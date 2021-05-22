@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html land="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="author" content="Skyler Ross"><meta name="description" content="The most accurate Game Boy opcode table on the market"><meta name="keywords" content="Game Boy, GameBoy, GB, opcode, table, map, emulation, emulation development, emudev, gbdev"><title>gbops - The Game Boy opcode table</title><link rel="preload" href="gbops%20-%20The%20Game%20Boy%20opcode%20table_files/dmgops.js" as="fetch" type="application/json"><link rel="stylesheet" href="gbops%20-%20The%20Game%20Boy%20opcode%20table_files/gbops.css"><link href="gbops%20-%20The%20Game%20Boy%20opcode%20table_files/css.css" rel="stylesheet"><script src="gbops%20-%20The%20Game%20Boy%20opcode%20table_files/dmgops.js"></script><script type="text/javascript" src="gbops%20-%20The%20Game%20Boy%20opcode%20table_files/gbops.js"></script></head><body> <header> <h1 id="titlecard">gbops, the most accurate™ opcode table for the Game Boy</h1> <details id="help-section"> <summary>Help</summary> <h5>Instruction format: </h5> <div class="sample-instruction"> MNEMONIC ARGS<br> LENGTH DURATION<br> AFFECTED FLAGS<br> </div> <br> <h5>Example instruction: </h5> <div class="sample-instruction"> XOR A,A <br> 1 4t <br> Z​0​0​0<br> </div> <br> <h5>Flags?</h5> <p> The names for the flags that this opcode table uses are:<br> Z = "Zero", N = "Negative", H = "Half carry" and C = "Carry" (always in that order)<br>
+ An instruction can do various things to the flags such as always set 
+(1), always reset (0), set or reset depending on the result of the 
+instrucion (letter for flag) or do nothing (-) </p> <h5 id="help-searchbar">How does the search bar work?</h5> <p> The search bar works by comparing properties of an opcode to a given number/string.<br> The currently supported properties are <code>length|len</code>, <code>name</code> and <code>number|num|opcode|op|#</code>.<br> The currently supported comparisions are <code>&lt;</code>, <code>&lt;=</code>, <code>=</code>, <code>&gt;=</code> and <code>&gt;</code>.<br> Numbers can be given in bases 16-10-8 and 2. </p> <h5>Some search examples:</h5> <p> <code>.name="LD"</code>, this searches for all opcodes containing "LD" in their name.<br> <code>.name="LD" .len=2</code>, this searches for opcodes all containing "LD" in their name and a length of 2. <br> <code>.name="LD" .len=2 or .opcode=0x76</code>, same as the previous but it <b>also</b> shows all opcodes with index 0x76, which are <code>HALT</code> and <code>BIT 6,(HL)</code> </p> <h5>Help!!! Why isn't the search bar working!?</h5> <p>The search bar is currently a huge WIP and will have tons of bugs, if you find one please report it to <a href="https://github.com/izik1/gbops/issues">The Issue Tracker</a> </p> </details> <details id="glossary"> <summary>Glossary</summary> <dl> <dt>Groups</dt> <dd> <dl class="groups sameline"> <dt class="lsm x8">x8/lsm</dt> <dd>8-bit Load/Store/Move</dd> <dt class="lsm x16">x16/lsm</dt> <dd>16-bit Load/Store/Move</dd> <dt class="alu x8">x8/alu</dt> <dd>8-bit Arithmetic Logic Unit</dd> <dt class="alu x16">x16/alu</dt> <dd>16-bit Arithmetic Logic Unit</dd> <dt class="rsb x8">x8/rsb</dt> <dd>8-bit ???</dd> <dt class="br control">control/br</dt> <dd>branch</dd> <dt class="control misc">control/misc</dt> <dd>misc</dd> </dl> </dd> <dt>Units</dt> <dd> <dl class="sameline"> <dt>T-Edge</dt> <dd>A single tick of the Game Boy's clock, from low to high, or high to low - 8,388,608 hz</dd> <dt>T-Cycle (t)</dt> <dd>Two T-Edges - 4,194,304 hz</dd> <dt>M-Cycle (m)</dt> <dd>Four T-Cycles - 1,048,576 hz</dd> <dt>h, 0x</dt> <dd><a href="https://en.wikipedia.org/wiki/Hexadecimal">Hexidecimal</a></dd> </dl> </dd> <dt>Types</dt> <dd> <dl class="sameline"> <dt>u8</dt> <dd>8-bit unsigned integer</dd> <dt>i8</dt> <dd>8-bit signed integer</dd> <dt>u16</dt> <dd>16-bit unsigned integer</dd> <dt>(...)</dt> <dd>pointer dereference</dd> </dl> </dd> </dl> </details> <div id="table-controls"> <label> Table Width: <select name="table_width"> <option value="8">8x</option> <option value="16" selected="selected">16x</option> </select> </label> <label> Cycle mode: <select name="cycle_mode"> <option value="t">t</option> <option value="m" selected="selected">m</option> <option value="both">both</option> </select> </label> <div style="display:inline-block"> <p>The search bar is experimental, see help for syntax, it might fail unexpectedly.</p> <label> Search: <input type="search" name="search-box"> </label> </div> </div> <div style="float:right"> If you find any bugs or something that seems out of place file an <a href="https://github.com/izik1/gbops/issues">issue</a>. </div> </header> <div id="floating-box-container" style="display:none" onclick="this.style.display = 'none';"> <div id="floating-box" class="floating-grid-container"></div> </div> <table id="unprefixed-16-m" class="opcode"><caption>Unprefixed:</caption><thead><tr><th>--</th><th>+0</th><th>+1</th><th>+2</th><th>+3</th><th>+4</th><th>+5</th><th>+6</th><th>+7</th><th>+8</th><th>+9</th><th>+A</th><th>+B</th><th>+C</th><th>+D</th><th>+E</th><th>+F</th></tr></thead><tbody><tr><th>00+</th><td class="opcode control misc" data-index="0"><div><pre>NOP
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="1"><div><pre>LD BC,u16
+3 3m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="2"><div><pre>LD (BC),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="3"><div><pre>INC BC
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="4"><div><pre>INC B
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="5"><div><pre>DEC B
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="6"><div><pre>LD B,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="7"><div><pre>RLCA
+1 1m
+0​0​0​C</pre></div></td><td class="opcode x16 lsm" data-index="8"><div><pre>LD (u16),SP
+3 5m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="9"><div><pre>ADD HL,BC
+1 2m
+-​0​H​C</pre></div></td><td class="opcode x8 lsm" data-index="10"><div><pre>LD A,(BC)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="11"><div><pre>DEC BC
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="12"><div><pre>INC C
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="13"><div><pre>DEC C
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="14"><div><pre>LD C,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="15"><div><pre>RRCA
+1 1m
+0​0​0​C</pre></div></td></tr><tr><th>10+</th><td class="opcode control misc" data-index="16"><div><pre>STOP
+2 1m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="17"><div><pre>LD DE,u16
+3 3m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="18"><div><pre>LD (DE),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="19"><div><pre>INC DE
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="20"><div><pre>INC D
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="21"><div><pre>DEC D
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="22"><div><pre>LD D,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="23"><div><pre>RLA
+1 1m
+0​0​0​C</pre></div></td><td class="opcode control br" data-index="24"><div><pre>JR i8
+2 3m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="25"><div><pre>ADD HL,DE
+1 2m
+-​0​H​C</pre></div></td><td class="opcode x8 lsm" data-index="26"><div><pre>LD A,(DE)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="27"><div><pre>DEC DE
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="28"><div><pre>INC E
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="29"><div><pre>DEC E
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="30"><div><pre>LD E,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="31"><div><pre>RRA
+1 1m
+0​0​0​C</pre></div></td></tr><tr><th>20+</th><td class="opcode control br" data-index="32"><div><pre>JR NZ,i8
+2 2m-3m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="33"><div><pre>LD HL,u16
+3 3m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="34"><div><pre>LD (HL+),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="35"><div><pre>INC HL
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="36"><div><pre>INC H
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="37"><div><pre>DEC H
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="38"><div><pre>LD H,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="39"><div><pre>DAA
+1 1m
+Z​-​0​C</pre></div></td><td class="opcode control br" data-index="40"><div><pre>JR Z,i8
+2 2m-3m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="41"><div><pre>ADD HL,HL
+1 2m
+-​0​H​C</pre></div></td><td class="opcode x8 lsm" data-index="42"><div><pre>LD A,(HL+)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="43"><div><pre>DEC HL
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="44"><div><pre>INC L
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="45"><div><pre>DEC L
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="46"><div><pre>LD L,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="47"><div><pre>CPL
+1 1m
+-​1​1​-</pre></div></td></tr><tr><th>30+</th><td class="opcode control br" data-index="48"><div><pre>JR NC,i8
+2 2m-3m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="49"><div><pre>LD SP,u16
+3 3m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="50"><div><pre>LD (HL-),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="51"><div><pre>INC SP
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="52"><div><pre>INC (HL)
+1 3m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="53"><div><pre>DEC (HL)
+1 3m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="54"><div><pre>LD (HL),u8
+2 3m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="55"><div><pre>SCF
+1 1m
+-​0​0​1</pre></div></td><td class="opcode control br" data-index="56"><div><pre>JR C,i8
+2 2m-3m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="57"><div><pre>ADD HL,SP
+1 2m
+-​0​H​C</pre></div></td><td class="opcode x8 lsm" data-index="58"><div><pre>LD A,(HL-)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="59"><div><pre>DEC SP
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="60"><div><pre>INC A
+1 1m
+Z​0​H​-</pre></div></td><td class="opcode x8 alu" data-index="61"><div><pre>DEC A
+1 1m
+Z​1​H​-</pre></div></td><td class="opcode x8 lsm" data-index="62"><div><pre>LD A,u8
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="63"><div><pre>CCF
+1 1m
+-​0​0​C</pre></div></td></tr><tr><th>40+</th><td class="opcode x8 lsm" data-index="64"><div><pre>LD B,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="65"><div><pre>LD B,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="66"><div><pre>LD B,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="67"><div><pre>LD B,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="68"><div><pre>LD B,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="69"><div><pre>LD B,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="70"><div><pre>LD B,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="71"><div><pre>LD B,A
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="72"><div><pre>LD C,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="73"><div><pre>LD C,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="74"><div><pre>LD C,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="75"><div><pre>LD C,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="76"><div><pre>LD C,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="77"><div><pre>LD C,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="78"><div><pre>LD C,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="79"><div><pre>LD C,A
+1 1m
+-​-​-​-</pre></div></td></tr><tr><th>50+</th><td class="opcode x8 lsm" data-index="80"><div><pre>LD D,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="81"><div><pre>LD D,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="82"><div><pre>LD D,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="83"><div><pre>LD D,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="84"><div><pre>LD D,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="85"><div><pre>LD D,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="86"><div><pre>LD D,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="87"><div><pre>LD D,A
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="88"><div><pre>LD E,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="89"><div><pre>LD E,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="90"><div><pre>LD E,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="91"><div><pre>LD E,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="92"><div><pre>LD E,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="93"><div><pre>LD E,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="94"><div><pre>LD E,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="95"><div><pre>LD E,A
+1 1m
+-​-​-​-</pre></div></td></tr><tr><th>60+</th><td class="opcode x8 lsm" data-index="96"><div><pre>LD H,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="97"><div><pre>LD H,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="98"><div><pre>LD H,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="99"><div><pre>LD H,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="100"><div><pre>LD H,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="101"><div><pre>LD H,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="102"><div><pre>LD H,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="103"><div><pre>LD H,A
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="104"><div><pre>LD L,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="105"><div><pre>LD L,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="106"><div><pre>LD L,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="107"><div><pre>LD L,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="108"><div><pre>LD L,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="109"><div><pre>LD L,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="110"><div><pre>LD L,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="111"><div><pre>LD L,A
+1 1m
+-​-​-​-</pre></div></td></tr><tr><th>70+</th><td class="opcode x8 lsm" data-index="112"><div><pre>LD (HL),B
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="113"><div><pre>LD (HL),C
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="114"><div><pre>LD (HL),D
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="115"><div><pre>LD (HL),E
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="116"><div><pre>LD (HL),H
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="117"><div><pre>LD (HL),L
+1 2m
+-​-​-​-</pre></div></td><td class="opcode control misc" data-index="118"><div><pre>HALT
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="119"><div><pre>LD (HL),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="120"><div><pre>LD A,B
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="121"><div><pre>LD A,C
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="122"><div><pre>LD A,D
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="123"><div><pre>LD A,E
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="124"><div><pre>LD A,H
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="125"><div><pre>LD A,L
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="126"><div><pre>LD A,(HL)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="127"><div><pre>LD A,A
+1 1m
+-​-​-​-</pre></div></td></tr><tr><th>80+</th><td class="opcode x8 alu" data-index="128"><div><pre>ADD A,B
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="129"><div><pre>ADD A,C
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="130"><div><pre>ADD A,D
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="131"><div><pre>ADD A,E
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="132"><div><pre>ADD A,H
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="133"><div><pre>ADD A,L
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="134"><div><pre>ADD A,(HL)
+1 2m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="135"><div><pre>ADD A,A
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="136"><div><pre>ADC A,B
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="137"><div><pre>ADC A,C
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="138"><div><pre>ADC A,D
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="139"><div><pre>ADC A,E
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="140"><div><pre>ADC A,H
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="141"><div><pre>ADC A,L
+1 1m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="142"><div><pre>ADC A,(HL)
+1 2m
+Z​0​H​C</pre></div></td><td class="opcode x8 alu" data-index="143"><div><pre>ADC A,A
+1 1m
+Z​0​H​C</pre></div></td></tr><tr><th>90+</th><td class="opcode x8 alu" data-index="144"><div><pre>SUB A,B
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="145"><div><pre>SUB A,C
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="146"><div><pre>SUB A,D
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="147"><div><pre>SUB A,E
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="148"><div><pre>SUB A,H
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="149"><div><pre>SUB A,L
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="150"><div><pre>SUB A,(HL)
+1 2m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="151"><div><pre>SUB A,A
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="152"><div><pre>SBC A,B
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="153"><div><pre>SBC A,C
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="154"><div><pre>SBC A,D
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="155"><div><pre>SBC A,E
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="156"><div><pre>SBC A,H
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="157"><div><pre>SBC A,L
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="158"><div><pre>SBC A,(HL)
+1 2m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="159"><div><pre>SBC A,A
+1 1m
+Z​1​H​C</pre></div></td></tr><tr><th>A0+</th><td class="opcode x8 alu" data-index="160"><div><pre>AND A,B
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="161"><div><pre>AND A,C
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="162"><div><pre>AND A,D
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="163"><div><pre>AND A,E
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="164"><div><pre>AND A,H
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="165"><div><pre>AND A,L
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="166"><div><pre>AND A,(HL)
+1 2m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="167"><div><pre>AND A,A
+1 1m
+Z​0​1​0</pre></div></td><td class="opcode x8 alu" data-index="168"><div><pre>XOR A,B
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="169"><div><pre>XOR A,C
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="170"><div><pre>XOR A,D
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="171"><div><pre>XOR A,E
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="172"><div><pre>XOR A,H
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="173"><div><pre>XOR A,L
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="174"><div><pre>XOR A,(HL)
+1 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="175"><div><pre>XOR A,A
+1 1m
+Z​0​0​0</pre></div></td></tr><tr><th>B0+</th><td class="opcode x8 alu" data-index="176"><div><pre>OR A,B
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="177"><div><pre>OR A,C
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="178"><div><pre>OR A,D
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="179"><div><pre>OR A,E
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="180"><div><pre>OR A,H
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="181"><div><pre>OR A,L
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="182"><div><pre>OR A,(HL)
+1 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="183"><div><pre>OR A,A
+1 1m
+Z​0​0​0</pre></div></td><td class="opcode x8 alu" data-index="184"><div><pre>CP A,B
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="185"><div><pre>CP A,C
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="186"><div><pre>CP A,D
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="187"><div><pre>CP A,E
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="188"><div><pre>CP A,H
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="189"><div><pre>CP A,L
+1 1m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="190"><div><pre>CP A,(HL)
+1 2m
+Z​1​H​C</pre></div></td><td class="opcode x8 alu" data-index="191"><div><pre>CP A,A
+1 1m
+Z​1​H​C</pre></div></td></tr><tr><th>C0+</th><td class="opcode control br" data-index="192"><div><pre>RET NZ
+1 2m-5m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="193"><div><pre>POP BC
+1 3m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="194"><div><pre>JP NZ,u16
+3 3m-4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="195"><div><pre>JP u16
+3 4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="196"><div><pre>CALL NZ,u16
+3 3m-6m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="197"><div><pre>PUSH BC
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="198"><div><pre>ADD A,u8
+2 2m
+Z​0​H​C</pre></div></td><td class="opcode control br" data-index="199"><div><pre>RST 00h
+1 4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="200"><div><pre>RET Z
+1 2m-5m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="201"><div><pre>RET
+1 4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="202"><div><pre>JP Z,u16
+3 3m-4m
+-​-​-​-</pre></div></td><td class="opcode control misc" data-index="203"><div><pre>PREFIX CB
+1 1m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="204"><div><pre>CALL Z,u16
+3 3m-6m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="205"><div><pre>CALL u16
+3 6m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="206"><div><pre>ADC A,u8
+2 2m
+Z​0​H​C</pre></div></td><td class="opcode control br" data-index="207"><div><pre>RST 08h
+1 4m
+-​-​-​-</pre></div></td></tr><tr><th>D0+</th><td class="opcode control br" data-index="208"><div><pre>RET NC
+1 2m-5m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="209"><div><pre>POP DE
+1 3m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="210"><div><pre>JP NC,u16
+3 3m-4m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="211"></td><td class="opcode control br" data-index="212"><div><pre>CALL NC,u16
+3 3m-6m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="213"><div><pre>PUSH DE
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="214"><div><pre>SUB A,u8
+2 2m
+Z​1​H​C</pre></div></td><td class="opcode control br" data-index="215"><div><pre>RST 10h
+1 4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="216"><div><pre>RET C
+1 2m-5m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="217"><div><pre>RETI
+1 4m
+-​-​-​-</pre></div></td><td class="opcode control br" data-index="218"><div><pre>JP C,u16
+3 3m-4m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="219"></td><td class="opcode control br" data-index="220"><div><pre>CALL C,u16
+3 3m-6m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="221"></td><td class="opcode x8 alu" data-index="222"><div><pre>SBC A,u8
+2 2m
+Z​1​H​C</pre></div></td><td class="opcode control br" data-index="223"><div><pre>RST 18h
+1 4m
+-​-​-​-</pre></div></td></tr><tr><th>E0+</th><td class="opcode x8 lsm" data-index="224"><div><pre>LD (FF00+u8),A
+2 3m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="225"><div><pre>POP HL
+1 3m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="226"><div><pre>LD (FF00+C),A
+1 2m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="227"></td><td class="opcode unused" data-index="228"></td><td class="opcode x16 lsm" data-index="229"><div><pre>PUSH HL
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="230"><div><pre>AND A,u8
+2 2m
+Z​0​1​0</pre></div></td><td class="opcode control br" data-index="231"><div><pre>RST 20h
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="232"><div><pre>ADD SP,i8
+2 4m
+0​0​H​C</pre></div></td><td class="opcode control br" data-index="233"><div><pre>JP HL
+1 1m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="234"><div><pre>LD (u16),A
+3 4m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="235"></td><td class="opcode unused" data-index="236"></td><td class="opcode unused" data-index="237"></td><td class="opcode x8 alu" data-index="238"><div><pre>XOR A,u8
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode control br" data-index="239"><div><pre>RST 28h
+1 4m
+-​-​-​-</pre></div></td></tr><tr><th>F0+</th><td class="opcode x8 lsm" data-index="240"><div><pre>LD A,(FF00+u8)
+2 3m
+-​-​-​-</pre></div></td><td class="opcode x16 lsm" data-index="241"><div><pre>POP AF
+1 3m
+Z​N​H​C</pre></div></td><td class="opcode x8 lsm" data-index="242"><div><pre>LD A,(FF00+C)
+1 2m
+-​-​-​-</pre></div></td><td class="opcode control misc" data-index="243"><div><pre>DI
+1 1m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="244"></td><td class="opcode x16 lsm" data-index="245"><div><pre>PUSH AF
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x8 alu" data-index="246"><div><pre>OR A,u8
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode control br" data-index="247"><div><pre>RST 30h
+1 4m
+-​-​-​-</pre></div></td><td class="opcode x16 alu" data-index="248"><div><pre>LD HL,SP+i8
+2 3m
+0​0​H​C</pre></div></td><td class="opcode x16 lsm" data-index="249"><div><pre>LD SP,HL
+1 2m
+-​-​-​-</pre></div></td><td class="opcode x8 lsm" data-index="250"><div><pre>LD A,(u16)
+3 4m
+-​-​-​-</pre></div></td><td class="opcode control misc" data-index="251"><div><pre>EI
+1 1m
+-​-​-​-</pre></div></td><td class="opcode unused" data-index="252"></td><td class="opcode unused" data-index="253"></td><td class="opcode x8 alu" data-index="254"><div><pre>CP A,u8
+2 2m
+Z​1​H​C</pre></div></td><td class="opcode control br" data-index="255"><div><pre>RST 38h
+1 4m
+-​-​-​-</pre></div></td></tr></tbody></table><table id="cbprefixed-16-m" class="opcode"><caption>0xCB Prefixed:</caption><thead><tr><th>--</th><th>+0</th><th>+1</th><th>+2</th><th>+3</th><th>+4</th><th>+5</th><th>+6</th><th>+7</th><th>+8</th><th>+9</th><th>+A</th><th>+B</th><th>+C</th><th>+D</th><th>+E</th><th>+F</th></tr></thead><tbody><tr><th>00+</th><td class="opcode x8 rsb" data-index="0"><div><pre>RLC B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="1"><div><pre>RLC C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="2"><div><pre>RLC D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="3"><div><pre>RLC E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="4"><div><pre>RLC H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="5"><div><pre>RLC L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="6"><div><pre>RLC (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="7"><div><pre>RLC A
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="8"><div><pre>RRC B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="9"><div><pre>RRC C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="10"><div><pre>RRC D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="11"><div><pre>RRC E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="12"><div><pre>RRC H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="13"><div><pre>RRC L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="14"><div><pre>RRC (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="15"><div><pre>RRC A
+2 2m
+Z​0​0​C</pre></div></td></tr><tr><th>10+</th><td class="opcode x8 rsb" data-index="16"><div><pre>RL B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="17"><div><pre>RL C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="18"><div><pre>RL D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="19"><div><pre>RL E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="20"><div><pre>RL H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="21"><div><pre>RL L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="22"><div><pre>RL (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="23"><div><pre>RL A
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="24"><div><pre>RR B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="25"><div><pre>RR C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="26"><div><pre>RR D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="27"><div><pre>RR E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="28"><div><pre>RR H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="29"><div><pre>RR L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="30"><div><pre>RR (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="31"><div><pre>RR A
+2 2m
+Z​0​0​C</pre></div></td></tr><tr><th>20+</th><td class="opcode x8 rsb" data-index="32"><div><pre>SLA B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="33"><div><pre>SLA C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="34"><div><pre>SLA D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="35"><div><pre>SLA E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="36"><div><pre>SLA H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="37"><div><pre>SLA L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="38"><div><pre>SLA (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="39"><div><pre>SLA A
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="40"><div><pre>SRA B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="41"><div><pre>SRA C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="42"><div><pre>SRA D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="43"><div><pre>SRA E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="44"><div><pre>SRA H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="45"><div><pre>SRA L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="46"><div><pre>SRA (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="47"><div><pre>SRA A
+2 2m
+Z​0​0​C</pre></div></td></tr><tr><th>30+</th><td class="opcode x8 rsb" data-index="48"><div><pre>SWAP B
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="49"><div><pre>SWAP C
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="50"><div><pre>SWAP D
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="51"><div><pre>SWAP E
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="52"><div><pre>SWAP H
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="53"><div><pre>SWAP L
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="54"><div><pre>SWAP (HL)
+2 4m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="55"><div><pre>SWAP A
+2 2m
+Z​0​0​0</pre></div></td><td class="opcode x8 rsb" data-index="56"><div><pre>SRL B
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="57"><div><pre>SRL C
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="58"><div><pre>SRL D
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="59"><div><pre>SRL E
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="60"><div><pre>SRL H
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="61"><div><pre>SRL L
+2 2m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="62"><div><pre>SRL (HL)
+2 4m
+Z​0​0​C</pre></div></td><td class="opcode x8 rsb" data-index="63"><div><pre>SRL A
+2 2m
+Z​0​0​C</pre></div></td></tr><tr><th>40+</th><td class="opcode x8 rsb" data-index="64"><div><pre>BIT 0,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="65"><div><pre>BIT 0,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="66"><div><pre>BIT 0,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="67"><div><pre>BIT 0,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="68"><div><pre>BIT 0,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="69"><div><pre>BIT 0,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="70"><div><pre>BIT 0,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="71"><div><pre>BIT 0,A
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="72"><div><pre>BIT 1,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="73"><div><pre>BIT 1,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="74"><div><pre>BIT 1,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="75"><div><pre>BIT 1,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="76"><div><pre>BIT 1,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="77"><div><pre>BIT 1,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="78"><div><pre>BIT 1,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="79"><div><pre>BIT 1,A
+2 2m
+Z​0​1​-</pre></div></td></tr><tr><th>50+</th><td class="opcode x8 rsb" data-index="80"><div><pre>BIT 2,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="81"><div><pre>BIT 2,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="82"><div><pre>BIT 2,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="83"><div><pre>BIT 2,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="84"><div><pre>BIT 2,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="85"><div><pre>BIT 2,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="86"><div><pre>BIT 2,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="87"><div><pre>BIT 2,A
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="88"><div><pre>BIT 3,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="89"><div><pre>BIT 3,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="90"><div><pre>BIT 3,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="91"><div><pre>BIT 3,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="92"><div><pre>BIT 3,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="93"><div><pre>BIT 3,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="94"><div><pre>BIT 3,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="95"><div><pre>BIT 3,A
+2 2m
+Z​0​1​-</pre></div></td></tr><tr><th>60+</th><td class="opcode x8 rsb" data-index="96"><div><pre>BIT 4,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="97"><div><pre>BIT 4,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="98"><div><pre>BIT 4,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="99"><div><pre>BIT 4,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="100"><div><pre>BIT 4,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="101"><div><pre>BIT 4,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="102"><div><pre>BIT 4,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="103"><div><pre>BIT 4,A
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="104"><div><pre>BIT 5,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="105"><div><pre>BIT 5,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="106"><div><pre>BIT 5,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="107"><div><pre>BIT 5,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="108"><div><pre>BIT 5,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="109"><div><pre>BIT 5,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="110"><div><pre>BIT 5,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="111"><div><pre>BIT 5,A
+2 2m
+Z​0​1​-</pre></div></td></tr><tr><th>70+</th><td class="opcode x8 rsb" data-index="112"><div><pre>BIT 6,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="113"><div><pre>BIT 6,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="114"><div><pre>BIT 6,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="115"><div><pre>BIT 6,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="116"><div><pre>BIT 6,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="117"><div><pre>BIT 6,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="118"><div><pre>BIT 6,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="119"><div><pre>BIT 6,A
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="120"><div><pre>BIT 7,B
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="121"><div><pre>BIT 7,C
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="122"><div><pre>BIT 7,D
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="123"><div><pre>BIT 7,E
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="124"><div><pre>BIT 7,H
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="125"><div><pre>BIT 7,L
+2 2m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="126"><div><pre>BIT 7,(HL)
+2 3m
+Z​0​1​-</pre></div></td><td class="opcode x8 rsb" data-index="127"><div><pre>BIT 7,A
+2 2m
+Z​0​1​-</pre></div></td></tr><tr><th>80+</th><td class="opcode x8 rsb" data-index="128"><div><pre>RES 0,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="129"><div><pre>RES 0,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="130"><div><pre>RES 0,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="131"><div><pre>RES 0,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="132"><div><pre>RES 0,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="133"><div><pre>RES 0,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="134"><div><pre>RES 0,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="135"><div><pre>RES 0,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="136"><div><pre>RES 1,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="137"><div><pre>RES 1,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="138"><div><pre>RES 1,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="139"><div><pre>RES 1,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="140"><div><pre>RES 1,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="141"><div><pre>RES 1,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="142"><div><pre>RES 1,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="143"><div><pre>RES 1,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>90+</th><td class="opcode x8 rsb" data-index="144"><div><pre>RES 2,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="145"><div><pre>RES 2,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="146"><div><pre>RES 2,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="147"><div><pre>RES 2,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="148"><div><pre>RES 2,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="149"><div><pre>RES 2,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="150"><div><pre>RES 2,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="151"><div><pre>RES 2,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="152"><div><pre>RES 3,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="153"><div><pre>RES 3,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="154"><div><pre>RES 3,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="155"><div><pre>RES 3,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="156"><div><pre>RES 3,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="157"><div><pre>RES 3,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="158"><div><pre>RES 3,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="159"><div><pre>RES 3,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>A0+</th><td class="opcode x8 rsb" data-index="160"><div><pre>RES 4,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="161"><div><pre>RES 4,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="162"><div><pre>RES 4,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="163"><div><pre>RES 4,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="164"><div><pre>RES 4,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="165"><div><pre>RES 4,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="166"><div><pre>RES 4,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="167"><div><pre>RES 4,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="168"><div><pre>RES 5,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="169"><div><pre>RES 5,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="170"><div><pre>RES 5,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="171"><div><pre>RES 5,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="172"><div><pre>RES 5,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="173"><div><pre>RES 5,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="174"><div><pre>RES 5,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="175"><div><pre>RES 5,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>B0+</th><td class="opcode x8 rsb" data-index="176"><div><pre>RES 6,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="177"><div><pre>RES 6,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="178"><div><pre>RES 6,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="179"><div><pre>RES 6,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="180"><div><pre>RES 6,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="181"><div><pre>RES 6,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="182"><div><pre>RES 6,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="183"><div><pre>RES 6,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="184"><div><pre>RES 7,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="185"><div><pre>RES 7,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="186"><div><pre>RES 7,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="187"><div><pre>RES 7,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="188"><div><pre>RES 7,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="189"><div><pre>RES 7,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="190"><div><pre>RES 7,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="191"><div><pre>RES 7,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>C0+</th><td class="opcode x8 rsb" data-index="192"><div><pre>SET 0,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="193"><div><pre>SET 0,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="194"><div><pre>SET 0,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="195"><div><pre>SET 0,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="196"><div><pre>SET 0,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="197"><div><pre>SET 0,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="198"><div><pre>SET 0,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="199"><div><pre>SET 0,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="200"><div><pre>SET 1,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="201"><div><pre>SET 1,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="202"><div><pre>SET 1,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="203"><div><pre>SET 1,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="204"><div><pre>SET 1,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="205"><div><pre>SET 1,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="206"><div><pre>SET 1,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="207"><div><pre>SET 1,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>D0+</th><td class="opcode x8 rsb" data-index="208"><div><pre>SET 2,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="209"><div><pre>SET 2,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="210"><div><pre>SET 2,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="211"><div><pre>SET 2,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="212"><div><pre>SET 2,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="213"><div><pre>SET 2,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="214"><div><pre>SET 2,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="215"><div><pre>SET 2,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="216"><div><pre>SET 3,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="217"><div><pre>SET 3,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="218"><div><pre>SET 3,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="219"><div><pre>SET 3,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="220"><div><pre>SET 3,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="221"><div><pre>SET 3,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="222"><div><pre>SET 3,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="223"><div><pre>SET 3,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>E0+</th><td class="opcode x8 rsb" data-index="224"><div><pre>SET 4,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="225"><div><pre>SET 4,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="226"><div><pre>SET 4,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="227"><div><pre>SET 4,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="228"><div><pre>SET 4,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="229"><div><pre>SET 4,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="230"><div><pre>SET 4,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="231"><div><pre>SET 4,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="232"><div><pre>SET 5,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="233"><div><pre>SET 5,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="234"><div><pre>SET 5,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="235"><div><pre>SET 5,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="236"><div><pre>SET 5,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="237"><div><pre>SET 5,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="238"><div><pre>SET 5,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="239"><div><pre>SET 5,A
+2 2m
+-​-​-​-</pre></div></td></tr><tr><th>F0+</th><td class="opcode x8 rsb" data-index="240"><div><pre>SET 6,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="241"><div><pre>SET 6,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="242"><div><pre>SET 6,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="243"><div><pre>SET 6,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="244"><div><pre>SET 6,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="245"><div><pre>SET 6,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="246"><div><pre>SET 6,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="247"><div><pre>SET 6,A
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="248"><div><pre>SET 7,B
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="249"><div><pre>SET 7,C
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="250"><div><pre>SET 7,D
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="251"><div><pre>SET 7,E
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="252"><div><pre>SET 7,H
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="253"><div><pre>SET 7,L
+2 2m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="254"><div><pre>SET 7,(HL)
+2 4m
+-​-​-​-</pre></div></td><td class="opcode x8 rsb" data-index="255"><div><pre>SET 7,A
+2 2m
+-​-​-​-</pre></div></td></tr></tbody></table></body></html>
