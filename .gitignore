@@ -1,6 +1,7 @@
+*.
 # Prerequisites
 *.d
-
+*.swp
 # Compiled Object files
 *.slo
 *.lo
@@ -33,3 +34,4 @@
 
 build*
 .DS_Store
+*_template.h

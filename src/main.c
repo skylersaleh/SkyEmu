@@ -6,9 +6,9 @@
  *
  **/
 
-typedef void *sb_opcode_impl_t;
 #include "raylib.h"
 #include "sb_instr_tables.h"
+#include "sb_types.h"
 #include <stdint.h>
 #define RAYGUI_IMPLEMENTATION
 #define RAYGUI_SUPPORT_ICONS
@@ -26,56 +26,28 @@ const int GUI_PADDING = 10;
 const int GUI_ROW_HEIGHT = 30;
 const int GUI_LABEL_HEIGHT = 0;
 const int GUI_LABEL_PADDING = 5;
-#define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024
-#define SB_U16_LO(A) ((A)&0xff)
-#define SB_U16_HI(A) ((A >> 8) & 0xff)
 
-// Extract bits from a bitfield
-#define SB_BFE(VALUE, BITOFFSET, SIZE)                                         \
-  (((VALUE) >> (BITOFFSET)) & ((2 << (SIZE)) - 1))
-#define SB_MODE_RESET 0
-#define SB_MODE_PAUSE 1
-#define SB_MODE_RUN 2
-#define SB_MODE_STEP 3
+sb_emu_state_t emu_state = {.pc_breakpoint = 0};
+sb_gb_t gb_state = {};
 
-// Draw and process scroll bar style edition controls
-
-typedef struct {
-  int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
-  int step_instructions; // Number of instructions to advance while stepping
-} sb_emu_state_t;
-
-typedef struct {
-  // Registers
-  uint16_t af, bc, de, hl, sp, pc;
-} sb_gb_cpu_t;
-
-typedef struct {
-  uint8_t data[65536];
-} sb_gb_mem_t;
-
-typedef struct {
-  uint8_t data[MAX_CARTRIDGE_SIZE];
-  char title[17];
-  bool game_boy_color;
-  uint8_t type;
-  int rom_size;
-  int ram_size;
-} sb_gb_cartridge_t;
-
-typedef struct {
-  sb_gb_cpu_t cpu;
-  sb_gb_mem_t mem;
-  sb_gb_cartridge_t cart;
-} sb_gb_t;
-
-sb_emu_state_t emu_state = {0};
-sb_gb_t gb_state = {0xffff};
-
-uint16_t sb_read16(sb_gb_t *gb, int addr) {
-  return *(uint16_t *)(gb->mem.data + addr);
-}
 uint8_t sb_read8(sb_gb_t *gb, int addr) { return gb->mem.data[addr]; }
+void sb_store8(sb_gb_t *gb, int addr, int value) {
+  if(addr >= 0xff00){
+    printf("Serial(%x): %c\n",addr,(char)value);
+  }else{
+    gb->mem.data[addr]=value;
+  }
+}
+void sb_store16(sb_gb_t *gb, int addr, unsigned int value) {
+  gb->mem.data[addr]=(value&0xff); 
+  gb->mem.data[addr+1]=((value>>8u)&0xff); 
+}
+uint16_t sb_read16(sb_gb_t *gb, int addr) {
+  uint16_t g = sb_read8(gb,addr+1);
+  g<<=8;
+  g|= sb_read8(gb,addr+0);
+  return g;
+}
 
 Rectangle sb_inside_rect_after_padding(Rectangle outside_rect, int padding) {
   Rectangle rect_inside = outside_rect;
@@ -113,12 +85,23 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state) {
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
 
-  int label_width = GetTextWidth("Instructions to Step");
   static bool edit_step_instructions = false;
   if (GuiSpinner(widget_rect, "", &emu_state->step_instructions, 1, 0x7fffffff,
                  edit_step_instructions))
     edit_step_instructions = !edit_step_instructions;
+  
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_LABEL_PADDING,
+                  &widget_rect, &inside_rect);
 
+  GuiLabel(widget_rect, "Breakpoint PC");
+  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
+                  &inside_rect);
+
+  static bool edit_bp_pc = false;
+  if (GuiSpinner(widget_rect, "", &emu_state->pc_breakpoint, 1, 0x7fffffff,
+                 edit_bp_pc))
+    edit_bp_pc = !edit_bp_pc;
+   
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
@@ -177,7 +160,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
                                sb_gb_t *gb) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
-  for (int i = -3; i < 4; ++i) {
+  for (int i = -6; i < 7; ++i) {
     sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
                     &widget_rect, &inside_rect);
     int pc_render = i + cpu_state->pc;
@@ -190,7 +173,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
       if (i == 0)
         GuiLabel(widget_rect, "PC->");
       widget_rect.x += 30;
-      GuiLabel(widget_rect, TextFormat("%04X", pc_render));
+      GuiLabel(widget_rect, TextFormat("%06d", pc_render));
       widget_rect.x += 50;
       int opcode = sb_read8(gb, pc_render);
       GuiLabel(widget_rect, sb_decode_table[opcode].opcode_name);
@@ -267,13 +250,14 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
       SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
   };
 
-  const char *flag_names[] = {"Z", "N", "H", "C", NULL};
+  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", NULL};
 
   bool flag_values[] = {
-      SB_BFE(cpu_state->af, 7, 1), // Z
-      SB_BFE(cpu_state->af, 6, 1), // N
-      SB_BFE(cpu_state->af, 5, 1), // H
-      SB_BFE(cpu_state->af, 4, 1), // C
+      SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
+      SB_BFE(cpu_state->af, SB_N_BIT, 1), // N
+      SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
+      SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
+      cpu_state->interrupt_enable, 
   };
   // Split registers into three rects horizontally
   {
@@ -316,6 +300,82 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
   GuiGroupBox(state_rect, "CPU State");
   return adv_rect;
 }
+
+void sb_tick(){
+ 
+  if (emu_state.run_mode == SB_MODE_RESET) {
+    memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
+    
+    gb_state.cpu.pc = 0x100;
+
+    gb_state.cpu.af=0x01B0;
+    gb_state.cpu.bc=0x0013;
+    gb_state.cpu.de=0x00D8;
+    gb_state.cpu.hl=0x014D;
+    gb_state.cpu.sp=0xFFFE;
+
+    gb_state.mem.data[0xFF05] = 0x00; // TIMA
+    gb_state.mem.data[0xFF06] = 0x00; // TMA
+    gb_state.mem.data[0xFF07] = 0x00; // TAC
+    gb_state.mem.data[0xFF10] = 0x80; // NR10
+    gb_state.mem.data[0xFF11] = 0xBF; // NR11
+    gb_state.mem.data[0xFF12] = 0xF3; // NR12
+    gb_state.mem.data[0xFF14] = 0xBF; // NR14
+    gb_state.mem.data[0xFF16] = 0x3F; // NR21
+    gb_state.mem.data[0xFF17] = 0x00; // NR22
+    gb_state.mem.data[0xFF19] = 0xBF; // NR24
+    gb_state.mem.data[0xFF1A] = 0x7F; // NR30
+    gb_state.mem.data[0xFF1B] = 0xFF; // NR31
+    gb_state.mem.data[0xFF1C] = 0x9F; // NR32
+    gb_state.mem.data[0xFF1E] = 0xBF; // NR34
+    gb_state.mem.data[0xFF20] = 0xFF; // NR41
+    gb_state.mem.data[0xFF21] = 0x00; // NR42
+    gb_state.mem.data[0xFF22] = 0x00; // NR43
+    gb_state.mem.data[0xFF23] = 0xBF; // NR44
+    gb_state.mem.data[0xFF24] = 0x77; // NR50
+    gb_state.mem.data[0xFF25] = 0xF3; // NR51
+    gb_state.mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
+    gb_state.mem.data[0xFF40] = 0x91; // LCDC
+    gb_state.mem.data[0xFF42] = 0x00; // SCY
+    gb_state.mem.data[0xFF43] = 0x00; // SCX
+    gb_state.mem.data[0xFF45] = 0x00; // LYC
+    gb_state.mem.data[0xFF47] = 0xFC; // BGP
+    gb_state.mem.data[0xFF48] = 0xFF; // OBP0
+    gb_state.mem.data[0xFF49] = 0xFF; // OBP1
+    gb_state.mem.data[0xFF4A] = 0x00; // WY
+    gb_state.mem.data[0xFF4B] = 0x00; // WX
+    gb_state.mem.data[0xFFFF] = 0x00; // IE
+  }
+  
+  if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
+    
+    int instructions_to_execute = emu_state.step_instructions;
+    for(int i=0;i<instructions_to_execute;++i){
+        
+        uint8_t op = sb_read8(&gb_state,gb_state.cpu.pc);
+                                                 
+        const sb_instr_t inst = sb_decode_table[op];
+
+        gb_state.cpu.pc+=inst.length;
+        int operand1 = sb_load_operand(&gb_state,inst.op_src1);
+        int operand2 = sb_load_operand(&gb_state,inst.op_src2);
+
+        inst.impl(&gb_state, operand1, operand2,inst.op_src1, inst.flag_mask);
+        if (gb_state.cpu.pc == emu_state.pc_breakpoint){
+          emu_state.run_mode = SB_MODE_PAUSE;
+          break;
+        }   
+    }
+
+
+  }
+  
+  if (emu_state.run_mode == SB_MODE_STEP) {
+    emu_state.run_mode = SB_MODE_PAUSE;
+  }
+  
+
+}
 void sb_draw_sidebar(Rectangle rect) {
   GuiPanel(rect);
   Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -323,16 +383,7 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
-  if (emu_state.run_mode == SB_MODE_STEP) {
-    emu_state.run_mode = SB_MODE_PAUSE;
-    gb_state.cpu.pc++;
-  }
-  if (emu_state.run_mode == SB_MODE_RUN) {
-    gb_state.cpu.pc++;
-  }
-  if (emu_state.run_mode == SB_MODE_RESET) {
-    gb_state.cpu.pc = 0x100;
-  }
+  
 }
 
 Rectangle panelRec = {20, 40, 200, 150};
@@ -431,6 +482,7 @@ void UpdateDrawFrame() {
     }
     ClearDroppedFiles();
   }
+  sb_tick();
 
   // Bouncing ball logic
   ballPosition.x += ballSpeed.x * GetFrameTime() * 60.;
@@ -472,7 +524,7 @@ int main(void) {
 
   // Set configuration flags for window creation
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
-  InitWindow(screenWidth, screenHeight, "raylib [core] example - window flags");
+  InitWindow(screenWidth, screenHeight, "SkyBoy");
 
 #if defined(PLATFORM_WEB)
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
