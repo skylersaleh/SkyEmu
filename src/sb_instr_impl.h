@@ -115,7 +115,7 @@ int sb_load_operand(sb_gb_t* gb, int operand){
     /*case SB_OP_FF00_PLUS_C_INDIRECT: { return sb_read16(gb, 0xff00+SB_U16_LO(gb->cpu.bc));; }*/
     case SB_OP_FF00_PLUS_U8_INDIRECT: { return sb_read8(gb, 0xff00|sb_read8(gb, gb->cpu.pc-1)); }
     case SB_OP_H: { return SB_U16_HI(gb->cpu.hl); }
-    case SB_OP_HL: { return SB_U16_LO(gb->cpu.hl); }
+    case SB_OP_HL: { return gb->cpu.hl; }
     case SB_OP_HL_DEC_INDIRECT: { return sb_read8(gb,gb->cpu.hl--); }
     case SB_OP_HL_INC_INDIRECT: { return sb_read8(gb,gb->cpu.hl++); }
     case SB_OP_HL_INDIRECT: { return sb_read8(gb,gb->cpu.hl); }
@@ -138,7 +138,7 @@ int sb_load_operand(sb_gb_t* gb, int operand){
 void sb_store_operand(sb_gb_t* gb, int operand, int value){
   switch(operand){
     case SB_OP_A: { SB_U16_HI_SET(gb->cpu.af,value); return; }
-    case SB_OP_AF: { gb->cpu.af = value; return; }
+    case SB_OP_AF: { gb->cpu.af = value & 0xfff0; return; }
     case SB_OP_B: { SB_U16_HI_SET(gb->cpu.bc,value);return; }
     case SB_OP_BC: { gb->cpu.bc = value; return; }
     case SB_OP_BC_INDIRECT: { return sb_store8(gb,gb->cpu.bc, value); }
@@ -177,7 +177,7 @@ static void sb_add_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8
 }
 
 static void sb_and_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode AND executed\n");
+  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) & op1 );
 }
 
 static void sb_bit_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -262,7 +262,7 @@ static void sb_nop_no_instr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, co
 }
 
 static void sb_or_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode OR executed\n");
+  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) | op1 );
 }
 
 static void sb_pop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -369,7 +369,7 @@ static void sb_swap_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint
 }
 
 static void sb_xor_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode XOR executed\n");
+  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) ^op1 );
 }
 
 #endif
