@@ -48,6 +48,7 @@ typedef struct{
 
 const static sb_instr_t sb_decode_table[]={
 """)
+  opcode_num = 0;
   for op in opcode_list:
 
     # Rename problematic opcodes
@@ -89,11 +90,16 @@ const static sb_instr_t sb_decode_table[]={
     unique_ops[op_name] = True;
     splits = op.rsplit(' ', maxsplit=3);
     instr_name ='"'+splits[0]+'"';
-    taken_latency = "0";
+    taken_latency = int("0");
     split_mcycles = splits[2].replace('m','').split('-');
     if len(split_mcycles)>1:
-       taken_latency=split_mcycles[1];
-    non_taken_latency = split_mcycles[0];
+       taken_latency= int(split_mcycles[1]);
+    non_taken_latency =int( split_mcycles[0]);
+    
+    length = int(splits[1])
+    if opcode_num>255:
+       length= length-1;
+    opcode_num+=1;
 
     for i in range(0,len(parameters)):
         p =parameters[i];
@@ -110,7 +116,7 @@ const static sb_instr_t sb_decode_table[]={
         unique_src[p]=True;
 
     impl_name = "sb_"+op_name.lower()+"_impl";
-    f.write(f'  {{ {impl_name:16}, {instr_name:16}, "{splits[3]}", {splits[1]},'
+    f.write(f'  {{ {impl_name:16}, {instr_name:16}, "{splits[3]}", {length},'
             f'{non_taken_latency}, {taken_latency}, SB_OP_{parameters[0]}, '
             f'SB_OP_{parameters[1]} }},\n') 
 

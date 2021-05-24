@@ -32,8 +32,8 @@ sb_gb_t gb_state = {};
 
 uint8_t sb_read8(sb_gb_t *gb, int addr) { return gb->mem.data[addr]; }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
-  if(addr >= 0xff00){
-    printf("Serial(%x): %c\n",addr,(char)value);
+  if(addr == 0xff01){
+    printf("%c",(char)value);
   }else{
     gb->mem.data[addr]=value;
   }
@@ -250,7 +250,7 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
       SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
   };
 
-  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", NULL};
+  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", "Prefix",  NULL};
 
   bool flag_values[] = {
       SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
@@ -258,6 +258,7 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
       SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
       SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
       cpu_state->interrupt_enable, 
+      cpu_state->prefix_op
   };
   // Split registers into three rects horizontally
   {
@@ -302,8 +303,11 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
 }
 
 void sb_tick(){
+  static FILE* file = NULL;
  
   if (emu_state.run_mode == SB_MODE_RESET) {
+    if(file)fclose(file);
+    file = fopen("instr_trace.txt","wb");
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
     
     gb_state.cpu.pc = 0x100;
@@ -338,6 +342,7 @@ void sb_tick(){
     gb_state.mem.data[0xFF40] = 0x91; // LCDC
     gb_state.mem.data[0xFF42] = 0x00; // SCY
     gb_state.mem.data[0xFF43] = 0x00; // SCX
+    gb_state.mem.data[0xFF44] = 0x90; // SCX
     gb_state.mem.data[0xFF45] = 0x00; // LYC
     gb_state.mem.data[0xFF47] = 0xFC; // BGP
     gb_state.mem.data[0xFF48] = 0xFF; // OBP0
@@ -351,20 +356,41 @@ void sb_tick(){
     
     int instructions_to_execute = emu_state.step_instructions;
     for(int i=0;i<instructions_to_execute;++i){
+    
         
-        uint8_t op = sb_read8(&gb_state,gb_state.cpu.pc);
-                                                 
-        const sb_instr_t inst = sb_decode_table[op];
+        int pc = gb_state.cpu.pc;
+        
 
+        unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
+        if(gb_state.cpu.prefix_op==false)
+        fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
+          SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
+          SB_U16_HI(gb_state.cpu.bc),SB_U16_LO(gb_state.cpu.bc),
+          SB_U16_HI(gb_state.cpu.de),SB_U16_LO(gb_state.cpu.de),
+          SB_U16_HI(gb_state.cpu.hl),SB_U16_LO(gb_state.cpu.hl),
+          gb_state.cpu.sp,pc,
+          sb_read8(&gb_state,pc),
+          sb_read8(&gb_state,pc+1),
+          sb_read8(&gb_state,pc+2),
+          sb_read8(&gb_state,pc+3)
+          );      
+        
+        if(gb_state.cpu.prefix_op)op+=256;
+
+        gb_state.cpu.prefix_op = false; 
+        const sb_instr_t inst = sb_decode_table[op];
         gb_state.cpu.pc+=inst.length;
         int operand1 = sb_load_operand(&gb_state,inst.op_src1);
         int operand2 = sb_load_operand(&gb_state,inst.op_src2);
 
         inst.impl(&gb_state, operand1, operand2,inst.op_src1, inst.flag_mask);
-        if (gb_state.cpu.pc == emu_state.pc_breakpoint){
+        if(gb_state.cpu.prefix_op==true)i--;
+        if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
+          gb_state.cpu.trigger_breakpoint = false; 
           emu_state.run_mode = SB_MODE_PAUSE;
           break;
-        }   
+        }                            
+        
     }
 
 

@@ -38,6 +38,8 @@ typedef struct {
   // Registers
   uint16_t af, bc, de, hl, sp, pc;
   bool interrupt_enable;
+  bool prefix_op;
+  bool trigger_breakpoint; 
 } sb_gb_cpu_t;
 
 typedef struct {

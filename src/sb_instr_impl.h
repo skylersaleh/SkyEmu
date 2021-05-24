@@ -135,7 +135,7 @@ int sb_load_operand(sb_gb_t* gb, int operand){
   return 0;
 }
 
-void sb_store_operand(sb_gb_t* gb, int operand, int value){
+void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
   switch(operand){
     case SB_OP_A: { SB_U16_HI_SET(gb->cpu.af,value); return; }
     case SB_OP_AF: { gb->cpu.af = value & 0xfff0; return; }
@@ -155,8 +155,9 @@ void sb_store_operand(sb_gb_t* gb, int operand, int value){
     }
     case SB_OP_H: { SB_U16_HI_SET(gb->cpu.hl,value);return; }
     case SB_OP_HL: { gb->cpu.hl = value; return; }
-    case SB_OP_HL_DEC_INDIRECT: { return sb_store8(gb,gb->cpu.hl--, value); }
-    case SB_OP_HL_INC_INDIRECT: { return sb_store8(gb,gb->cpu.hl++, value); }
+    //Increments and decrements happen on the operand read
+    case SB_OP_HL_DEC_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
+    case SB_OP_HL_INC_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
     case SB_OP_HL_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
     case SB_OP_L: { SB_U16_LO_SET(gb->cpu.hl,value);return; }
     case SB_OP_SP: { gb->cpu.sp = value; return; }
@@ -169,15 +170,44 @@ void sb_store_operand(sb_gb_t* gb, int operand, int value){
 }
 
 static void sb_adc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode ADC executed\n");
+  int C = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  int r = ((op1&0xff)+(op2&0xff)+C)&0xff;
+  //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
+  //ADD sp, i8 uses bits 3/7 respectively
+  bool carry = ((op1&0xff)+(op2&0xff)+C)>255;
+  bool half_carry = ((op1&0xf)+(op2&0xf)+C)>15;
+  if(op1_enum==SB_OP_HL){
+    carry = ((op1&0xffff)+(op2&0xffff)+C)>65535;
+    half_carry = ((op1&0xfff)+(op2&0xfff)+C)>0xfff;
+    r = ((op1&0xffff)+(op2&0xffff)+C)&0xffff;
+  }
+  sb_store_operand(gb,op1_enum, r);
+  sb_set_flags(gb, flag_mask, r==0,0,half_carry,carry);
+  
 }
 
 static void sb_add_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode ADD executed\n");
+  int r = ((op1&0xff)+(op2&0xff))&0xff;
+  //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
+  //ADD sp, i8 uses bits 3/7 respectively
+  bool carry = ((op1&0xff)+(op2&0xff))>255;
+  bool zero = (r&0xff) ==0;
+  bool half_carry = ((op1&0xf)+(op2&0xf))>15;
+  if(op1_enum==SB_OP_HL){
+    carry = ((op1&0xffff)+(op2&0xffff))>65535;
+    half_carry = ((op1&0xfff)+(op2&0xfff))>0xfff;
+    r = ((op1&0xffff)+(op2&0xffff))&0xffff;
+  }
+  sb_store_operand(gb,op1_enum, r);
+  sb_set_flags(gb, flag_mask, zero,0,half_carry,carry);
+
 }
 
 static void sb_and_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) & op1 );
+  int res = SB_U16_HI(gb->cpu.af) & op2 ;
+  SB_U16_HI_SET(gb->cpu.af, res );
+  bool zero = res==0;
+  sb_set_flags(gb, flag_mask, zero,0,1,0);
 }
 
 static void sb_bit_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -195,24 +225,41 @@ static void sb_callc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uin
 }
 
 static void sb_ccf_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode CCF executed\n");
+  unsigned carry = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  sb_set_flags(gb,flag_mask,-1,-1,-1,!carry);
 }
 
 static void sb_cp_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode CP executed\n");
+  int r = ((op1&0xff)-(op2&0xff))&0xff;
+  //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
+  //ADD sp, i8 uses bits 3/7 respectively
+  bool carry = ((op1&0xff)-(op2&0xff))<0;
+  bool zero = (r&0xff) ==0;
+  bool half_carry = ((op1&0xf)-(op2&0xf))<0;
+  
+  sb_set_flags(gb, flag_mask, zero,1,half_carry,carry);
+  
 }
 
 static void sb_cpl_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode CPL executed\n");
+  int a = SB_U16_HI(gb->cpu.af)^0xff;
+  SB_U16_HI_SET(gb->cpu.af, a);
+  sb_set_flags(gb, flag_mask, -1,1,1,-1);
 }
 
 static void sb_daa_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode DAA executed\n");
+  int a = SB_U16_HI(gb->cpu.af);
+  bool H = SB_BFE(gb->cpu.af,SB_H_BIT,1);
+  bool C = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  if((a&0xf)>0x9||H)a+=0x6;
+  if((a&0xf0)>0x90||C)a+=0x60;
+  SB_U16_HI_SET(gb->cpu.af,a);
+  sb_set_flags(gb, flag_mask, (a&0xff)==0,-1,0,a>255);
 }
 
 static void sb_dec_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
   int r = op1-1;
-  sb_set_flags(gb, flag_mask, (r&0xff)==0,1,((r^op1)>>5)==1,-1);
+  sb_set_flags(gb, flag_mask, (r&0xff)==0,1,((op1&0xf)-1)<0,-1);
   sb_store_operand(gb,op1_enum, r);
 }
 
@@ -230,7 +277,7 @@ static void sb_halt_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint
 
 static void sb_inc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
   int r = op1+1;
-  sb_set_flags(gb,flag_mask, (r&0xff)==0,0,((r^op1)>>5)==1,-1);
+  sb_set_flags(gb,flag_mask, (r&0xff)==0,0,((op1&0xf)+1)>0xf,-1);
   sb_store_operand(gb,op1_enum, r);
 }
 
@@ -243,7 +290,7 @@ static void sb_jpc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8
 }
 
 static void sb_jr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  gb->cpu.pc += op1;
+  gb->cpu.pc += (int8_t)op1;
 }
 
 static void sb_jrc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -262,7 +309,10 @@ static void sb_nop_no_instr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, co
 }
 
 static void sb_or_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) | op1 );
+  int r = SB_U16_HI(gb->cpu.af) | op2;
+  SB_U16_HI_SET(gb->cpu.af, r);
+  bool zero = r==0;
+  sb_set_flags(gb, flag_mask, zero,0,0,0);
 }
 
 static void sb_pop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -271,7 +321,7 @@ static void sb_pop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8
 }
 
 static void sb_prefix_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode PREFIX executed\n");
+  gb->cpu.prefix_op = true;
 }
 
 static void sb_push_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -313,11 +363,23 @@ static void sb_rlca_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint
 }
 
 static void sb_rr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode RR executed\n");
+  // See: http://www.devrs.com/gb/files/opcodes.html
+  unsigned carry = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  unsigned int carry_out = op1&1;
+  op1 = (op1>>1)|(carry<<7);
+  sb_store_operand(gb,op1_enum,op1);
+  sb_set_flags(gb, flag_mask, (op1&0xff)==0,0,0,carry_out);
+  
 }
 
 static void sb_rra_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode RRA executed\n");
+  // See: http://www.devrs.com/gb/files/opcodes.html
+  unsigned int a = SB_U16_HI(gb->cpu.af);
+  unsigned carry = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  unsigned int carry_out = a&1;
+  a = (a>>1)|(carry<<7);
+  SB_U16_HI_SET(gb->cpu.af,a);
+  sb_set_flags(gb, flag_mask, 0,0,0,carry_out);
 }
 
 static void sb_rrc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -329,15 +391,26 @@ static void sb_rrca_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint
 }
 
 static void sb_rst_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode RST executed\n");
+  gb->cpu.pc = op1;
 }
 
 static void sb_sbc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode SBC executed\n");
-}
+  int C = SB_BFE(gb->cpu.af,SB_C_BIT,1);
+  int r = ((op1&0xff)-(op2&0xff)-C)&0xff;
+  //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
+  //ADD sp, i8 uses bits 3/7 respectively
+  bool carry = ((op1&0xff)-(op2&0xff)-C)<0;
+  bool half_carry = ((op1&0xf)-(op2&0xf)-C)<0;
+  if(op1_enum==SB_OP_HL){
+    carry = ((op1&0xffff)-(op2&0xffff)-C)<0;
+    half_carry = ((op1&0xfff)+(op2&0xfff)-C)<0;
+    r = ((op1&0xffff)-(op2&0xffff)-C)&0xffff;
+  }
+  sb_store_operand(gb,op1_enum, r);
+  sb_set_flags(gb, flag_mask,r==0,1,half_carry,carry);}
 
 static void sb_scf_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode SCF executed\n");
+  sb_set_flags(gb,flag_mask,-1,0,0,1);
 }
 
 static void sb_set_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
@@ -353,23 +426,48 @@ static void sb_sra_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8
 }
 
 static void sb_srl_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode SRL executed\n");
+  // See: http://www.devrs.com/gb/files/opcodes.html
+  unsigned int carry_out = op1&1;
+  op1 = (op1>>1);
+  sb_store_operand(gb,op1_enum,op1);
+  sb_set_flags(gb, flag_mask, (op1&0xff) ==0,0,0,carry_out);
 }
 
 static void sb_stop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode STOP executed\n");
+  printf("STOP\n");
+  gb->cpu.trigger_breakpoint=true;
 }
 
 static void sb_sub_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode SUB executed\n");
+  int r = ((op1&0xff)-(op2&0xff))&0xff;
+  //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
+  //ADD sp, i8 uses bits 3/7 respectively
+  bool carry = ((op1&0xff)-(op2&0xff))<0;
+  bool zero = (r&0xff) ==0;
+  bool half_carry = ((op1&0xf)-(op2&0xf))<0;
+  if(op1_enum==SB_OP_HL){
+    carry = ((op1&0xffff)-(op2&0xffff))<0;
+    half_carry = ((op1&0xfff)-(op2&0xfff))<0;
+    r = ((op1&0xffff)-(op2&0xffff))&0xffff;
+  }
+  sb_store_operand(gb,op1_enum, r);
+  sb_set_flags(gb, flag_mask, zero,1,half_carry,carry);
+  
 }
 
 static void sb_swap_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode SWAP executed\n");
+  int r = ((op1&0xf)<<8)|((op1&0xf0)>>8);
+  bool zero = (r&0xff) ==0;
+  sb_store_operand(gb,op1_enum, r);
+  sb_set_flags(gb, flag_mask, zero,-1,-1,-1);
+  
 }
 
 static void sb_xor_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){
-  SB_U16_HI_SET(gb->cpu.af, SB_U16_HI(gb->cpu.af) ^op1 );
+  unsigned res = ((SB_U16_HI(gb->cpu.af)) ^op2)&0xff;
+  bool zero = (res&0xff)==0;
+  sb_set_flags(gb, flag_mask, zero,0,0,0);
+  sb_store_operand(gb,op1_enum, res);
 }
 
 #endif
