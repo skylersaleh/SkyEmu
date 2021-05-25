@@ -62,5 +62,5 @@ typedef struct {
 } sb_gb_t;
 
 
-typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, const uint8_t * flag_mask);
+typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
 #endif

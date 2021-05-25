@@ -36,8 +36,8 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
-  if(addr == 0xff80){
-    //printf("store: %d %x\n",count,value);
+  if(addr == 0xdd01){
+    printf("store: %d %x\n",count,value);
     //gb->cpu.trigger_breakpoint=true;
   }
   if(addr == 0xff01){
@@ -391,7 +391,7 @@ void sb_tick(){
         int operand1 = sb_load_operand(&gb_state,inst.op_src1);
         int operand2 = sb_load_operand(&gb_state,inst.op_src2);
 
-        inst.impl(&gb_state, operand1, operand2,inst.op_src1, inst.flag_mask);
+        inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb_state.cpu.prefix_op==true)i--;
         if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
           gb_state.cpu.trigger_breakpoint = false; 
