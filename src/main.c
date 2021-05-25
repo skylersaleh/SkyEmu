@@ -16,11 +16,6 @@
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
 #endif
-Vector2 ballPosition = {200 / 2.0f, 200 / 2.0f};
-Vector2 ballSpeed = {5.0f, 4.0f};
-float ballRadius = 20;
-
-int framesCounter = 0;
 
 const int GUI_PADDING = 10;
 const int GUI_ROW_HEIGHT = 30;
@@ -36,7 +31,7 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
-  if(addr == 0xdd01){
+  if(addr == 0xdd03){
     printf("store: %d %x\n",count,value);
     //gb->cpu.trigger_breakpoint=true;
   }
@@ -370,6 +365,7 @@ void sb_tick(){
         
 
         unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
+        
         if(gb_state.cpu.prefix_op==false)
         fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
           SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
@@ -382,7 +378,7 @@ void sb_tick(){
           sb_read8(&gb_state,pc+2),
           sb_read8(&gb_state,pc+3)
           );      
-        
+          
         if(gb_state.cpu.prefix_op)op+=256;
 
         gb_state.cpu.prefix_op = false; 
@@ -400,15 +396,10 @@ void sb_tick(){
         }                            
         
     }
-
-
   }
-  
   if (emu_state.run_mode == SB_MODE_STEP) {
     emu_state.run_mode = SB_MODE_PAUSE;
   }
-  
-
 }
 void sb_draw_sidebar(Rectangle rect) {
   GuiPanel(rect);
@@ -419,10 +410,6 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
   
 }
-
-Rectangle panelRec = {20, 40, 200, 150};
-Rectangle panelContentRec = {0, 0, 340, 340};
-Vector2 panelScroll = {99, -20};
 
 bool showContentArea = true;
 void UpdateDrawFrame() {
@@ -518,33 +505,11 @@ void UpdateDrawFrame() {
   }
   sb_tick();
 
-  // Bouncing ball logic
-  ballPosition.x += ballSpeed.x * GetFrameTime() * 60.;
-  ballPosition.y += ballSpeed.y * GetFrameTime() * 60.;
-  if ((ballPosition.x >= (GetScreenWidth() - ballRadius)) ||
-      (ballPosition.x <= ballRadius))
-    ballSpeed.x *= -1.0f;
-  if ((ballPosition.y >= (GetScreenHeight() - ballRadius)) ||
-      (ballPosition.y <= ballRadius))
-    ballSpeed.y *= -1.0f;
-  //-----------------------------------------------------
-
   // Draw
   //-----------------------------------------------------
   BeginDrawing();
 
-  if (IsWindowState(FLAG_WINDOW_TRANSPARENT))
-    ClearBackground(BLANK);
-  else
-    ClearBackground(RAYWHITE);
-
-  DrawCircleV(ballPosition, ballRadius, MAROON);
-  DrawRectangleLinesEx(
-      (Rectangle){0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()}, 4,
-      RAYWHITE);
-
-  DrawCircleV(GetMousePosition(), 10, DARKBLUE);
-
+  ClearBackground(RAYWHITE);
   sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
 
   EndDrawing();

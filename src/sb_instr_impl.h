@@ -280,7 +280,8 @@ static void sb_ei_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum
 }
 
 static void sb_halt_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode HALT executed\n");
+  gb->cpu.trigger_breakpoint=true;
+  printf("Halt Executed\n");
 }
 
 static void sb_inc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -313,7 +314,9 @@ static void sb_nop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_nop_no_instr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode NOP_NO_INSTR executed\n");
+  //This instruction should never be called, break if it does
+  gb->cpu.trigger_breakpoint=true;
+  printf("NOP_NO_INSTR executed\n");
 }
 
 static void sb_or_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -352,7 +355,8 @@ static void sb_retc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
 }
 
 static void sb_reti_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  printf("Stubbed opcode RETI executed\n");
+  sb_ret_impl(gb,op1,op2,op1_enum,op2_enum,flag_mask);
+  sb_ei_impl(gb,op1,op2,op1_enum,op2_enum,flag_mask);
 }
 
 static void sb_rl_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -433,6 +437,8 @@ static void sb_rrca_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
 }
 
 static void sb_rst_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
+  gb->cpu.sp-=2;
+  sb_store16(gb,gb->cpu.sp,gb->cpu.pc);
   gb->cpu.pc = op1;
 }
 
