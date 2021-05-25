@@ -107,7 +107,7 @@ int sb_load_operand(sb_gb_t* gb, int operand){
     case SB_OP_BC: { return gb->cpu.bc; }
     case SB_OP_BC_INDIRECT: { return sb_read8(gb,gb->cpu.bc); }
     case SB_OP_C: { return SB_U16_LO(gb->cpu.bc); }
-    case SB_OP_C_FLAG: { return ((gb->cpu.af>>SB_C_BIT)&0x1); }
+    case SB_OP_C_FLAG: { return SB_BFE(gb->cpu.af,SB_C_BIT,1)==1; }
     case SB_OP_D: { return SB_U16_HI(gb->cpu.de); }
     case SB_OP_DE: { return gb->cpu.de; }
     case SB_OP_DE_INDIRECT: { return sb_read8(gb,gb->cpu.de); }
@@ -121,15 +121,15 @@ int sb_load_operand(sb_gb_t* gb, int operand){
     case SB_OP_HL_INDIRECT: { return sb_read8(gb,gb->cpu.hl); }
     case SB_OP_I8: { return (int8_t)sb_read8(gb,gb->cpu.pc-1); }
     case SB_OP_L: { return SB_U16_LO(gb->cpu.hl); }
-    case SB_OP_NC_FLAG: { return ((gb->cpu.af>>SB_C_BIT)&0x1)==0; }
+    case SB_OP_NC_FLAG: { return SB_BFE(gb->cpu.af,SB_C_BIT,1)==0; }
     case SB_OP_NONE: { return 0; }
-    case SB_OP_NZ_FLAG: { return ((gb->cpu.af>>SB_Z_BIT)&0x1)==0; }
+    case SB_OP_NZ_FLAG: { return SB_BFE(gb->cpu.af,SB_Z_BIT,1)==0; }
     case SB_OP_SP: { return gb->cpu.sp; }
     case SB_OP_SP_PLUS_I8: { return gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1); }
     case SB_OP_U16: { return sb_read16(gb, gb->cpu.pc-2); }
     case SB_OP_U16_INDIRECT: { return sb_read16(gb, sb_read16(gb, gb->cpu.pc-2)); }
     case SB_OP_U8: { return sb_read8(gb, gb->cpu.pc-1); }
-    case SB_OP_Z_FLAG: { return ((gb->cpu.af>>SB_Z_BIT)&0x1); }
+    case SB_OP_Z_FLAG: { return SB_BFE(gb->cpu.af,SB_Z_BIT,1)==1; }
   }
   printf("Unhandled read operand %d\n",operand);
   return 0;
@@ -148,7 +148,7 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
     case SB_OP_DE_INDIRECT: { return sb_store8(gb,gb->cpu.de, value); }
     case SB_OP_E: { SB_U16_LO_SET(gb->cpu.de,value);return; }
     case SB_OP_FF00_PLUS_C_INDIRECT: {
-      return sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
+      //return sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
     }
     case SB_OP_FF00_PLUS_U8_INDIRECT: {
       return sb_store8(gb,0xff00+sb_read8(gb,gb->cpu.pc-1), value);

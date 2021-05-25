@@ -54,11 +54,16 @@ typedef struct {
   int rom_size;
   int ram_size;
 } sb_gb_cartridge_t;
+typedef struct{
+  bool up,down,left,right;
+  bool a, b, start, select;  
+} sb_gb_joy_t;
 
 typedef struct {
-  sb_gb_cpu_t cpu;
-  sb_gb_mem_t mem;
   sb_gb_cartridge_t cart;
+  sb_gb_cpu_t cpu;
+  sb_gb_joy_t joy; 
+  sb_gb_mem_t mem;
 } sb_gb_t;
 
 

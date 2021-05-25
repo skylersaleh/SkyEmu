@@ -16,6 +16,9 @@
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
 #endif
+                           
+#define SB_IO_JOYPAD 0xff00
+#define SB_IO_SERIAL_BYTE 0xff01
 
 const int GUI_PADDING = 10;
 const int GUI_ROW_HEIGHT = 30;
@@ -31,11 +34,15 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
+  if(addr<=0x7fff){
+    printf("Attempt to write to rom address %x\n",addr);
+    gb->cpu.trigger_breakpoint=true;
+  }
   if(addr == 0xdd03){
     printf("store: %d %x\n",count,value);
     //gb->cpu.trigger_breakpoint=true;
   }
-  if(addr == 0xff01){
+  if(addr == SB_IO_SERIAL_BYTE){
     printf("%c",(char)value);
   }else{
     gb->mem.data[addr]=value;
@@ -163,7 +170,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
                                sb_gb_t *gb) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
-  for (int i = -6; i < 7; ++i) {
+  for (int i = -3; i < 5; ++i) {
     sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
                     &widget_rect, &inside_rect);
     int pc_render = i + cpu_state->pc;
@@ -192,6 +199,47 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
   GuiGroupBox(state_rect, "Instructions");
   return adv_rect;
 }
+Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  Rectangle wr = widget_rect;
+  wr.width = GUI_PADDING;
+  wr.height = GUI_PADDING;
+                                                                
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Up",joy->up);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Down",joy->down);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Left",joy->left);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Right",joy->right);
+                                                                
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"A",joy->a);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"B",joy->b);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Start",joy->start);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Select",joy->select);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+                          
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "Joypad State");
+  return adv_rect;
+}
 Rectangle sb_draw_cartridge_state(Rectangle rect,
                                   sb_gb_cartridge_t *cart_state) {
 
@@ -205,9 +253,7 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 10, &widget_rect,
                   &inside_rect);
 
-  Rectangle wr = widget_rect;
-  wr.width = GUI_PADDING;
-  wr.height = GUI_PADDING;
+  Rectangle wr = widget_rect;wr.width = wr.height = GUI_PADDING;
 
   GuiCheckBox(wr,
               TextFormat("Game Boy Color (%s)",
@@ -231,7 +277,7 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
                   &adv_rect);
   GuiGroupBox(state_rect, "Cartridge State (Drag and Drop .GBC to Load ROM)");
   return adv_rect;
-}
+}                             
 Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
                             sb_gb_t *gb) {
 
@@ -304,10 +350,46 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
   GuiGroupBox(state_rect, "CPU State");
   return adv_rect;
 }
+void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
+  // FF00 - P1/JOYP - Joypad (R/W)
+  //
+  // Bit 7 - Not used
+  // Bit 6 - Not used
+  // Bit 5 - P15 Select Action buttons    (0=Select)
+  // Bit 4 - P14 Select Direction buttons (0=Select)
+  // Bit 3 - P13 Input: Down  or Start    (0=Pressed) (Read Only)
+  // Bit 2 - P12 Input: Up    or Select   (0=Pressed) (Read Only)
+  // Bit 1 - P11 Input: Left  or B        (0=Pressed) (Read Only)
+  // Bit 0 - P10 Input: Right or A        (0=Pressed) (Read Only)
 
+  uint8_t data_dir =    (gb->joy.down<<3)| (gb->joy.up<<2)    |(gb->joy.left<<1)|(gb->joy.right);  
+  uint8_t data_action = (gb->joy.start<<3)|(gb->joy.select<<2)|(gb->joy.b<<1)   |(gb->joy.a);
+
+  uint8_t data = gb->mem.data[SB_IO_JOYPAD];
+  
+  data&=0xf;
+  
+  if(0 == (data & (1<<4))) data |= data_dir;
+  if(0 == (data & (1<<5))) data |= data_action;
+
+  gb->mem.data[SB_IO_JOYPAD] = data;
+
+}        
+void sb_poll_controller_input(sb_gb_t* gb){
+
+  gb->joy.left  = IsKeyDown(KEY_A);
+  gb->joy.right = IsKeyDown(KEY_D);
+  gb->joy.up    = IsKeyDown(KEY_W);
+  gb->joy.down  = IsKeyDown(KEY_S);
+  gb->joy.a = IsKeyDown(KEY_J);
+  gb->joy.b = IsKeyDown(KEY_K);
+  gb->joy.start = IsKeyDown(KEY_ENTER);
+  gb->joy.select = IsKeyDown(KEY_APOSTROPHE);
+
+}
 void sb_tick(){
   static FILE* file = NULL;
- 
+  sb_poll_controller_input(&gb_state);
   if (emu_state.run_mode == SB_MODE_RESET) {
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
@@ -360,12 +442,12 @@ void sb_tick(){
     int instructions_to_execute = emu_state.step_instructions;
     for(int i=0;i<instructions_to_execute;++i){
     
-        
+        sb_update_joypad_io_reg(&emu_state, &gb_state);
         int pc = gb_state.cpu.pc;
         
 
         unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
-        
+        if(gb_state.cpu.pc == 0xC67D)gb_state.cpu.trigger_breakpoint =true;
         if(gb_state.cpu.prefix_op==false)
         fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
           SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
@@ -407,6 +489,7 @@ void sb_draw_sidebar(Rectangle rect) {
 
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
+  rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
   
 }
