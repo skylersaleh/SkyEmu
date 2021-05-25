@@ -156,8 +156,8 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
     case SB_OP_H: { SB_U16_HI_SET(gb->cpu.hl,value);return; }
     case SB_OP_HL: { gb->cpu.hl = value; return; }
     //Increments and decrements happen on the operand read
-    case SB_OP_HL_DEC_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
-    case SB_OP_HL_INC_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
+    case SB_OP_HL_DEC_INDIRECT: { return sb_store8(gb,gb->cpu.hl+1, value); }
+    case SB_OP_HL_INC_INDIRECT: { return sb_store8(gb,gb->cpu.hl-1, value); }
     case SB_OP_HL_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
     case SB_OP_L: { SB_U16_LO_SET(gb->cpu.hl,value);return; }
     case SB_OP_SP: { gb->cpu.sp = value; return; }
@@ -251,10 +251,16 @@ static void sb_daa_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8
   int a = SB_U16_HI(gb->cpu.af);
   bool H = SB_BFE(gb->cpu.af,SB_H_BIT,1);
   bool C = SB_BFE(gb->cpu.af,SB_C_BIT,1);
-  if((a&0xf)>0x9||H)a+=0x6;
-  if((a&0xf0)>0x90||C)a+=0x60;
+  bool N = SB_BFE(gb->cpu.af,SB_N_BIT,1);
+  if(N){
+    if(C)a-=0x60;
+    if(H)a-=0x6;
+  }else{
+    if(C||a>0x99){a+=0x60;C=true;}
+    if(H||(a&0xf)>0x9)a+=0x6;
+  }
   SB_U16_HI_SET(gb->cpu.af,a);
-  sb_set_flags(gb, flag_mask, (a&0xff)==0,-1,0,a>255);
+  sb_set_flags(gb, flag_mask, (a&0xff)==0,-1,0,C);
 }
 
 static void sb_dec_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, const uint8_t * flag_mask){

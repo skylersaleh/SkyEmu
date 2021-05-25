@@ -30,8 +30,16 @@ const int GUI_LABEL_PADDING = 5;
 sb_emu_state_t emu_state = {.pc_breakpoint = 0};
 sb_gb_t gb_state = {};
 
-uint8_t sb_read8(sb_gb_t *gb, int addr) { return gb->mem.data[addr]; }
+uint8_t sb_read8(sb_gb_t *gb, int addr) { 
+  //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
+  return gb->mem.data[addr];
+}
 void sb_store8(sb_gb_t *gb, int addr, int value) {
+  static int count = 0;
+  if(addr == 0xff80){
+    //printf("store: %d %x\n",count,value);
+    //gb->cpu.trigger_breakpoint=true;
+  }
   if(addr == 0xff01){
     printf("%c",(char)value);
   }else{
