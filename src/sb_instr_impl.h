@@ -148,7 +148,7 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
     case SB_OP_DE_INDIRECT: { return sb_store8(gb,gb->cpu.de, value); }
     case SB_OP_E: { SB_U16_LO_SET(gb->cpu.de,value);return; }
     case SB_OP_FF00_PLUS_C_INDIRECT: {
-      //return sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
+      return sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
     }
     case SB_OP_FF00_PLUS_U8_INDIRECT: {
       return sb_store8(gb,0xff00+sb_read8(gb,gb->cpu.pc-1), value);
@@ -169,7 +169,7 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
   printf("Unhandled write operand %d\n",operand);
   return;
 }
-
+static void sb_push_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
 static void sb_adc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   int C = SB_BFE(gb->cpu.af,SB_C_BIT,1);
   int r = ((op1&0xff)+(op2&0xff)+C)&0xff;
@@ -195,13 +195,19 @@ static void sb_add_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
   bool zero = (r&0xff) ==0;
   bool half_carry = ((op1&0xf)+(op2&0xf))>15;
   if(op1_enum==SB_OP_HL){
+    if((op2&0x80) && op2_enum == SB_OP_I8)op2|=0xff00;
     carry = ((op1&0xffff)+(op2&0xffff))>65535;
     half_carry = ((op1&0xfff)+(op2&0xfff))>0xfff;
     r = ((op1&0xffff)+(op2&0xffff))&0xffff;
   }
+  if(op1_enum==SB_OP_SP){
+    carry = ((op1&0xff)+(op2&0xff))>0xff;
+    half_carry = ((op1&0xf)+(op2&0xf))>0xf;
+    r = ((op1&0xffff)+(op2&0xffff))&0xffff;
+    zero = false;
+  }
   sb_store_operand(gb,op1_enum, r);
   sb_set_flags(gb, flag_mask, zero,0,half_carry,carry);
-
 }
 
 static void sb_and_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -217,8 +223,7 @@ static void sb_bit_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_call_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  gb->cpu.sp-=2;
-  sb_store16(gb,gb->cpu.sp,gb->cpu.pc);
+  sb_push_impl(gb,gb->cpu.pc,op2,op1_enum,op2_enum,flag_mask);
   gb->cpu.pc = op1;
 }
 
@@ -232,12 +237,11 @@ static void sb_ccf_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_cp_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  int r = ((op1&0xff)-(op2&0xff))&0xff;
   //HL calculates half carry as the carry out from bit 11, carry as the carry out from bit 15
   //ADD sp, i8 uses bits 3/7 respectively
-  bool carry = ((op1&0xff)-(op2&0xff))<0;
-  bool zero = (r&0xff) ==0;
-  bool half_carry = ((op1&0xf)-(op2&0xf))<0;
+  bool carry = op1<op2;
+  bool zero = op1==op2;
+  bool half_carry = (op1&0xf)<(op2&0xf);
   
   sb_set_flags(gb, flag_mask, zero,1,half_carry,carry);
   
@@ -307,7 +311,17 @@ static void sb_jrc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_ld_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  sb_store_operand(gb,op1_enum,op2);
+  if(op1_enum == SB_OP_U16_INDIRECT && op2_enum==SB_OP_SP){
+    sb_store16(gb, sb_read16(gb, gb->cpu.pc-2), op2);
+  }else if(op1_enum == SB_OP_HL && op2_enum==SB_OP_SP_PLUS_I8){
+    sb_store_operand(gb,op1_enum, op2);
+    op1 = gb->cpu.sp;
+    op2 = (int8_t)sb_read8(gb, gb->cpu.pc-1);
+    bool carry = ((op1&0xff)+(op2&0xff))>0xff;
+    bool half_carry = ((op1&0xf)+(op2&0xf))>0xf;
+    
+    sb_set_flags(gb, flag_mask, 0,0,half_carry,carry);
+  }else sb_store_operand(gb,op1_enum,op2);
 }
 
 static void sb_nop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -437,9 +451,7 @@ static void sb_rrca_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
 }
 
 static void sb_rst_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  gb->cpu.sp-=2;
-  sb_store16(gb,gb->cpu.sp,gb->cpu.pc);
-  gb->cpu.pc = op1;
+  sb_call_impl(gb,op1,op2,op1_enum,op2_enum,flag_mask);
 }
 
 static void sb_sbc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){

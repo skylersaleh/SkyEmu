@@ -16,7 +16,9 @@
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
 #endif
-                           
+
+#define SB_NUM_SAVE_STATES 128
+
 #define SB_IO_JOYPAD 0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
 
@@ -28,6 +30,26 @@ const int GUI_LABEL_PADDING = 5;
 sb_emu_state_t emu_state = {.pc_breakpoint = 0};
 sb_gb_t gb_state = {};
 
+sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
+int sb_valid_save_states = 0; 
+unsigned sb_save_state_index=0;
+
+void sb_pop_save_state(sb_gb_t* gb){
+  if(sb_valid_save_states>0){
+    --sb_valid_save_states;
+    --sb_save_state_index;
+    *gb = sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES];
+  }
+}
+
+ 
+void sb_push_save_state(sb_gb_t* gb){
+  ++sb_valid_save_states;
+  if(sb_valid_save_states>SB_NUM_SAVE_STATES)sb_valid_save_states = SB_NUM_SAVE_STATES;
+  ++sb_save_state_index;
+  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
+}
+ 
 uint8_t sb_read8(sb_gb_t *gb, int addr) { 
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
   return gb->mem.data[addr];
@@ -35,11 +57,12 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
   if(addr<=0x7fff){
-    printf("Attempt to write to rom address %x\n",addr);
-    gb->cpu.trigger_breakpoint=true;
+    //printf("Attempt to write to rom address %x\n",addr);
+    //gb->cpu.trigger_breakpoint=true;
+    return;
   }
-  if(addr == 0xdd03){
-    printf("store: %d %x\n",count,value);
+  if(addr == 0xdd03||addr==0xdd01){
+    //printf("store: %d %x\n",count,value);
     //gb->cpu.trigger_breakpoint=true;
   }
   if(addr == SB_IO_SERIAL_BYTE){
@@ -49,8 +72,8 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
   }
 }
 void sb_store16(sb_gb_t *gb, int addr, unsigned int value) {
-  gb->mem.data[addr]=(value&0xff); 
-  gb->mem.data[addr+1]=((value>>8u)&0xff); 
+  sb_store8(gb,addr,value&0xff); 
+  sb_store8(gb,addr+1,((value>>8u)&0xff)); 
 }
 uint16_t sb_read16(sb_gb_t *gb, int addr) {
   uint16_t g = sb_read8(gb,addr+1);
@@ -76,7 +99,7 @@ void sb_vertical_adv(Rectangle outside_rect, int advance, int y_padd,
   rect_bottom->height -= advance + y_padd;
 }
 
-Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state) {
+Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
@@ -88,6 +111,19 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state) {
   emu_state->run_mode =
       GuiToggleGroup(widget_rect, "Reset;Pause;Run;Step", emu_state->run_mode);
 
+
+
+                           
+  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
+                  &inside_rect);
+  widget_rect.width =
+      widget_rect.width / 2 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 1 / 2;
+      
+  int save_state=GuiToggleGroup(widget_rect, "Pop Save State;Push Save State", 3);
+
+  if(save_state ==0)sb_pop_save_state(gb);
+  if(save_state ==1)sb_push_save_state(gb);
+                                              
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_LABEL_PADDING,
                   &widget_rect, &inside_rect);
 
@@ -108,7 +144,7 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state) {
                   &inside_rect);
 
   static bool edit_bp_pc = false;
-  if (GuiSpinner(widget_rect, "", &emu_state->pc_breakpoint, 1, 0x7fffffff,
+  if (GuiSpinner(widget_rect, "", &emu_state->pc_breakpoint, -1, 0x7fffffff,
                  edit_bp_pc))
     edit_bp_pc = !edit_bp_pc;
    
@@ -170,7 +206,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
                                sb_gb_t *gb) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
-  for (int i = -3; i < 5; ++i) {
+  for (int i = -6; i < 5; ++i) {
     sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
                     &widget_rect, &inside_rect);
     int pc_render = i + cpu_state->pc;
@@ -220,7 +256,10 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
   wr.y=widget_rect.y;
   GuiCheckBox(wr,"Right",joy->right);
                                                                 
+  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  inside_rect.x +=rect.width/2;
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.x +=rect.width/2;
   wr.y=widget_rect.y;
   GuiCheckBox(wr,"A",joy->a);
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
@@ -435,6 +474,10 @@ void sb_tick(){
     gb_state.mem.data[0xFF4A] = 0x00; // WY
     gb_state.mem.data[0xFF4B] = 0x00; // WX
     gb_state.mem.data[0xFFFF] = 0x00; // IE
+
+    for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
+      gb_state.framebuffer[i] = GetRandomValue(0,255);
+    }
   }
   
   if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
@@ -447,7 +490,8 @@ void sb_tick(){
         
 
         unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
-        if(gb_state.cpu.pc == 0xC67D)gb_state.cpu.trigger_breakpoint =true;
+
+        //if(gb_state.cpu.pc == 0xC65F)gb_state.cpu.trigger_breakpoint =true;
         if(gb_state.cpu.prefix_op==false)
         fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
           SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
@@ -471,6 +515,9 @@ void sb_tick(){
 
         inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb_state.cpu.prefix_op==true)i--;
+
+        //sb_push_save_state(&gb_state);
+
         if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
           gb_state.cpu.trigger_breakpoint = false; 
           emu_state.run_mode = SB_MODE_PAUSE;
@@ -479,6 +526,7 @@ void sb_tick(){
         
     }
   }
+ 
   if (emu_state.run_mode == SB_MODE_STEP) {
     emu_state.run_mode = SB_MODE_PAUSE;
   }
@@ -487,11 +535,11 @@ void sb_draw_sidebar(Rectangle rect) {
   GuiPanel(rect);
   Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
 
-  rect_inside = sb_draw_emu_state(rect_inside, &emu_state);
+  rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
   rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
-  
+                               
 }
 
 bool showContentArea = true;
@@ -594,8 +642,28 @@ void UpdateDrawFrame() {
 
   ClearBackground(RAYWHITE);
   sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
+                  
+ 
+  Image screenIm = {
+        .data = gb_state.framebuffer,
+        .width = SB_LCD_W,
+        .height = SB_LCD_H,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+        .mipmaps = 1
+  };
+    
+  Texture2D screenTex = LoadTextureFromImage(screenIm); 
+  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
+  Rectangle rect;
+  rect.x = 400;
+  rect.y = 0;
+  rect.width = GetScreenWidth()-400;
+  rect.height = GetScreenHeight();
+
+  DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},rect, (Color){255,255,255,255}); 
 
   EndDrawing();
+  UnloadTexture(screenTex);
 }
 
 int main(void) {

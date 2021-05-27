@@ -26,6 +26,9 @@
 #define SB_MODE_RUN 2
 #define SB_MODE_STEP 3
 
+#define SB_LCD_W 160
+#define SB_LCD_H 144
+
 // Draw and process scroll bar style edition controls
 
 typedef struct {
@@ -64,6 +67,7 @@ typedef struct {
   sb_gb_cpu_t cpu;
   sb_gb_joy_t joy; 
   sb_gb_mem_t mem;
+  uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
 } sb_gb_t;
 
 
