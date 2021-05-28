@@ -67,13 +67,18 @@ typedef struct{
   unsigned int curr_scanline;
   uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
 } sb_lcd_ppu_t;
- 
+
+typedef struct{
+  int clocks_till_div_inc;
+  int clocks_till_tima_inc;
+} sb_timer_t;
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
   sb_gb_joy_t joy; 
   sb_gb_mem_t mem;
   sb_lcd_ppu_t lcd;
+  sb_timer_t timers;
 } sb_gb_t;  
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);

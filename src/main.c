@@ -21,6 +21,10 @@
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
+#define SB_IO_DIV         0xff04
+#define SB_IO_TIMA        0xff05
+#define SB_IO_TMA         0xff06
+#define SB_IO_TAC         0xff07
 #define SB_IO_INTER_F     0xff0f
 #define SB_IO_LCD_CTRL    0xff40
 #define SB_IO_LCD_STAT    0xff41
@@ -86,6 +90,17 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   }
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
+  if(addr == 0xff46){
+    printf("OAM Transfer\n");
+    int src = value<<8;
+    for(int i=0;i<=0x9F;++i){
+      int d = sb_read8_direct(gb,src+i);
+      sb_store8_direct(gb,0xfe00+i,d);
+      
+    }
+  }else if(addr == SB_IO_DIV){
+    value = 0; //All writes reset the div timer
+  }
   sb_store8_direct(gb,addr,value);
 } 
 void sb_store16(sb_gb_t *gb, int addr, unsigned int value) {
@@ -252,6 +267,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
   GuiGroupBox(state_rect, "Instructions");
   return adv_rect;
 }
+ 
 Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -294,6 +310,40 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
   GuiGroupBox(state_rect, "Joypad State");
+  return adv_rect;
+}          
+Rectangle sb_draw_timer_state(Rectangle rect, sb_gb_t *gb) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  Rectangle wr = widget_rect;
+  wr.width = GUI_PADDING;
+  wr.height = GUI_PADDING;
+                                                                
+
+  int div = sb_read8_direct(gb, SB_IO_DIV);
+  int tima = sb_read8_direct(gb, SB_IO_TIMA);
+  int tma = sb_read8_direct(gb, SB_IO_TMA);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("DIV: %d", div));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("TIMA: %d", tima));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("TMA: %d", tma));
+
+                                                             
+  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  inside_rect.x +=rect.width/2;
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("CLKs to DIV: %d", gb->timers.clocks_till_div_inc));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("CLKs to TIMA: %d", gb->timers.clocks_till_tima_inc));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+                              
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect); 
+  GuiGroupBox(state_rect, "Timer State");
   return adv_rect;
 }
 Rectangle sb_draw_cartridge_state(Rectangle rect,
@@ -490,12 +540,12 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
   // Bit 1 - P11 Input: Left  or B        (0=Pressed) (Read Only)
   // Bit 0 - P10 Input: Right or A        (0=Pressed) (Read Only)
 
-  uint8_t data_dir =    (gb->joy.down<<3)| (gb->joy.up<<2)    |(gb->joy.left<<1)|(gb->joy.right);  
-  uint8_t data_action = (gb->joy.start<<3)|(gb->joy.select<<2)|(gb->joy.b<<1)   |(gb->joy.a);
+  uint8_t data_dir =    ((!gb->joy.down)<<3)| ((!gb->joy.up)<<2)    |((!gb->joy.left)<<1)|((!gb->joy.right));  
+  uint8_t data_action = ((!gb->joy.start)<<3)|((!gb->joy.select)<<2)|((!gb->joy.b)<<1)   |(!gb->joy.a);
 
   uint8_t data = gb->mem.data[SB_IO_JOYPAD];
   
-  data&=0xf;
+  data&=0xf0;
   
   if(0 == (data & (1<<4))) data |= data_dir;
   if(0 == (data & (1<<5))) data |= data_action;
@@ -574,24 +624,39 @@ void sb_draw_scanline(sb_gb_t*gb){
   bool draw_sprite = SB_BFE(ctrl,1,1)==1;
   bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
   int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;  
-  int bg_win_tile_data_base = SB_BFE(ctrl,4,1)==1 ? 0x8000 : 0x8800;  
+  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;  
   bool window_enable = SB_BFE(ctrl,5,1)==1;  
   int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;  
   
+  int oam_table_offset = 0xfe00;
   uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
   int wx = sb_read8_direct(gb, SB_IO_LCD_WX);
   int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
   int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
   int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
 
-  printf("Tile base: %x Data Base: %x\n", bg_tile_map_base, bg_win_tile_data_base);
-   
+  int sprite_h = sprite8x16 ? 16: 8;
+  const int sprites_per_scanline = 10;
+  // HW only draws first 10 sprites that touch a scanline
+  int render_sprites[40];
+  int sprite_index=0; 
+  
+  for(int i=0;i<sprites_per_scanline;++i)render_sprites[i]=-1;
+  const int num_sprites= 40;     
+  for(int i=0;i<num_sprites;++i){
+    int sprite_base = oam_table_offset+i*4;
+    int yc = sb_read8_direct(gb, sprite_base+0)-16;
+    int xc = sb_read8_direct(gb, sprite_base+1)-16; 
+    if(yc<=y && yc+sprite_h>y&& sprite_index<sprites_per_scanline){
+      render_sprites[sprite_index++]=i;
+    }
+  }
 
   for(int x = 0; x < SB_LCD_W; ++x){
       
     uint8_t r=0,g=0,b=0;
 
-    if(draw_bg||true){
+    if(draw_bg){
       int px = x+ sx; 
       int py = y+ sy;
       const int tile_size = 8;
@@ -600,18 +665,49 @@ void sb_draw_scanline(sb_gb_t*gb){
       
       int tile_id = sb_read8_direct(gb, bg_tile_map_base+tile_offset);
 
-      printf("Tile addr %x  Tile offset: %d Tile ID: %d\n",bg_tile_map_base+tile_offset, tile_offset, tile_id);
-      int pixel_in_tile_x = (px%8);
+      int pixel_in_tile_x = 7-(px%8);
       int pixel_in_tile_y = (py%8);
 
-      int bytes_per_tile = 2*8*8;
+      int bytes_per_tile = 2*8;
 
-      int byte_tile_data_off = tile_id*bytes_per_tile+pixel_in_tile_y*2;
+      int byte_tile_data_off = 0;
 
-      uint8_t data1 = sb_read8_direct(gb, bg_win_tile_data_base+byte_tile_data_off);
-      uint8_t data2 = sb_read8_direct(gb, bg_win_tile_data_base+byte_tile_data_off+1);
-      uint8_t color_id = SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2;
+      if(bg_win_tile_data_mode==0){
+        byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
+      }else{
+        byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
+      }
+      byte_tile_data_off+=pixel_in_tile_y*2;
+      uint8_t data1 = sb_read8_direct(gb, byte_tile_data_off);
+      uint8_t data2 = sb_read8_direct(gb, byte_tile_data_off+1);
+      uint8_t color_id = 3-(SB_BFE(data2,pixel_in_tile_x,1)+SB_BFE(data1,pixel_in_tile_x,1)*2);
 
+
+      for(int i=0;i<sprites_per_scanline;++i){
+        int sprite = render_sprites[i];
+        if(sprite==-1)continue;
+        int sprite_base = oam_table_offset+sprite*4;
+        int yc = sb_read8_direct(gb, sprite_base+0)-16;
+        int xc = sb_read8_direct(gb, sprite_base+1)-8;
+        
+        int tile = sb_read8_direct(gb, sprite_base+2);
+        int attr = sb_read8_direct(gb, sprite_base+3);
+
+        int x_sprite = 7-(x-xc); 
+        int y_sprite = y-yc;
+        //Check if the sprite is hit
+        if(x_sprite>=8 || x_sprite<0)continue;
+        if(y_sprite<0 || y_sprite>=16 || (y_sprite>=8 && sprite8x16==false))continue;
+
+        int byte_tile_data_off = 0x8000 + (((uint8_t)(tile))*bytes_per_tile);
+        byte_tile_data_off+=y_sprite*2;
+
+        uint8_t data1 = sb_read8_direct(gb, byte_tile_data_off);
+        uint8_t data2 = sb_read8_direct(gb, byte_tile_data_off+1);
+
+        color_id = 3-(SB_BFE(data2,x_sprite,1)+SB_BFE(data1,x_sprite,1)*2);
+        
+      }
       r = color_id*85;
       g = color_id*85;
       b = color_id*85;
@@ -632,6 +728,44 @@ void sb_update_lcd(sb_gb_t* gb, int delta_cycles){
   if(new_scanline){
     sb_draw_scanline(gb);
   }
+}
+void sb_update_timers(sb_gb_t* gb, int delta_clocks){
+  uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
+  bool tima_enable = SB_BFE(tac, 2, 1);
+  int clk_sel = SB_BFE(tac, 0, 2);
+  gb->timers.clocks_till_div_inc -=delta_clocks;
+  if(gb->timers.clocks_till_div_inc<0){
+    int period = 4*1024*1024/16384; 
+    gb->timers.clocks_till_div_inc+=period;
+    if(gb->timers.clocks_till_div_inc<0)
+      gb->timers.clocks_till_div_inc = period; 
+
+    uint8_t d = sb_read8_direct(gb, SB_IO_DIV);
+    sb_store8_direct(gb, SB_IO_DIV, d+1); 
+  }
+  gb->timers.clocks_till_tima_inc -=delta_clocks;
+  if(gb->timers.clocks_till_tima_inc<0){
+    int period =0;
+    switch(clk_sel){
+      case 0: period = 1024; break; 
+      case 1: period = 16; break; 
+      case 2: period = 64; break; 
+      case 3: period = 256; break; 
+    }
+    gb->timers.clocks_till_tima_inc+=period;
+    if(gb->timers.clocks_till_tima_inc<0)
+      gb->timers.clocks_till_tima_inc = period; 
+
+    uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
+    // Trigger timer interrupt 
+    if(d == 255){
+      uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+      i_flag |= 1<<2;
+      sb_store8_direct(gb, SB_IO_INTER_F, i_flag); 
+      
+    }
+    sb_store8_direct(gb, SB_IO_TIMA, d+1); 
+  }  
 }
 void sb_tick(){
   static FILE* file = NULL;
@@ -681,6 +815,9 @@ void sb_tick(){
     gb_state.mem.data[0xFF4A] = 0x00; // WY
     gb_state.mem.data[0xFF4B] = 0x00; // WX
     gb_state.mem.data[0xFFFF] = 0x00; // IE
+    
+    gb_state.timers.clocks_till_div_inc=0;
+    gb_state.timers.clocks_till_tima_inc=0;
 
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
       gb_state.lcd.framebuffer[i] = GetRandomValue(0,255);
@@ -725,12 +862,15 @@ void sb_tick(){
             if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
           }
           if(trigger_interrupt!=-1)i_flag &= ~(1<<trigger_interrupt);
+          //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
+          sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
         }
 
         gb_state.cpu.prefix_op = false;
         int delta_cycles = 0;
         if(trigger_interrupt!=-1){
-          sb_call_impl(&gb_state, (trigger_interrupt*0x8)+0x40, 0, 0, 0, "----");
+          int interrupt_address = (trigger_interrupt*0x8)+0x40;
+          sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
           delta_cycles = 5*4;
         }else{
           sb_instr_t inst = sb_decode_table[op];
@@ -745,7 +885,8 @@ void sb_tick(){
           delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
         }
         sb_update_lcd(&gb_state,delta_cycles);
-
+        sb_update_timers(&gb_state,delta_cycles);
+                                
         //sb_push_save_state(&gb_state);
 
         if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
@@ -767,6 +908,7 @@ void sb_draw_sidebar(Rectangle rect) {
 
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
+  rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
   rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
                                
