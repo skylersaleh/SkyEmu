@@ -62,14 +62,19 @@ typedef struct{
   bool a, b, start, select;  
 } sb_gb_joy_t;
 
+typedef struct{
+  unsigned int scanline_cycles;
+  unsigned int curr_scanline;
+  uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
+} sb_lcd_ppu_t;
+ 
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
   sb_gb_joy_t joy; 
   sb_gb_mem_t mem;
-  uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
-} sb_gb_t;
-
+  sb_lcd_ppu_t lcd;
+} sb_gb_t;  
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
 #endif

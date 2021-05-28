@@ -4,7 +4,7 @@
  *
  *   Copyright (c) 2021 Skyler "Sky" Saleh
  *
- **/
+**/
 
 #include "raylib.h"
 #include "sb_instr_tables.h"
@@ -19,8 +19,18 @@
 
 #define SB_NUM_SAVE_STATES 128
 
-#define SB_IO_JOYPAD 0xff00
+#define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
+#define SB_IO_INTER_F     0xff0f
+#define SB_IO_LCD_CTRL    0xff40
+#define SB_IO_LCD_STAT    0xff41
+#define SB_IO_LCD_SY     0xff42
+#define SB_IO_LCD_SX     0xff43
+#define SB_IO_LCD_LY      0xff44
+#define SB_IO_LCD_LYC     0xff45
+#define SB_IO_LCD_WY      0xff4A
+#define SB_IO_LCD_WX      0xff4B
+#define SB_IO_INTER_EN    0xffff
 
 const int GUI_PADDING = 10;
 const int GUI_ROW_HEIGHT = 30;
@@ -49,12 +59,16 @@ void sb_push_save_state(sb_gb_t* gb){
   ++sb_save_state_index;
   sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
 }
- 
-uint8_t sb_read8(sb_gb_t *gb, int addr) { 
+  
+uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
   return gb->mem.data[addr];
+}  
+uint8_t sb_read8(sb_gb_t *gb, int addr) { 
+  //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
+  return sb_read8_direct(gb,addr);
 }
-void sb_store8(sb_gb_t *gb, int addr, int value) {
+void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
   if(addr<=0x7fff){
     //printf("Attempt to write to rom address %x\n",addr);
@@ -71,6 +85,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     gb->mem.data[addr]=value;
   }
 }
+void sb_store8(sb_gb_t *gb, int addr, int value) {
+  sb_store8_direct(gb,addr,value);
+} 
 void sb_store16(sb_gb_t *gb, int addr, unsigned int value) {
   sb_store8(gb,addr,value&0xff); 
   sb_store8(gb,addr+1,((value>>8u)&0xff)); 
@@ -316,7 +333,79 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
                   &adv_rect);
   GuiGroupBox(state_rect, "Cartridge State (Drag and Drop .GBC to Load ROM)");
   return adv_rect;
-}                             
+}
+Rectangle sb_draw_tile_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
+                            sb_gb_t *gb) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+
+  const char *register_names_16b[] = {"AF", "BC", "DE", "HL", "SP", "PC", NULL};
+
+  int register_values_16b[] = {cpu_state->af, cpu_state->bc, cpu_state->de,
+                               cpu_state->hl, cpu_state->sp, cpu_state->pc};
+
+  const char *register_names_8b[] = {"A", "F", "B", "C", "D",
+                                     "E", "H", "L", NULL};
+
+  int register_values_8b[] = {
+      SB_U16_HI(cpu_state->af), SB_U16_LO(cpu_state->af),
+      SB_U16_HI(cpu_state->bc), SB_U16_LO(cpu_state->bc),
+      SB_U16_HI(cpu_state->de), SB_U16_LO(cpu_state->de),
+      SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
+  };
+
+  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", "Prefix",  NULL};
+
+  bool flag_values[] = {
+      SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
+      SB_BFE(cpu_state->af, SB_N_BIT, 1), // N
+      SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
+      SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
+      cpu_state->interrupt_enable, 
+      cpu_state->prefix_op
+  };
+  // Split registers into three rects horizontally
+  {
+    Rectangle in_rect[3];
+    const char *sections[] = {"16-bit Registers", "8-bit Registers", "Flags"};
+    int orig_y = inside_rect.y;
+    int x_off = 0;
+    for (int i = 0; i < 3; ++i) {
+      in_rect[i] = inside_rect;
+      in_rect[i].width = inside_rect.width / 3 - GUI_PADDING * 2 / 3;
+      in_rect[i].x += x_off;
+      x_off += in_rect[i].width + GUI_PADDING;
+    }
+    in_rect[0] = sb_draw_reg_state(in_rect[0], "16-bit Registers",
+                                   register_names_16b, register_values_16b);
+
+    in_rect[1] = sb_draw_reg_state(in_rect[1], "8-bit Registers",
+                                   register_names_8b, register_values_8b);
+
+    in_rect[2] =
+        sb_draw_flag_state(in_rect[2], "Flags", flag_names, flag_values);
+    for (int i = 0; i < 3; ++i) {
+      if (inside_rect.y < in_rect[i].y)
+        inside_rect.y = in_rect[i].y;
+    }
+    for (int i = 0; i < 3; ++i) {
+      in_rect[i].height = inside_rect.y - orig_y - GUI_PADDING;
+      in_rect[i].y = orig_y;
+      GuiGroupBox(in_rect[i], sections[i]);
+    }
+
+    inside_rect.height -= inside_rect.y - orig_y;
+  }
+
+  inside_rect = sb_draw_instructions(inside_rect, cpu_state, gb);
+
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "Tile Data");
+  return adv_rect;
+}
 Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
                             sb_gb_t *gb) {
 
@@ -426,6 +515,124 @@ void sb_poll_controller_input(sb_gb_t* gb){
   gb->joy.select = IsKeyDown(KEY_APOSTROPHE);
 
 }
+
+bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
+  uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT); 
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  uint8_t ly  = sb_read8_direct(gb, SB_IO_LCD_LY);
+  uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
+  bool enable = SB_BFE(ctrl,7,1)==1;
+  int mode = 0; 
+  if(!enable){
+    gb->lcd.scanline_cycles = 0;
+    ly = 0;   
+  }
+
+
+  const int mode2_clks= 80;
+  // TODO: mode 3 is 10 cycles longer for every sprite intersected
+  const int mode3_clks = 168;
+  const int mode0_clks = 208;
+  const int scanline_dots = 456; 
+
+  bool new_scanline = false; 
+  gb->lcd.scanline_cycles +=delta_cycles;
+  if(gb->lcd.scanline_cycles>=scanline_dots){
+    gb->lcd.scanline_cycles-=scanline_dots;
+    new_scanline = true;
+    ly+=1; 
+  }
+
+  if(ly > 153) ly = 0; 
+
+  if(gb->lcd.scanline_cycles<=mode2_clks)mode = 2;
+  else if(gb->lcd.scanline_cycles<=mode3_clks+mode2_clks) mode =3;
+  else mode =0;
+
+  if(ly>=154) {ly=0;}
+  if(ly>=144) {mode = 1; new_scanline = false;} 
+  
+  if(ly ==SB_LCD_H){
+    uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+    //V-BLANK Interrupt
+    sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
+  }
+  if(ly == lyc){
+    uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+    //LCD-stat Interrupt
+    sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
+    mode|=0x4;
+  }
+  stat = (stat&0xf8) | mode; 
+  sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
+  sb_store8_direct(gb, SB_IO_LCD_LY, ly);
+  return new_scanline; 
+}
+void sb_draw_scanline(sb_gb_t*gb){
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  bool draw_bg     = SB_BFE(ctrl,0,1)==1;
+  bool draw_sprite = SB_BFE(ctrl,1,1)==1;
+  bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
+  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;  
+  int bg_win_tile_data_base = SB_BFE(ctrl,4,1)==1 ? 0x8000 : 0x8800;  
+  bool window_enable = SB_BFE(ctrl,5,1)==1;  
+  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;  
+  
+  uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
+  int wx = sb_read8_direct(gb, SB_IO_LCD_WX);
+  int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+  int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
+  int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
+
+  printf("Tile base: %x Data Base: %x\n", bg_tile_map_base, bg_win_tile_data_base);
+   
+
+  for(int x = 0; x < SB_LCD_W; ++x){
+      
+    uint8_t r=0,g=0,b=0;
+
+    if(draw_bg||true){
+      int px = x+ sx; 
+      int py = y+ sy;
+      const int tile_size = 8;
+      const int tiles_per_row = 32;
+      int tile_offset = ((px/tile_size)+(py/tile_size)*tiles_per_row)&0x3ff;
+      
+      int tile_id = sb_read8_direct(gb, bg_tile_map_base+tile_offset);
+
+      printf("Tile addr %x  Tile offset: %d Tile ID: %d\n",bg_tile_map_base+tile_offset, tile_offset, tile_id);
+      int pixel_in_tile_x = (px%8);
+      int pixel_in_tile_y = (py%8);
+
+      int bytes_per_tile = 2*8*8;
+
+      int byte_tile_data_off = tile_id*bytes_per_tile+pixel_in_tile_y*2;
+
+      uint8_t data1 = sb_read8_direct(gb, bg_win_tile_data_base+byte_tile_data_off);
+      uint8_t data2 = sb_read8_direct(gb, bg_win_tile_data_base+byte_tile_data_off+1);
+      uint8_t color_id = SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2;
+
+      r = color_id*85;
+      g = color_id*85;
+      b = color_id*85;
+      //r = SB_BFE(tile_id,0,3)*31;
+      //g = SB_BFE(tile_id,3,3)*31;
+      //b = SB_BFE(tile_id,6,2)*63;
+
+    }
+     
+
+    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;     
+    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;     
+    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;     
+  }
+}
+void sb_update_lcd(sb_gb_t* gb, int delta_cycles){
+  bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
+  if(new_scanline){
+    sb_draw_scanline(gb);
+  }
+}
 void sb_tick(){
   static FILE* file = NULL;
   sb_poll_controller_input(&gb_state);
@@ -476,7 +683,7 @@ void sb_tick(){
     gb_state.mem.data[0xFFFF] = 0x00; // IE
 
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
-      gb_state.framebuffer[i] = GetRandomValue(0,255);
+      gb_state.lcd.framebuffer[i] = GetRandomValue(0,255);
     }
   }
   
@@ -506,22 +713,45 @@ void sb_tick(){
           );      
           
         if(gb_state.cpu.prefix_op)op+=256;
+           
+        int trigger_interrupt = -1;
+        // TODO: Can interrupts trigger between prefix ops and the second byte?
+        if(gb_state.cpu.interrupt_enable && gb_state.cpu.prefix_op==false){
+          uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
+          uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
+          uint8_t masked_interupt = ie&i_flag&0x1f;
 
-        gb_state.cpu.prefix_op = false; 
-        const sb_instr_t inst = sb_decode_table[op];
-        gb_state.cpu.pc+=inst.length;
-        int operand1 = sb_load_operand(&gb_state,inst.op_src1);
-        int operand2 = sb_load_operand(&gb_state,inst.op_src2);
+          for(int i=0;i<5;++i){
+            if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
+          }
+          if(trigger_interrupt!=-1)i_flag &= ~(1<<trigger_interrupt);
+        }
 
-        inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
-        if(gb_state.cpu.prefix_op==true)i--;
+        gb_state.cpu.prefix_op = false;
+        int delta_cycles = 0;
+        if(trigger_interrupt!=-1){
+          sb_call_impl(&gb_state, (trigger_interrupt*0x8)+0x40, 0, 0, 0, "----");
+          delta_cycles = 5*4;
+        }else{
+          sb_instr_t inst = sb_decode_table[op];
+          gb_state.cpu.pc+=inst.length;
+          int operand1 = sb_load_operand(&gb_state,inst.op_src1);
+          int operand2 = sb_load_operand(&gb_state,inst.op_src2);
+                                  
+          int pc_before_inst = gb_state.cpu.pc; 
+          inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
+          if(gb_state.cpu.prefix_op==true)i--;
+
+          delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
+        }
+        sb_update_lcd(&gb_state,delta_cycles);
 
         //sb_push_save_state(&gb_state);
 
         if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
           gb_state.cpu.trigger_breakpoint = false; 
           emu_state.run_mode = SB_MODE_PAUSE;
-          break;
+          break;                   
         }                            
         
     }
@@ -645,7 +875,7 @@ void UpdateDrawFrame() {
                   
  
   Image screenIm = {
-        .data = gb_state.framebuffer,
+        .data = gb_state.lcd.framebuffer,
         .width = SB_LCD_W,
         .height = SB_LCD_H,
         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
@@ -661,7 +891,7 @@ void UpdateDrawFrame() {
   rect.height = GetScreenHeight();
 
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},rect, (Color){255,255,255,255}); 
-
+   
   EndDrawing();
   UnloadTexture(screenTex);
 }
@@ -675,7 +905,7 @@ int main(void) {
   // Set configuration flags for window creation
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
-
+  SetTraceLogLevel(LOG_WARNING);
 #if defined(PLATFORM_WEB)
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
