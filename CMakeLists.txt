@@ -37,6 +37,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
 # This is the main part:
 
 add_executable(${PROJECT_NAME} src/main.c)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=128MB")
+endif ()
 #set(raylib_VERBOSE 1)
 target_link_libraries(${PROJECT_NAME} raylib)
 

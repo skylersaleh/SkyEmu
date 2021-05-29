@@ -277,15 +277,16 @@ static void sb_dec_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 
 static void sb_di_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.interrupt_enable = false;
+  gb->cpu.deferred_interrupt_enable = false;
 }
 
 static void sb_ei_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  gb->cpu.interrupt_enable = true;
+  gb->cpu.deferred_interrupt_enable = true;
 }
 
 static void sb_halt_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  gb->cpu.trigger_breakpoint=true;
-  printf("Halt Executed\n");
+  gb->cpu.wait_for_interrupt=true;
+  gb->cpu.interrupt_enable = true;
 }
 
 static void sb_inc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -503,8 +504,8 @@ static void sb_srl_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_stop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  printf("STOP\n");
-  gb->cpu.trigger_breakpoint=true;
+  gb->cpu.wait_for_interrupt=true;
+  gb->cpu.interrupt_enable = true; 
 }
 
 static void sb_sub_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
