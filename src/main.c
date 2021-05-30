@@ -629,7 +629,7 @@ void sb_poll_controller_input(sb_gb_t* gb){
 bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
   uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT); 
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
-  uint8_t ly  = sb_read8_direct(gb, SB_IO_LCD_LY);
+  uint8_t ly  = gb->lcd.curr_scanline;
   uint8_t old_ly = ly;
   uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
@@ -637,6 +637,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
   bool new_scanline = false; 
   if(!enable){
     gb->lcd.scanline_cycles = 0;
+    gb->lcd.curr_scanline = 0; 
     ly = 0;   
   }else{
     const int mode2_clks= 80;
@@ -649,10 +650,10 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     if(gb->lcd.scanline_cycles>=scanline_dots){
       gb->lcd.scanline_cycles-=scanline_dots;
       ly+=1; 
+      gb->lcd.curr_scanline += 1; 
     }
     
-    //if(ly==153&& gb->lcd.scanline_cycles>4){ly = 0; gb->lcd.curr_window_scanline = 0;} 
-    if(ly>153){ly = 0; gb->lcd.curr_window_scanline = 0;} 
+    if(ly>153){ly = 0;gb->lcd.curr_scanline=0; gb->lcd.curr_window_scanline = 0;} 
 
 
     if(gb->lcd.scanline_cycles<=mode2_clks)mode = 2;
@@ -660,24 +661,25 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     else mode =0;
 
     int old_mode = stat&0x7;
-    if((old_mode&0x3)!=2&&(mode&0x3)==2)new_scanline=true;
+    if((old_mode&0x3)!=3&&(mode&0x3)==3)new_scanline=true;
     
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt = SB_BFE(stat, 5,1);
     bool vblank_interrupt = SB_BFE(stat, 4,1);
     bool hblank_interrupt = SB_BFE(stat, 3,1);
-    if(ly+1==SB_LCD_H&&new_scanline){
+    if(ly==SB_LCD_H&&old_ly!=SB_LCD_H){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(ly+1==SB_LCD_H&&new_scanline&& vblank_interrupt){
+    if(ly==SB_LCD_H&&old_ly!=SB_LCD_H&& vblank_interrupt){
       //vblank-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }      
-    if(ly>144) {mode = 1; new_scanline = false;} 
-    if(ly +1  == lyc) mode|=0x4;
+    if(ly >= SB_LCD_H) {mode = 1; new_scanline = false;} 
+    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;} 
+    if(ly == lyc) mode|=0x4;
 
     if((old_mode & 0x4)==0 && (mode&0x4)==4 && lyc_eq_ly_interrupt){
       //LCD-stat Interrupt
