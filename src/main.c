@@ -9,7 +9,8 @@
 #include "raylib.h"
 #include "sb_instr_tables.h"
 #include "sb_types.h"
-#include <stdint.h>
+#include <stdint.h>                      
+#include <math.h>
 #define RAYGUI_IMPLEMENTATION
 #define RAYGUI_SUPPORT_ICONS
 #include "raygui.h"
@@ -18,6 +19,8 @@
 #endif
 
 #define SB_NUM_SAVE_STATES 128
+#define SB_AUDIO_BUFF_SAMPLES 2048
+#define SB_AUDIO_SAMPLE_RATE 44100
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -25,6 +28,31 @@
 #define SB_IO_TIMA        0xff05
 #define SB_IO_TMA         0xff06
 #define SB_IO_TAC         0xff07
+
+#define SB_IO_AUD1_TONE_SWEEP   0xff10
+#define SB_IO_AUD1_LENGTH_DUTY  0xff11
+#define SB_IO_AUD1_VOL_ENV      0xff12
+#define SB_IO_AUD1_FREQ         0xff13
+#define SB_IO_AUD1_FREQ_HI      0xff14
+
+#define SB_IO_AUD2_LENGTH_DUTY  0xff21
+#define SB_IO_AUD2_VOL_ENV      0xff22
+#define SB_IO_AUD2_FREQ         0xff23
+#define SB_IO_AUD2_FREQ_HI      0xff24
+ 
+#define SB_IO_AUD3_POWER        0xff1A
+#define SB_IO_AUD3_LENGTH       0xff1B
+#define SB_IO_AUD3_VOL          0xff1C
+#define SB_IO_AUD3_FREQ         0xff1D
+#define SB_IO_AUD3_FREQ_HI      0xff1E
+#define SB_IO_AUD3_WAVE_BASE    0xff30
+ 
+
+#define SB_IO_AUD4_LENGTH       0xff20
+#define SB_IO_AUD4_VOL_ENV      0xff21
+#define SB_IO_AUD4_POLY         0xff22
+#define SB_IO_AUD4_COUNTER      0xff23
+
 #define SB_IO_INTER_F     0xff0f
 #define SB_IO_LCD_CTRL    0xff40
 #define SB_IO_LCD_STAT    0xff41
@@ -46,7 +74,7 @@ const int GUI_ROW_HEIGHT = 30;
 const int GUI_LABEL_HEIGHT = 0;
 const int GUI_LABEL_PADDING = 5;
 
-sb_emu_state_t emu_state = {.pc_breakpoint = 0};
+sb_emu_state_t emu_state = {.pc_breakpoint = -1};
 sb_gb_t gb_state = {};
 
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
@@ -191,7 +219,7 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
                   &inside_rect);
 
   static bool edit_step_instructions = false;
-  if (GuiSpinner(widget_rect, "", &emu_state->step_instructions, 1, 0x7fffffff,
+  if (GuiSpinner(widget_rect, "", &emu_state->step_instructions, 0, 0x7fffffff,
                  edit_step_instructions))
     edit_step_instructions = !edit_step_instructions;
   
@@ -598,6 +626,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
   uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT); 
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   uint8_t ly  = sb_read8_direct(gb, SB_IO_LCD_LY);
+  uint8_t old_ly = ly;
   uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
   int mode = 0; 
@@ -637,7 +666,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(ly == lyc) mode|=0x4;
+    if(old_ly == lyc) mode|=0x4;
 
     int old_mode = stat&0x7;
     if((old_mode&0x4)==0 && (mode&0x4) == 0x4 && lyc_eq_ly_interrupt){
@@ -817,16 +846,25 @@ void sb_draw_scanline(sb_gb_t*gb){
     g = color_id*85;
     b = color_id*85;
 
+    const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+    color_id = 3-color_id; 
+                                        
+    r = palette_dmg_green[color_id*3+0];
+    g = palette_dmg_green[color_id*3+1];
+    b = palette_dmg_green[color_id*3+2];
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;     
   }
 }
-void sb_update_lcd(sb_gb_t* gb, int delta_cycles){
+bool sb_update_lcd(sb_gb_t* gb, int delta_cycles){
   bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
   if(new_scanline){
     sb_draw_scanline(gb);
+    uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
+    if(y+1==SB_LCD_H)return true;
   }
+  return false;
 }
 void sb_update_timers(sb_gb_t* gb, int delta_clocks){
   uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
@@ -874,6 +912,7 @@ void sb_tick(){
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
+    //memset(&gb_state.mem, 0, sizeof(gb_state.mem));
     
     gb_state.cpu.pc = 0x100;
 
@@ -886,6 +925,7 @@ void sb_tick(){
     gb_state.mem.data[0xFF05] = 0x00; // TIMA
     gb_state.mem.data[0xFF06] = 0x00; // TMA
     gb_state.mem.data[0xFF07] = 0x00; // TAC
+    /*
     gb_state.mem.data[0xFF10] = 0x80; // NR10
     gb_state.mem.data[0xFF11] = 0xBF; // NR11
     gb_state.mem.data[0xFF12] = 0xF3; // NR12
@@ -893,15 +933,18 @@ void sb_tick(){
     gb_state.mem.data[0xFF16] = 0x3F; // NR21
     gb_state.mem.data[0xFF17] = 0x00; // NR22
     gb_state.mem.data[0xFF19] = 0xBF; // NR24
+    */
     gb_state.mem.data[0xFF1A] = 0x7F; // NR30
     gb_state.mem.data[0xFF1B] = 0xFF; // NR31
     gb_state.mem.data[0xFF1C] = 0x9F; // NR32
     gb_state.mem.data[0xFF1E] = 0xBF; // NR34
+    /*
     gb_state.mem.data[0xFF20] = 0xFF; // NR41
     gb_state.mem.data[0xFF21] = 0x00; // NR42
     gb_state.mem.data[0xFF22] = 0x00; // NR43
     gb_state.mem.data[0xFF23] = 0xBF; // NR44
     gb_state.mem.data[0xFF24] = 0x77; // NR50
+    */
     gb_state.mem.data[0xFF25] = 0xF3; // NR51
     gb_state.mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
     gb_state.mem.data[0xFF40] = 0x91; // LCDC
@@ -920,13 +963,14 @@ void sb_tick(){
     gb_state.timers.clocks_till_tima_inc=0;
 
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
-      gb_state.lcd.framebuffer[i] = GetRandomValue(0,255);
+      gb_state.lcd.framebuffer[i] = 0;
     }
   }
   
   if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
     
     int instructions_to_execute = emu_state.step_instructions;
+    if(instructions_to_execute==0)instructions_to_execute=0x7fffffff;
     for(int i=0;i<instructions_to_execute;++i){
     
         sb_update_joypad_io_reg(&emu_state, &gb_state);
@@ -936,6 +980,7 @@ void sb_tick(){
         unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
 
         //if(gb_state.cpu.pc == 0xC65F)gb_state.cpu.trigger_breakpoint =true;
+        /*
         if(gb_state.cpu.prefix_op==false)
         fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
           SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
@@ -947,7 +992,8 @@ void sb_tick(){
           sb_read8(&gb_state,pc+1),
           sb_read8(&gb_state,pc+2),
           sb_read8(&gb_state,pc+3)
-          );      
+          ); 
+        */
         if(gb_state.cpu.prefix_op)op+=256;
            
         int trigger_interrupt = -1;
@@ -974,6 +1020,7 @@ void sb_tick(){
         if(trigger_interrupt!=-1){
           gb_state.cpu.wait_for_interrupt = false;
           gb_state.cpu.interrupt_enable = false;
+          gb_state.cpu.deferred_interrupt_enable = false;
           int interrupt_address = (trigger_interrupt*0x8)+0x40;
           sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
           delta_cycles = 5*4;
@@ -990,7 +1037,7 @@ void sb_tick(){
 
           delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
         }
-        sb_update_lcd(&gb_state,delta_cycles);
+        bool vblank = sb_update_lcd(&gb_state,delta_cycles);
         sb_update_timers(&gb_state,delta_cycles);
                                 
         //sb_push_save_state(&gb_state);
@@ -1000,7 +1047,7 @@ void sb_tick(){
           emu_state.run_mode = SB_MODE_PAUSE;
           break;                   
         }                            
-        
+        if(vblank&& emu_state.step_instructions ==0 )break;
     }
   }
  
@@ -1019,6 +1066,142 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
                                
 }
+AudioStream audio_stream;
+void sb_process_audio(sb_gb_t *gb){
+  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES]; 
+  static float chan1_t = 0, length_t1=0; 
+  static float chan2_t = 0, length_t2=0;
+  static float chan3_t = 0, length_t3=0;
+  static float chan4_t = 0, length_t4=0;
+  static float last_noise_value = 0;
+
+  static float capacitor = 0.0; 
+
+  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+  
+  float sample_delta_t = 1.0/SB_AUDIO_SAMPLE_RATE;
+  uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
+  uint8_t freq1_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ);
+  uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
+  uint8_t vol_env1 = sb_read8_direct(gb,SB_IO_AUD1_VOL_ENV);
+  uint16_t freq1 = freq1_lo | ((int)(SB_BFE(freq1_hi,0,3))<<8u);
+  float freq1_hz = 131072.0/(2048.-freq1);
+  float volume1 = SB_BFE(vol_env1,4,4)/15.f;
+  float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
+  float length1 = (64.-SB_BFE(length_duty1,0,6))/256.; 
+  if(SB_BFE(freq1_hi,7,1)){chan1_t=0.f;length_t1 = 0;}
+  if(SB_BFE(freq1_hi,6,1)==0){length1 = 1.0e9;}
+  freq1_hi &=0x7f;
+  sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI,freq1_hi);
+
+  uint8_t length_duty2 = sb_read8_direct(gb, SB_IO_AUD2_LENGTH_DUTY);
+  uint8_t freq2_lo = sb_read8_direct(gb,SB_IO_AUD2_FREQ);
+  uint8_t freq2_hi = sb_read8_direct(gb,SB_IO_AUD2_FREQ_HI);
+  uint8_t vol_env2 = sb_read8_direct(gb,SB_IO_AUD2_VOL_ENV);
+  uint16_t freq2 = freq2_lo | ((int)(SB_BFE(freq2_hi,0,3))<<8u);
+  float freq2_hz = 131072.0/(2048.-freq2);
+  float volume2 = SB_BFE(vol_env2,4,4)/15.f;
+  float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
+  float length2 = (64.-SB_BFE(length_duty2,0,6))/256.; 
+  
+  if(SB_BFE(freq2_hi,7,1)){chan2_t=0.f; length_t2=0;}
+  if(SB_BFE(freq2_hi,6,1)==0){length2 = 1.0e9;}
+  freq2_hi &=0x7f;
+  sb_store8_direct(gb, SB_IO_AUD2_FREQ_HI,freq2_hi);
+  
+  uint8_t power3 = sb_read8_direct(gb,SB_IO_AUD3_POWER);
+  uint8_t length3_dat = sb_read8_direct(gb,SB_IO_AUD3_LENGTH);
+  uint8_t freq3_lo = sb_read8_direct(gb,SB_IO_AUD3_FREQ);
+  uint8_t freq3_hi = sb_read8_direct(gb,SB_IO_AUD3_FREQ_HI);
+  uint8_t vol_env3 = sb_read8_direct(gb,SB_IO_AUD3_VOL);
+  uint16_t freq3 = freq3_lo | ((int)(SB_BFE(freq3_hi,0,3))<<8u);
+  float freq3_hz = 65536.0/(2048.-freq3);
+  float volume3 = 0.0f;
+  float length3 = (256.-length3_dat)/256.; 
+  switch(SB_BFE(vol_env3,5,2)){
+    case 1: volume3=1.;
+    case 2: volume3=0.5;
+    case 3: volume3=0.25;
+  }
+  if(SB_BFE(power3,7,1)==0)volume3=0;
+  if(SB_BFE(freq3_hi,7,1)){chan3_t=0.f;length_t3=0.f;}         
+  if(SB_BFE(freq3_hi,6,1)==0){length3 = 1.0e9;}
+  freq3_hi &=0x7f;
+  sb_store8_direct(gb, SB_IO_AUD3_FREQ_HI,freq3_hi);
+  
+ 
+  uint8_t length_duty4 = sb_read8_direct(gb, SB_IO_AUD4_LENGTH);
+  uint8_t counter4 = sb_read8_direct(gb, SB_IO_AUD4_COUNTER);
+  uint8_t poly4 = sb_read8_direct(gb,SB_IO_AUD4_POLY);
+  uint8_t vol_env4 = sb_read8_direct(gb,SB_IO_AUD4_VOL_ENV);
+  float r4 = SB_BFE(poly4,0,3);
+  uint8_t s4 = SB_BFE(poly4,4,4);
+  if(r4==0)r4=0.5;
+  float freq4_hz = 524288.0/r4/pow(2.0,s4+1);
+  float volume4 = SB_BFE(vol_env4,4,4)/15.f;
+  float length4 = (64.-SB_BFE(length_duty4,0,6))/256.; 
+  if(SB_BFE(counter4,7,1)){chan4_t=0.f;length_t4 = 0;}
+  if(SB_BFE(counter4,6,1)==0){length4 = 1.0e9;}
+  counter4 &=0x7f;
+  sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
+                  
+  while(IsAudioStreamProcessed(audio_stream)){
+    for(int i=0;i<SB_AUDIO_BUFF_SAMPLES;++i){
+      // Advance cycle
+      chan1_t+=sample_delta_t*freq1_hz;
+      chan2_t+=sample_delta_t*freq2_hz;
+      chan3_t+=sample_delta_t*freq3_hz;
+      chan4_t+=sample_delta_t*freq4_hz;
+      
+      length_t1+=sample_delta_t;
+      length_t2+=sample_delta_t;
+      length_t3+=sample_delta_t;
+      length_t4+=sample_delta_t;
+
+      if(length_t1>length1)volume1=0;
+      if(length_t2>length2)volume2=0;
+      if(length_t3>length3)volume3=0;
+      if(length_t4>length4)volume4=0;
+      
+      // Loop back
+      if(chan1_t>=1.0)chan1_t-=1.0;
+      if(chan2_t>=1.0)chan2_t-=1.0;
+      if(chan3_t>=1.0)chan3_t-=1.0;
+      if(chan4_t>=1.0){
+        chan4_t-=1.0;
+        last_noise_value = GetRandomValue(0,1)*2.-1.;
+      }
+      
+      // Audio Gen
+      float sample_volume = 0;
+      sample_volume+=(chan1_t>duty1?1:-1)*volume1;
+      sample_volume+=(chan2_t>duty2?1:-1)*volume2;
+
+      int wav_samp = chan3_t*32; 
+      uint8_t dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
+      int offset = (wav_samp&1)? 0:4;
+      dat = (dat>>offset)&0xf;
+      sample_volume+=(dat-8)/7.*volume3;
+
+      sample_volume+=last_noise_value*volume4;
+
+      sample_volume*=0.25;
+
+
+      // Clipping
+      if(sample_volume>1.0)sample_volume=1;
+      if(sample_volume<-1.0)sample_volume=-1;
+      float out = sample_volume-capacitor; 
+      capacitor = (sample_volume-out)*0.996;
+      // Quantization
+      audio_buff[i] = sample_volume*32760;
+      
+    }
+    
+    UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES);
+  }
+}
+
 
 bool showContentArea = true;
 void UpdateDrawFrame() {
@@ -1113,7 +1296,8 @@ void UpdateDrawFrame() {
     }
     ClearDroppedFiles();
   }
-  sb_tick();
+  sb_tick();                      
+  sb_process_audio(&gb_state);
 
   // Draw
   //-----------------------------------------------------
@@ -1154,6 +1338,11 @@ int main(void) {
   // Set configuration flags for window creation
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
+  InitAudioDevice();
+
+  SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
+  audio_stream = InitAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
+  PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
 #if defined(PLATFORM_WEB)
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
