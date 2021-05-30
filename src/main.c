@@ -94,8 +94,7 @@ void sb_push_save_state(sb_gb_t* gb){
   ++sb_valid_save_states;
   if(sb_valid_save_states>SB_NUM_SAVE_STATES)sb_valid_save_states = SB_NUM_SAVE_STATES;
   ++sb_save_state_index;
-  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES].mem = gb->mem;
-  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES].cpu = gb->cpu;
+  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
 }
   
 uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
@@ -658,9 +657,9 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     if(ly>=144) {mode = 1; new_scanline = false;} 
     
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
-    bool oam_interrupt = SB_BFE(stat, 6,1);
-    bool vblank_interrupt = SB_BFE(stat, 5,1);
-    bool hblank_interrupt = SB_BFE(stat, 4,1);
+    bool oam_interrupt = SB_BFE(stat, 5,1);
+    bool vblank_interrupt = SB_BFE(stat, 4,1);
+    bool hblank_interrupt = SB_BFE(stat, 3,1);
     if(ly ==SB_LCD_H){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
@@ -669,7 +668,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     if(old_ly == lyc) mode|=0x4;
 
     int old_mode = stat&0x7;
-    if((old_mode&0x4)==0 && (mode&0x4) == 0x4 && lyc_eq_ly_interrupt){
+    if((old_mode&0x3)!=0 && (mode&0x4) == 0x4 &&(mode&0x3)==0&& lyc_eq_ly_interrupt){
       //LCD-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
@@ -839,7 +838,7 @@ void sb_draw_scanline(sb_gb_t*gb){
     uint8_t palette = 0;  
     if(color_id & BACKGROUND_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
     else if(color_id & OBJECT_PALETTE1)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
-    else palette = sb_read8_direct(gb, SB_IO_PPU_OBP0);
+    else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
     color_id = SB_BFE(palette,2*color_id,2);
     color_id = 3-color_id; 
     r = color_id*85;
@@ -1211,7 +1210,7 @@ void UpdateDrawFrame() {
     if (count > 0) {
       unsigned int bytes = 0;
       unsigned char *data = LoadFileData(files[0], &bytes);
-      if(bytes>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
+      if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
       printf("Dropped File: %s, %d bytes\n", files[0], bytes);
       for (size_t i = 0; i < bytes; ++i) {
         gb_state.cart.data[i] = data[i];
@@ -1221,6 +1220,7 @@ void UpdateDrawFrame() {
       for (int i = 0; i < 11; ++i) {
         gb_state.cart.title[i] = gb_state.cart.data[i + 0x134];
       }
+      gb_state.cart.title[12] ='\0';
       // TODO PGB Mode(Values with Bit 7 set, and either Bit 2 or 3 set)
       gb_state.cart.game_boy_color =
           SB_BFE(gb_state.cart.data[0x143], 7, 1) == 1;
