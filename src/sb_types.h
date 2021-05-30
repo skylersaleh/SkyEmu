@@ -67,6 +67,7 @@ typedef struct{
 typedef struct{
   unsigned int scanline_cycles;
   unsigned int curr_scanline;
+  unsigned int curr_window_scanline;
   uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
 } sb_lcd_ppu_t;
 

@@ -112,6 +112,7 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     //gb->cpu.trigger_breakpoint=true;
     return;
   }
+  
   if(addr == 0xdd03||addr==0xdd01){
     //printf("store: %d %x\n",count,value);
     //gb->cpu.trigger_breakpoint=true;
@@ -123,6 +124,10 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   }
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
+  if(addr == 0xff41){
+    value&=~0x7;
+    value|= sb_read8_direct(gb,addr)&0x7;
+  }              
   if(addr == 0xff46){
     int src = value<<8;
     for(int i=0;i<=0x9F;++i){
@@ -646,32 +651,35 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       ly+=1; 
     }
     
+    //if(ly==153&& gb->lcd.scanline_cycles>4){ly = 0; gb->lcd.curr_window_scanline = 0;} 
+    if(ly>153){ly = 0; gb->lcd.curr_window_scanline = 0;} 
 
-    if(ly > 153) ly = 0; 
 
     if(gb->lcd.scanline_cycles<=mode2_clks)mode = 2;
     else if(gb->lcd.scanline_cycles<=mode3_clks+mode2_clks) mode =3;
     else mode =0;
 
-    
     int old_mode = stat&0x7;
     if((old_mode&0x3)!=2&&(mode&0x3)==2)new_scanline=true;
-    if(ly>=154) {ly=0;}
-    if(ly>=144) {mode = 1; new_scanline = false;} 
     
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt = SB_BFE(stat, 5,1);
     bool vblank_interrupt = SB_BFE(stat, 4,1);
     bool hblank_interrupt = SB_BFE(stat, 3,1);
-    if(ly+1 ==SB_LCD_H&&new_scanline){
+    if(ly+1==SB_LCD_H&&new_scanline){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    
-    if(ly +1 == lyc) mode|=0x4;
+    if(ly+1==SB_LCD_H&&new_scanline&& vblank_interrupt){
+      //vblank-stat Interrupt
+      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
+    }      
+    if(ly>144) {mode = 1; new_scanline = false;} 
+    if(ly +1  == lyc) mode|=0x4;
 
-    if((old_mode & 0x4)==0 && (mode&0x4) && lyc_eq_ly_interrupt){
+    if((old_mode & 0x4)==0 && (mode&0x4)==4 && lyc_eq_ly_interrupt){
       //LCD-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
@@ -681,11 +689,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
-    if((old_mode&0x3)!=1 && (mode&0x3) == 0x1 && vblank_interrupt){
-      //vblank-stat Interrupt
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
-    } 
+   
     if((old_mode&0x3)!=0 && (mode&0x3) == 0x0 && hblank_interrupt){
       //hblank-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
@@ -706,7 +710,7 @@ void sb_draw_scanline(sb_gb_t*gb){
   int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;  
   bool window_enable = SB_BFE(ctrl,5,1)==1;  
   int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;  
-  
+                     
   int oam_table_offset = 0xfe00;
   uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
   int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
@@ -714,6 +718,7 @@ void sb_draw_scanline(sb_gb_t*gb){
   int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
   int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
 
+  if(wy>y)window_enable = false; 
   int sprite_h = sprite8x16 ? 16: 8;
   const int sprites_per_scanline = 10;
   // HW only draws first 10 sprites that touch a scanline
@@ -733,6 +738,7 @@ void sb_draw_scanline(sb_gb_t*gb){
     }
   }
 
+  bool rendered_part_of_window = false;
   for(int x = 0; x < SB_LCD_W; ++x){
                       
     
@@ -768,8 +774,9 @@ void sb_draw_scanline(sb_gb_t*gb){
     }
     if(window_enable && draw_bg_win){
       int px = x-wx; 
-      int py = y-wy;
+      int py = gb->lcd.curr_window_scanline;
       if(px>=0&&py>=0){
+        rendered_part_of_window = true;
         const int tile_size = 8;
         const int tiles_per_row = 32;
         int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
@@ -795,7 +802,7 @@ void sb_draw_scanline(sb_gb_t*gb){
       }
     } 
     if(draw_sprite){
-
+      int prior_sprite_x = 256; 
       for(int i=0;i<sprites_per_scanline;++i){
         int sprite = render_sprites[i];
         if(sprite==-1)continue;
@@ -822,6 +829,8 @@ void sb_draw_scanline(sb_gb_t*gb){
         if(x_sprite>=8 || x_sprite<0)continue;
         if(y_sprite<0 || y_sprite>=16 || (y_sprite>=8 && sprite8x16==false))continue;
 
+        if(prior_sprite_x<=xc) continue;
+        
         int byte_tile_data_off = 0x8000 + (((uint8_t)(tile))*bytes_per_tile);
         byte_tile_data_off+=y_sprite*2;
 
@@ -830,9 +839,8 @@ void sb_draw_scanline(sb_gb_t*gb){
 
         uint8_t cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
         if(bg_win_on_top){
-          if((color_id&0x3)==0)color_id = cid | (palette<<4);
-        }else if(cid!=0)color_id = cid | (palette<<4);
-        
+          if((color_id&0x3)==0){color_id = cid | (palette<<4); prior_sprite_x =xc;}
+        }else if(cid!=0){color_id = cid | (palette<<4); prior_sprite_x=xc;}
         
       }       
       //r = SB_BFE(tile_id,0,3)*31;
@@ -860,6 +868,7 @@ void sb_draw_scanline(sb_gb_t*gb){
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;     
   }
+  if(rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
 }
 bool sb_update_lcd(sb_gb_t* gb, int delta_cycles){
   bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
