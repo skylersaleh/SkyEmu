@@ -18,7 +18,7 @@
 #include <emscripten/emscripten.h>
 #endif
 
-#define SB_NUM_SAVE_STATES 128
+#define SB_NUM_SAVE_STATES 5
 #define SB_AUDIO_BUFF_SAMPLES 2048
 #define SB_AUDIO_SAMPLE_RATE 44100
 
