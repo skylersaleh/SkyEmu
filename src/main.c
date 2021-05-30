@@ -35,10 +35,10 @@
 #define SB_IO_AUD1_FREQ         0xff13
 #define SB_IO_AUD1_FREQ_HI      0xff14
 
-#define SB_IO_AUD2_LENGTH_DUTY  0xff21
-#define SB_IO_AUD2_VOL_ENV      0xff22
-#define SB_IO_AUD2_FREQ         0xff23
-#define SB_IO_AUD2_FREQ_HI      0xff24
+#define SB_IO_AUD2_LENGTH_DUTY  0xff16
+#define SB_IO_AUD2_VOL_ENV      0xff17
+#define SB_IO_AUD2_FREQ         0xff18
+#define SB_IO_AUD2_FREQ_HI      0xff19
  
 #define SB_IO_AUD3_POWER        0xff1A
 #define SB_IO_AUD3_LENGTH       0xff1B
@@ -643,9 +643,9 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     gb->lcd.scanline_cycles +=delta_cycles;
     if(gb->lcd.scanline_cycles>=scanline_dots){
       gb->lcd.scanline_cycles-=scanline_dots;
-      new_scanline = true;
       ly+=1; 
     }
+    
 
     if(ly > 153) ly = 0; 
 
@@ -653,6 +653,9 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     else if(gb->lcd.scanline_cycles<=mode3_clks+mode2_clks) mode =3;
     else mode =0;
 
+    
+    int old_mode = stat&0x7;
+    if((old_mode&0x3)!=2&&(mode&0x3)==2)new_scanline=true;
     if(ly>=154) {ly=0;}
     if(ly>=144) {mode = 1; new_scanline = false;} 
     
@@ -660,15 +663,15 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     bool oam_interrupt = SB_BFE(stat, 5,1);
     bool vblank_interrupt = SB_BFE(stat, 4,1);
     bool hblank_interrupt = SB_BFE(stat, 3,1);
-    if(ly ==SB_LCD_H){
+    if(ly+1 ==SB_LCD_H&&new_scanline){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(old_ly == lyc) mode|=0x4;
+    
+    if(ly +1 == lyc) mode|=0x4;
 
-    int old_mode = stat&0x7;
-    if((old_mode&0x3)!=0 && (mode&0x4) == 0x4 &&(mode&0x3)==0&& lyc_eq_ly_interrupt){
+    if((old_mode & 0x4)==0 && (mode&0x4) && lyc_eq_ly_interrupt){
       //LCD-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
@@ -803,6 +806,8 @@ void sb_draw_scanline(sb_gb_t*gb){
         int tile = sb_read8_direct(gb, sprite_base+2);
         int attr = sb_read8_direct(gb, sprite_base+3);
 
+        if(sprite8x16)tile &=0xfe;
+        
         bool x_flip = SB_BFE(attr,5,1)==1;
         bool y_flip = SB_BFE(attr,6,1)==1;
         bool bg_win_on_top = SB_BFE(attr,7,1)==1;
@@ -825,8 +830,8 @@ void sb_draw_scanline(sb_gb_t*gb){
 
         uint8_t cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
         if(bg_win_on_top){
-          if((color_id&0x3)==0)color_id = cid | (palette<<8);
-        }else if(cid!=0)color_id = cid | (palette<<8);
+          if((color_id&0x3)==0)color_id = cid | (palette<<4);
+        }else if(cid!=0)color_id = cid | (palette<<4);
         
         
       }       
@@ -1065,6 +1070,16 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
                                
 }
+float compute_vol_env_slope(uint8_t d){
+  int dir = SB_BFE(d,3,1);
+  int length_of_step = SB_BFE(d,0,3);
+  
+  float step_time = 64./length_of_step;
+  float slope = step_time;
+  if(dir==0)slope*=-1;
+  if(length_of_step==0)slope=0;
+  return slope/16.; 
+}
 AudioStream audio_stream;
 void sb_process_audio(sb_gb_t *gb){
   static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES]; 
@@ -1086,6 +1101,7 @@ void sb_process_audio(sb_gb_t *gb){
   uint16_t freq1 = freq1_lo | ((int)(SB_BFE(freq1_hi,0,3))<<8u);
   float freq1_hz = 131072.0/(2048.-freq1);
   float volume1 = SB_BFE(vol_env1,4,4)/15.f;
+  float volume_env1 = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   float length1 = (64.-SB_BFE(length_duty1,0,6))/256.; 
   if(SB_BFE(freq1_hi,7,1)){chan1_t=0.f;length_t1 = 0;}
@@ -1100,6 +1116,7 @@ void sb_process_audio(sb_gb_t *gb){
   uint16_t freq2 = freq2_lo | ((int)(SB_BFE(freq2_hi,0,3))<<8u);
   float freq2_hz = 131072.0/(2048.-freq2);
   float volume2 = SB_BFE(vol_env2,4,4)/15.f;
+  float volume_env2 = compute_vol_env_slope(vol_env2);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
   float length2 = (64.-SB_BFE(length_duty2,0,6))/256.; 
   
@@ -1138,6 +1155,7 @@ void sb_process_audio(sb_gb_t *gb){
   if(r4==0)r4=0.5;
   float freq4_hz = 524288.0/r4/pow(2.0,s4+1);
   float volume4 = SB_BFE(vol_env4,4,4)/15.f;
+  float volume_env4 = compute_vol_env_slope(vol_env4);
   float length4 = (64.-SB_BFE(length_duty4,0,6))/256.; 
   if(SB_BFE(counter4,7,1)){chan4_t=0.f;length_t4 = 0;}
   if(SB_BFE(counter4,6,1)==0){length4 = 1.0e9;}
@@ -1155,12 +1173,13 @@ void sb_process_audio(sb_gb_t *gb){
       length_t1+=sample_delta_t;
       length_t2+=sample_delta_t;
       length_t3+=sample_delta_t;
-      length_t4+=sample_delta_t;
+      length_t4+=sample_delta_t;  
 
-      if(length_t1>length1)volume1=0;
-      if(length_t2>length2)volume2=0;
+               
+      if(length_t1>length1){volume1=0;volume_env1=0;}
+      if(length_t2>length2){volume2=0;volume_env2=0;}
       if(length_t3>length3)volume3=0;
-      if(length_t4>length4)volume4=0;
+      if(length_t4>length4){volume4=0;volume_env4=0;}
       
       // Loop back
       if(chan1_t>=1.0)chan1_t-=1.0;
@@ -1170,11 +1189,23 @@ void sb_process_audio(sb_gb_t *gb){
         chan4_t-=1.0;
         last_noise_value = GetRandomValue(0,1)*2.-1.;
       }
+      //Volume Envelopes
+      float v1=volume_env1*length_t1+volume1;
+      float v2=volume_env2*length_t2+volume2;
+      float v4=volume_env4*length_t4+volume4;
+
+      if(v1<0)v1=0;
+      if(v2<0)v2=0;
+      if(v4<0)v4=0;
       
+      if(v1>1)v1=1;
+      if(v2>1)v2=1;
+      if(v4>1)v4=1;
+                 
       // Audio Gen
       float sample_volume = 0;
-      sample_volume+=(chan1_t>duty1?1:-1)*volume1;
-      sample_volume+=(chan2_t>duty2?1:-1)*volume2;
+      sample_volume+=(chan1_t>duty1?1:-1)*v1;
+      sample_volume+=(chan2_t>duty2?1:-1)*v2;
 
       int wav_samp = chan3_t*32; 
       uint8_t dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
@@ -1182,7 +1213,7 @@ void sb_process_audio(sb_gb_t *gb){
       dat = (dat>>offset)&0xf;
       sample_volume+=(dat-8)/7.*volume3;
 
-      sample_volume+=last_noise_value*volume4;
+      sample_volume+=last_noise_value*v4;
 
       sample_volume*=0.25;
 
