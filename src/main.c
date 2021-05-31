@@ -118,10 +118,15 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     //gb->cpu.trigger_breakpoint=true;
   }
   if(addr == SB_IO_SERIAL_BYTE){
+    //Serial Interrupt                                                      
+    uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);                  
+    sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<3));
+    
     printf("%c",(char)value);
-  }else{
-    gb->mem.data[addr]=value;
+    value=0;
   }
+  gb->mem.data[addr]=value;
+  
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   if(addr == 0xff41){
@@ -931,7 +936,10 @@ void sb_tick(){
     
     gb_state.cpu.pc = 0x100;
 
-    gb_state.cpu.af=0x01B0;
+    gb_state.cpu.af=0x01B0;      
+    if(gb_state.cart.game_boy_color){
+      gb_state.cpu.af|=0x11<<8;
+    }
     gb_state.cpu.bc=0x0013;
     gb_state.cpu.de=0x00D8;
     gb_state.cpu.hl=0x014D;
@@ -980,12 +988,13 @@ void sb_tick(){
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
       gb_state.lcd.framebuffer[i] = 0;
     }
+    emu_state.run_mode=SB_MODE_PAUSE;
   }
   
   if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
     
     int instructions_to_execute = emu_state.step_instructions;
-    if(instructions_to_execute==0)instructions_to_execute=0x7fffffff;
+    if(instructions_to_execute==0)instructions_to_execute=60000;
     for(int i=0;i<instructions_to_execute;++i){
     
         sb_update_joypad_io_reg(&emu_state, &gb_state);
@@ -1018,6 +1027,7 @@ void sb_tick(){
           uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
           uint8_t masked_interupt = ie&i_flag&0x1f;
 
+
           for(int i=0;i<5;++i){
             if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
           }
@@ -1038,7 +1048,7 @@ void sb_tick(){
           gb_state.cpu.deferred_interrupt_enable = false;
           int interrupt_address = (trigger_interrupt*0x8)+0x40;
           sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
-          delta_cycles = 5*4;
+          delta_cycles = 5*4*4;
           
         }else if(gb_state.cpu.wait_for_interrupt==false){
           sb_instr_t inst = sb_decode_table[op];
@@ -1105,6 +1115,13 @@ void sb_process_audio(sb_gb_t *gb){
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
   
   float sample_delta_t = 1.0/SB_AUDIO_SAMPLE_RATE;
+  uint8_t freq_sweep1 = sb_read8_direct(gb, SB_IO_AUD1_TONE_SWEEP);
+  float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
+  float freq_sweep_sign1 = SB_BFE(freq_sweep1, 3,1)? -1. : 1;
+  //float freq_sweep_n1 = 131072./(2048-SB_BFE(freq_sweep1, 0,3));
+  float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
+  if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
+
   uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
   uint8_t freq1_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ);
   uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
@@ -1174,9 +1191,13 @@ void sb_process_audio(sb_gb_t *gb){
   sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
                   
   while(IsAudioStreamProcessed(audio_stream)){
-    for(int i=0;i<SB_AUDIO_BUFF_SAMPLES;++i){
+    for(int i=0;i<SB_AUDIO_BUFF_SAMPLES;++i){  
+
+      float f1 = freq1_hz*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t1/freq_sweep_time_mul1);
+
+      //float f1 = freq1_hz+freq_sweep_sign1*freq_sweep_n1*length_t1/freq_sweep_time_mul1;
       // Advance cycle
-      chan1_t+=sample_delta_t*freq1_hz;
+      chan1_t+=sample_delta_t*f1;
       chan2_t+=sample_delta_t*freq2_hz;
       chan3_t+=sample_delta_t*freq3_hz;
       chan4_t+=sample_delta_t*freq4_hz;
@@ -1227,7 +1248,6 @@ void sb_process_audio(sb_gb_t *gb){
       sample_volume+=last_noise_value*v4;
 
       sample_volume*=0.25;
-
 
       // Clipping
       if(sample_volume>1.0)sample_volume=1;
