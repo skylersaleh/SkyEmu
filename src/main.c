@@ -46,7 +46,6 @@
 #define SB_IO_AUD3_FREQ         0xff1D
 #define SB_IO_AUD3_FREQ_HI      0xff1E
 #define SB_IO_AUD3_WAVE_BASE    0xff30
- 
 
 #define SB_IO_AUD4_LENGTH       0xff20
 #define SB_IO_AUD4_VOL_ENV      0xff21
@@ -98,15 +97,35 @@ void sb_push_save_state(sb_gb_t* gb){
 }
   
 uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
+  if(addr>=0xA000&&addr<=0xBfff){
+    int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+    return gb->cart.ram_data[ram_addr_off];
+  }
   return gb->mem.data[addr];
 }  
 uint8_t sb_read8(sb_gb_t *gb, int addr) { 
   //if(addr == 0xff44)return 0x90;
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
   return sb_read8_direct(gb,addr);
-}                           
+}     
+void sb_unmap_ram(sb_gb_t*gb){
+  int old_bank_off = 0x2000*gb->cart.mapped_ram_bank;
+  if(gb->cart.ram_is_dirty){
+    for(int i= 0; i<0x2000;++i){
+      gb->cart.ram_data[old_bank_off+i]=gb->mem.data[0xA000+i];
+    } 
+  }
+}
 void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
+  if(addr>=0xA000&&addr<=0xBfff){
+    if(gb->cart.ram_write_enable){
+      int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+      gb->cart.ram_data[ram_addr_off]=value;
+      gb->cart.ram_is_dirty = true;
+    }
+    return; 
+  }
   if(addr<=0x7fff){
     //printf("Attempt to write to rom address %x\n",addr);
     //gb->cpu.trigger_breakpoint=true;
@@ -118,15 +137,11 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     //gb->cpu.trigger_breakpoint=true;
   }
   if(addr == SB_IO_SERIAL_BYTE){
-    //Serial Interrupt                                                      
-    uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);                  
-    sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<3));
-    
+     
     printf("%c",(char)value);
-    value=0;
+  }else{
+    gb->mem.data[addr]=value;
   }
-  gb->mem.data[addr]=value;
-  
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   if(addr == 0xff41){
@@ -142,7 +157,8 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
   }else if(addr == SB_IO_DIV){
     value = 0; //All writes reset the div timer
   }else if(addr >= 0x0000 && addr <=0x1fff){
-    printf("Enable Ram writes %d\n", value);
+    if((value&0xf)==0xA) gb->cart.ram_write_enable = true;
+    else gb->cart.ram_write_enable = false;
   }else if(addr >= 0x2000 && addr <=0x3fff){
     //MBC3 rombank select
     //TODO implement other mappers
@@ -158,14 +174,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
   }else if(addr >= 0x4000 && addr <=0x5fff){
     //MBC3 rombank select
     //TODO implement other mappers
-    value&=0x7f; 
-    if(value ==0)value = 1; 
-    //printf("Switching to RAM bank %d\n", value);
-    //TODO
-    //int bank_off = 0x4000*value;
-    //for(int i= 0; i<0x4000;++i){
-    //  gb->mem.data[0x4000+i] = gb->cart.data[bank_off+i];
-    //}
+    value %= (gb->cart.ram_size/0x2000);
+    printf("Switching to RAM bank %d\n", value);
+    gb->cart.mapped_ram_bank = value;
     return;
   } 
   sb_store8_direct(gb,addr,value);
@@ -666,7 +677,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     else mode =0;
 
     int old_mode = stat&0x7;
-    if((old_mode&0x3)!=3&&(mode&0x3)==3)new_scanline=true;
+    if((old_mode&0x3)!=0&&(mode&0x3)==0)new_scanline=true;
     
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt = SB_BFE(stat, 5,1);
@@ -938,7 +949,7 @@ void sb_tick(){
 
     gb_state.cpu.af=0x01B0;      
     if(gb_state.cart.game_boy_color){
-      gb_state.cpu.af|=0x11<<8;
+    //  gb_state.cpu.af|=0x11<<8;
     }
     gb_state.cpu.bc=0x0013;
     gb_state.cpu.de=0x00D8;
@@ -988,7 +999,6 @@ void sb_tick(){
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
       gb_state.lcd.framebuffer[i] = 0;
     }
-    emu_state.run_mode=SB_MODE_PAUSE;
   }
   
   if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
@@ -1026,7 +1036,6 @@ void sb_tick(){
           uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
           uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
           uint8_t masked_interupt = ie&i_flag&0x1f;
-
 
           for(int i=0;i<5;++i){
             if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
@@ -1121,7 +1130,7 @@ void sb_process_audio(sb_gb_t *gb){
   //float freq_sweep_n1 = 131072./(2048-SB_BFE(freq_sweep1, 0,3));
   float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
   if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
-
+  //if(freq_sweep_time_mul1==0)freq_sweep_time_mul1=1.0e6;                             
   uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
   uint8_t freq1_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ);
   uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
@@ -1207,7 +1216,6 @@ void sb_process_audio(sb_gb_t *gb){
       length_t3+=sample_delta_t;
       length_t4+=sample_delta_t;  
 
-               
       if(length_t1>length1){volume1=0;volume_env1=0;}
       if(length_t2>length2){volume2=0;volume_env2=0;}
       if(length_t3>length3)volume3=0;
@@ -1264,7 +1272,6 @@ void sb_process_audio(sb_gb_t *gb){
 }
 
 
-bool showContentArea = true;
 void UpdateDrawFrame() {
   if (IsFileDropped()) {
     int count = 0;
@@ -1289,74 +1296,64 @@ void UpdateDrawFrame() {
       gb_state.cart.type = gb_state.cart.data[0x147];
 
       switch (gb_state.cart.data[0x148]) {
-      case 0x0:
-        gb_state.cart.rom_size = 32 * 1024;
-        break;
-      case 0x1:
-        gb_state.cart.rom_size = 64 * 1024;
-        break;
-      case 0x2:
-        gb_state.cart.rom_size = 128 * 1024;
-        break;
-      case 0x3:
-        gb_state.cart.rom_size = 256 * 1024;
-        break;
-      case 0x4:
-        gb_state.cart.rom_size = 512 * 1024;
-        break;
-      case 0x5:
-        gb_state.cart.rom_size = 1024 * 1024;
-        break;
-      case 0x6:
-        gb_state.cart.rom_size = 2 * 1024 * 1024;
-        break;
-      case 0x7:
-        gb_state.cart.rom_size = 4 * 1024 * 1024;
-        break;
-      case 0x8:
-        gb_state.cart.rom_size = 8 * 1024 * 1024;
-        break;
-      case 0x52:
-        gb_state.cart.rom_size = 1.1 * 1024 * 1024;
-        break;
-      case 0x53:
-        gb_state.cart.rom_size = 1.2 * 1024 * 1024;
-        break;
-      case 0x54:
-        gb_state.cart.rom_size = 1.5 * 1024 * 1024;
-        break;
-      default:
-        gb_state.cart.rom_size = 32 * 1024;
-        break;
+        case 0x0: gb_state.cart.rom_size = 32 * 1024;  break;
+        case 0x1: gb_state.cart.rom_size = 64 * 1024;  break;
+        case 0x2: gb_state.cart.rom_size = 128 * 1024; break;
+        case 0x3: gb_state.cart.rom_size = 256 * 1024; break;
+        case 0x4: gb_state.cart.rom_size = 512 * 1024; break;
+        case 0x5: gb_state.cart.rom_size = 1024 * 1024;     break;
+        case 0x6: gb_state.cart.rom_size = 2 * 1024 * 1024; break;
+        case 0x7: gb_state.cart.rom_size = 4 * 1024 * 1024; break;
+        case 0x8: gb_state.cart.rom_size = 8 * 1024 * 1024; break;
+        case 0x52: gb_state.cart.rom_size = 1.1 * 1024 * 1024; break;
+        case 0x53: gb_state.cart.rom_size = 1.2 * 1024 * 1024; break;
+        case 0x54: gb_state.cart.rom_size = 1.5 * 1024 * 1024; break;
+        default: gb_state.cart.rom_size = 32 * 1024; break;
       }
 
       switch (gb_state.cart.data[0x149]) {
-      case 0x0:
-        gb_state.cart.ram_size = 0;
-        break;
-      case 0x1:
-        gb_state.cart.ram_size = 0;
-        break;
-      case 0x2:
-        gb_state.cart.ram_size = 8 * 1024;
-        break;
-      case 0x3:
-        gb_state.cart.ram_size = 32 * 1024;
-        break;
-      case 0x4:
-        gb_state.cart.ram_size = 128 * 1024;
-        break;
-      case 0x5:
-        gb_state.cart.ram_size = 64 * 1024;
-        break;
-      default:
-        break;
+        case 0x0: gb_state.cart.ram_size = 0; break;
+        case 0x1: gb_state.cart.ram_size = 0; break;
+        case 0x2: gb_state.cart.ram_size = 8 * 1024; break;
+        case 0x3: gb_state.cart.ram_size = 32 * 1024; break;
+        case 0x4: gb_state.cart.ram_size = 128 * 1024; break;
+        case 0x5: gb_state.cart.ram_size = 64 * 1024; break;
+        default: gb_state.cart.ram_size = 0; break;
       }
       emu_state.run_mode = SB_MODE_RESET;
 
       UnloadFileData(data);
+      const char * c = GetFileNameWithoutExt(files[0]);
+      const char * save_file = TextFormat("%s.sav",c);
+      strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
+      gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0; 
+
+      if(FileExists(save_file)){                          
+        int bytes=0;
+        unsigned char* data = LoadFileData(save_file,&bytes);
+        printf("Loadied save file: %s, bytes: %d\n",save_file,bytes);
+
+        if(bytes!=gb_state.cart.ram_size){
+          printf("Warning save file size(%d) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
+        }
+        if(bytes>gb_state.cart.ram_size){
+          bytes = gb_state.cart.ram_size;
+        }                                   
+        memcpy(gb_state.cart.ram_data, data, bytes); 
+        UnloadFileData(data);
+
+      }else{
+        printf("Could not find save file: %s\n",save_file);
+        memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
+      }
     }
     ClearDroppedFiles();
+  }
+  if(gb_state.cart.ram_is_dirty){
+    if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
+      printf("Saved %s\n", gb_state.cart.save_file_path);
+    }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
+    gb_state.cart.ram_is_dirty=false;
   }
   sb_tick();                      
   sb_process_audio(&gb_state);

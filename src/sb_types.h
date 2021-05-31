@@ -11,7 +11,9 @@
 
 #include <stdint.h>
 
+#define SB_FILE_PATH_SIZE 1024
 #define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024
+#define MAX_CARTRIDGE_RAM 128 * 1024
 #define SB_U16_LO(A) ((A)&0xff)
 #define SB_U16_LO_SET(A,VAL) A = (((A)&0xff00)|(((int)(VAL))&0xff))
 #define SB_U16_HI(A) ((A >> 8) & 0xff)
@@ -53,8 +55,13 @@ typedef struct {
 
 typedef struct {
   uint8_t data[MAX_CARTRIDGE_SIZE];
+  uint8_t ram_data[MAX_CARTRIDGE_RAM]; 
   char title[17];
+  char save_file_path[SB_FILE_PATH_SIZE]; 
   bool game_boy_color;
+  bool ram_write_enable;
+  bool ram_is_dirty; 
+  uint8_t mapped_ram_bank;
   uint8_t type;
   int rom_size;
   int ram_size;
