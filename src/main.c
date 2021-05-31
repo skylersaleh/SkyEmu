@@ -1324,14 +1324,18 @@ void UpdateDrawFrame() {
 
       UnloadFileData(data);
       const char * c = GetFileNameWithoutExt(files[0]);
+#if defined(PLATFORM_WEB)
+      const char * save_file = TextFormat("/offline/%s.sav",c);
+#else
       const char * save_file = TextFormat("%s.sav",c);
+#endif
       strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
       gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0; 
 
       if(FileExists(save_file)){                          
-        int bytes=0;
+        unsigned int bytes=0;
         unsigned char* data = LoadFileData(save_file,&bytes);
-        printf("Loadied save file: %s, bytes: %d\n",save_file,bytes);
+        printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
 
         if(bytes!=gb_state.cart.ram_size){
           printf("Warning save file size(%d) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
@@ -1351,6 +1355,14 @@ void UpdateDrawFrame() {
   }
   if(gb_state.cart.ram_is_dirty){
     if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
+ #if defined(PLATFORM_WEB)
+      // Don't forget to sync to make sure you store it to IndexedDB
+    EM_ASM(
+        FS.syncfs(function (err) {
+            // Error
+        });
+    );
+ #endif
       printf("Saved %s\n", gb_state.cart.save_file_path);
     }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
     gb_state.cart.ram_is_dirty=false;
@@ -1404,6 +1416,19 @@ int main(void) {
   PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
 #if defined(PLATFORM_WEB)
+// EM_ASM is a macro to call in-line JavaScript code.
+    EM_ASM(
+        // Make a directory other than '/'
+        FS.mkdir('/offline');
+        // Then mount with IDBFS type
+        FS.mount(IDBFS, {}, '/offline');
+
+        // Then sync
+        FS.syncfs(true, function (err) {
+            // Error
+        });
+    );
+
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
   SetTargetFPS(60);
