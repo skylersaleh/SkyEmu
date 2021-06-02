@@ -20,7 +20,7 @@
 
 #define SB_NUM_SAVE_STATES 5
 #define SB_AUDIO_BUFF_SAMPLES 2048
-#define SB_AUDIO_SAMPLE_RATE 44100
+#define SB_AUDIO_SAMPLE_RATE 48000
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -60,12 +60,32 @@
 #define SB_IO_LCD_LY      0xff44
 #define SB_IO_LCD_LYC     0xff45
 
+#define SB_IO_OAM_DMA     0xff46
+
 #define SB_IO_PPU_BGP     0xff47
 #define SB_IO_PPU_OBP0    0xff48
 #define SB_IO_PPU_OBP1    0xff49
 
 #define SB_IO_LCD_WY      0xff4A
 #define SB_IO_LCD_WX      0xff4B
+
+#define SB_IO_GBC_SPEED_SWITCH 0xff4d
+#define SB_IO_GBC_VBK     0xff4f
+  
+#define SB_IO_DMA_SRC_HI  0xff51
+#define SB_IO_DMA_SRC_LO  0xff52
+#define SB_IO_DMA_DST_HI  0xff53
+#define SB_IO_DMA_DST_LO  0xff54
+#define SB_IO_DMA_MODE_LEN 0xff55
+                                 
+#define SB_IO_GBC_BCPS    0xff68
+#define SB_IO_GBC_BCPD    0xff69
+
+#define SB_IO_GBC_OCPS    0xff6A
+#define SB_IO_GBC_OCPD    0xff6B
+              
+#define SB_IO_GBC_SVBK    0xff70
+
 #define SB_IO_INTER_EN    0xffff
 
 const int GUI_PADDING = 10;
@@ -96,16 +116,40 @@ void sb_push_save_state(sb_gb_t* gb){
   sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
 }
   
-uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
-  if(addr>=0xA000&&addr<=0xBfff){
+inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
+  if(addr>=0x8000&&addr<=0x9fff){
+    uint8_t vbank =gb->mem.data[SB_IO_GBC_VBK]%SB_VRAM_NUM_BANKS;
+    return gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
+  } else if(addr>=0xA000&&addr<=0xBfff){
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
     return gb->cart.ram_data[ram_addr_off];
-  }
+  }else if(addr>=0xD000&&addr<=0xDfff){
+    uint8_t bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
+    if(bank==0)bank = 1; 
+    int ram_addr_off = 0x1000*bank+(addr-0xd000);
+    return gb->mem.wram[ram_addr_off];
+  }                                      
   return gb->mem.data[addr];
 }  
 uint8_t sb_read8(sb_gb_t *gb, int addr) { 
   //if(addr == 0xff44)return 0x90;
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
+  if(addr == SB_IO_GBC_BCPD){
+    uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+    uint8_t index = SB_BFE(bcps,0,6);
+    return gb->lcd.color_palettes[index];
+  }else if(addr == SB_IO_GBC_OCPD){
+    uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+    uint8_t index = SB_BFE(ocps,0,6);
+    return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
+  }else if (addr == SB_IO_GBC_VBK){
+    uint8_t d= sb_read8_direct(gb,addr);
+    return d|0xfe;
+  }else if (addr == 0xff26){
+    uint8_t d= sb_read8_direct(gb,addr);
+    //Hack to get OoS/OoA running TODO: Actually fix this
+    return d&0xf0;
+  } 
   return sb_read8_direct(gb,addr);
 }     
 void sb_unmap_ram(sb_gb_t*gb){
@@ -118,41 +162,64 @@ void sb_unmap_ram(sb_gb_t*gb){
 }
 void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   static int count = 0;
-  if(addr>=0xA000&&addr<=0xBfff){
-    if(gb->cart.ram_write_enable){
+  if(addr>=0x8000&&addr<=0x9fff){
+    uint8_t vbank =sb_read8_direct(gb, SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;;
+    gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value; 
+    return; 
+  }else if(addr>=0xA000&&addr<=0xBfff){
+    if(gb->cart.ram_write_enable){   
       int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
       gb->cart.ram_data[ram_addr_off]=value;
       gb->cart.ram_is_dirty = true;
     }
     return; 
+  }else if(addr>=0xD000&&addr<=0xDfff){
+    uint8_t bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
+    if(bank==0)bank = 1; 
+    int ram_addr_off = 0x1000*bank+(addr-0xd000);
+    gb->mem.wram[ram_addr_off]=value;
+    return;
   }
   if(addr<=0x7fff){
     //printf("Attempt to write to rom address %x\n",addr);
     //gb->cpu.trigger_breakpoint=true;
     return;
   }
-  
-  if(addr == 0xdd03||addr==0xdd01){
-    //printf("store: %d %x\n",count,value);
-    //gb->cpu.trigger_breakpoint=true;
-  }
-  if(addr == SB_IO_SERIAL_BYTE){
-     
-    printf("%c",(char)value);
-  }else{
-    gb->mem.data[addr]=value;
-  }
+  gb->mem.data[addr]=value;
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   if(addr == 0xff41){
     value&=~0x7;
     value|= sb_read8_direct(gb,addr)&0x7;
-  }              
-  if(addr == 0xff46){
-    int src = value<<8;
-    for(int i=0;i<=0x9F;++i){
-      int d = sb_read8_direct(gb,src+i);
-      sb_store8_direct(gb,0xfe00+i,d);
+  }else if(addr == SB_IO_DMA_MODE_LEN){
+    gb->dma.active =true; 
+    gb->dma.bytes_transferred=0;
+    gb->dma.in_hblank = false; 
+  }
+  if(addr == SB_IO_OAM_DMA){
+    gb->dma.oam_dma_active=true;
+    gb->dma.oam_bytes_transferred=0;
+    //for(int i=0;i<=0x9F;++i){
+    //  int d = sb_read8_direct(gb,src+i);
+    //  sb_store8_direct(gb,0xfe00+i,d);
+    //}
+  }else if(addr == SB_IO_GBC_BCPD){
+    uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+    uint8_t index = SB_BFE(bcps,0,6);
+    bool autoindex = SB_BFE(bcps,7,1);
+    gb->lcd.color_palettes[index] = value;
+    if(autoindex){
+      index++;
+      sb_store8_direct(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
+    }
+  }else if(addr == SB_IO_GBC_OCPD){
+    uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+    uint8_t index = SB_BFE(ocps,0,6);
+    bool autoindex = SB_BFE(ocps,7,1);
+    gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
+    if(autoindex){
+      index++;
+      sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
     }
   }else if(addr == SB_IO_DIV){
     value = 0; //All writes reset the div timer
@@ -175,9 +242,10 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     //MBC3 rombank select
     //TODO implement other mappers
     value %= (gb->cart.ram_size/0x2000);
-    printf("Switching to RAM bank %d\n", value);
     gb->cart.mapped_ram_bank = value;
     return;
+  }else if(addr == SB_IO_SERIAL_BYTE){
+    printf("%c",(char)value);
   } 
   sb_store8_direct(gb,addr,value);
 } 
@@ -386,7 +454,59 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
                   &adv_rect);
   GuiGroupBox(state_rect, "Joypad State");
   return adv_rect;
-}          
+}
+ 
+Rectangle sb_draw_dma_state(Rectangle rect, sb_gb_t *gb) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  Rectangle wr = widget_rect;
+  wr.width = GUI_PADDING;
+  wr.height = GUI_PADDING;
+          
+  int dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
+                  ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
+  int dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
+                  ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
+  uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
+
+  int len = (SB_BFE(dma_mode_length, 0,7)+1);
+  bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
+     
+
+  int div = sb_read8_direct(gb, SB_IO_DIV);
+  int tima = sb_read8_direct(gb, SB_IO_TIMA);
+  int tma = sb_read8_direct(gb, SB_IO_TMA);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("DMA SRC: %x", dma_src));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("DMA DST: %x", dma_dst));
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("Length (16B chunks): %d", len));
+
+                                                             
+  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  inside_rect.x +=rect.width/2;
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING*0.5, &widget_rect,  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("Bytes Transferred: %d", gb->dma.bytes_transferred));
+
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.x =widget_rect.x;
+  wr.y = widget_rect.y;
+ 
+  GuiCheckBox(wr,"Active",gb->dma.active);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"HDMA Mode",hdma_mode);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect); 
+  GuiGroupBox(state_rect, "DMA State");
+  return adv_rect;
+}
 Rectangle sb_draw_timer_state(Rectangle rect, sb_gb_t *gb) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -712,16 +832,26 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       //hblank-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
-    } 
+    }                                       
   }
+  gb->lcd.in_hblank = (mode&0x3)==0;
   stat = (stat&0xf8) | mode; 
   sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
   sb_store8_direct(gb, SB_IO_LCD_LY, ly);
   return new_scanline; 
+}                                      
+uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
+  return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
 }
 void sb_draw_scanline(sb_gb_t*gb){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
+  bool master_priority = false;
+  if(gb->model == SB_GBC){
+    // This bit has a different meaning in GBC mode
+    master_priority = draw_bg_win;
+    draw_bg_win = true;
+  }
   bool draw_sprite = SB_BFE(ctrl,1,1)==1;
   bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
   int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;  
@@ -755,14 +885,16 @@ void sb_draw_scanline(sb_gb_t*gb){
       render_sprites[sprite_index++]=i;
     }
   }
-
+  
   bool rendered_part_of_window = false;
   for(int x = 0; x < SB_LCD_W; ++x){
                       
-    
     const int bytes_per_tile = 2*8;
-    uint8_t r=0,g=0,b=0;
-    uint8_t color_id=0; 
+    int r=0,g=0,b=0;
+    int color_id=0;
+
+    bool background_priority= false; 
+    
     if(draw_bg_win){
       int px = x+ sx; 
       int py = y+ sy;
@@ -770,95 +902,140 @@ void sb_draw_scanline(sb_gb_t*gb){
       const int tiles_per_row = 32;
       int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
       
-      int tile_id = sb_read8_direct(gb, bg_tile_map_base+tile_offset);
+      int tile_id = sb_read_vram(gb, bg_tile_map_base+tile_offset,0);
 
       int pixel_in_tile_x = 7-(px%8);
       int pixel_in_tile_y = (py%8);
 
-
       int byte_tile_data_off = 0;
 
+      int tile_d_vram_bank = 0;
+      int tile_bg_palette = 0; 
+      
+      bool bg_to_oam_priority=false;
+      if(gb->model==SB_GBC){
+        uint8_t attr = sb_read_vram(gb, bg_tile_map_base+tile_offset,1);
+
+        bg_to_oam_priority = SB_BFE(attr,7,1);
+        bool v_flip = SB_BFE(attr,6,1);
+        bool h_flip = SB_BFE(attr,5,1);
+        tile_d_vram_bank = SB_BFE(attr,3,1);
+        tile_bg_palette = SB_BFE(attr,0,3);
+
+        if(v_flip)pixel_in_tile_y = 7-pixel_in_tile_y;
+        if(h_flip)pixel_in_tile_x = 7-pixel_in_tile_x;
+      }      
+      
       if(bg_win_tile_data_mode==0){
         byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
       }else{
         byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
       }
-      
       byte_tile_data_off+=pixel_in_tile_y*2;
-      uint8_t data1 = sb_read8_direct(gb, byte_tile_data_off);
-      uint8_t data2 = sb_read8_direct(gb, byte_tile_data_off+1);
+      uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
+      uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
       color_id = (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
       color_id |= BACKGROUND_PALETTE;
+      color_id |= tile_bg_palette<<8;
+      background_priority = bg_to_oam_priority&&master_priority;
     }
-    if(window_enable && draw_bg_win){
+     if(window_enable && draw_bg_win){
       int px = x-wx; 
-      int py = gb->lcd.curr_window_scanline;
-      if(px>=0&&py>=0){
+      if(px>=0){
+        int py = gb->lcd.curr_window_scanline;
         rendered_part_of_window = true;
         const int tile_size = 8;
         const int tiles_per_row = 32;
         int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
         
-        int tile_id = sb_read8_direct(gb, win_tile_map_base+tile_offset);
+        int tile_id = sb_read_vram(gb, win_tile_map_base+tile_offset,0);
 
         int pixel_in_tile_x = 7-(px%8);
         int pixel_in_tile_y = (py%8);
 
 
         int byte_tile_data_off = 0;
+        int tile_d_vram_bank = 0; 
+        int tile_bg_palette = 0; 
+        bool bg_to_oam_priority = false;
+        if(gb->model==SB_GBC){
+          uint8_t attr = sb_read_vram(gb, win_tile_map_base+tile_offset,1);
 
+          bg_to_oam_priority = SB_BFE(attr,7,1);
+          bool v_flip = SB_BFE(attr,6,1);
+          bool h_flip = SB_BFE(attr,5,1);
+          tile_d_vram_bank = SB_BFE(attr,3,1);
+          tile_bg_palette = SB_BFE(attr,0,3);
+
+          if(v_flip)pixel_in_tile_y = 7-pixel_in_tile_y;
+          if(h_flip)pixel_in_tile_x = 7-pixel_in_tile_x;
+
+        }  
         if(bg_win_tile_data_mode==0){
           byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
         }else{
           byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
         }
         byte_tile_data_off+=pixel_in_tile_y*2;
-        uint8_t data1 = sb_read8_direct(gb, byte_tile_data_off);
-        uint8_t data2 = sb_read8_direct(gb, byte_tile_data_off+1);
-        color_id = (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
+        uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
+        uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
+        int c_id= (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
+        color_id = c_id;
         color_id |= BACKGROUND_PALETTE;
+        color_id |= tile_bg_palette<<8;
+        background_priority = bg_to_oam_priority&&master_priority;
       }
-    } 
+    }             
     if(draw_sprite){
-      int prior_sprite_x = 256; 
+      int prior_sprite = 256; 
       for(int i=0;i<sprites_per_scanline;++i){
         int sprite = render_sprites[i];
-        if(sprite==-1)continue;
+        if(sprite==-1)break;
         int sprite_base = oam_table_offset+sprite*4;
-        int yc = sb_read8_direct(gb, sprite_base+0)-16;
         int xc = sb_read8_direct(gb, sprite_base+1)-8;
+        
+        int x_sprite = 7-(x-xc); 
+        int prior = gb->model==SB_GBC?0 : xc;
+
+        if(prior_sprite<=prior) continue;
+        //Check if the sprite is hit
+        if(x_sprite>=8 || x_sprite<0) continue;
+
+        int yc = sb_read8_direct(gb, sprite_base+0)-16;
+        int y_sprite = y-yc;       
         
         int tile = sb_read8_direct(gb, sprite_base+2);
         int attr = sb_read8_direct(gb, sprite_base+3);
-
+        int tile_d_vram_bank = 0;
+        int tile_sprite_palette =0;
+       
+        if(gb->model==SB_GBC){
+          tile_d_vram_bank = SB_BFE(attr, 3,1);
+          tile_sprite_palette = SB_BFE(attr, 0,3)<<8;
+        }
         if(sprite8x16)tile &=0xfe;
         
-        bool x_flip = SB_BFE(attr,5,1)==1;
-        bool y_flip = SB_BFE(attr,6,1)==1;
-        bool bg_win_on_top = SB_BFE(attr,7,1)==1;
+        bool x_flip = SB_BFE(attr,5,1);
+        bool y_flip = SB_BFE(attr,6,1);
+        bool bg_win_on_top = SB_BFE(attr,7,1);
                                        
-        int palette = SB_BFE(attr,4,1)==1; 
-        int x_sprite = 7-(x-xc); 
-        int y_sprite = y-yc;       
-
+        int palette = SB_BFE(attr,4,1); 
+        
         if(x_flip)x_sprite = 7-x_sprite;
         if(y_flip)y_sprite = (sprite8x16? 15 : 7)-y_sprite;
-        //Check if the sprite is hit
-        if(x_sprite>=8 || x_sprite<0)continue;
-        if(y_sprite<0 || y_sprite>=16 || (y_sprite>=8 && sprite8x16==false))continue;
 
-        if(prior_sprite_x<=xc) continue;
         
         int byte_tile_data_off = 0x8000 + (((uint8_t)(tile))*bytes_per_tile);
         byte_tile_data_off+=y_sprite*2;
 
-        uint8_t data1 = sb_read8_direct(gb, byte_tile_data_off);
-        uint8_t data2 = sb_read8_direct(gb, byte_tile_data_off+1);
-
-        uint8_t cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
-        if(bg_win_on_top){
-          if((color_id&0x3)==0){color_id = cid | (palette<<4); prior_sprite_x =xc;}
-        }else if(cid!=0){color_id = cid | (palette<<4); prior_sprite_x=xc;}
+        uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
+        uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
+                             
+        
+        int cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
+        if((bg_win_on_top||background_priority)&&master_priority){
+          if((color_id&0x3)==0){color_id = cid | (palette<<4)|tile_sprite_palette; prior_sprite =prior;}
+        }else if(cid!=0){color_id = cid | (palette<<4)|tile_sprite_palette; prior_sprite=prior;}
         
       }       
       //r = SB_BFE(tile_id,0,3)*31;
@@ -867,21 +1044,47 @@ void sb_draw_scanline(sb_gb_t*gb){
 
     }
     uint8_t palette = 0;  
-    if(color_id & BACKGROUND_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
-    else if(color_id & OBJECT_PALETTE1)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
-    else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
-    color_id = SB_BFE(palette,2*color_id,2);
-    color_id = 3-color_id; 
-    r = color_id*85;
-    g = color_id*85;
-    b = color_id*85;
+    if(gb->model == SB_GB){
+      if(color_id & BACKGROUND_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
+      else if(color_id & OBJECT_PALETTE1)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
+      else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
+      color_id = SB_BFE(palette,2*color_id,2);
 
-    const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
-    color_id = 3-color_id; 
-                                        
-    r = palette_dmg_green[color_id*3+0];
-    g = palette_dmg_green[color_id*3+1];
-    b = palette_dmg_green[color_id*3+2];
+      const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+                                          
+      r = palette_dmg_green[color_id*3+0];
+      g = palette_dmg_green[color_id*3+1];
+      b = palette_dmg_green[color_id*3+2];
+    }else if(gb->model == SB_GBC){
+
+      int palette = (color_id>>8)&0xff;
+      int entry= palette*2*4+(color_id&0x3)*2;
+      if(!(color_id & BACKGROUND_PALETTE)) entry += SB_PPU_BG_COLOR_PALETTES;
+      uint16_t color = gb->lcd.color_palettes[entry+0];
+      color |= ((int)gb->lcd.color_palettes[entry+1])<<8;
+      
+      r = SB_BFE(color,0,5);
+      g = SB_BFE(color,5,5);
+      b = SB_BFE(color,10,5);  
+
+      // Color correction algorithm from Near's article
+
+      // https://near.sh/articles/video/color-emulation
+      int R = (r * 26 + g *  4 + b *  2);
+      int G = (         g * 24 + b *  8);
+      int B = (r *  6 + g *  4 + b * 22);
+      if(R>960)R=960;
+      if(G>960)G=960;
+      if(B>960)B=960;
+      r = R >> 2;
+      g = G >> 2;
+      b = B >> 2;
+      /*
+      r = r*r/4;
+      g = g*g/4;
+      b = b*b/4;
+      */
+    }                
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;     
@@ -936,6 +1139,62 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
     sb_store8_direct(gb, SB_IO_TIMA, d); 
   }  
 }
+int sb_update_dma(sb_gb_t *gb){
+
+  int delta_cycles = 0;
+  if(gb->dma.active){
+    unsigned bytes_transferred = 0; 
+    uint16_t dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
+                    ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
+    uint16_t dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
+                    ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
+    dma_src&=0xfff0;
+    dma_dst&=0x1ff0;
+    dma_dst|=0x8000;
+    uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
+
+    int len = (SB_BFE(dma_mode_length, 0,7)+1);
+    bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
+
+    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<=SB_LCD_H-1)){
+      while(len>=0){
+        for(int i=0;i<16;++i){
+          int off = gb->dma.bytes_transferred++;
+          uint8_t data = sb_read8_direct(gb,off+dma_src);
+          sb_store8_direct(gb,off+dma_dst,data);
+          bytes_transferred+=1; 
+        }
+        len--;
+        if(hdma_mode)break;
+      }
+    
+      if(len<0){
+        gb->dma.active = false;
+        len = 0; 
+        hdma_mode = 0; 
+      }
+      uint8_t new_mode = (len&0x7f)|(hdma_mode<<7);
+      sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
+    }
+    gb->dma.in_hblank = gb->lcd.in_hblank;
+    delta_cycles+= bytes_transferred/2;
+  }
+  return delta_cycles;
+}   
+void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
+ if(gb->dma.oam_dma_active){
+    uint16_t dma_src = ((int)sb_read8_direct(gb,SB_IO_OAM_DMA))<<8u;
+    uint16_t dma_dst = 0xfe00;
+    
+    while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
+      uint8_t data = sb_read8_direct(gb,dma_src+gb->dma.oam_bytes_transferred);
+      sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+      gb->dma.oam_bytes_transferred++;
+    }
+    if(gb->dma.oam_bytes_transferred==0xA0)gb->dma.oam_dma_active=false;
+  }
+
+}
 void sb_tick(){
   static FILE* file = NULL;
   sb_poll_controller_input(&gb_state);
@@ -947,9 +1206,13 @@ void sb_tick(){
     
     gb_state.cpu.pc = 0x100;
 
-    gb_state.cpu.af=0x01B0;      
+    gb_state.cpu.af=0x01B0;   
+    gb_state.model = SB_GB;
     if(gb_state.cart.game_boy_color){
-    //  gb_state.cpu.af|=0x11<<8;
+      gb_state.model = SB_GBC;
+    }
+    if(gb_state.model == SB_GBC){
+      gb_state.cpu.af|=0x11<<8;
     }
     gb_state.cpu.bc=0x0013;
     gb_state.cpu.de=0x00D8;
@@ -1007,72 +1270,89 @@ void sb_tick(){
     if(instructions_to_execute==0)instructions_to_execute=60000;
     for(int i=0;i<instructions_to_execute;++i){
     
+        bool double_speed = false;
         sb_update_joypad_io_reg(&emu_state, &gb_state);
-        int pc = gb_state.cpu.pc;
-        
-
-        unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
-
-        //if(gb_state.cpu.pc == 0xC65F)gb_state.cpu.trigger_breakpoint =true;
-        /*
-        if(gb_state.cpu.prefix_op==false)
-        fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
-          SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
-          SB_U16_HI(gb_state.cpu.bc),SB_U16_LO(gb_state.cpu.bc),
-          SB_U16_HI(gb_state.cpu.de),SB_U16_LO(gb_state.cpu.de),
-          SB_U16_HI(gb_state.cpu.hl),SB_U16_LO(gb_state.cpu.hl),
-          gb_state.cpu.sp,pc,
-          sb_read8(&gb_state,pc),
-          sb_read8(&gb_state,pc+1),
-          sb_read8(&gb_state,pc+2),
-          sb_read8(&gb_state,pc+3)
-          ); 
-        */
-        if(gb_state.cpu.prefix_op)op+=256;
-           
-        int trigger_interrupt = -1;
-        // TODO: Can interrupts trigger between prefix ops and the second byte?
-        if(gb_state.cpu.interrupt_enable && gb_state.cpu.prefix_op==false){
-          uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
-          uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
-          uint8_t masked_interupt = ie&i_flag&0x1f;
-
-          for(int i=0;i<5;++i){
-            if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
-          }
-          if(trigger_interrupt!=-1)i_flag &= ~(1<<trigger_interrupt);
-          //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
-          sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
-        }
-        if(gb_state.cpu.deferred_interrupt_enable){
-          gb_state.cpu.deferred_interrupt_enable = false;
-          gb_state.cpu.interrupt_enable = true;
-        }
-
-        gb_state.cpu.prefix_op = false;
-        int delta_cycles = 4;
-        if(trigger_interrupt!=-1){
-          gb_state.cpu.wait_for_interrupt = false;
-          gb_state.cpu.interrupt_enable = false;
-          gb_state.cpu.deferred_interrupt_enable = false;
-          int interrupt_address = (trigger_interrupt*0x8)+0x40;
-          sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
-          delta_cycles = 5*4*4;
+        int dma_delta_cycles = sb_update_dma(&gb_state);
+        int cpu_delta_cycles = 0;
+        if(dma_delta_cycles==0){
+          int pc = gb_state.cpu.pc;
           
-        }else if(gb_state.cpu.wait_for_interrupt==false){
-          sb_instr_t inst = sb_decode_table[op];
-          gb_state.cpu.pc+=inst.length;
-          int operand1 = sb_load_operand(&gb_state,inst.op_src1);
-          int operand2 = sb_load_operand(&gb_state,inst.op_src2);
-                                  
-          int pc_before_inst = gb_state.cpu.pc; 
-          inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
-          if(gb_state.cpu.prefix_op==true)i--;
 
-          delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
+          unsigned op = sb_read8(&gb_state,gb_state.cpu.pc);
+
+          bool request_speed_switch= false; 
+          if(gb_state.model == SB_GBC){
+            unsigned speed = sb_read8(&gb_state,SB_IO_GBC_SPEED_SWITCH);
+            double_speed = SB_BFE(speed, 7, 1);
+            request_speed_switch = SB_BFE(speed, 0, 1);
+          }
+          //if(gb_state.cpu.pc == 0xC65F)gb_state.cpu.trigger_breakpoint =true;
+          /*
+          if(gb_state.cpu.prefix_op==false)
+          fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
+            SB_U16_HI(gb_state.cpu.af),SB_U16_LO(gb_state.cpu.af),
+            SB_U16_HI(gb_state.cpu.bc),SB_U16_LO(gb_state.cpu.bc),
+            SB_U16_HI(gb_state.cpu.de),SB_U16_LO(gb_state.cpu.de),
+            SB_U16_HI(gb_state.cpu.hl),SB_U16_LO(gb_state.cpu.hl),
+            gb_state.cpu.sp,pc,
+            sb_read8(&gb_state,pc),
+            sb_read8(&gb_state,pc+1),
+            sb_read8(&gb_state,pc+2),
+            sb_read8(&gb_state,pc+3)
+            ); 
+          */
+          if(gb_state.cpu.prefix_op)op+=256;
+             
+          int trigger_interrupt = -1;
+          // TODO: Can interrupts trigger between prefix ops and the second byte?
+          if(gb_state.cpu.interrupt_enable && gb_state.cpu.prefix_op==false){
+            uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
+            uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
+            uint8_t masked_interupt = ie&i_flag&0x1f;
+
+            for(int i=0;i<5;++i){
+              if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
+            }
+            if(trigger_interrupt!=-1)i_flag &= ~(1<<trigger_interrupt);
+            //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
+            sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
+          }
+          if(gb_state.cpu.deferred_interrupt_enable){
+            gb_state.cpu.deferred_interrupt_enable = false;
+            gb_state.cpu.interrupt_enable = true;
+          }
+
+          gb_state.cpu.prefix_op = false;
+          cpu_delta_cycles = 4;
+          if(trigger_interrupt!=-1){
+            gb_state.cpu.wait_for_interrupt = false;
+            gb_state.cpu.interrupt_enable = false;
+            gb_state.cpu.deferred_interrupt_enable = false;
+            int interrupt_address = (trigger_interrupt*0x8)+0x40;
+            sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
+            cpu_delta_cycles = 5*4*4;
+            
+          }else if(gb_state.cpu.wait_for_interrupt==false){
+            sb_instr_t inst = sb_decode_table[op];
+            gb_state.cpu.pc+=inst.length;
+            int operand1 = sb_load_operand(&gb_state,inst.op_src1);
+            int operand2 = sb_load_operand(&gb_state,inst.op_src2);
+                                    
+            int pc_before_inst = gb_state.cpu.pc; 
+            inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
+            if(gb_state.cpu.prefix_op==true)i--;
+
+            cpu_delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
+          }else if(gb_state.cpu.wait_for_interrupt==true && request_speed_switch){
+            gb_state.cpu.wait_for_interrupt = false; 
+            sb_store8(&gb_state,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
+          }
         }
-        bool vblank = sb_update_lcd(&gb_state,delta_cycles);
-        sb_update_timers(&gb_state,delta_cycles);
+        sb_update_oam_dma(&gb_state,cpu_delta_cycles);
+        int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles; 
+        delta_cycles_after_speed+= dma_delta_cycles;
+        bool vblank = sb_update_lcd(&gb_state,delta_cycles_after_speed);
+        sb_update_timers(&gb_state,cpu_delta_cycles+dma_delta_cycles*2);
                                 
         //sb_push_save_state(&gb_state);
 
@@ -1096,6 +1376,7 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
   rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
+  rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
   rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
   rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
                                
@@ -1248,14 +1529,14 @@ void sb_process_audio(sb_gb_t *gb){
       sample_volume+=(chan2_t>duty2?1:-1)*v2;
 
       int wav_samp = chan3_t*32; 
-      uint8_t dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
+      int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
       int offset = (wav_samp&1)? 0:4;
       dat = (dat>>offset)&0xf;
       sample_volume+=(dat-8)/7.*volume3;
 
       sample_volume+=last_noise_value*v4;
 
-      sample_volume*=0.25;
+      sample_volume*=0.25*0.1;
 
       // Clipping
       if(sample_volume>1.0)sample_volume=1;
@@ -1410,7 +1691,7 @@ int main(void) {
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
   InitAudioDevice();
-
+                                 
   SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
   audio_stream = InitAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
   PlayAudioStream(audio_stream);

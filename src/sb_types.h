@@ -23,6 +23,7 @@
 // Extract bits from a bitfield
 #define SB_BFE(VALUE, BITOFFSET, SIZE)                                         \
   (((VALUE) >> (BITOFFSET)) & ((1u << (SIZE)) - 1))
+#define SB_BIT_TEST(VALUE,BITOFFSET) ((VALUE)&(1u<<(BITOFFSET)))
 #define SB_MODE_RESET 0
 #define SB_MODE_PAUSE 1
 #define SB_MODE_RUN 2
@@ -30,6 +31,16 @@
 
 #define SB_LCD_W 160
 #define SB_LCD_H 144
+#define SB_PPU_BG_COLOR_PALETTES 64
+#define SB_PPU_SPRITE_COLOR_PALETTES 64
+#define SB_VRAM_BANK_SIZE 8192
+#define SB_VRAM_NUM_BANKS 2
+
+#define SB_WRAM_BANK_SIZE 4096
+#define SB_WRAM_NUM_BANKS 8
+
+#define SB_GB 0 
+#define SB_GBC 1
 
 // Draw and process scroll bar style edition controls
 
@@ -51,6 +62,7 @@ typedef struct {
 
 typedef struct {
   uint8_t data[65536];
+  uint8_t wram[SB_WRAM_NUM_BANKS*SB_WRAM_BANK_SIZE];
 } sb_gb_mem_t;
 
 typedef struct {
@@ -76,7 +88,18 @@ typedef struct{
   unsigned int curr_scanline;
   unsigned int curr_window_scanline;
   uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
+  uint8_t vram[SB_VRAM_BANK_SIZE*SB_VRAM_NUM_BANKS];
+  uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
+  bool in_hblank; //Used for HDMA
 } sb_lcd_ppu_t;
+typedef struct{
+  bool in_hblank; 
+  bool active;
+  int bytes_transferred;
+
+  bool oam_dma_active;
+  int oam_bytes_transferred; 
+} sb_dma_t;
 
 typedef struct{
   int clocks_till_div_inc;
@@ -89,6 +112,8 @@ typedef struct {
   sb_gb_mem_t mem;
   sb_lcd_ppu_t lcd;
   sb_timer_t timers;
+  sb_dma_t dma; 
+  int model; 
 } sb_gb_t;  
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
