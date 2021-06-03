@@ -101,6 +101,9 @@ sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0; 
 unsigned sb_save_state_index=0;
 
+uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);       
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
+
 void sb_pop_save_state(sb_gb_t* gb){
   if(sb_valid_save_states>0){
     --sb_valid_save_states;
@@ -302,6 +305,28 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
 
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
+
+  GuiLabel(widget_rect, "Panel Mode");
+  widget_rect.width =
+      widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
+  emu_state->panel_mode =
+      GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
+   
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %i]", GetFPS()));
+  return adv_rect;
+}
+ 
+Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+
+  
+  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
+                  &inside_rect);
   widget_rect.width =
       widget_rect.width / 2 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 1 / 2;
       
@@ -316,7 +341,7 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
   GuiLabel(widget_rect, "Instructions to Step");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
-
+  
   static bool edit_step_instructions = false;
   if (GuiSpinner(widget_rect, "", &emu_state->step_instructions, 0, 0x7fffffff,
                  edit_step_instructions))
@@ -333,13 +358,14 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
   if (GuiSpinner(widget_rect, "", &emu_state->pc_breakpoint, -1, 0x7fffffff,
                  edit_bp_pc))
     edit_bp_pc = !edit_bp_pc;
+  
    
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
-  GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %i]", GetFPS()));
+  GuiGroupBox(state_rect, "Debug State");
   return adv_rect;
-}
+}          
 Rectangle sb_draw_reg_state(Rectangle rect, const char *group_name,
                             const char **register_names, int *values) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -785,8 +811,12 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
   if(!enable){
     gb->lcd.scanline_cycles = 0;
     gb->lcd.curr_scanline = 0; 
+    gb->lcd.curr_window_scanline = 0; 
+    gb->lcd.wy_eq_ly = false;
+    gb->lcd.last_frame_ppu_disabled = true;
     ly = 0;   
   }else{
+    
     const int mode2_clks= 80;
     // TODO: mode 3 is 10 cycles longer for every sprite intersected
     const int mode3_clks = 168;
@@ -798,9 +828,17 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       gb->lcd.scanline_cycles-=scanline_dots;
       ly+=1; 
       gb->lcd.curr_scanline += 1; 
+      int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+      if(ly==wy)gb->lcd.wy_eq_ly = true;
     }
     
-    if(ly>153){ly = 0;gb->lcd.curr_scanline=0; gb->lcd.curr_window_scanline = 0;} 
+    if(ly>153){
+      ly = 0;
+      gb->lcd.curr_scanline=0;
+      gb->lcd.curr_window_scanline = 0;
+      gb->lcd.wy_eq_ly=false;
+      gb->lcd.last_frame_ppu_disabled = false;
+    } 
 
 
     if(gb->lcd.scanline_cycles<=mode2_clks)mode = 2;
@@ -808,7 +846,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     else mode =0;
 
     int old_mode = stat&0x7;
-    if((old_mode&0x3)!=0&&(mode&0x3)==0)new_scanline=true;
+    if((old_mode&0x3)!=0&&(mode&0x3)==0)new_scanline=!gb->lcd.last_frame_ppu_disabled;
     
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt = SB_BFE(stat, 5,1);
@@ -854,11 +892,95 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
 }
-
-Rectangle sb_draw_vram_state(Rectangle rect, sb_gb_t *gb) {
+ 
+Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
   static uint8_t tmp_image[512*512*3];
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
+  
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;  
+  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;  
+  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;  
+   
+  // Draw Tilemaps
+  for(int tile_map = 0;tile_map<2;++tile_map){
+    const char * name = tile_map == 0  ? "Background" : "Window"; 
+    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+    GuiLabel(widget_rect, TextFormat("%s Tile Map",name));
+
+    int image_height = 32*(8+2);
+    int image_width =  32*(8+2);
+    sb_vertical_adv(inside_rect, image_height, GUI_PADDING, &widget_rect,  &inside_rect);
+    Rectangle wr = widget_rect;
+    int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
+    int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+    int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
+    int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
+    
+    int box_x1 = tile_map ==0 ? sx : wx;
+    int box_x2 = box_x1+(SB_LCD_W-1);
+    int box_y1 = tile_map ==0 ? sy : wy;
+    int box_y2 = box_y1+(SB_LCD_H-1);
+    int tile_map_base = tile_map==0? bg_tile_map_base:win_tile_map_base;
+    int scanline = tile_map==0 ? gb->lcd.curr_scanline +sy : gb->lcd.curr_window_scanline;
+    for(int yt = 0; yt<32;++yt)
+      for(int xt = 0; xt<32;++xt)
+        for(int py = 0;py<8;++py)
+          for(int px = 0;px<8;++px){
+            int x = xt*8+px;
+            int y = yt*8+py;
+            int color_id = sb_lookup_tile(gb,x,y,tile_map_base,bg_win_tile_data_mode);
+            int p = (xt*10+(px)+1)+(yt*10+py+1)*image_width;
+            int r=0,g=0,b=0;
+            sb_lookup_palette_color(gb,color_id,&r,&g,&b);              
+            if(((x==(box_x1%256)||x==(box_x2%256)) && (((y-box_y1)&0xff)>=0 && ((box_y2-y)&0xff) <=box_y2-box_y1))||
+               ((y==(box_y1%256)||y==(box_y2%256)) && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
+               r=255; g=b=0;
+            }  
+            if(y == (scanline&0xff) &&(((x-box_x1)&0xff)>=0 && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
+              b = 255;  r=g=0;
+            }
+            tmp_image[p*3+0]=r;
+            tmp_image[p*3+1]=g;
+            tmp_image[p*3+2]=b;
+          }
+    Image screenIm = {
+          .data = tmp_image,
+          .width = image_width,
+          .height = image_height,
+          .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+          .mipmaps = 1
+    };
+
+    Texture2D screenTex = LoadTextureFromImage(screenIm); 
+    SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
+    Rectangle im_rect;
+    im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
+    im_rect.y = widget_rect.y;
+    im_rect.width = image_width;
+    im_rect.height = image_height;
+
+    DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255}); 
+    UnloadTexture(screenTex);
+  }        
+                              
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect); 
+  GuiGroupBox(state_rect, "PPU State");
+  return adv_rect;
+}
+Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
+  static uint8_t tmp_image[512*512*3];
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;  
+  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;  
+  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;  
+                          
   // Draw tile data arrays
   for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
     sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
@@ -896,18 +1018,17 @@ Rectangle sb_draw_vram_state(Rectangle rect, sb_gb_t *gb) {
           .mipmaps = 1
     };
 
-    
-      
     Texture2D screenTex = LoadTextureFromImage(screenIm); 
     SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
     Rectangle im_rect;
-    im_rect.x = widget_rect.x;
+    im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
     im_rect.y = widget_rect.y;
     im_rect.width = image_width;
     im_rect.height = image_height;
 
     DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255}); 
-                             
+    UnloadTexture(screenTex);
+      
   }                            
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
@@ -915,13 +1036,100 @@ Rectangle sb_draw_vram_state(Rectangle rect, sb_gb_t *gb) {
   GuiGroupBox(state_rect, "PPU State");
   return adv_rect;
 }
-void sb_draw_vram(sb_gb_t* gb){
- 
+// Returns info about the pixel in the tile map packed into a 32bit integer
+// ret[1:0] = color_id
+// ret[7:2] = palette_id
+// ret[8]   = backgroud_priority          
+#define SB_BACKG_PALETTE 0
+#define SB_OBJ0_PALETTE 1
+#define SB_OBJ1_PALETTE 2
+uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode){        
+  const int tile_size = 8;
+  const int tiles_per_row = 32;
+  int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
+  
+  int tile_id = sb_read_vram(gb, tile_base+tile_offset,0);
+
+  int pixel_in_tile_x = 7-(px%8);
+  int pixel_in_tile_y = (py%8);
+
+  int byte_tile_data_off = 0;
+
+  int tile_d_vram_bank = 0;
+  int tile_bg_palette = 0; 
+  
+  bool bg_to_oam_priority=false;
+  tile_bg_palette = SB_BACKG_PALETTE;
+  if(gb->model==SB_GBC){
+    uint8_t attr = sb_read_vram(gb, tile_base+tile_offset,1);
+
+    bg_to_oam_priority = SB_BFE(attr,7,1);
+    bool v_flip = SB_BFE(attr,6,1);
+    bool h_flip = SB_BFE(attr,5,1);
+    tile_d_vram_bank = SB_BFE(attr,3,1);
+    tile_bg_palette = SB_BFE(attr,0,3);
+
+    if(v_flip)pixel_in_tile_y = 7-pixel_in_tile_y;
+    if(h_flip)pixel_in_tile_x = 7-pixel_in_tile_x;
+  }      
+  
+  const int bytes_per_tile = 2*8;
+  if(data_mode==0){
+    byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
+  }else{
+    byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
+  }
+  byte_tile_data_off+=pixel_in_tile_y*2;
+  uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
+  uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
+  int color_id = (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
+  color_id |= (tile_bg_palette&0x3f)<<2;
+  if(bg_to_oam_priority)color_id|= 1<<8; 
+  return color_id; 
+}
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
+  uint8_t palette = 0;  
+  if(gb->model == SB_GB){                
+    int pal_id = SB_BFE(color_id,2,6);
+    if(pal_id==SB_BACKG_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
+    else if(pal_id==SB_OBJ1_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
+    else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
+    color_id = SB_BFE(palette,2*(color_id&0x3),2);
+
+    const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+                                        
+    *r = palette_dmg_green[color_id*3+0];
+    *g = palette_dmg_green[color_id*3+1];
+    *b = palette_dmg_green[color_id*3+2];
+  }else if(gb->model == SB_GBC){
+
+    int palette = SB_BFE(color_id,2,6);
+    int entry= palette*8+(color_id&0x3)*2;
+    uint16_t color = gb->lcd.color_palettes[entry+0];
+    color |= ((int)gb->lcd.color_palettes[entry+1])<<8;
+    
+    int tr = SB_BFE(color,0,5);
+    int tg = SB_BFE(color,5,5);
+    int tb = SB_BFE(color,10,5);  
+
+    // Color correction algorithm from Near's article
+
+    // https://near.sh/articles/video/color-emulation
+    int R = (tr * 26 + tg *  4 + tb *  2);
+    int G = (         tg * 24 + tb *  8);
+    int B = (tr *  6 + tg *  4 + tb * 22);
+    if(R>960)R=960;
+    if(G>960)G=960;
+    if(B>960)B=960;
+    *r = R >> 2;
+    *g = G >> 2;
+    *b = B >> 2;
+  } 
 }
 void sb_draw_scanline(sb_gb_t*gb){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
-  bool master_priority = false;
+  bool master_priority = true;
   if(gb->model == SB_GBC){
     // This bit has a different meaning in GBC mode
     master_priority = draw_bg_win;
@@ -941,14 +1149,12 @@ void sb_draw_scanline(sb_gb_t*gb){
   int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
   int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
 
-  if(wy>y)window_enable = false; 
+  if(!gb->lcd.wy_eq_ly)window_enable = false; 
   int sprite_h = sprite8x16 ? 16: 8;
   const int sprites_per_scanline = 10;
   // HW only draws first 10 sprites that touch a scanline
   int render_sprites[sprites_per_scanline];
   int sprite_index=0; 
-  const int BACKGROUND_PALETTE = 0x40; 
-  const int OBJECT_PALETTE1 = 0x10; 
   
   for(int i=0;i<sprites_per_scanline;++i)render_sprites[i]=-1;
   const int num_sprites= 40;     
@@ -973,92 +1179,14 @@ void sb_draw_scanline(sb_gb_t*gb){
     if(draw_bg_win){
       int px = x+ sx; 
       int py = y+ sy;
-      const int tile_size = 8;
-      const int tiles_per_row = 32;
-      int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
-      
-      int tile_id = sb_read_vram(gb, bg_tile_map_base+tile_offset,0);
-
-      int pixel_in_tile_x = 7-(px%8);
-      int pixel_in_tile_y = (py%8);
-
-      int byte_tile_data_off = 0;
-
-      int tile_d_vram_bank = 0;
-      int tile_bg_palette = 0; 
-      
-      bool bg_to_oam_priority=false;
-      if(gb->model==SB_GBC){
-        uint8_t attr = sb_read_vram(gb, bg_tile_map_base+tile_offset,1);
-
-        bg_to_oam_priority = SB_BFE(attr,7,1);
-        bool v_flip = SB_BFE(attr,6,1);
-        bool h_flip = SB_BFE(attr,5,1);
-        tile_d_vram_bank = SB_BFE(attr,3,1);
-        tile_bg_palette = SB_BFE(attr,0,3);
-
-        if(v_flip)pixel_in_tile_y = 7-pixel_in_tile_y;
-        if(h_flip)pixel_in_tile_x = 7-pixel_in_tile_x;
-      }      
-      
-      if(bg_win_tile_data_mode==0){
-        byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
-      }else{
-        byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
-      }
-      byte_tile_data_off+=pixel_in_tile_y*2;
-      uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
-      uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
-      color_id = (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
-      color_id |= BACKGROUND_PALETTE;
-      color_id |= tile_bg_palette<<8;
-      background_priority = bg_to_oam_priority&&master_priority;
+      color_id = sb_lookup_tile(gb,px,py,bg_tile_map_base,bg_win_tile_data_mode);
     }
      if(window_enable && draw_bg_win){
       int px = x-wx; 
       if(px>=0){
         int py = gb->lcd.curr_window_scanline;
         rendered_part_of_window = true;
-        const int tile_size = 8;
-        const int tiles_per_row = 32;
-        int tile_offset = (((px&0xff)/tile_size)+((py&0xff)/tile_size)*tiles_per_row)&0x3ff;
-        
-        int tile_id = sb_read_vram(gb, win_tile_map_base+tile_offset,0);
-
-        int pixel_in_tile_x = 7-(px%8);
-        int pixel_in_tile_y = (py%8);
-
-
-        int byte_tile_data_off = 0;
-        int tile_d_vram_bank = 0; 
-        int tile_bg_palette = 0; 
-        bool bg_to_oam_priority = false;
-        if(gb->model==SB_GBC){
-          uint8_t attr = sb_read_vram(gb, win_tile_map_base+tile_offset,1);
-
-          bg_to_oam_priority = SB_BFE(attr,7,1);
-          bool v_flip = SB_BFE(attr,6,1);
-          bool h_flip = SB_BFE(attr,5,1);
-          tile_d_vram_bank = SB_BFE(attr,3,1);
-          tile_bg_palette = SB_BFE(attr,0,3);
-
-          if(v_flip)pixel_in_tile_y = 7-pixel_in_tile_y;
-          if(h_flip)pixel_in_tile_x = 7-pixel_in_tile_x;
-
-        }  
-        if(bg_win_tile_data_mode==0){
-          byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
-        }else{
-          byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
-        }
-        byte_tile_data_off+=pixel_in_tile_y*2;
-        uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
-        uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
-        int c_id= (SB_BFE(data1,pixel_in_tile_x,1)+SB_BFE(data2,pixel_in_tile_x,1)*2);
-        color_id = c_id;
-        color_id |= BACKGROUND_PALETTE;
-        color_id |= tile_bg_palette<<8;
-        background_priority = bg_to_oam_priority&&master_priority;
+        color_id = sb_lookup_tile(gb,px,py,win_tile_map_base,bg_win_tile_data_mode);
       }
     }             
     if(draw_sprite){
@@ -1084,9 +1212,10 @@ void sb_draw_scanline(sb_gb_t*gb){
         int tile_d_vram_bank = 0;
         int tile_sprite_palette =0;
        
+        int palette = SB_BFE(attr,4,1)!=0?SB_OBJ1_PALETTE:SB_OBJ0_PALETTE; 
         if(gb->model==SB_GBC){
           tile_d_vram_bank = SB_BFE(attr, 3,1);
-          tile_sprite_palette = SB_BFE(attr, 0,3)<<8;
+          palette = SB_BFE(attr, 0,3)+8;
         }
         if(sprite8x16)tile &=0xfe;
         
@@ -1094,7 +1223,6 @@ void sb_draw_scanline(sb_gb_t*gb){
         bool y_flip = SB_BFE(attr,6,1);
         bool bg_win_on_top = SB_BFE(attr,7,1);
                                        
-        int palette = SB_BFE(attr,4,1); 
         
         if(x_flip)x_sprite = 7-x_sprite;
         if(y_flip)y_sprite = (sprite8x16? 15 : 7)-y_sprite;
@@ -1108,9 +1236,9 @@ void sb_draw_scanline(sb_gb_t*gb){
                              
         
         int cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
-        if((bg_win_on_top||background_priority)&&master_priority){
-          if((color_id&0x3)==0){color_id = cid | (palette<<4)|tile_sprite_palette; prior_sprite =prior;}
-        }else if(cid!=0){color_id = cid | (palette<<4)|tile_sprite_palette; prior_sprite=prior;}
+        if((bg_win_on_top||(SB_BFE(color_id,8,1)))&&master_priority){
+          if((color_id&0x3)==0&&cid!=0){color_id = cid | (palette<<2); prior_sprite =prior;}
+        }else if(cid!=0){color_id = cid | (palette<<2); prior_sprite=prior;}
         
       }       
       //r = SB_BFE(tile_id,0,3)*31;
@@ -1118,48 +1246,7 @@ void sb_draw_scanline(sb_gb_t*gb){
       //b = SB_BFE(tile_id,6,2)*63;
 
     }
-    uint8_t palette = 0;  
-    if(gb->model == SB_GB){
-      if(color_id & BACKGROUND_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
-      else if(color_id & OBJECT_PALETTE1)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
-      else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
-      color_id = SB_BFE(palette,2*color_id,2);
-
-      const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
-                                          
-      r = palette_dmg_green[color_id*3+0];
-      g = palette_dmg_green[color_id*3+1];
-      b = palette_dmg_green[color_id*3+2];
-    }else if(gb->model == SB_GBC){
-
-      int palette = (color_id>>8)&0xff;
-      int entry= palette*2*4+(color_id&0x3)*2;
-      if(!(color_id & BACKGROUND_PALETTE)) entry += SB_PPU_BG_COLOR_PALETTES;
-      uint16_t color = gb->lcd.color_palettes[entry+0];
-      color |= ((int)gb->lcd.color_palettes[entry+1])<<8;
-      
-      r = SB_BFE(color,0,5);
-      g = SB_BFE(color,5,5);
-      b = SB_BFE(color,10,5);  
-
-      // Color correction algorithm from Near's article
-
-      // https://near.sh/articles/video/color-emulation
-      int R = (r * 26 + g *  4 + b *  2);
-      int G = (         g * 24 + b *  8);
-      int B = (r *  6 + g *  4 + b * 22);
-      if(R>960)R=960;
-      if(G>960)G=960;
-      if(B>960)B=960;
-      r = R >> 2;
-      g = G >> 2;
-      b = B >> 2;
-      /*
-      r = r*r/4;
-      g = g*g/4;
-      b = b*b/4;
-      */
-    }                
+    sb_lookup_palette_color(gb,color_id,&r,&g,&b);              
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;     
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;     
@@ -1453,12 +1540,16 @@ void sb_draw_sidebar(Rectangle rect) {
   Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
 
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
-  rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
-  rect_inside = sb_draw_vram_state(rect_inside, &gb_state);
-  rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
-  rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
-  rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
-  rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
+  if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
+  else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
+  else if(emu_state.panel_mode==SB_PANEL_CPU){
+    rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
+    rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
+    rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
+    rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
+    rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
+    rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
+  }
                                
 }
 float compute_vol_env_slope(uint8_t d){

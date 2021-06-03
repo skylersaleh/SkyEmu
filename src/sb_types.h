@@ -40,7 +40,12 @@
 #define SB_WRAM_NUM_BANKS 8
 
 #define SB_GB 0 
-#define SB_GBC 1
+#define SB_GBC 1 
+
+#define SB_PANEL_CPU      0
+#define SB_PANEL_TILEMAPS 1
+#define SB_PANEL_TILEDATA 2
+#define SB_PANEL_AUDIO    3
 
 // Draw and process scroll bar style edition controls
 
@@ -48,6 +53,7 @@ typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
   int pc_breakpoint;     // PC to run until
+  int panel_mode;
 } sb_emu_state_t;
 
 typedef struct {
@@ -91,6 +97,8 @@ typedef struct{
   uint8_t vram[SB_VRAM_BANK_SIZE*SB_VRAM_NUM_BANKS];
   uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
   bool in_hblank; //Used for HDMA
+  bool wy_eq_ly;
+  bool last_frame_ppu_disabled;
 } sb_lcd_ppu_t;
 typedef struct{
   bool in_hblank; 
