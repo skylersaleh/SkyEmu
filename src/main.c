@@ -52,6 +52,7 @@
 #define SB_IO_AUD4_POLY         0xff22
 #define SB_IO_AUD4_COUNTER      0xff23
 
+#define SB_IO_SOUND_ON_OFF      0xff26
 #define SB_IO_INTER_F     0xff0f
 #define SB_IO_LCD_CTRL    0xff40
 #define SB_IO_LCD_STAT    0xff41
@@ -134,22 +135,20 @@ inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
 uint8_t sb_read8(sb_gb_t *gb, int addr) { 
   //if(addr == 0xff44)return 0x90;
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
-  if(addr == SB_IO_GBC_BCPD){
-    uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
-    uint8_t index = SB_BFE(bcps,0,6);
-    return gb->lcd.color_palettes[index];
-  }else if(addr == SB_IO_GBC_OCPD){
-    uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
-    uint8_t index = SB_BFE(ocps,0,6);
-    return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
-  }else if (addr == SB_IO_GBC_VBK){
-    uint8_t d= sb_read8_direct(gb,addr);
-    return d|0xfe;
-  }else if (addr == 0xff26){
-    uint8_t d= sb_read8_direct(gb,addr);
-    //Hack to get OoS/OoA running TODO: Actually fix this
-    return d&0xf0;
-  } 
+  if(addr >=0xff00){
+    if(addr == SB_IO_GBC_BCPD){
+      uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+      uint8_t index = SB_BFE(bcps,0,6);
+      return gb->lcd.color_palettes[index];
+    }else if(addr == SB_IO_GBC_OCPD){
+      uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+      uint8_t index = SB_BFE(ocps,0,6);
+      return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
+    }else if (addr == SB_IO_GBC_VBK){
+      uint8_t d= sb_read8_direct(gb,addr);
+      return d|0xfe;
+    }
+  }
   return sb_read8_direct(gb,addr);
 }     
 void sb_unmap_ram(sb_gb_t*gb){
@@ -188,41 +187,55 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   gb->mem.data[addr]=value;
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
-  if(addr == 0xff41){
-    value&=~0x7;
-    value|= sb_read8_direct(gb,addr)&0x7;
-  }else if(addr == SB_IO_DMA_MODE_LEN){
-    gb->dma.active =true; 
-    gb->dma.bytes_transferred=0;
-    gb->dma.in_hblank = false; 
-  }
-  if(addr == SB_IO_OAM_DMA){
-    gb->dma.oam_dma_active=true;
-    gb->dma.oam_bytes_transferred=0;
-    //for(int i=0;i<=0x9F;++i){
-    //  int d = sb_read8_direct(gb,src+i);
-    //  sb_store8_direct(gb,0xfe00+i,d);
-    //}
-  }else if(addr == SB_IO_GBC_BCPD){
-    uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
-    uint8_t index = SB_BFE(bcps,0,6);
-    bool autoindex = SB_BFE(bcps,7,1);
-    gb->lcd.color_palettes[index] = value;
-    if(autoindex){
-      index++;
-      sb_store8_direct(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
+  if(addr>=0xff00){
+    if(addr == 0xff41){
+      value&=~0x7;
+      value|= sb_read8_direct(gb,addr)&0x7;
+    }else if(addr == SB_IO_DMA_MODE_LEN){
+      if(gb->dma.active){
+        // Writting bit 7 to 0 for a running transfer halts HDMA
+        if(!(value&0x80)){
+          gb->dma.active = false;
+        }
+      }else{
+        gb->dma.active =true; 
+        gb->dma.bytes_transferred=0;
+        gb->dma.in_hblank = gb->lcd.in_hblank;
+      }
     }
-  }else if(addr == SB_IO_GBC_OCPD){
-    uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
-    uint8_t index = SB_BFE(ocps,0,6);
-    bool autoindex = SB_BFE(ocps,7,1);
-    gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
-    if(autoindex){
-      index++;
-      sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
-    }
-  }else if(addr == SB_IO_DIV){
-    value = 0; //All writes reset the div timer
+    if(addr == SB_IO_OAM_DMA){
+      gb->dma.oam_dma_active=true;
+      gb->dma.oam_bytes_transferred=0;
+      //for(int i=0;i<=0x9F;++i){
+      //  int d = sb_read8_direct(gb,src+i);
+      //  sb_store8_direct(gb,0xfe00+i,d);
+      //}
+    }else if(addr == SB_IO_GBC_BCPD){
+      uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+      uint8_t index = SB_BFE(bcps,0,6);
+      bool autoindex = SB_BFE(bcps,7,1);
+      gb->lcd.color_palettes[index] = value;
+      if(autoindex){
+        index++;
+        sb_store8_direct(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
+      }
+    }else if(addr == SB_IO_GBC_OCPD){
+      uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+      uint8_t index = SB_BFE(ocps,0,6);
+      bool autoindex = SB_BFE(ocps,7,1);
+      gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
+      if(autoindex){
+        index++;
+        sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
+      }
+    }else if(addr == SB_IO_DIV){
+      value = 0; //All writes reset the div timer
+    }else if(addr == SB_IO_SERIAL_BYTE){
+      printf("%c",(char)value);
+    } else if (addr == SB_IO_SOUND_ON_OFF){
+      uint8_t d= sb_read8_direct(gb,addr);
+      value = (d&0x7f)|(value&0x80);
+    } 
   }else if(addr >= 0x0000 && addr <=0x1fff){
     if((value&0xf)==0xA) gb->cart.ram_write_enable = true;
     else gb->cart.ram_write_enable = false;
@@ -244,9 +257,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     value %= (gb->cart.ram_size/0x2000);
     gb->cart.mapped_ram_bank = value;
     return;
-  }else if(addr == SB_IO_SERIAL_BYTE){
-    printf("%c",(char)value);
-  } 
+  }
   sb_store8_direct(gb,addr,value);
 } 
 void sb_store16(sb_gb_t *gb, int addr, unsigned int value) {
@@ -843,6 +854,70 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
 }
+
+Rectangle sb_draw_vram_state(Rectangle rect, sb_gb_t *gb) {
+  static uint8_t tmp_image[512*512*3];
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  // Draw tile data arrays
+  for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
+    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+    GuiLabel(widget_rect, TextFormat("Tile Data (Bank %d)",tile_data_bank));
+
+    int scale = 1;
+    int image_height = 384/32*(8+2)*scale;
+    int image_width =  32*(8+2)*scale;
+    sb_vertical_adv(inside_rect, image_height, GUI_PADDING, &widget_rect,  &inside_rect);
+    Rectangle wr = widget_rect;
+    
+    int tile_data_base = 0x8000;
+    for(int t=0;t<384;++t){
+      int xt = (t%32)*10;
+      int yt = (t/32)*10;
+
+      for(int py = 0;py<8;++py)
+        for(int px = 0;px<8;++px){
+          int d = tile_data_base+py*2+ t*16;
+          uint8_t data1 = sb_read_vram(gb,d,tile_data_bank);
+          uint8_t data2 = sb_read_vram(gb,d+1,tile_data_bank);
+          uint8_t value = SB_BFE(data1,px,1)+SB_BFE(data2,px,1)*2;
+          uint8_t color = value*80;
+          int p = (xt+(7-px)+1)+(yt+py+1)*image_width;
+          tmp_image[p*3+0]=color;
+          tmp_image[p*3+1]=color;
+          tmp_image[p*3+2]=color;
+        }
+    }
+    Image screenIm = {
+          .data = tmp_image,
+          .width = image_width,
+          .height = image_height,
+          .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+          .mipmaps = 1
+    };
+
+    
+      
+    Texture2D screenTex = LoadTextureFromImage(screenIm); 
+    SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
+    Rectangle im_rect;
+    im_rect.x = widget_rect.x;
+    im_rect.y = widget_rect.y;
+    im_rect.width = image_width;
+    im_rect.height = image_height;
+
+    DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255}); 
+                             
+  }                            
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect); 
+  GuiGroupBox(state_rect, "PPU State");
+  return adv_rect;
+}
+void sb_draw_vram(sb_gb_t* gb){
+ 
+}
 void sb_draw_scanline(sb_gb_t*gb){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
@@ -1114,7 +1189,7 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
     uint8_t d = sb_read8_direct(gb, SB_IO_DIV);
     sb_store8_direct(gb, SB_IO_DIV, d+1); 
   }
-  gb->timers.clocks_till_tima_inc -=delta_clocks;
+  if(tima_enable)gb->timers.clocks_till_tima_inc -=delta_clocks;
   if(gb->timers.clocks_till_tima_inc<0){
     int period =0;
     switch(clk_sel){
@@ -1153,10 +1228,10 @@ int sb_update_dma(sb_gb_t *gb){
     dma_dst|=0x8000;
     uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
 
-    int len = (SB_BFE(dma_mode_length, 0,7)+1);
+    int len = (SB_BFE(dma_mode_length, 0,7));
     bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
 
-    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<=SB_LCD_H-1)){
+    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<=SB_LCD_H)){
       while(len>=0){
         for(int i=0;i<16;++i){
           int off = gb->dma.bytes_transferred++;
@@ -1168,12 +1243,13 @@ int sb_update_dma(sb_gb_t *gb){
         if(hdma_mode)break;
       }
     
+      uint8_t new_mode = (len&0x7f)|(hdma_mode<<7);
       if(len<0){
         gb->dma.active = false;
         len = 0; 
-        hdma_mode = 0; 
+        hdma_mode = 0;
+        new_mode = 0xff;
       }
-      uint8_t new_mode = (len&0x7f)|(hdma_mode<<7);
       sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
     }
     gb->dma.in_hblank = gb->lcd.in_hblank;
@@ -1202,6 +1278,9 @@ void sb_tick(){
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
+    memset(&gb_state.dma, 0, sizeof(gb_state.dma));
+    memset(&gb_state.timers, 0, sizeof(gb_state.timers));
+    memset(&gb_state.lcd, 0, sizeof(gb_state.lcd));
     //memset(&gb_state.mem, 0, sizeof(gb_state.mem));
     
     gb_state.cpu.pc = 0x100;
@@ -1375,6 +1454,7 @@ void sb_draw_sidebar(Rectangle rect) {
 
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
   rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
+  rect_inside = sb_draw_vram_state(rect_inside, &gb_state);
   rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
   rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
   rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
@@ -1392,7 +1472,7 @@ float compute_vol_env_slope(uint8_t d){
   return slope/16.; 
 }
 AudioStream audio_stream;
-void sb_process_audio(sb_gb_t *gb){
+void sb_process_audio(sb_gb_t *gb, bool global_mute){
   static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES]; 
   static float chan1_t = 0, length_t1=0; 
   static float chan2_t = 0, length_t2=0;
@@ -1536,7 +1616,8 @@ void sb_process_audio(sb_gb_t *gb){
 
       sample_volume+=last_noise_value*v4;
 
-      sample_volume*=0.25*0.1;
+      sample_volume*=0.25*0.1;              
+      if(global_mute ==true)sample_volume = 0;
 
       // Clipping
       if(sample_volume>1.0)sample_volume=1;
@@ -1648,8 +1729,9 @@ void UpdateDrawFrame() {
     }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
     gb_state.cart.ram_is_dirty=false;
   }
-  sb_tick();                      
-  sb_process_audio(&gb_state);
+  sb_tick();                  
+  bool mute = emu_state.run_mode != SB_MODE_RUN;
+  sb_process_audio(&gb_state, mute);
 
   // Draw
   //-----------------------------------------------------
