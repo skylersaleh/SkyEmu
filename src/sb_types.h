@@ -81,6 +81,7 @@ typedef struct {
   bool ram_is_dirty; 
   uint8_t mapped_ram_bank;
   uint8_t type;
+  uint8_t mbc_type; 
   int rom_size;
   int ram_size;
 } sb_gb_cartridge_t;

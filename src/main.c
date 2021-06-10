@@ -89,6 +89,14 @@
 
 #define SB_IO_INTER_EN    0xffff
 
+#define SB_MBC_NO_MBC 0
+#define SB_MBC_MBC1 1
+#define SB_MBC_MBC2 2
+#define SB_MBC_MBC3 3
+#define SB_MBC_MBC5 5
+#define SB_MBC_MBC6 6
+#define SB_MBC_MBC7 7
+
 const int GUI_PADDING = 10;
 const int GUI_ROW_HEIGHT = 30;
 const int GUI_LABEL_HEIGHT = 0;
@@ -209,10 +217,6 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     if(addr == SB_IO_OAM_DMA){
       gb->dma.oam_dma_active=true;
       gb->dma.oam_bytes_transferred=0;
-      //for(int i=0;i<=0x9F;++i){
-      //  int d = sb_read8_direct(gb,src+i);
-      //  sb_store8_direct(gb,0xfe00+i,d);
-      //}
     }else if(addr == SB_IO_GBC_BCPD){
       uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
@@ -233,6 +237,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       }
     }else if(addr == SB_IO_DIV){
       value = 0; //All writes reset the div timer
+      sb_store8(gb,SB_IO_TIMA,0);//TIMA and DIV are the same counter
     }else if(addr == SB_IO_SERIAL_BYTE){
       printf("%c",(char)value);
     } else if (addr == SB_IO_SOUND_ON_OFF){
@@ -240,18 +245,24 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       value = (d&0x7f)|(value&0x80);
     } 
   }else if(addr >= 0x0000 && addr <=0x1fff){
-    if((value&0xf)==0xA) gb->cart.ram_write_enable = true;
-    else gb->cart.ram_write_enable = false;
+    gb->cart.ram_write_enable = (value&0xf)==0xA;
   }else if(addr >= 0x2000 && addr <=0x3fff){
     //MBC3 rombank select
+    static int top_bit = 0; 
+    static int lower_bits = 0; 
     //TODO implement other mappers
-    value&=0x7f; 
-    if(value ==0)value = 1; 
+    if(addr>=0x3000){
+      top_bit = value&1;
+      value = 0;
+    }else lower_bits = value;
+    // On MBC5, bank 0 actually gives bank 0 
+    if(value ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)value = 1; 
     //printf("Switching to ROM bank %d\n", value);
-    unsigned int bank_off = 0x4000*value;
     unsigned int size = gb->cart.rom_size;
+    value %= (gb->cart.rom_size)/0x4000;
+    unsigned int bank_off = 0x4000*(lower_bits |(top_bit<<8));
     for(int i= 0; i<0x4000;++i){
-      gb->mem.data[0x4000+i] = gb->cart.data[(bank_off+i)%size];
+      gb->mem.data[0x4000+i] = gb->cart.data[(bank_off+i)];
     }
     return;
   }else if(addr >= 0x4000 && addr <=0x5fff){
@@ -616,78 +627,6 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
   GuiGroupBox(state_rect, "Cartridge State (Drag and Drop .GBC to Load ROM)");
   return adv_rect;
 }
-Rectangle sb_draw_tile_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
-                            sb_gb_t *gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  const char *register_names_16b[] = {"AF", "BC", "DE", "HL", "SP", "PC", NULL};
-
-  int register_values_16b[] = {cpu_state->af, cpu_state->bc, cpu_state->de,
-                               cpu_state->hl, cpu_state->sp, cpu_state->pc};
-
-  const char *register_names_8b[] = {"A", "F", "B", "C", "D",
-                                     "E", "H", "L", NULL};
-
-  int register_values_8b[] = {
-      SB_U16_HI(cpu_state->af), SB_U16_LO(cpu_state->af),
-      SB_U16_HI(cpu_state->bc), SB_U16_LO(cpu_state->bc),
-      SB_U16_HI(cpu_state->de), SB_U16_LO(cpu_state->de),
-      SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
-  };
-
-  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", "Prefix",  NULL};
-
-  bool flag_values[] = {
-      SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
-      SB_BFE(cpu_state->af, SB_N_BIT, 1), // N
-      SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
-      SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
-      cpu_state->interrupt_enable, 
-      cpu_state->prefix_op
-  };
-  // Split registers into three rects horizontally
-  {
-    Rectangle in_rect[3];
-    const char *sections[] = {"16-bit Registers", "8-bit Registers", "Flags"};
-    int orig_y = inside_rect.y;
-    int x_off = 0;
-    for (int i = 0; i < 3; ++i) {
-      in_rect[i] = inside_rect;
-      in_rect[i].width = inside_rect.width / 3 - GUI_PADDING * 2 / 3;
-      in_rect[i].x += x_off;
-      x_off += in_rect[i].width + GUI_PADDING;
-    }
-    in_rect[0] = sb_draw_reg_state(in_rect[0], "16-bit Registers",
-                                   register_names_16b, register_values_16b);
-
-    in_rect[1] = sb_draw_reg_state(in_rect[1], "8-bit Registers",
-                                   register_names_8b, register_values_8b);
-
-    in_rect[2] =
-        sb_draw_flag_state(in_rect[2], "Flags", flag_names, flag_values);
-    for (int i = 0; i < 3; ++i) {
-      if (inside_rect.y < in_rect[i].y)
-        inside_rect.y = in_rect[i].y;
-    }
-    for (int i = 0; i < 3; ++i) {
-      in_rect[i].height = inside_rect.y - orig_y - GUI_PADDING;
-      in_rect[i].y = orig_y;
-      GuiGroupBox(in_rect[i], sections[i]);
-    }
-
-    inside_rect.height -= inside_rect.y - orig_y;
-  }
-
-  inside_rect = sb_draw_instructions(inside_rect, cpu_state, gb);
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Tile Data");
-  return adv_rect;
-}
 Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
                             sb_gb_t *gb) {
 
@@ -828,8 +767,6 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       gb->lcd.scanline_cycles-=scanline_dots;
       ly+=1; 
       gb->lcd.curr_scanline += 1; 
-      int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
-      if(ly==wy)gb->lcd.wy_eq_ly = true;
     }
     
     if(ly>153){
@@ -847,7 +784,12 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
 
     int old_mode = stat&0x7;
     if((old_mode&0x3)!=0&&(mode&0x3)==0)new_scanline=!gb->lcd.last_frame_ppu_disabled;
-    
+
+
+    if(new_scanline){
+      int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+      if(ly==wy)gb->lcd.wy_eq_ly = true;
+    }
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt = SB_BFE(stat, 5,1);
     bool vblank_interrupt = SB_BFE(stat, 4,1);
@@ -871,7 +813,7 @@ bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
-    if((old_mode&0x3)!=2 && (mode&0x3) == 0x2 && oam_interrupt){
+    if((((old_mode&0x3)!=2 && (mode&0x3) == 0x2)||((old_mode&0x3)!=1 && (mode&0x3) == 0x1)) && oam_interrupt){
       //oam-stat Interrupt
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
@@ -962,7 +904,8 @@ Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
     im_rect.height = image_height;
 
     DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255}); 
-    UnloadTexture(screenTex);
+    
+    //UnloadTexture(screenTex);
   }        
                               
   Rectangle state_rect, adv_rect;
@@ -1027,7 +970,7 @@ Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
     im_rect.height = image_height;
 
     DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255}); 
-    UnloadTexture(screenTex);
+    //UnloadTexture(screenTex);
       
   }                            
   Rectangle state_rect, adv_rect;
@@ -1285,9 +1228,9 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
       case 2: period = 64; break; 
       case 3: period = 256; break; 
     }
-    gb->timers.clocks_till_tima_inc+=period;
-    if(gb->timers.clocks_till_tima_inc<0)
-      gb->timers.clocks_till_tima_inc = period; 
+    while(gb->timers.clocks_till_tima_inc<0)
+      gb->timers.clocks_till_tima_inc += period; 
+    
 
     uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
     // Trigger timer interrupt 
@@ -1368,8 +1311,9 @@ void sb_tick(){
     memset(&gb_state.dma, 0, sizeof(gb_state.dma));
     memset(&gb_state.timers, 0, sizeof(gb_state.timers));
     memset(&gb_state.lcd, 0, sizeof(gb_state.lcd));
-    //memset(&gb_state.mem, 0, sizeof(gb_state.mem));
-    
+    memset(&gb_state.mem.wram, 0, sizeof(gb_state.mem.wram));
+    //Zero out memory
+    for(int i=0x8000;i<=0xffff;++i)gb_state.mem.data[i]=0; 
     gb_state.cpu.pc = 0x100;
 
     gb_state.cpu.af=0x01B0;   
@@ -1468,37 +1412,46 @@ void sb_tick(){
             ); 
           */
           if(gb_state.cpu.prefix_op)op+=256;
-             
-          int trigger_interrupt = -1;
-          // TODO: Can interrupts trigger between prefix ops and the second byte?
-          if(gb_state.cpu.interrupt_enable && gb_state.cpu.prefix_op==false){
-            uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
-            uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
-            uint8_t masked_interupt = ie&i_flag&0x1f;
-
-            for(int i=0;i<5;++i){
-              if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
-            }
-            if(trigger_interrupt!=-1)i_flag &= ~(1<<trigger_interrupt);
-            //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
-            sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
-          }
           if(gb_state.cpu.deferred_interrupt_enable){
             gb_state.cpu.deferred_interrupt_enable = false;
             gb_state.cpu.interrupt_enable = true;
           }
-
+             
+          int trigger_interrupt = -1;
+          // TODO: Can interrupts trigger between prefix ops and the second byte?
+          if(gb_state.cpu.prefix_op==false){
+            uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
+            uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
+            uint8_t masked_interupt = ie&i_flag&0x1f;
+            for(int i=0;i<5;++i){
+              if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
+            }
+            //if(trigger_interrupt!=-1&&(gb_state.cpu.wait_for_interrupt==false && gb_state.cpu.interrupt_enable))i_flag &= ~(1<<trigger_interrupt);
+            //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
+            //sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
+          }
+          
           gb_state.cpu.prefix_op = false;
           cpu_delta_cycles = 4;
+          bool call_interrupt = false;
           if(trigger_interrupt!=-1){
+            if(gb_state.cpu.interrupt_enable){
+              gb_state.cpu.interrupt_enable = false;
+              gb_state.cpu.deferred_interrupt_enable = false;
+              int interrupt_address = (trigger_interrupt*0x8)+0x40;
+              sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
+              cpu_delta_cycles = 5*4*4;
+              call_interrupt=true;
+            }
+            if(call_interrupt){
+              uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
+              i_flag &= ~(1<<trigger_interrupt);
+              sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
+            }
             gb_state.cpu.wait_for_interrupt = false;
-            gb_state.cpu.interrupt_enable = false;
-            gb_state.cpu.deferred_interrupt_enable = false;
-            int interrupt_address = (trigger_interrupt*0x8)+0x40;
-            sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
-            cpu_delta_cycles = 5*4*4;
             
-          }else if(gb_state.cpu.wait_for_interrupt==false){
+          }
+          if(call_interrupt==false&&gb_state.cpu.wait_for_interrupt==false){
             sb_instr_t inst = sb_decode_table[op];
             gb_state.cpu.pc+=inst.length;
             int operand1 = sb_load_operand(&gb_state,inst.op_src1);
@@ -1509,7 +1462,7 @@ void sb_tick(){
             if(gb_state.cpu.prefix_op==true)i--;
 
             cpu_delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
-          }else if(gb_state.cpu.wait_for_interrupt==true && request_speed_switch){
+          }else if(call_interrupt==false&&gb_state.cpu.wait_for_interrupt==true && request_speed_switch){
             gb_state.cpu.wait_for_interrupt = false; 
             sb_store8(&gb_state,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
           }
@@ -1703,7 +1656,8 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
       int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
       int offset = (wav_samp&1)? 0:4;
       dat = (dat>>offset)&0xf;
-      sample_volume+=(dat-8)/7.*volume3;
+      //Why?
+      sample_volume+=(dat-8)/7.*volume3*4;
 
       sample_volume+=last_noise_value*v4;
 
@@ -1748,6 +1702,33 @@ void UpdateDrawFrame() {
           SB_BFE(gb_state.cart.data[0x143], 7, 1) == 1;
       gb_state.cart.type = gb_state.cart.data[0x147];
 
+      switch(gb_state.cart.type){
+        case 0: gb_state.cart.mbc_type = SB_MBC_NO_MBC; break;
+        
+        case 1:
+        case 2:
+        case 3: gb_state.cart.mbc_type = SB_MBC_MBC1; break;
+         
+        case 5:
+        case 6: gb_state.cart.mbc_type = SB_MBC_MBC2; break;
+                                                   
+        case 0x0f:
+        case 0x10:
+        case 0x11:
+        case 0x12:
+        case 0x13: gb_state.cart.mbc_type = SB_MBC_MBC3; break;
+        
+        case 0x19:
+        case 0x1A:
+        case 0x1B:
+        case 0x1C:
+        case 0x1D:
+        case 0x1E:gb_state.cart.mbc_type = SB_MBC_MBC5; break;
+        
+        case 0x20:gb_state.cart.mbc_type = SB_MBC_MBC6; break;
+        case 0x22:gb_state.cart.mbc_type = SB_MBC_MBC7; break;
+                                                    
+      }
       switch (gb_state.cart.data[0x148]) {
         case 0x0: gb_state.cart.rom_size = 32 * 1024;  break;
         case 0x1: gb_state.cart.rom_size = 64 * 1024;  break;
@@ -1766,7 +1747,7 @@ void UpdateDrawFrame() {
 
       switch (gb_state.cart.data[0x149]) {
         case 0x0: gb_state.cart.ram_size = 0; break;
-        case 0x1: gb_state.cart.ram_size = 0; break;
+        case 0x1: gb_state.cart.ram_size = 2*1024; break;
         case 0x2: gb_state.cart.ram_size = 8 * 1024; break;
         case 0x3: gb_state.cart.ram_size = 32 * 1024; break;
         case 0x4: gb_state.cart.ram_size = 128 * 1024; break;
@@ -1869,6 +1850,8 @@ int main(void) {
   audio_stream = InitAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
   PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
+  ShowCursor();
+  SetExitKey(0);
 #if defined(PLATFORM_WEB)
 // EM_ASM is a macro to call in-line JavaScript code.
     EM_ASM(

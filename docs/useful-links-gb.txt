@@ -1,0 +1,2 @@
+Pandocs: https://gbdev.io/pandocs/
+GB Emulator Shootout: https://daid.github.io/GBEmulatorShootout/
