@@ -1372,6 +1372,7 @@ void sb_tick(){
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
       gb_state.lcd.framebuffer[i] = 0;
     }
+    emu_state.run_mode = SB_MODE_RUN;
   }
   
   if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
@@ -1421,7 +1422,7 @@ void sb_tick(){
           // TODO: Can interrupts trigger between prefix ops and the second byte?
           if(gb_state.cpu.prefix_op==false){
             uint8_t ie = sb_read8_direct(&gb_state,SB_IO_INTER_EN);
-            uint8_t i_flag = sb_read8_direct(&gb_state,SB_IO_INTER_F);
+            uint8_t i_flag = gb_state.cpu.last_inter_f;
             uint8_t masked_interupt = ie&i_flag&0x1f;
             for(int i=0;i<5;++i){
               if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
@@ -1430,17 +1431,18 @@ void sb_tick(){
             //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
             //sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
           }
+          gb_state.cpu.last_inter_f = sb_read8_direct(&gb_state,SB_IO_INTER_F);
           
           gb_state.cpu.prefix_op = false;
           cpu_delta_cycles = 4;
           bool call_interrupt = false;
-          if(trigger_interrupt!=-1){
+          if(trigger_interrupt!=-1&&request_speed_switch==false){
             if(gb_state.cpu.interrupt_enable){
               gb_state.cpu.interrupt_enable = false;
               gb_state.cpu.deferred_interrupt_enable = false;
               int interrupt_address = (trigger_interrupt*0x8)+0x40;
               sb_call_impl(&gb_state, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
-              cpu_delta_cycles = 5*4*4;
+              cpu_delta_cycles = 5*4;
               call_interrupt=true;
             }
             if(call_interrupt){

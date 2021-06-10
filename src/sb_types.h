@@ -64,6 +64,7 @@ typedef struct {
   bool wait_for_interrupt; 
   bool prefix_op;
   bool trigger_breakpoint; 
+  int last_inter_f; 
 } sb_gb_cpu_t;
 
 typedef struct {
