@@ -503,7 +503,45 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
   GuiGroupBox(state_rect, "Joypad State");
   return adv_rect;
 }
- 
+          
+Rectangle sb_draw_interrupt_state(Rectangle rect, sb_gb_t *gb) {
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  Rectangle wr = inside_rect;
+  wr.width = GUI_PADDING;
+  wr.height = GUI_PADDING;
+  uint8_t e = sb_read8(gb,SB_IO_INTER_EN);
+  uint8_t f = sb_read8(gb,SB_IO_INTER_F);
+  bool values[]={
+    SB_BFE(e,0,1), SB_BFE(e,1,1), SB_BFE(e,2,1), SB_BFE(e,3,1), SB_BFE(e,4,1),
+    SB_BFE(f,0,1), SB_BFE(f,1,1), SB_BFE(f,2,1), SB_BFE(f,3,1), SB_BFE(f,4,1),
+  };
+  const char * names[] ={
+    "VBlank En", "Stat En", "Timer En", "Serial En", "Joypad En",
+    "VBlank F", "Stat F", "Timer F", "Serial F", "Joypad F",
+  };
+                
+  int num_values = sizeof(values)/sizeof(bool);
+  for(int i=0;i<num_values;++i){
+    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+    wr.y=widget_rect.y;
+    GuiCheckBox(wr,names[i],values[i]);
+    if(i+1==num_values/2){                        
+      inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+      inside_rect.x +=rect.width/2;
+      wr.x +=rect.width/2;
+    }
+  }
+                         
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "Interrupt State");
+  return adv_rect;
+}
+          
 Rectangle sb_draw_dma_state(Rectangle rect, sb_gb_t *gb) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -1384,7 +1422,7 @@ void sb_tick(){
         bool double_speed = false;
         sb_update_joypad_io_reg(&emu_state, &gb_state);
         int dma_delta_cycles = sb_update_dma(&gb_state);
-        int cpu_delta_cycles = 0;
+        int cpu_delta_cycles = 4;
         if(dma_delta_cycles==0){
           int pc = gb_state.cpu.pc;
           
@@ -1431,7 +1469,6 @@ void sb_tick(){
             //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true; 
             //sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
           }
-          gb_state.cpu.last_inter_f = sb_read8_direct(&gb_state,SB_IO_INTER_F);
           
           gb_state.cpu.prefix_op = false;
           cpu_delta_cycles = 4;
@@ -1468,6 +1505,7 @@ void sb_tick(){
             gb_state.cpu.wait_for_interrupt = false; 
             sb_store8(&gb_state,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
           }
+          gb_state.cpu.last_inter_f = sb_read8_direct(&gb_state,SB_IO_INTER_F);
         }
         sb_update_oam_dma(&gb_state,cpu_delta_cycles);
         int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles; 
@@ -1500,6 +1538,7 @@ void sb_draw_sidebar(Rectangle rect) {
   else if(emu_state.panel_mode==SB_PANEL_CPU){
     rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
     rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
+    rect_inside = sb_draw_interrupt_state(rect_inside, &gb_state);
     rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
     rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
     rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
