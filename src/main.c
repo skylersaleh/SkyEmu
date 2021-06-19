@@ -1887,7 +1887,7 @@ int main(void) {
   InitAudioDevice();
                                  
   SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-  audio_stream = InitAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
+  audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
   PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
