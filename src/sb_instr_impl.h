@@ -505,6 +505,9 @@ static void sb_srl_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 static void sb_stop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.wait_for_interrupt=true;
   gb->cpu.interrupt_enable = true; 
+  // Div is reset on stop
+  gb->timers.clocks_till_div_inc = 0;
+  sb_store8(gb,0xff04,0);
 }
 
 static void sb_sub_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){

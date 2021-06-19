@@ -1248,28 +1248,24 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
   bool tima_enable = SB_BFE(tac, 2, 1);
   int clk_sel = SB_BFE(tac, 0, 2);
   gb->timers.clocks_till_div_inc -=delta_clocks;
-  if(gb->timers.clocks_till_div_inc<0){
-    int period = 4*1024*1024/16384; 
-    gb->timers.clocks_till_div_inc+=period;
-    if(gb->timers.clocks_till_div_inc<0)
-      gb->timers.clocks_till_div_inc = period; 
+  int period = 4*1024*1024/16384; 
+  while(gb->timers.clocks_till_div_inc<=0){
+    gb->timers.clocks_till_div_inc += period; 
 
     uint8_t d = sb_read8_direct(gb, SB_IO_DIV);
     sb_store8_direct(gb, SB_IO_DIV, d+1); 
   }
   if(tima_enable)gb->timers.clocks_till_tima_inc -=delta_clocks;
-  if(gb->timers.clocks_till_tima_inc<0){
-    int period =0;
-    switch(clk_sel){
-      case 0: period = 1024; break; 
-      case 1: period = 16; break; 
-      case 2: period = 64; break; 
-      case 3: period = 256; break; 
-    }
-    while(gb->timers.clocks_till_tima_inc<0)
-      gb->timers.clocks_till_tima_inc += period; 
+  period =0;
+  switch(clk_sel){
+    case 0: period = 1024; break; 
+    case 1: period = 16; break; 
+    case 2: period = 64; break; 
+    case 3: period = 256; break; 
+  }
+  while(gb->timers.clocks_till_tima_inc<=0){
+    gb->timers.clocks_till_tima_inc += period; 
     
-
     uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
     // Trigger timer interrupt 
     if(d == 255){
@@ -1280,7 +1276,7 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
       
     }else d +=1; 
     sb_store8_direct(gb, SB_IO_TIMA, d); 
-  }  
+  }
 }
 int sb_update_dma(sb_gb_t *gb){
 
@@ -1496,11 +1492,14 @@ void sb_tick(){
             int operand1 = sb_load_operand(&gb_state,inst.op_src1);
             int operand2 = sb_load_operand(&gb_state,inst.op_src2);
                                     
-            int pc_before_inst = gb_state.cpu.pc; 
+            unsigned pc_before_inst = gb_state.cpu.pc; 
             inst.impl(&gb_state, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
             if(gb_state.cpu.prefix_op==true)i--;
 
-            cpu_delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? inst.mcycles : inst.mcycles_branch_taken);
+            unsigned next_op = sb_read8(&gb_state,gb_state.cpu.pc);
+            if(gb_state.cpu.prefix_op)next_op+=256;
+            sb_instr_t next_inst = sb_decode_table[next_op];
+            cpu_delta_cycles = 4*(gb_state.cpu.pc==pc_before_inst? next_inst.mcycles : next_inst.mcycles+inst.mcycles_branch_taken-inst.mcycles);
           }else if(call_interrupt==false&&gb_state.cpu.wait_for_interrupt==true && request_speed_switch){
             gb_state.cpu.wait_for_interrupt = false; 
             sb_store8(&gb_state,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);

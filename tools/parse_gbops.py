@@ -96,6 +96,8 @@ const static sb_instr_t sb_decode_table[]={
        taken_latency= int(split_mcycles[1]);
     non_taken_latency =int( split_mcycles[0]);
     
+    if taken_latency < non_taken_latency:
+      taken_latency = non_taken_latency;
     length = int(splits[1])
     if opcode_num>255:
        length= length-1;
