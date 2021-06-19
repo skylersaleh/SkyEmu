@@ -1,4 +1,4 @@
-name: Build Emscripten version and deploy to GitHub Pages
+name: Build Web & Deploy to GH
 on: [push,pull_request]
 jobs:
   build-and-deploy:

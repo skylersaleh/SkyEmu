@@ -1,0 +1,38 @@
+name: Linux Build
+on: [push,pull_request]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v2.3.1 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxinerama-dev libxcursor-dev
+          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev
+      - name: Configure & Build 🔧 
+        run: |
+          mkdir build
+          cd build
+          cmake .. && cmake --build .
+          
+      - name: GH Release 🚀
+        # You may pin to the exact commit or the version.
+        uses: actions/upload-artifact@v2
+        with:
+           name: LinuxRelease
+           path: build/bin/
+        #uses: softprops/action-gh-release@v0.1.5
+        #with:
+        #  # Note-worthy description of changes in release
+        #  # body: # optional
+        #  # Path to load note-worthy description of changes in release from
+        #  # body_path: # optional
+        #  # Gives the release a custom name. Defaults to tag name
+        #  name: LinuxRelease
+        #  # Identify the release as a prerelease. Defaults to false
+        #  prerelease: True
+        #  # Newline-delimited list of path globs for asset files to upload
+        #  files: build/bin/*
+ 
