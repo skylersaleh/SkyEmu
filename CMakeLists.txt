@@ -6,11 +6,16 @@ if (EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_GLFW=3 -s ASSERTIONS=1 -s WASM=1 -s ASYNCIFY -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html")
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
 endif ()
+ 
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2 ")
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O2 ") 
 
 find_package(OpenGL)
-# Set this to the minimal version you want to support
-find_package(raylib 3.0 QUIET) # Let CMake search for a raylib-config.cmake
 
+#add_subdirectory(${CMAKE_SOURCE_DIR}/libs/raylib)
+# Set this to the minimal version you want to support
+# find_package(raylib QUIET) # Let CMake search for a raylib-config.cmake
+# 
 # You could change the QUIET above to REQUIRED and remove this if() clause
 # This part downloads raylib and builds it if it's not installed on your system
 if (NOT raylib_FOUND) # If there's none, fetch and build raylib
@@ -18,7 +23,8 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
 
   FetchContent_Declare(
     raylib
-    URL https://github.com/raysan5/raylib/archive/master.tar.gz
+    GIT_REPOSITORY https://github.com/skylersaleh/raylib.git
+    GIT_TAG origin/emscripten-resize
   )
 
   FetchContent_GetProperties(raylib)
@@ -37,8 +43,6 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2 ")
-set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O2 ")
 # This is the main part:
 
 add_executable(${PROJECT_NAME} src/main.c)

@@ -5,18 +5,27 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Game Boy Emulator</title>
     <style>
-      .emscripten { padding-right: 0; margin-left: auto; margin-right: auto; display: block; }
+      body{padding:0; margin:0;}
+      .emscripten { padding: 0; margin: 0; display: block; }
       textarea.emscripten { font-family: monospace; width: 80%; }
       div.emscripten { text-align: center; }
       div.emscripten_border { border: 1px solid black; }
       /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
       canvas.emscripten {
-        border: 0px none;
         background-color: black;
         width: 100%;
         height: 100%;
       }
-
+      #canvas {
+          position: absolute;
+          top: 0px;
+          left: 0px;
+          margin: 0px;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          display: block;
+      } 
       .spinner {
         height: 50px;
         width: 50px;
@@ -135,13 +144,6 @@
 
       var container = document.getElementById ("container");
 
-      window.addEventListener ("resize", function (e) {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
-        canvas.style.width = container.clientWidth + "px";
-        canvas.style.height = container.clientHeight + "px";
-      }, true);
-       
       Module.setStatus('Downloading...');
       window.onerror = function() {
         Module.setStatus('Exception thrown, see JavaScript console');

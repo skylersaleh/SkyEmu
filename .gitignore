@@ -35,4 +35,5 @@
 build*
 .DS_Store
 *_template.h
-*.swo
+*.swo 
+*.swn
