@@ -1,4 +1,4 @@
-name: Linux Build
+name: Build macOS
 on: [push,pull_request]
 jobs:
   build-and-deploy:

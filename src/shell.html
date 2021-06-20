@@ -10,7 +10,12 @@
       div.emscripten { text-align: center; }
       div.emscripten_border { border: 1px solid black; }
       /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
-      canvas.emscripten { border: 0px none; background-color: black; }
+      canvas.emscripten {
+        border: 0px none;
+        background-color: black;
+        width: 100%;
+        height: 100%;
+      }
 
       .spinner {
         height: 50px;
@@ -47,7 +52,6 @@
     </style>
   </head>
   <body>
-    <hr/>
     <figure style="overflow:visible;" id="spinner"><div class="spinner"></div><center style="margin-top:0.5em"><strong>emscripten</strong></center></figure>
     <div class="emscripten" id="status">Downloading...</div>
     <div class="emscripten">
@@ -56,10 +60,11 @@
     <div class="emscripten_border" id="container">
       <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
     </div>
-    
+    <!-- Code for displaying console 
     <hr/>
     <textarea class="emscripten" id="output" rows="8"></textarea>
     <hr>
+    -->
     <script type='text/javascript'>
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');
