@@ -7,8 +7,8 @@ if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
 endif ()
  
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2 ")
-set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O2 ") 
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Os ")
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -Os ") 
 
 find_package(OpenGL)
 
