@@ -3,7 +3,6 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-   	<meta name="apple-mobile-web-app-capable" content="yes">
     <title>Game Boy Emulator</title>
     <style>
       body{padding:0; margin:0;}
@@ -26,7 +25,17 @@
           height: 100%;
           overflow: hidden;
           display: block;
-      } 
+      }
+      input[type="file"] {
+        display: block !important;
+        opacity: 0% !important;
+        overflow: hidden !important;
+        z-index: 100 !important;
+        margin-top: 0px;
+        padding-top: 0px;
+        position: absolute;
+        visibility:hidden;
+      }
       .spinner {
         height: 50px;
         width: 50px;
@@ -74,7 +83,10 @@
     <hr/>
     <textarea class="emscripten" id="output" rows="8"></textarea>
     <hr>
-    -->
+    -->       
+    <input type="file" id="fileInput" value="">
+    <input id="fileStaging" value="">
+    <input id="fileStagingName" value="">
     <script type='text/javascript'>
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');

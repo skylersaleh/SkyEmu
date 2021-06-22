@@ -1730,7 +1730,126 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
   }
 }
 
-void sb_draw_load_rom_prompt(Rectangle rect){
+void sb_load_rom( const char* file_path){
+  unsigned int bytes = 0;
+  unsigned char *data = LoadFileData(file_path, &bytes);
+  if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
+  printf("Loaded File: %s, %d bytes\n", file_path, bytes);
+  for (size_t i = 0; i < bytes; ++i) {
+    gb_state.cart.data[i] = data[i];
+  }
+  for(size_t i = 0; i< 32*1024;++i)gb_state.mem.data[i] = gb_state.cart.data[i];
+  // Copy Header
+  for (int i = 0; i < 11; ++i) {
+    gb_state.cart.title[i] = gb_state.cart.data[i + 0x134];
+  }
+  gb_state.cart.title[12] ='\0';
+  // TODO PGB Mode(Values with Bit 7 set, and either Bit 2 or 3 set)
+  gb_state.cart.game_boy_color =
+      SB_BFE(gb_state.cart.data[0x143], 7, 1) == 1;
+  gb_state.cart.type = gb_state.cart.data[0x147];
+
+  switch(gb_state.cart.type){
+    case 0: gb_state.cart.mbc_type = SB_MBC_NO_MBC; break;
+    
+    case 1:
+    case 2:
+    case 3: gb_state.cart.mbc_type = SB_MBC_MBC1; break;
+     
+    case 5:
+    case 6: gb_state.cart.mbc_type = SB_MBC_MBC2; break;
+                                               
+    case 0x0f:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13: gb_state.cart.mbc_type = SB_MBC_MBC3; break;
+    
+    case 0x19:
+    case 0x1A:
+    case 0x1B:
+    case 0x1C:
+    case 0x1D:
+    case 0x1E:gb_state.cart.mbc_type = SB_MBC_MBC5; break;
+    
+    case 0x20:gb_state.cart.mbc_type = SB_MBC_MBC6; break;
+    case 0x22:gb_state.cart.mbc_type = SB_MBC_MBC7; break;
+                                                
+  }
+  switch (gb_state.cart.data[0x148]) {
+    case 0x0: gb_state.cart.rom_size = 32 * 1024;  break;
+    case 0x1: gb_state.cart.rom_size = 64 * 1024;  break;
+    case 0x2: gb_state.cart.rom_size = 128 * 1024; break;
+    case 0x3: gb_state.cart.rom_size = 256 * 1024; break;
+    case 0x4: gb_state.cart.rom_size = 512 * 1024; break;
+    case 0x5: gb_state.cart.rom_size = 1024 * 1024;     break;
+    case 0x6: gb_state.cart.rom_size = 2 * 1024 * 1024; break;
+    case 0x7: gb_state.cart.rom_size = 4 * 1024 * 1024; break;
+    case 0x8: gb_state.cart.rom_size = 8 * 1024 * 1024; break;
+    case 0x52: gb_state.cart.rom_size = 1.1 * 1024 * 1024; break;
+    case 0x53: gb_state.cart.rom_size = 1.2 * 1024 * 1024; break;
+    case 0x54: gb_state.cart.rom_size = 1.5 * 1024 * 1024; break;
+    default: gb_state.cart.rom_size = 32 * 1024; break;
+  }
+
+  switch (gb_state.cart.data[0x149]) {
+    case 0x0: gb_state.cart.ram_size = 0; break;
+    case 0x1: gb_state.cart.ram_size = 2*1024; break;
+    case 0x2: gb_state.cart.ram_size = 8 * 1024; break;
+    case 0x3: gb_state.cart.ram_size = 32 * 1024; break;
+    case 0x4: gb_state.cart.ram_size = 128 * 1024; break;
+    case 0x5: gb_state.cart.ram_size = 64 * 1024; break;
+    default: gb_state.cart.ram_size = 0; break;
+  }
+  emu_state.run_mode = SB_MODE_RESET;
+  emu_state.rom_loaded = true;
+  UnloadFileData(data);
+  const char * c = GetFileNameWithoutExt(file_path);
+#if defined(PLATFORM_WEB)
+      const char * save_file = TextFormat("/offline/%s.sav",c);
+#else
+      const char * save_file = TextFormat("%s.sav",c);
+#endif
+  strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
+  gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0; 
+
+  if(FileExists(save_file)){                          
+    unsigned int bytes=0;
+    unsigned char* data = LoadFileData(save_file,&bytes);
+    printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
+
+    if(bytes!=gb_state.cart.ram_size){
+      printf("Warning save file size(%d) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
+    }
+    if(bytes>gb_state.cart.ram_size){
+      bytes = gb_state.cart.ram_size;
+    }                                   
+    memcpy(gb_state.cart.ram_data, data, bytes); 
+    UnloadFileData(data);
+
+  }else{
+    printf("Could not find save file: %s\n",save_file);
+    memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
+  }                                                                       
+}
+
+void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
+  
+  static bool last_visible = false;
+  if(visible==false){
+#if defined(PLATFORM_WEB)
+    if(last_visible==true){
+      EM_ASM({
+        var input = document.getElementById('fileInput');
+        input.style.visibility= "hidden";
+      });
+    }
+#endif
+    last_visible=false;
+    return; 
+  }
+
+  last_visible=true;
   Color color = {0,0,0,127};
   const char * label = "Drop ROM";
   int icon_scale = (rect.width<rect.height?rect.width:rect.height)/16*0.33;
@@ -1745,30 +1864,52 @@ void sb_draw_load_rom_prompt(Rectangle rect){
   button_rect.width = label_sz.x;
   button_rect.height = 30;
  #if defined(PLATFORM_WEB)
-
   button_rect.x= rect.width/2+rect.x-button_rect.width/2;
   button_rect.y= rect.y+rect.height/2+icon_off*2;
   bool open_dialog = GuiButton(button_rect,"Open Rom");
-  if(open_dialog){
-    // EM_ASM is a macro to call in-line JavaScript code.
-  
-    //char* file_name = (char*)EM_ASM_INT(
-    EM_ASM(
-      var input = document.createElement('input');
-      input.setAttribute("type", "file");
-      input.click();
-      input.onchange = e => {
+  char * new_path = (char*)EM_ASM_INT({
+    var input = document.getElementById('fileInput');
+    input.style.left = $0 +'px';
+    input.style.top = $1 +'px';
+    input.style.width = $2 +'px';
+    input.style.height= $3 +'px';
+    input.style.visibility = 'visible';
+    if(input.value!= ''){
+      console.log(input.value);
+      var reader= new FileReader();
+      file = input.files[0];
+      reader.addEventListener('loadend', print_file);
+      reader.readAsArrayBuffer(file);
+      var filename = file.name;
+      input.value = '';
 
-        // getting a hold of the file reference
-        var file = e.target.files[0];
-        console.log(file);;
-
+      function print_file(e){
+          var result=reader.result;
+          const uint8_view = new Uint8Array(result);
+          var out_file = '/offline/'+filename;
+          FS.writeFile(out_file, uint8_view);
+          FS.syncfs(function (err) {});
+          var input_stage = document.getElementById('fileStaging');
+          input_stage.value = out_file;
       }
-      //input.remove();
-    );
-    //printf("Open: %s\n",file_name);
-    //free(file_name);
-  }      
+    }
+    var input_stage = document.getElementById('fileStaging');
+    ret_path = '';
+    if(input_stage.value !=''){
+      ret_path = input_stage.value;
+      input_stage.value = '';
+    }
+    var sz = lengthBytesUTF8(ret_path)+1;
+    var string_on_heap = _malloc(length);
+    stringToUTF8(ret_path, string_on_heap, sz);
+    return string_on_heap;
+  },button_rect.x,button_rect.y,button_rect.width,button_rect.height);
+  
+  printf("%s\n",new_path);
+  if(!TextIsEqual("",new_path))sb_load_rom(new_path);
+  free(new_path);
+  //printf("Open: %s\n",file_name);
+  //free(file_name);
 #endif  
   
 }
@@ -1779,106 +1920,7 @@ void UpdateDrawFrame() {
     int count = 0;
     char **files = GetDroppedFiles(&count);
     if (count > 0) {
-      unsigned int bytes = 0;
-      unsigned char *data = LoadFileData(files[0], &bytes);
-      if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
-      printf("Dropped File: %s, %d bytes\n", files[0], bytes);
-      for (size_t i = 0; i < bytes; ++i) {
-        gb_state.cart.data[i] = data[i];
-      }
-      for(size_t i = 0; i< 32*1024;++i)gb_state.mem.data[i] = gb_state.cart.data[i];
-      // Copy Header
-      for (int i = 0; i < 11; ++i) {
-        gb_state.cart.title[i] = gb_state.cart.data[i + 0x134];
-      }
-      gb_state.cart.title[12] ='\0';
-      // TODO PGB Mode(Values with Bit 7 set, and either Bit 2 or 3 set)
-      gb_state.cart.game_boy_color =
-          SB_BFE(gb_state.cart.data[0x143], 7, 1) == 1;
-      gb_state.cart.type = gb_state.cart.data[0x147];
-
-      switch(gb_state.cart.type){
-        case 0: gb_state.cart.mbc_type = SB_MBC_NO_MBC; break;
-        
-        case 1:
-        case 2:
-        case 3: gb_state.cart.mbc_type = SB_MBC_MBC1; break;
-         
-        case 5:
-        case 6: gb_state.cart.mbc_type = SB_MBC_MBC2; break;
-                                                   
-        case 0x0f:
-        case 0x10:
-        case 0x11:
-        case 0x12:
-        case 0x13: gb_state.cart.mbc_type = SB_MBC_MBC3; break;
-        
-        case 0x19:
-        case 0x1A:
-        case 0x1B:
-        case 0x1C:
-        case 0x1D:
-        case 0x1E:gb_state.cart.mbc_type = SB_MBC_MBC5; break;
-        
-        case 0x20:gb_state.cart.mbc_type = SB_MBC_MBC6; break;
-        case 0x22:gb_state.cart.mbc_type = SB_MBC_MBC7; break;
-                                                    
-      }
-      switch (gb_state.cart.data[0x148]) {
-        case 0x0: gb_state.cart.rom_size = 32 * 1024;  break;
-        case 0x1: gb_state.cart.rom_size = 64 * 1024;  break;
-        case 0x2: gb_state.cart.rom_size = 128 * 1024; break;
-        case 0x3: gb_state.cart.rom_size = 256 * 1024; break;
-        case 0x4: gb_state.cart.rom_size = 512 * 1024; break;
-        case 0x5: gb_state.cart.rom_size = 1024 * 1024;     break;
-        case 0x6: gb_state.cart.rom_size = 2 * 1024 * 1024; break;
-        case 0x7: gb_state.cart.rom_size = 4 * 1024 * 1024; break;
-        case 0x8: gb_state.cart.rom_size = 8 * 1024 * 1024; break;
-        case 0x52: gb_state.cart.rom_size = 1.1 * 1024 * 1024; break;
-        case 0x53: gb_state.cart.rom_size = 1.2 * 1024 * 1024; break;
-        case 0x54: gb_state.cart.rom_size = 1.5 * 1024 * 1024; break;
-        default: gb_state.cart.rom_size = 32 * 1024; break;
-      }
-
-      switch (gb_state.cart.data[0x149]) {
-        case 0x0: gb_state.cart.ram_size = 0; break;
-        case 0x1: gb_state.cart.ram_size = 2*1024; break;
-        case 0x2: gb_state.cart.ram_size = 8 * 1024; break;
-        case 0x3: gb_state.cart.ram_size = 32 * 1024; break;
-        case 0x4: gb_state.cart.ram_size = 128 * 1024; break;
-        case 0x5: gb_state.cart.ram_size = 64 * 1024; break;
-        default: gb_state.cart.ram_size = 0; break;
-      }
-      emu_state.run_mode = SB_MODE_RESET;
-      emu_state.rom_loaded = true;
-      UnloadFileData(data);
-      const char * c = GetFileNameWithoutExt(files[0]);
-#if defined(PLATFORM_WEB)
-      const char * save_file = TextFormat("/offline/%s.sav",c);
-#else
-      const char * save_file = TextFormat("%s.sav",c);
-#endif
-      strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
-      gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0; 
-
-      if(FileExists(save_file)){                          
-        unsigned int bytes=0;
-        unsigned char* data = LoadFileData(save_file,&bytes);
-        printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
-
-        if(bytes!=gb_state.cart.ram_size){
-          printf("Warning save file size(%d) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
-        }
-        if(bytes>gb_state.cart.ram_size){
-          bytes = gb_state.cart.ram_size;
-        }                                   
-        memcpy(gb_state.cart.ram_data, data, bytes); 
-        UnloadFileData(data);
-
-      }else{
-        printf("Could not find save file: %s\n",save_file);
-        memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
-      }
+      sb_load_rom(files[0]);
     }
     ClearDroppedFiles();
   }
@@ -1887,9 +1929,7 @@ void UpdateDrawFrame() {
  #if defined(PLATFORM_WEB)
       // Don't forget to sync to make sure you store it to IndexedDB
     EM_ASM(
-        FS.syncfs(function (err) {
-            // Error
-        });
+        FS.syncfs(function (err) {});
     );
  #endif
       printf("Saved %s\n", gb_state.cart.save_file_path);
@@ -1941,7 +1981,7 @@ void UpdateDrawFrame() {
   }
   
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255}); 
-  if(emu_state.rom_loaded==false)sb_draw_load_rom_prompt(lcd_rect);
+  sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
   EndDrawing();
   UnloadTexture(screenTex);
 }
@@ -1972,9 +2012,7 @@ int main(void) {
         FS.mount(IDBFS, {}, '/offline');
 
         // Then sync
-        FS.syncfs(true, function (err) {
-            // Error
-        });
+        FS.syncfs(true, function (err) {});
     );
 
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
