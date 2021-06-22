@@ -302,31 +302,39 @@ void sb_vertical_adv(Rectangle outside_rect, int advance, int y_padd,
   rect_bottom->height -= advance + y_padd;
 }
 
-Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb) {
+Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb, bool top_panel) {
 
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING/(top_panel?2:1));
   Rectangle widget_rect;
+  if(top_panel){
+    widget_rect = inside_rect;
+    widget_rect.width = 100;
+    emu_state->run_mode =
+      GuiToggleGroup(widget_rect, "#74#Reset;#132#Pause;#131#Run;#134#Step", emu_state->run_mode);
+      return (Rectangle){0};// Not used for vertical alignment
+  }
 
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
+  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   widget_rect.width =
       widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
   emu_state->run_mode =
-      GuiToggleGroup(widget_rect, "Reset;Pause;Run;Step", emu_state->run_mode);
+      GuiToggleGroup(widget_rect, "#74#Reset;#132#Pause;#131#Run;#134#Step", emu_state->run_mode);
 
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
 
-  GuiLabel(widget_rect, "Panel Mode");
-  widget_rect.width =
-      widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
-  emu_state->panel_mode =
-      GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
-   
   Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %i]", GetFPS()));
+  if(!top_panel){
+    GuiLabel(widget_rect, "Panel Mode");
+    widget_rect.width =
+        widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
+    emu_state->panel_mode =
+        GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
+     
+    sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                    &adv_rect);
+    GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %i]", GetFPS()));
+  }
   return adv_rect;
 }
  
@@ -1531,7 +1539,7 @@ void sb_draw_sidebar(Rectangle rect) {
   GuiPanel(rect);
   Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
 
-  rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state);
+  rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state,false);
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
@@ -1544,6 +1552,10 @@ void sb_draw_sidebar(Rectangle rect) {
     rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
   }
                                
+}
+void sb_draw_top_panel(Rectangle rect) {
+  GuiPanel(rect);
+  sb_draw_emu_state(rect, &emu_state,&gb_state, true);
 }
 float compute_vol_env_slope(uint8_t d){
   int dir = SB_BFE(d,3,1);
@@ -1718,6 +1730,49 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
   }
 }
 
+void sb_draw_load_rom_prompt(Rectangle rect){
+  Color color = {0,0,0,127};
+  const char * label = "Drop ROM";
+  int icon_scale = (rect.width<rect.height?rect.width:rect.height)/16*0.33;
+  icon_scale = 6;
+  int icon_off = RICON_SIZE*icon_scale/2;
+
+  GuiDrawIcon(3,(Vector2){rect.x+rect.width/2-icon_off,rect.y+rect.height/2-icon_off},icon_scale, color);
+  Vector2 label_sz= MeasureTextEx(GetFontDefault(), label, icon_scale*10/2,icon_scale/2);
+  DrawText(label,rect.x+rect.width/2-label_sz.x/2,rect.y+rect.height/2+icon_off,icon_scale*10/2,color);
+
+  Rectangle button_rect;
+  button_rect.width = label_sz.x;
+  button_rect.height = 30;
+ #if defined(PLATFORM_WEB)
+
+  button_rect.x= rect.width/2+rect.x-button_rect.width/2;
+  button_rect.y= rect.y+rect.height/2+icon_off*2;
+  bool open_dialog = GuiButton(button_rect,"Open Rom");
+  if(open_dialog){
+    // EM_ASM is a macro to call in-line JavaScript code.
+  
+    //char* file_name = (char*)EM_ASM_INT(
+    EM_ASM(
+      var input = document.createElement('input');
+      input.setAttribute("type", "file");
+      input.click();
+      input.onchange = e => {
+
+        // getting a hold of the file reference
+        var file = e.target.files[0];
+        console.log(file);;
+
+      }
+      //input.remove();
+    );
+    //printf("Open: %s\n",file_name);
+    //free(file_name);
+  }      
+#endif  
+  
+}
+
 
 void UpdateDrawFrame() {
   if (IsFileDropped()) {
@@ -1795,7 +1850,7 @@ void UpdateDrawFrame() {
         default: gb_state.cart.ram_size = 0; break;
       }
       emu_state.run_mode = SB_MODE_RESET;
-
+      emu_state.rom_loaded = true;
       UnloadFileData(data);
       const char * c = GetFileNameWithoutExt(files[0]);
 #if defined(PLATFORM_WEB)
@@ -1849,10 +1904,6 @@ void UpdateDrawFrame() {
   //-----------------------------------------------------
   BeginDrawing();
 
-  ClearBackground(RAYWHITE);
-  sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
-                  
- 
   Image screenIm = {
         .data = gb_state.lcd.framebuffer,
         .width = SB_LCD_W,
@@ -1862,15 +1913,35 @@ void UpdateDrawFrame() {
   };
     
   Texture2D screenTex = LoadTextureFromImage(screenIm); 
-  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
-  Rectangle rect;
-  rect.x = 400;
-  rect.y = 0;
-  rect.width = GetScreenWidth()-400;
-  rect.height = GetScreenHeight();
+  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT); 
+  ClearBackground(RAYWHITE);
+  int screen_width = GetScreenWidth();
+  int screen_height = GetScreenHeight();
 
-  DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},rect, (Color){255,255,255,255}); 
+                   
+  Rectangle lcd_rect;
+  lcd_rect.x = 400;
+  lcd_rect.y = 0;
+  lcd_rect.width = GetScreenWidth()-400;
+  lcd_rect.height = GetScreenHeight();
    
+  float lcd_aspect = 144/160.;                                        
+  int panel_height = 30+GUI_PADDING; 
+  if((screen_width-400)/(float)screen_height>160/144.*0.7){
+    // Widescreen
+    sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
+  }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
+    // Tall Screen
+    sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
+    lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),panel_height+GetScreenWidth()*lcd_aspect};
+  }else{
+    // Square Screen
+    lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),GetScreenHeight()-panel_height};
+    sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
+  }
+  
+  DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255}); 
+  if(emu_state.rom_loaded==false)sb_draw_load_rom_prompt(lcd_rect);
   EndDrawing();
   UnloadTexture(screenTex);
 }

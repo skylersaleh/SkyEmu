@@ -54,6 +54,7 @@ typedef struct {
   int step_instructions; // Number of instructions to advance while stepping
   int pc_breakpoint;     // PC to run until
   int panel_mode;
+  bool rom_loaded;
 } sb_emu_state_t;
 
 typedef struct {
