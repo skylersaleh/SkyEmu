@@ -136,7 +136,7 @@ inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
     return gb->cart.ram_data[ram_addr_off];
   }else if(addr>=0xD000&&addr<=0xDfff){
-    uint8_t bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
+    int bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
     if(bank==0)bank = 1; 
     int ram_addr_off = 0x1000*bank+(addr-0xd000);
     return gb->mem.wram[ram_addr_off];
@@ -184,7 +184,7 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     }
     return; 
   }else if(addr>=0xD000&&addr<=0xDfff){
-    uint8_t bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
+    int bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
     if(bank==0)bank = 1; 
     int ram_addr_off = 0x1000*bank+(addr-0xd000);
     gb->mem.wram[ram_addr_off]=value;
@@ -251,16 +251,17 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     static int top_bit = 0; 
     static int lower_bits = 0; 
     //TODO implement other mappers
-    if(addr>=0x3000){
+    if(addr>=0x3000&& gb->cart.mbc_type==SB_MBC_MBC5){
       top_bit = value&1;
       value = 0;
     }else lower_bits = value;
+
+    value = lower_bits | (top_bit<<8);
     // On MBC5, bank 0 actually gives bank 0 
     if(value ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)value = 1; 
     //printf("Switching to ROM bank %d\n", value);
-    unsigned int size = gb->cart.rom_size;
     value %= (gb->cart.rom_size)/0x4000;
-    unsigned int bank_off = 0x4000*(lower_bits |(top_bit<<8));
+    unsigned int bank_off = 0x4000*(value);
     for(int i= 0; i<0x4000;++i){
       gb->mem.data[0x4000+i] = gb->cart.data[(bank_off+i)];
     }

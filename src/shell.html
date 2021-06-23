@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="target-densitydpi=device-dpi, width=device-width, user-scalable=no, maximum-scale=0.8, minimum-scale=0.8" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Game Boy Emulator</title>
     <style>
       body{padding:0; margin:0;}
@@ -87,7 +89,8 @@
     <input type="file" id="fileInput" value="">
     <input id="fileStaging" value="">
     <input id="fileStagingName" value="">
-    <script type='text/javascript'>
+    <script type='text/javascript'>                          
+      window.scroll(0,1);
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');
       var spinnerElement = document.getElementById('spinner');
