@@ -1346,7 +1346,6 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 }
 void sb_tick(){
   static FILE* file = NULL;
-  sb_poll_controller_input(&gb_state);
   if (emu_state.run_mode == SB_MODE_RESET) {
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
@@ -1914,7 +1913,101 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
 #endif  
   
 }
+float sb_distance(Vector2 a, Vector2 b){
+  a.x-=b.x;
+  a.y-=b.y;
+  return sqrt(a.x*a.x+a.y*a.y);
+}
 
+void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
+  Color fill_color = {200,200,200,255};
+  Color sel_color = {150,150,150,255};
+  Color line_color = {127,127,127,255};
+  float button_r = rect.width*0.09;
+
+  float dpad_sz0 = rect.width*0.05;
+  float dpad_sz1 = rect.width*0.20;
+
+
+  Vector2 a_pos = {rect.width*0.85,rect.height*0.3};
+  Vector2 b_pos = {rect.width*0.65,rect.height*0.5};
+  Vector2 dpad_pos = {rect.width*0.25,rect.height*0.4};
+
+  a_pos.x+=rect.x;
+  b_pos.x+=rect.x;
+  dpad_pos.x+=rect.x;
+  
+  a_pos.y+=rect.y;
+  b_pos.y+=rect.y;
+  dpad_pos.y+=rect.y;
+
+ 
+  const int max_points = 5;
+  Vector2 points[max_points]={0};
+
+  int p = 0;    
+  if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
+  for(int i=0; i<GetTouchPointsCount();++i){
+    if(p<max_points)points[p++]=GetTouchPosition(i);
+  }
+
+  bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
+
+  for(int i = 0;i<p;++i){
+    if(sb_distance(points[i],a_pos)<button_r*1.25)a=true;
+    if(sb_distance(points[i],b_pos)<button_r*1.25)b=true;
+
+    int dx = points[i].x-dpad_pos.x;
+    int dy = points[i].y-dpad_pos.y;
+    if(dx>=-dpad_sz1 && dx<=dpad_sz1 && dy>=-dpad_sz1 && dy<=dpad_sz1 ){
+      if(dy>dpad_sz0)down=true;
+      if(dy<-dpad_sz0)up=true;
+
+      if(dx>dpad_sz0)right=true;
+      if(dx<-dpad_sz0)left=true; 
+        
+    }
+
+  }
+   
+
+  DrawCircle(a_pos.x, a_pos.y, button_r+1, line_color);
+  DrawCircle(a_pos.x, a_pos.y, button_r, a?sel_color:fill_color);
+                             
+  DrawCircle(b_pos.x, b_pos.y, button_r+1, line_color);
+  DrawCircle(b_pos.x, b_pos.y, button_r, b?sel_color:fill_color); 
+
+  DrawRectangle(dpad_pos.x-dpad_sz1-1,dpad_pos.y-dpad_sz0-1,dpad_sz1*2+2,dpad_sz0*2+2,line_color);
+  DrawRectangle(dpad_pos.x-dpad_sz0-1,dpad_pos.y-dpad_sz1-1,dpad_sz0*2+2,dpad_sz1*2+2,line_color);
+                             
+  DrawRectangle(dpad_pos.x-dpad_sz1,dpad_pos.y-dpad_sz0,dpad_sz1*2,dpad_sz0*2,fill_color);
+  DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y-dpad_sz1,dpad_sz0*2,dpad_sz1*2,fill_color);
+                         
+  if(down) DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y+dpad_sz0,dpad_sz0*2,dpad_sz1-dpad_sz0,sel_color);
+  if(up) DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y-dpad_sz1,dpad_sz0*2,dpad_sz1-dpad_sz0,sel_color);
+
+ 
+  if(left) DrawRectangle(dpad_pos.x-dpad_sz1,dpad_pos.y-dpad_sz0,dpad_sz1-dpad_sz0,dpad_sz0*2,sel_color);
+  if(right) DrawRectangle(dpad_pos.x+dpad_sz0,dpad_pos.y-dpad_sz0,dpad_sz1-dpad_sz0,dpad_sz0*2,sel_color);
+
+
+  Rectangle widget_rect = rect;
+  widget_rect.x += GUI_PADDING;
+  widget_rect.y += rect.height-GUI_ROW_HEIGHT-GUI_PADDING;
+  widget_rect.width = (rect.width-GUI_PADDING*2)/2;
+  widget_rect.height = GUI_ROW_HEIGHT;
+   
+  int button = GuiToggleGroup(widget_rect, "Start;Select", -1);
+  
+  gb->joy.left  |= left;
+  gb->joy.right |= right;
+  gb->joy.up    |= up;
+  gb->joy.down  |= down;
+  gb->joy.a |= a;
+  gb->joy.b |= b;
+  gb->joy.start |= button==0;
+  gb->joy.select |= button==1; 
+}
 
 void UpdateDrawFrame() {
   if (IsFileDropped()) {
@@ -1945,6 +2038,7 @@ void UpdateDrawFrame() {
   //-----------------------------------------------------
   BeginDrawing();
 
+  sb_poll_controller_input(&gb_state);
   Image screenIm = {
         .data = gb_state.lcd.framebuffer,
         .width = SB_LCD_W,
@@ -1973,8 +2067,15 @@ void UpdateDrawFrame() {
     sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
   }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
     // Tall Screen
-    sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
-    lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),panel_height+GetScreenWidth()*lcd_aspect};
+    //sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
+    lcd_rect = (Rectangle){0, 0, GetScreenWidth(),GetScreenWidth()*lcd_aspect};
+
+    Rectangle cont_rect;
+    cont_rect.x=0;
+    cont_rect.y = lcd_rect.y+lcd_rect.height;
+    cont_rect.width = GetScreenWidth();
+    cont_rect.height= GetScreenHeight()-cont_rect.y;
+    sb_draw_onscreen_controller(&gb_state,cont_rect); 
   }else{
     // Square Screen
     lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),GetScreenHeight()-panel_height};
