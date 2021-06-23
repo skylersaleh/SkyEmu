@@ -1942,7 +1942,7 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
   dpad_pos.y+=rect.y;
 
  
-  const int max_points = 5;
+  enum{max_points = 5};
   Vector2 points[max_points]={0};
 
   int p = 0;    
