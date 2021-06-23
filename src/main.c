@@ -1900,7 +1900,7 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
       input_stage.value = '';
     }
     var sz = lengthBytesUTF8(ret_path)+1;
-    var string_on_heap = _malloc(length);
+    var string_on_heap = _malloc(sz);
     stringToUTF8(ret_path, string_on_heap, sz);
     return string_on_heap;
   },button_rect.x,button_rect.y,button_rect.width,button_rect.height);
