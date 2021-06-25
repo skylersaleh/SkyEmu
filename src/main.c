@@ -21,7 +21,7 @@
 #define SB_NUM_SAVE_STATES 5
 #define SB_AUDIO_BUFF_SAMPLES 2048
 #define SB_AUDIO_BUFF_CHANNELS 2
-#define SB_AUDIO_SAMPLE_RATE 48000
+#define SB_AUDIO_SAMPLE_RATE 44100
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -133,7 +133,13 @@ void sb_push_save_state(sb_gb_t* gb){
 }
   
 inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) { 
-  if(addr>=0x8000&&addr<=0x9fff){
+  if(addr>=0x4000&&addr<=0x7fff){ 
+    int bank = gb->cart.mapped_rom_bank;
+    if(bank ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)bank = 1; 
+    bank %= (gb->cart.rom_size)/0x4000;
+    unsigned int bank_off = 0x4000*(bank);
+    return gb->cart.data[addr-0x4000+bank_off];
+  }else if(addr>=0x8000&&addr<=0x9fff){
     uint8_t vbank =gb->mem.data[SB_IO_GBC_VBK]%SB_VRAM_NUM_BANKS;
     return gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
   } else if(addr>=0xA000&&addr<=0xBfff){
@@ -252,23 +258,10 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     gb->cart.ram_write_enable = (value&0xf)==0xA;
   }else if(addr >= 0x2000 && addr <=0x3fff){
     //MBC3 rombank select
-    static int top_bit = 0; 
-    static int lower_bits = 0; 
-    //TODO implement other mappers
     if(addr>=0x3000&& gb->cart.mbc_type==SB_MBC_MBC5){
-      top_bit = value&1;
-      value = 0;
-    }else lower_bits = value;
-
-    value = lower_bits | (top_bit<<8);
-    // On MBC5, bank 0 actually gives bank 0 
-    if(value ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)value = 1; 
-    //printf("Switching to ROM bank %d\n", value);
-    value %= (gb->cart.rom_size)/0x4000;
-    unsigned int bank_off = 0x4000*(value);
-    for(int i= 0; i<0x4000;++i){
-      gb->mem.data[0x4000+i] = gb->cart.data[(bank_off+i)];
-    }
+      gb->cart.mapped_rom_bank&=0xff;
+      gb->cart.mapped_rom_bank|= (int)(value&1)<<8;
+    }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;;
     return;
   }else if(addr >= 0x4000 && addr <=0x5fff){
     //MBC3 rombank select
@@ -591,7 +584,7 @@ Rectangle sb_draw_dma_state(Rectangle rect, sb_gb_t *gb) {
 
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
   wr.x =widget_rect.x;
-  wr.y = widget_rect.y;
+  wr.y = widget_rect.y;           
  
   GuiCheckBox(wr,"Active",gb->dma.active);
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
@@ -1350,18 +1343,19 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 }
 void sb_tick(){
   static FILE* file = NULL;
+  static bool init_audio = false;
+  
   if (emu_state.run_mode == SB_MODE_RESET) {
-    if(file)fclose(file);
-    file = fopen("instr_trace.txt","wb");
-   
-    // Initialize audio here so that we can be sure an interaction has happened
-    // before initializing audio (needed for Android)
-    UnloadAudioStream(audio_stream);
-    CloseAudioDevice();
+   if(init_audio==false&&emu_state.rom_loaded){
+    printf("Initializing Audio\n");
     InitAudioDevice();
     SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
     audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS); 
-    PlayAudioStream(audio_stream); 
+    PlayAudioStream(audio_stream);
+    init_audio=true;
+  }   
+    if(file)fclose(file);
+    file = fopen("instr_trace.txt","wb");
     
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
     memset(&gb_state.dma, 0, sizeof(gb_state.dma));
@@ -1426,12 +1420,12 @@ void sb_tick(){
     gb_state.timers.clocks_till_tima_inc=0;
 
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
-      gb_state.lcd.framebuffer[i] = 0;
+      gb_state.lcd.framebuffer[i] = 127;
     }
     emu_state.run_mode = SB_MODE_RUN;
   }
   
-  if (emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP) {
+  if (emu_state.rom_loaded&&(emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP)) {
     
     int instructions_to_execute = emu_state.step_instructions;
     if(instructions_to_execute==0)instructions_to_execute=60000;
@@ -2120,6 +2114,7 @@ void UpdateDrawFrame() {
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255}); 
   sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
   EndDrawing();
+  if(!IsAudioStreamPlaying(audio_stream))PlayAudioStream(audio_stream);
   UnloadTexture(screenTex);
 }
 
@@ -2132,10 +2127,6 @@ int main(void) {
   // Set configuration flags for window creation
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
-  //InitAudioDevice();
-  //SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-  //audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
-  //PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
   SetExitKey(0);
