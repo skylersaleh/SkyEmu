@@ -21,7 +21,7 @@
 #define SB_NUM_SAVE_STATES 5
 #define SB_AUDIO_BUFF_SAMPLES 2048
 #define SB_AUDIO_BUFF_CHANNELS 2
-#define SB_AUDIO_SAMPLE_RATE 44100
+#define SB_AUDIO_SAMPLE_RATE 48000
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -1353,16 +1353,16 @@ void sb_tick(){
   if (emu_state.run_mode == SB_MODE_RESET) {
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
-
+   
+    // Initialize audio here so that we can be sure an interaction has happened
+    // before initializing audio (needed for Android)
     UnloadAudioStream(audio_stream);
     CloseAudioDevice();
     InitAudioDevice();
     SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-    audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
-    //InitAudioDevice();
-    //SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-    //audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
-    //PlayAudioStream(audio_stream);                     
+    audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS); 
+    PlayAudioStream(audio_stream); 
+    
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
     memset(&gb_state.dma, 0, sizeof(gb_state.dma));
     memset(&gb_state.timers, 0, sizeof(gb_state.timers));
@@ -1765,6 +1765,7 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
 }
 
 void sb_load_rom( const char* file_path){
+  
   unsigned int bytes = 0;
   unsigned char *data = LoadFileData(file_path, &bytes);
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
@@ -1959,7 +1960,7 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
   Color line_color = {127,127,127,255};
   float button_r = rect.width*0.09;
 
-  float dpad_sz0 = rect.width*0.05;
+  float dpad_sz0 = rect.width*0.055;
   float dpad_sz1 = rect.width*0.20;
 
 
@@ -2131,10 +2132,10 @@ int main(void) {
   // Set configuration flags for window creation
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
-  InitAudioDevice();
-  SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-  audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
-  PlayAudioStream(audio_stream);
+  //InitAudioDevice();
+  //SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
+  //audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
+  //PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
   SetExitKey(0);
