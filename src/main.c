@@ -20,6 +20,7 @@
 
 #define SB_NUM_SAVE_STATES 5
 #define SB_AUDIO_BUFF_SAMPLES 2048
+#define SB_AUDIO_BUFF_CHANNELS 2
 #define SB_AUDIO_SAMPLE_RATE 44100
 
 #define SB_IO_JOYPAD      0xff00
@@ -50,7 +51,8 @@
 #define SB_IO_AUD4_LENGTH       0xff20
 #define SB_IO_AUD4_VOL_ENV      0xff21
 #define SB_IO_AUD4_POLY         0xff22
-#define SB_IO_AUD4_COUNTER      0xff23
+#define SB_IO_AUD4_COUNTER      0xff23                      
+#define SB_IO_SOUND_OUTPUT_SEL  0xff25
 
 #define SB_IO_SOUND_ON_OFF      0xff26
 #define SB_IO_INTER_F     0xff0f
@@ -108,6 +110,8 @@ sb_gb_t gb_state = {};
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0; 
 unsigned sb_save_state_index=0;
+
+AudioStream audio_stream;
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);       
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
@@ -1349,6 +1353,16 @@ void sb_tick(){
   if (emu_state.run_mode == SB_MODE_RESET) {
     if(file)fclose(file);
     file = fopen("instr_trace.txt","wb");
+
+    UnloadAudioStream(audio_stream);
+    CloseAudioDevice();
+    InitAudioDevice();
+    SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
+    audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
+    //InitAudioDevice();
+    //SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
+    //audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
+    //PlayAudioStream(audio_stream);                     
     memset(&gb_state.cpu, 0, sizeof(gb_state.cpu));
     memset(&gb_state.dma, 0, sizeof(gb_state.dma));
     memset(&gb_state.timers, 0, sizeof(gb_state.timers));
@@ -1567,9 +1581,8 @@ float compute_vol_env_slope(uint8_t d){
   if(length_of_step==0)slope=0;
   return slope/16.; 
 }
-AudioStream audio_stream;
 void sb_process_audio(sb_gb_t *gb, bool global_mute){
-  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES]; 
+  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS]; 
   static float chan1_t = 0, length_t1=0; 
   static float chan2_t = 0, length_t2=0;
   static float chan3_t = 0, length_t3=0;
@@ -1655,9 +1668,20 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
   if(SB_BFE(counter4,6,1)==0){length4 = 1.0e9;}
   counter4 &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
-                  
-  while(IsAudioStreamProcessed(audio_stream)){
-    for(int i=0;i<SB_AUDIO_BUFF_SAMPLES;++i){  
+
+  uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
+  //These are type int to allow them to be multiplied to enable/disable
+  int chan1_l = SB_BFE(chan_sel,0,1);
+  int chan2_l = SB_BFE(chan_sel,1,1);
+  int chan3_l = SB_BFE(chan_sel,2,1);
+  int chan4_l = SB_BFE(chan_sel,3,1);
+  int chan1_r = SB_BFE(chan_sel,4,1);
+  int chan2_r = SB_BFE(chan_sel,5,1);
+  int chan3_r = SB_BFE(chan_sel,6,1);
+  int chan4_r = SB_BFE(chan_sel,7,1);               
+  
+  if(IsAudioStreamProcessed(audio_stream)){
+    for(int i=0;i<SB_AUDIO_BUFF_SAMPLES;i+=1){  
 
       float f1 = freq1_hz*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t1/freq_sweep_time_mul1);
 
@@ -1700,33 +1724,43 @@ void sb_process_audio(sb_gb_t *gb, bool global_mute){
       if(v4>1)v4=1;
                  
       // Audio Gen
-      float sample_volume = 0;
-      sample_volume+=(chan1_t>duty1?1:-1)*v1;
-      sample_volume+=(chan2_t>duty2?1:-1)*v2;
+      float sample_volume_l = 0;
+      float sample_volume_r = 0;
+      sample_volume_l+=(chan1_t>duty1?1:-1)*v1*chan1_l;
+      sample_volume_r+=(chan1_t>duty1?1:-1)*v1*chan1_r;
+
+      sample_volume_l+=(chan2_t>duty2?1:-1)*v2*chan2_l;
+      sample_volume_r+=(chan2_t>duty2?1:-1)*v2*chan2_r;
 
       int wav_samp = chan3_t*32; 
       int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
       int offset = (wav_samp&1)? 0:4;
       dat = (dat>>offset)&0xf;
-      //Why?
-      sample_volume+=(dat-8)/7.*volume3*4;
+      sample_volume_l+=(dat-8)/7.*volume3*chan3_l*4;
+      sample_volume_r+=(dat-8)/7.*volume3*chan3_r*4;
 
-      sample_volume+=last_noise_value*v4;
+      sample_volume_l+=last_noise_value*v4*chan4_l;
+      sample_volume_r+=last_noise_value*v4*chan4_r;
 
-      sample_volume*=0.25*0.1;              
-      if(global_mute ==true)sample_volume = 0;
+      sample_volume_l*=0.25;              
+      sample_volume_r*=0.25;              
+      if(global_mute ==true)sample_volume_l = sample_volume_r = 0;
 
       // Clipping
-      if(sample_volume>1.0)sample_volume=1;
-      if(sample_volume<-1.0)sample_volume=-1;
-      float out = sample_volume-capacitor; 
-      capacitor = (sample_volume-out)*0.996;
+      if(sample_volume_l>1.0)sample_volume_l=1;
+      if(sample_volume_r>1.0)sample_volume_r=1;
+      if(sample_volume_l<-1.0)sample_volume_l=-1;
+      if(sample_volume_r<-1.0)sample_volume_r=-1;
+      float out = sample_volume_l-capacitor; 
+      capacitor = (sample_volume_l-out)*0.996;
       // Quantization
-      audio_buff[i] = sample_volume*32760;
+      audio_buff[i*2+0] = sample_volume_l*32760;
+      audio_buff[i*2+1] = sample_volume_r*32760;
+      //audio_buff[i+SB_AUDIO_BUFF_SAMPLES/2] = sample_volume_r*32760;
       
     }
     
-    UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES);
+    UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS);
   }
 }
 
@@ -2098,9 +2132,8 @@ int main(void) {
   SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
   InitAudioDevice();
-                                 
   SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-  audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, 1);
+  audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
   PlayAudioStream(audio_stream);
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
