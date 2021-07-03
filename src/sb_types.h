@@ -47,6 +47,9 @@
 #define SB_PANEL_TILEDATA 2
 #define SB_PANEL_AUDIO    3
 
+//Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
+#define SB_AUDIO_RING_BUFFER_SIZE (8192*32)
+
 // Draw and process scroll bar style edition controls
 
 typedef struct {
@@ -117,6 +120,23 @@ typedef struct{
   int clocks_till_div_inc;
   int clocks_till_tima_inc;
 } sb_timer_t;
+
+typedef struct{
+  uint16_t data[SB_AUDIO_RING_BUFFER_SIZE];
+  uint32_t read_ptr;
+  uint32_t write_ptr;
+}sb_ring_buffer_t;
+inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
+  uint32_t v = (buff->write_ptr-buff->read_ptr);
+  v= v%SB_AUDIO_RING_BUFFER_SIZE;
+  return v;
+}
+typedef struct{
+  float channel_output[4];
+  float mix_l_volume, mix_r_volume;
+  float master_volume;
+  sb_ring_buffer_t ring_buff;
+}sb_audio_t;
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
@@ -125,6 +145,7 @@ typedef struct {
   sb_lcd_ppu_t lcd;
   sb_timer_t timers;
   sb_dma_t dma; 
+  sb_audio_t audio;
   int model; 
 } sb_gb_t;  
 
