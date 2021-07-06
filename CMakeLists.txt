@@ -44,8 +44,8 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # This is the main part:
-
-add_executable(${PROJECT_NAME} src/main.c)
+file(GLOB SOURCE_FILES ${PROJECT_SOURCE_DIR}/src/*.h ${PROJECT_SOURCE_DIR}/src/*.c)
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=128MB -lidbfs.js")
 endif ()
