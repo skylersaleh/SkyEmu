@@ -2146,7 +2146,7 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
     }
 
   }
-
+    
 
   DrawCircle(a_pos.x, a_pos.y, button_r+1, line_color);
   DrawCircle(a_pos.x, a_pos.y, button_r, a?sel_color:fill_color);
@@ -2171,19 +2171,39 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
   Rectangle widget_rect = rect;
   widget_rect.x += GUI_PADDING;
   widget_rect.y += rect.height-GUI_ROW_HEIGHT-GUI_PADDING;
-  widget_rect.width = (rect.width-GUI_PADDING*2)/2;
+  widget_rect.width -=GUI_PADDING*2;
   widget_rect.height = GUI_ROW_HEIGHT;
 
-  int button = GuiToggleGroup(widget_rect, "Start;Select", -1);
+  char * button_name[] ={"Start", "Select"};
+  int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
+  int button_press=0;           
+  int button_width = (widget_rect.width-(num_buttons-1)*GuiGetStyle(TOGGLE, GROUP_PADDING))/num_buttons;
+  for(int b=0;b<num_buttons;++b){                                           
+    int state = 0;
+    Rectangle bounds = widget_rect;
+    bounds.width = button_width;
+    bounds.x+=(button_width+GuiGetStyle(TOGGLE, GROUP_PADDING))*(b);
+   
+    for(int i = 0;i<p;++i){
+      int dx = points[i].x-bounds.x;
+      int dy = points[i].y-bounds.y;
+      if(dx>=0 && dx<=bounds.width && dy>=0 && dy<=bounds.height ){
+        button_press|=1<<b; 
+        state =1;
+      }
 
+    }
+    GuiDrawRectangle(bounds, GuiGetStyle(BUTTON, BORDER_WIDTH), Fade(GetColor(GuiGetStyle(BUTTON, BORDER + state)), guiAlpha), Fade(GetColor(GuiGetStyle(BUTTON, BASE + state*3)), guiAlpha));
+    GuiDrawText(button_name[b], GetTextBounds(BUTTON, bounds), GuiGetStyle(BUTTON, TEXT_ALIGNMENT), Fade(GetColor(GuiGetStyle(BUTTON, TEXT + state)), guiAlpha));
+  }
   gb->joy.left  |= left;
   gb->joy.right |= right;
   gb->joy.up    |= up;
   gb->joy.down  |= down;
   gb->joy.a |= a;
   gb->joy.b |= b;
-  gb->joy.start |= button==0;
-  gb->joy.select |= button==1;
+  gb->joy.start |= SB_BFE(button_press,0,1);
+  gb->joy.select |= SB_BFE(button_press,1,1);
 }
 
 void UpdateDrawFrame() {
