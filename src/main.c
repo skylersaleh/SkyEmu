@@ -271,6 +271,14 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     value %= (gb->cart.ram_size/0x2000);
     gb->cart.mapped_ram_bank = value;
     return;
+  }else if (addr>=0xfe00 && addr<=0xfe9f ){
+    //OAM cannot be written to in mode 2 and 3
+    int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
+    if(stat>=2) return;            
+  } else if (addr>=0x8000 && addr <=0x9fff){
+    //VRAM cannot be writen to in mode 3
+    int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
+    if(stat>=3) return;            
   }
   sb_store8_direct(gb,addr,value);
 }
