@@ -152,6 +152,9 @@ inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     if(bank==0)bank = 1;
     int ram_addr_off = 0x1000*bank+(addr-0xd000);
     return gb->mem.wram[ram_addr_off];
+  }else if(addr>=0xe000 && addr<=0xfdff){
+    //Echo Ram
+    addr =addr - 0xe000 + 0xc000;
   }
   return gb->mem.data[addr];
 }
@@ -201,6 +204,9 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     int ram_addr_off = 0x1000*bank+(addr-0xd000);
     gb->mem.wram[ram_addr_off]=value;
     return;
+  }else if(addr>=0xe000 && addr<=0xfdff){
+    //Echo Ram
+    addr =addr - 0xe000 + 0xc000;
   }
   if(addr<=0x7fff){
     //printf("Attempt to write to rom address %x\n",addr);
