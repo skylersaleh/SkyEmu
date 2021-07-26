@@ -16,10 +16,10 @@
 #include "raygui.h"
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
-#endif
+#endif                                             
 
 #define SB_NUM_SAVE_STATES 5
-#define SB_AUDIO_BUFF_SAMPLES 8192
+#define SB_AUDIO_BUFF_SAMPLES 2048
 #define SB_AUDIO_BUFF_CHANNELS 2
 #define SB_AUDIO_SAMPLE_RATE 44100
 
@@ -116,6 +116,7 @@ AudioStream audio_stream;
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 void sb_process_audio(sb_gb_t *gb, double delta_time);
+double sb_gb_fps_counter(int tick);
 
 void sb_pop_save_state(sb_gb_t* gb){
   if(sb_valid_save_states>0){
@@ -332,7 +333,7 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
 
     sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                     &adv_rect);
-    GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %i]", GetFPS()));
+    GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %f]", sb_gb_fps_counter(0)));
   }
   return adv_rect;
 }
@@ -1342,10 +1343,28 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
   }
 
 }
+double sb_gb_fps_counter(int tick){
+  static int call = -1;
+  static double last_t = 0;
+  static double fps = 60; 
+  if(call==-1){
+    call = 0;
+    last_t = GetTime();
+  }
+  call+=tick;
+  
+  if(call>=5){
+    call=0;
+    double t = GetTime();
+    fps = 5./(t-last_t);
+    last_t = t;
+  }
+  return fps; 
+}
 void sb_tick(){
   static FILE* file = NULL;
   static bool init_audio = false;
-
+  
   if (emu_state.run_mode == SB_MODE_RESET) {
    if(init_audio==false&&emu_state.rom_loaded){
     printf("Initializing Audio\n");
@@ -1431,20 +1450,19 @@ void sb_tick(){
     int instructions_to_execute = emu_state.step_instructions;
     if(instructions_to_execute==0)instructions_to_execute=6000000;
     int frames_to_draw = 1;
-    double frame_time = GetFrameTime();
-    static double avg_frame_time = 1.0/60.*1.0;
-    avg_frame_time = frame_time*0.05+avg_frame_time*0.95;
+    float frame_time = 1./sb_gb_fps_counter(0);
+    static float avg_frame_time = 1.0/60.*1.00;
+    avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
     int size = sb_ring_buffer_size(&gb_state.audio.ring_buff);
     int samples_per_buffer = SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS;
-    float buffs_available = size/(double)(samples_per_buffer);
-    float time_correction_scale = (2.0+80.0)/(80.+buffs_available);
-    time_correction_scale = avg_frame_time/(1.0/60.);
-    if(buffs_available<2)time_correction_scale*=1.1;
-    if(buffs_available>4)time_correction_scale*=0.9;
+    float buffs_available = size/(float)(samples_per_buffer);
+    float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
+    time_correction_scale = avg_frame_time/(1.0/60.)*0.995;
+    if(buffs_available<0.5)time_correction_scale*=1.005;
+    if(buffs_available>3)time_correction_scale*=0.98;
 
     //int target_buffs = 3;
     //time_correction_scale*= (target_buffs+30)/(30+buffs_available);
-    double t= 0;
     for(int i=0;i<instructions_to_execute;++i){
 
         bool double_speed = false;
@@ -1544,9 +1562,8 @@ void sb_tick(){
         bool vblank = sb_update_lcd(&gb_state,delta_cycles_after_speed);
         sb_update_timers(&gb_state,cpu_delta_cycles+dma_delta_cycles*2);
 
-        double delta_t = delta_cycles_after_speed/(double)(4*1024*1024);
+        double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
         delta_t*=time_correction_scale;
-        t+=delta_t;
         //sb_push_save_state(&gb_state);
 
         if (gb_state.cpu.pc == emu_state.pc_breakpoint||gb_state.cpu.trigger_breakpoint){
@@ -1554,11 +1571,13 @@ void sb_tick(){
           emu_state.run_mode = SB_MODE_PAUSE;
           break;
         }
-        if(vblank)--frames_to_draw;
-
+        if(vblank){--frames_to_draw;sb_gb_fps_counter(1);}
+        
+        sb_process_audio(&gb_state,delta_t);
         int size = sb_ring_buffer_size(&gb_state.audio.ring_buff);
-        //if(size> SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS*3)break;
-        if(frames_to_draw<=0&& emu_state.step_instructions ==0 )break;
+        
+       //if(size> SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS*3)break;
+       if(frames_to_draw<=0&& emu_state.step_instructions ==0 )break;
     }
 
   }
@@ -1574,7 +1593,7 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
 
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
 
-  double fifo_size = sb_ring_buffer_size(&gb->audio.ring_buff);
+  float fifo_size = sb_ring_buffer_size(&gb->audio.ring_buff);
   GuiLabel(widget_rect, TextFormat("FIFO Size: %4f (%4f)", fifo_size,fifo_size/SB_AUDIO_RING_BUFFER_SIZE));
 
 
@@ -1595,10 +1614,32 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   GuiLabel(widget_rect, "Mix Volume (L)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   GuiProgressBar(widget_rect, "", "", gb->audio.mix_l_volume, 0, 1);
-           
+  
+   
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
+  GuiLabel(widget_rect, "Output Waveform");
+   
+  sb_vertical_adv(inside_rect, 128, GUI_PADDING, &widget_rect, &inside_rect);
+  
+  Color outline_color = GetColor(GuiGetStyle(DEFAULT,BORDER_COLOR_NORMAL));
+  Color line_color = GetColor(GuiGetStyle(DEFAULT,BORDER_COLOR_FOCUSED));
+  DrawRectangleLines(widget_rect.x,widget_rect.y,widget_rect.width,widget_rect.height,outline_color);
+  int old_v = 0;
+  static Vector2 points[512];
+  for(int i=0;i<widget_rect.width;++i){
+    int entry = (gb->audio.ring_buff.read_ptr+i*4)%SB_AUDIO_RING_BUFFER_SIZE;
+    int value = gb->audio.ring_buff.data[entry]/256/2;
+    points[i]= (Vector2){widget_rect.x+i,widget_rect.y+64+value};
+    old_v=value;
+  }
+  DrawLineStrip(points,widget_rect.width,line_color);
+     
+
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
+
+
   GuiGroupBox(state_rect, "Audio State");
   return adv_rect;
 }
@@ -1630,8 +1671,8 @@ float compute_vol_env_slope(uint8_t d){
   int dir = SB_BFE(d,3,1);
   int length_of_step = SB_BFE(d,0,3);
 
-  float step_time = 64./length_of_step;
-  float slope = step_time;
+  float step_time = length_of_step/64.0;
+  float slope = 1./step_time;
   if(dir==0)slope*=-1;
   if(length_of_step==0)slope=0;
   return slope/16.;
@@ -1647,8 +1688,12 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;
 
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
   current_sim_time +=delta_time;
-
+  while(current_sim_time>1.0){
+      current_sample_generated_time-=1.0;
+      current_sim_time-=1.0;
+  } 
   static float capacitor_r = 0.0;
   static float capacitor_l = 0.0;
 
@@ -1739,7 +1784,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
   while(current_sample_generated_time < current_sim_time){
 
-    current_sample_generated_time+=sample_delta_t;
+    current_sample_generated_time+=1.0/SB_AUDIO_SAMPLE_RATE;
+    
     if((sb_ring_buffer_size(&gb->audio.ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     float f1 = freq1_hz*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t1/freq_sweep_time_mul1);
 
@@ -1761,10 +1807,10 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     if(length_t4>length4){volume4=0;volume_env4=0;}
 
     // Loop back
-    if(chan1_t>=1.0)chan1_t-=1.0;
-    if(chan2_t>=1.0)chan2_t-=1.0;
-    if(chan3_t>=1.0)chan3_t-=1.0;
-    if(chan4_t>=1.0){
+    while(chan1_t>=1.0)chan1_t-=1.0;
+    while(chan2_t>=1.0)chan2_t-=1.0;
+    while(chan3_t>=1.0)chan3_t-=1.0;
+    while(chan4_t>=1.0){
       chan4_t-=1.0;
       last_noise_value = GetRandomValue(0,1)*2.-1.;
     }
@@ -1794,7 +1840,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     sample_volume_l+=channels[1]*chan2_l;
     sample_volume_r+=channels[1]*chan2_r;
      
-    int wav_samp = chan3_t*32;
+    unsigned wav_samp = chan3_t*32;
+    wav_samp%=32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     int offset = (wav_samp&1)? 0:4;
     dat = ((dat>>offset)&0xf)>>channel3_shift;
@@ -1808,6 +1855,9 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     sample_volume_l+=channels[3]*chan4_l;
     sample_volume_r+=channels[3]*chan4_r;
     
+    sample_volume_l*=0.25;
+    sample_volume_r*=0.25;
+     
     const float lowpass_coef = 0.999;
     gb->audio.mix_l_volume = gb->audio.mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
     gb->audio.mix_r_volume = gb->audio.mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
@@ -1816,9 +1866,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
       gb->audio.channel_output[i] = gb->audio.channel_output[i]*lowpass_coef 
                                   + fabs(channels[i])*(1.0-lowpass_coef); 
     }
-    sample_volume_l*=0.25;
-    sample_volume_r*=0.25;
-
+    
     // Clipping
     if(sample_volume_l>1.0)sample_volume_l=1;
     if(sample_volume_r>1.0)sample_volume_r=1;
@@ -1828,32 +1876,32 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     float out_r = sample_volume_r-capacitor_r;
     capacitor_l = (sample_volume_l-out_l)*0.996;
     capacitor_r = (sample_volume_r-out_r)*0.996;
-    out_l = sample_volume_l;
-    out_r = sample_volume_r;
+    //out_l = sample_volume_l;
+    //out_r = sample_volume_r;
     // Quantization
-    int write_entry0 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
-    int write_entry1 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry0 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry1 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
 
     gb->audio.ring_buff.data[write_entry0] = out_l*32760;
     gb->audio.ring_buff.data[write_entry1] = out_r*32760;
   }
 }
 void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
-  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS];
+  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS*2];
   int size = sb_ring_buffer_size(&gb->audio.ring_buff);
   if(global_mute){
-    while(IsAudioStreamProcessed(audio_stream)){
+    if(IsAudioStreamProcessed(audio_stream)){
       for(int i=0;i<SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS;++i)audio_buff[i]=0;
       UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS);
     }
   }
-  while(IsAudioStreamProcessed(audio_stream)){
+  if(IsAudioStreamProcessed(audio_stream)){
     //Fill up Audio buffer from ring_buffer
-    sb_process_audio(&gb_state,((double)(SB_AUDIO_BUFF_SAMPLES))/SB_AUDIO_SAMPLE_RATE);
     for(int i=0; i< SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS; ++i){
       unsigned read_entry = (gb->audio.ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
       audio_buff[i]= gb->audio.ring_buff.data[read_entry];
     }
+
     UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS);
   }
 }
@@ -2160,7 +2208,8 @@ void UpdateDrawFrame() {
     gb_state.cart.ram_is_dirty=false;
   }
   sb_tick();
-
+ 
+  bool mute = emu_state.run_mode != SB_MODE_RUN;
   // Draw
   //-----------------------------------------------------
   BeginDrawing();
@@ -2212,11 +2261,9 @@ void UpdateDrawFrame() {
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255});
   sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
   EndDrawing();
-  if(!IsAudioStreamPlaying(audio_stream))PlayAudioStream(audio_stream);
   UnloadTexture(screenTex);
+  sb_update_audio_stream_from_fifo(&gb_state,mute); 
 
-  bool mute = emu_state.run_mode != SB_MODE_RUN;
-  sb_update_audio_stream_from_fifo(&gb_state,mute);
 }
 
 int main(void) {
@@ -2231,7 +2278,6 @@ int main(void) {
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
   SetExitKey(0);
-  SetTargetFPS(60);
 #if defined(PLATFORM_WEB)
 // EM_ASM is a macro to call in-line JavaScript code.
     EM_ASM(
@@ -2247,6 +2293,7 @@ int main(void) {
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
 
+  SetTargetFPS(60);
   // Main game loop
   while (!WindowShouldClose()) // Detect window close button or ESC key
   {

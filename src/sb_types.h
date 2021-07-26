@@ -48,7 +48,7 @@
 #define SB_PANEL_AUDIO    3
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
-#define SB_AUDIO_RING_BUFFER_SIZE (8192*32)
+#define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 
 // Draw and process scroll bar style edition controls
 
@@ -122,11 +122,15 @@ typedef struct{
 } sb_timer_t;
 
 typedef struct{
-  uint16_t data[SB_AUDIO_RING_BUFFER_SIZE];
+  int16_t data[SB_AUDIO_RING_BUFFER_SIZE];
   uint32_t read_ptr;
   uint32_t write_ptr;
 }sb_ring_buffer_t;
 inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
+  if(buff->read_ptr>SB_AUDIO_RING_BUFFER_SIZE){
+    buff->write_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
+    buff->read_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
+  }
   uint32_t v = (buff->write_ptr-buff->read_ptr);
   v= v%SB_AUDIO_RING_BUFFER_SIZE;
   return v;
