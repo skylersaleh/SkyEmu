@@ -670,7 +670,11 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
                   &inside_rect);
   GuiLabel(widget_rect, TextFormat("ROM Size: %d", cart_state->rom_size));
-
+         
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
+                  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("Mapped ROM Bank: %d", cart_state->mapped_rom_bank));
+           
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
                   &inside_rect);
   GuiLabel(widget_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
@@ -1446,6 +1450,7 @@ void sb_tick(){
 
     gb_state.timers.clocks_till_div_inc=0;
     gb_state.timers.clocks_till_tima_inc=0;
+    gb_state.cart.mapped_rom_bank=1;
 
     for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
       gb_state.lcd.framebuffer[i] = 127;
@@ -1456,7 +1461,7 @@ void sb_tick(){
   if (emu_state.rom_loaded&&(emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP)) {
 
     int instructions_to_execute = emu_state.step_instructions;
-    if(instructions_to_execute==0)instructions_to_execute=6000000;
+    if(instructions_to_execute==0)instructions_to_execute=600000;
     int frames_to_draw = 1;
     float frame_time = 1./sb_gb_fps_counter(0);
     static float avg_frame_time = 1.0/60.*1.00;
