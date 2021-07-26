@@ -1497,11 +1497,7 @@ void sb_tick(){
             );
           */
           if(gb_state.cpu.prefix_op)op+=256;
-          if(gb_state.cpu.deferred_interrupt_enable){
-            gb_state.cpu.deferred_interrupt_enable = false;
-            gb_state.cpu.interrupt_enable = true;
-          }
-
+     
           int trigger_interrupt = -1;
           // TODO: Can interrupts trigger between prefix ops and the second byte?
           if(gb_state.cpu.prefix_op==false){
@@ -1515,7 +1511,7 @@ void sb_tick(){
             //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true;
             //sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
           }
-
+     
           gb_state.cpu.prefix_op = false;
           cpu_delta_cycles = 4;
           bool call_interrupt = false;
@@ -1536,6 +1532,12 @@ void sb_tick(){
             gb_state.cpu.wait_for_interrupt = false;
 
           }
+
+          if(gb_state.cpu.deferred_interrupt_enable){
+            gb_state.cpu.deferred_interrupt_enable = false;
+            gb_state.cpu.interrupt_enable = true;
+          }
+     
           if(call_interrupt==false&&gb_state.cpu.wait_for_interrupt==false){
             sb_instr_t inst = sb_decode_table[op];
             gb_state.cpu.pc+=inst.length;
