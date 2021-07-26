@@ -7,8 +7,8 @@ if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
 endif ()
  
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O2 ")
-set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O2 ") 
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O3 -g ")
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O3 -g ") 
 
 find_package(OpenGL)
 
@@ -47,7 +47,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_executable(${PROJECT_NAME} src/main.c)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=128MB -lidbfs.js")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js")
 endif ()
 #set(raylib_VERBOSE 1)
 target_link_libraries(${PROJECT_NAME} raylib)
