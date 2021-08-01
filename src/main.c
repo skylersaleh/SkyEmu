@@ -684,7 +684,10 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
                   &inside_rect);
   GuiLabel(widget_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
-
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
+                  &inside_rect);
+  GuiLabel(widget_rect, TextFormat("Mapped RAM Bank: %d", cart_state->mapped_ram_bank));
+   
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
@@ -1082,9 +1085,9 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
 
   const int bytes_per_tile = 2*8;
   if(data_mode==0){
-    byte_tile_data_off = 0x8000 + 0x1000 + (((int8_t)(tile_id))*bytes_per_tile);
+    byte_tile_data_off = 0x8000 + 0x1000 + ((int)((int8_t)(tile_id))*bytes_per_tile);
   }else{
-    byte_tile_data_off = 0x8000 + (((uint8_t)(tile_id))*bytes_per_tile);
+    byte_tile_data_off = 0x8000 + ((int)((uint8_t)(tile_id))*bytes_per_tile);
   }
   byte_tile_data_off+=pixel_in_tile_y*2;
   uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
@@ -1648,7 +1651,7 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   int old_v = 0;
   static Vector2 points[512];
   for(int i=0;i<widget_rect.width;++i){
-    int entry = (gb->audio.ring_buff.read_ptr+i*4)%SB_AUDIO_RING_BUFFER_SIZE;
+    int entry = (gb->audio.ring_buff.read_ptr+i)%SB_AUDIO_RING_BUFFER_SIZE;
     int value = gb->audio.ring_buff.data[entry]/256/2;
     points[i]= (Vector2){widget_rect.x+i,widget_rect.y+64+value};
     old_v=value;
@@ -1697,6 +1700,23 @@ float compute_vol_env_slope(uint8_t d){
   if(dir==0)slope*=-1;
   if(length_of_step==0)slope=0;
   return slope/16.;
+} 
+float sb_polyblep(float t,float dt){
+  if(t<=dt){    
+    t = t/dt;
+    return t+t-t*t-1.0;;
+  }else if (t >= 1-dt){
+    t=(t-1.0)/dt;
+    return t*t+t+t+1.0;
+  }else return 0; 
+}
+float sb_bandlimited_square(float t, float duty_cycle,float dt){
+  float t2 = t - duty_cycle;
+  if(t2< 0.0)t2 +=1.0;
+  float y = t < duty_cycle ? -1 : 1;
+  y -= sb_polyblep(t,dt);
+  y += sb_polyblep(t2,dt);
+  return y;
 }
 void sb_process_audio(sb_gb_t *gb, double delta_time){
   //TODO: Move these into a struct
@@ -1853,8 +1873,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     float sample_volume_l = 0;
     float sample_volume_r = 0;
 
-    channels[0]= (chan1_t>duty1?1:-1)*v1;
-    channels[1]= (chan2_t>duty2?1:-1)*v2;
+    channels[0]= sb_bandlimited_square(chan1_t,duty1,sample_delta_t*f1)*v1;
+    channels[1]= sb_bandlimited_square(chan2_t,duty2,sample_delta_t*freq2_hz)*v2;
 
     sample_volume_l+=channels[0]*chan1_l;
     sample_volume_r+=channels[0]*chan1_r;

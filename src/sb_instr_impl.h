@@ -285,7 +285,7 @@ static void sb_ei_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum
 }
 
 static void sb_halt_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  gb->cpu.wait_for_interrupt=true;
+  gb->cpu.wait_for_interrupt=gb->cpu.interrupt_enable;
 }
 
 static void sb_inc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
