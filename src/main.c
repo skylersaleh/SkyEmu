@@ -14,6 +14,7 @@
 #define RAYGUI_IMPLEMENTATION
 #define RAYGUI_SUPPORT_ICONS
 #include "raygui.h"
+#include "rlgl.h"
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
 #endif                                             
@@ -914,13 +915,12 @@ Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
 
   // Draw Tilemaps
   for(int tile_map = 0;tile_map<2;++tile_map){
-    const char * name = tile_map == 0  ? "Background" : "Window";
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-    GuiLabel(widget_rect, TextFormat("%s Tile Map",name));
+    Vector2 mouse_pos = GetMousePosition();
+    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, 0, &widget_rect,  &inside_rect);
 
     int image_height = 32*(8+2);
     int image_width =  32*(8+2);
-    sb_vertical_adv(inside_rect, image_height, GUI_PADDING, &widget_rect,  &inside_rect);
+    sb_vertical_adv(inside_rect, image_height+GUI_PADDING*2, GUI_PADDING, &widget_rect,  &inside_rect);
     Rectangle wr = widget_rect;
     int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
     int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
@@ -966,13 +966,27 @@ Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
     SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
     Rectangle im_rect;
     im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
-    im_rect.y = widget_rect.y;
+    im_rect.y = widget_rect.y+GUI_PADDING;
     im_rect.width = image_width;
     im_rect.height = image_height;
 
     DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255});
 
-    //UnloadTexture(screenTex);
+    const char * name = tile_map == 0  ? "Background" : "Window";
+    mouse_pos.x-=im_rect.x;
+    mouse_pos.y-=im_rect.y;
+    if(mouse_pos.x<im_rect.width && mouse_pos.y <im_rect.height &&
+      mouse_pos.x>=0 && mouse_pos.y>=0){
+      int tx = (mouse_pos.x -1)/10;
+      int ty = (mouse_pos.y -1)/10;
+      int t = tx+ty*32;
+      int tile_data0 = sb_read_vram(gb, tile_map_base+t,0);
+      int tile_data1 = sb_read_vram(gb, tile_map_base+t,1);
+      GuiGroupBox(widget_rect, TextFormat("%s Tile Map (Tile (%d, %d) Index=0x%02x Attr=0x%02x)",name,tx,ty,tile_data0,tile_data1));
+    }else GuiGroupBox(widget_rect, TextFormat("%s Tile Map",name));
+    // Flush Raylib batch so that texture can be deleted. 
+    rlDrawRenderBatchActive();
+    UnloadTexture(screenTex);
   }
 
   Rectangle state_rect, adv_rect;
@@ -993,13 +1007,13 @@ Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
 
   // Draw tile data arrays
   for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-    GuiLabel(widget_rect, TextFormat("Tile Data (Bank %d)",tile_data_bank));
+    Vector2 mouse_pos = GetMousePosition();
+    sb_vertical_adv(inside_rect, 0, GUI_PADDING, &widget_rect,  &inside_rect);
 
     int scale = 1;
     int image_height = 384/32*(8+2)*scale;
     int image_width =  32*(8+2)*scale;
-    sb_vertical_adv(inside_rect, image_height, GUI_PADDING, &widget_rect,  &inside_rect);
+    sb_vertical_adv(inside_rect, image_height+GUI_PADDING*2, GUI_PADDING, &widget_rect,  &inside_rect);
     Rectangle wr = widget_rect;
 
     int tile_data_base = 0x8000;
@@ -1032,13 +1046,24 @@ Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
     SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
     Rectangle im_rect;
     im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
-    im_rect.y = widget_rect.y;
+    im_rect.y = widget_rect.y+GUI_PADDING;
     im_rect.width = image_width;
     im_rect.height = image_height;
 
     DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255});
-    //UnloadTexture(screenTex);
-
+    // Flush Raylib batch so that texture can be deleted. 
+    rlDrawRenderBatchActive();
+    UnloadTexture(screenTex); 
+    
+    mouse_pos.x-=im_rect.x;
+    mouse_pos.y-=im_rect.y;
+    if(mouse_pos.x<im_rect.width && mouse_pos.y <im_rect.height &&
+      mouse_pos.x>=0 && mouse_pos.y>=0){
+      int tx = (mouse_pos.x -1)/10;
+      int ty = (mouse_pos.y -1)/10;
+      int t = tx+ty*32;
+      GuiGroupBox(widget_rect, TextFormat("Tile Data[%d] (TileID = 0x%02x)",tile_data_bank,t));
+    }else GuiGroupBox(widget_rect, TextFormat("Tile Data[%d]",tile_data_bank));
   }
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
@@ -1085,9 +1110,9 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
 
   const int bytes_per_tile = 2*8;
   if(data_mode==0){
-    byte_tile_data_off = 0x8000 + 0x1000 + ((int)((int8_t)(tile_id))*bytes_per_tile);
+    byte_tile_data_off = 0x8000 + 0x1000 + ((int)((int8_t)(tile_id)))*bytes_per_tile;
   }else{
-    byte_tile_data_off = 0x8000 + ((int)((uint8_t)(tile_id))*bytes_per_tile);
+    byte_tile_data_off = 0x8000 + ((int)((uint8_t)(tile_id)))*bytes_per_tile;
   }
   byte_tile_data_off+=pixel_in_tile_y*2;
   uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
