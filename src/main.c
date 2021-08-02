@@ -2284,7 +2284,10 @@ void UpdateDrawFrame() {
     }
     ClearDroppedFiles();
   }
-  if(gb_state.cart.ram_is_dirty){
+  static unsigned frames_since_last_save = 0; 
+  frames_since_last_save++;
+  if(gb_state.cart.ram_is_dirty && frames_since_last_save>10){
+    frames_since_last_save = 0; 
     if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
  #if defined(PLATFORM_WEB)
       // Don't forget to sync to make sure you store it to IndexedDB
