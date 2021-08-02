@@ -1347,7 +1347,7 @@ int sb_update_dma(sb_gb_t *gb){
 
     int len = (SB_BFE(dma_mode_length, 0,7));
     bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
-    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<SB_LCD_H))
+    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<SB_LCD_H-1))
     {
       while(len>=0){
         for(int i=0;i<16;++i){
@@ -1371,9 +1371,9 @@ int sb_update_dma(sb_gb_t *gb){
         new_mode = 0xff;
       }
       sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
-    }else delta_cycles=1;
-    gb->dma.in_hblank = gb->lcd.in_hblank;
-    delta_cycles+= bytes_transferred/2;
+      gb->dma.in_hblank = gb->lcd.in_hblank;
+    }else{ gb->dma.in_hblank = false;}
+    delta_cycles+= bytes_transferred/2+1;
   }
   return delta_cycles;
 }
@@ -2175,8 +2175,8 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
   float dpad_sz1 = rect.width*0.20;
 
 
-  Vector2 a_pos = {rect.width*0.85,rect.height*0.3};
-  Vector2 b_pos = {rect.width*0.65,rect.height*0.5};
+  Vector2 a_pos = {rect.width*0.85,rect.height*0.32};
+  Vector2 b_pos = {rect.width*0.65,rect.height*0.48};
   Vector2 dpad_pos = {rect.width*0.25,rect.height*0.4};
 
   a_pos.x+=rect.x;
@@ -2200,12 +2200,12 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
   bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
 
   for(int i = 0;i<p;++i){
-    if(sb_distance(points[i],a_pos)<button_r*1.25)a=true;
-    if(sb_distance(points[i],b_pos)<button_r*1.25)b=true;
+    if(sb_distance(points[i],a_pos)<button_r*1.6)a=true;
+    if(sb_distance(points[i],b_pos)<button_r*1.6)b=true;
 
     int dx = points[i].x-dpad_pos.x;
     int dy = points[i].y-dpad_pos.y;
-    if(dx>=-dpad_sz1 && dx<=dpad_sz1 && dy>=-dpad_sz1 && dy<=dpad_sz1 ){
+    if(dx>=-dpad_sz1*1.15 && dx<=dpad_sz1*1.15 && dy>=-dpad_sz1*1.15 && dy<=dpad_sz1*1.15 ){
       if(dy>dpad_sz0)down=true;
       if(dy<-dpad_sz0)up=true;
 
@@ -2256,7 +2256,7 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
     for(int i = 0;i<p;++i){
       int dx = points[i].x-bounds.x;
       int dy = points[i].y-bounds.y;
-      if(dx>=0 && dx<=bounds.width && dy>=0 && dy<=bounds.height ){
+      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
         button_press|=1<<b; 
         state =1;
       }
