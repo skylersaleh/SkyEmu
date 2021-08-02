@@ -218,12 +218,11 @@ void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   if(addr>=0xff00){
-    if(addr == 0xff41){
-      value&=~0x7;
-      value|= sb_read8_direct(gb,addr)&0x7;
-    }else if(addr == SB_IO_DMA_MODE_LEN){
+    if(addr == SB_IO_DMA_SRC_LO ||addr == SB_IO_DMA_DST_LO){
+      value&=~0xf;
+    } else if(addr == SB_IO_DMA_MODE_LEN){
       if(gb->dma.active){
-        // Writting bit 7 to 0 for a running transfer halts HDMA
+        // Writing bit 7 to 0 for a running transfer halts HDMA
         if(!(value&0x80)){
           gb->dma.active = false;
         }
@@ -1062,7 +1061,7 @@ Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
       int tx = (mouse_pos.x -1)/10;
       int ty = (mouse_pos.y -1)/10;
       int t = tx+ty*32;
-      GuiGroupBox(widget_rect, TextFormat("Tile Data[%d] (TileID = 0x%02x)",tile_data_bank,t));
+      GuiGroupBox(widget_rect, TextFormat("Tile Data[%d] (TileID = 0x%02x)",tile_data_bank,t&0xff));
     }else GuiGroupBox(widget_rect, TextFormat("Tile Data[%d]",tile_data_bank));
   }
   Rectangle state_rect, adv_rect;
@@ -1348,20 +1347,23 @@ int sb_update_dma(sb_gb_t *gb){
 
     int len = (SB_BFE(dma_mode_length, 0,7));
     bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
-
-    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<=SB_LCD_H)){
+    if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<SB_LCD_H))
+    {
       while(len>=0){
         for(int i=0;i<16;++i){
           int off = gb->dma.bytes_transferred++;
-          uint8_t data = sb_read8_direct(gb,off+dma_src);
-          sb_store8_direct(gb,off+dma_dst,data);
+          if(off+dma_src>0xffff){len=0;break;}
+          uint8_t data = sb_read8(gb,off+dma_src);
+          sb_store8(gb,off+dma_dst,data);
           bytes_transferred+=1;
+          
         }
-        len--;
+        len--;           
         if(hdma_mode)break;
       }
 
-      uint8_t new_mode = (len&0x7f)|(hdma_mode<<7);
+      uint8_t new_mode = (len&0x7f);
+      if(hdma_mode)new_mode|=0x80;
       if(len<0){
         gb->dma.active = false;
         len = 0;
@@ -1369,7 +1371,7 @@ int sb_update_dma(sb_gb_t *gb){
         new_mode = 0xff;
       }
       sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
-    }
+    }else delta_cycles=1;
     gb->dma.in_hblank = gb->lcd.in_hblank;
     delta_cycles+= bytes_transferred/2;
   }
@@ -1515,8 +1517,9 @@ void sb_tick(){
         bool double_speed = false;
         sb_update_joypad_io_reg(&emu_state, &gb_state);
         int dma_delta_cycles = sb_update_dma(&gb_state);
-        int cpu_delta_cycles = 4;
+        int cpu_delta_cycles = 0;
         if(dma_delta_cycles==0){
+          cpu_delta_cycles=4;
           int pc = gb_state.cpu.pc;
 
 
