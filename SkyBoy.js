@@ -7412,6 +7412,8 @@ function CanvasGetWidth(){ return canvas.clientWidth; }
       GLctx.readPixels(x, y, width, height, format, type, pixelData);
     }
 
+  function _glScissor(x0, x1, x2, x3) { GLctx['scissor'](x0, x1, x2, x3) }
+
   function _glShaderSource(shader, count, string, length) {
       var source = GL.getSource(shader, count, string, length);
   
@@ -8742,6 +8744,7 @@ var asmLibraryArg = {
   "glLinkProgram": _glLinkProgram,
   "glPixelStorei": _glPixelStorei,
   "glReadPixels": _glReadPixels,
+  "glScissor": _glScissor,
   "glShaderSource": _glShaderSource,
   "glTexImage2D": _glTexImage2D,
   "glTexParameterf": _glTexParameterf,
