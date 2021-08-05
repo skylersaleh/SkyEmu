@@ -1696,10 +1696,25 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   return adv_rect;
 }
 void sb_draw_sidebar(Rectangle rect) {
-  GuiPanel(rect);
   Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
 
   rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state,false);
+  
+  static Vector2 scroll = {0}; 
+  static Rectangle last_rect={0};
+  last_rect.x=last_rect.y=0;
+  if(last_rect.height < rect_inside.height){
+    last_rect.width = rect_inside.width-5;
+  }else last_rect.width=rect_inside.width- GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH)-5;
+  Rectangle view = GuiScrollPanel(rect_inside, last_rect, &scroll);
+            
+  Vector2 view_scale = GetWindowScaleDPI();
+  BeginScissorMode(view.x*view_scale.x, view.y*view_scale.y,view.width*view_scale.x, view.height*view_scale.y);
+  rect_inside.y+=scroll.y;
+  int starty = rect_inside.y;
+  rect_inside.y+=GUI_PADDING; 
+  rect_inside.x+=GUI_PADDING;
+  rect_inside.width = view.width-GUI_PADDING*1.5;
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
@@ -1713,6 +1728,9 @@ void sb_draw_sidebar(Rectangle rect) {
   }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
     rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
   }
+  last_rect.width = view.width-GUI_PADDING;
+  last_rect.height = rect_inside.y-starty;
+  EndScissorMode();
 
 }
 void sb_draw_top_panel(Rectangle rect) {
@@ -2322,17 +2340,18 @@ void UpdateDrawFrame() {
   int screen_height = GetScreenHeight();
 
 
+  int panel_width = 430;
   Rectangle lcd_rect;
-  lcd_rect.x = 400;
+  lcd_rect.x = panel_width;
   lcd_rect.y = 0;
-  lcd_rect.width = GetScreenWidth()-400;
+  lcd_rect.width = GetScreenWidth()-panel_width;
   lcd_rect.height = GetScreenHeight();
 
   float lcd_aspect = 144/160.;
   int panel_height = 30+GUI_PADDING;
   if((screen_width-400)/(float)screen_height>160/144.*0.7){
     // Widescreen
-    sb_draw_sidebar((Rectangle){0, 0, 400, GetScreenHeight()});
+    sb_draw_sidebar((Rectangle){0, 0, panel_width, GetScreenHeight()});
   }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
     // Tall Screen
     //sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
@@ -2365,7 +2384,7 @@ int main(void) {
   const int screenHeight = 700;
 
   // Set configuration flags for window creation
-  SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
+  SetConfigFlags(FLAG_VSYNC_HINT  |FLAG_WINDOW_HIGHDPI| FLAG_WINDOW_RESIZABLE);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
