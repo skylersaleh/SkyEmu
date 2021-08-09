@@ -839,13 +839,18 @@ Rectangle gba_draw_arm7_state(Rectangle rect, gba_t* gba) {
       "R4","R5","R6","R7",
       "R8","R9","R10","R11",
       "R12","R13","R14","R15(PC)",
-      "CPSR",
+      "CPSR","N","Z","C","V",
       NULL
     };
-    int reg_vals[17];
+    int reg_vals[21];
     for(int i=0;i<16;++i)reg_vals[i] = arm->registers[i];
 
     reg_vals[16]=arm->registers[16]; 
+    reg_vals[17] = SB_BFE(arm->registers[16],31,1);
+    reg_vals[18] = SB_BFE(arm->registers[16],30,1);
+    reg_vals[19] = SB_BFE(arm->registers[16],29,1);
+    reg_vals[20] = SB_BFE(arm->registers[16],28,1);
+    
     const char * banked_regs[] = {
       "SPSRfiq","SPSRirq","SPSRsvc","SPSRabt","SPSRund",
       "R8fiq","R9fiq","R10fiq","R11fiq",

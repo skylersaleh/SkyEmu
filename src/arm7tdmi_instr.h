@@ -46,7 +46,7 @@ static inline void arm7tdmi_B(gba_t *gba, uint32_t opcode){
     if(SB_BFE(v,23,1))v|=0xff000000;
     //Shift left and take into account prefetch
     int32_t pc_off = v<<2; 
-    pc_off+=8;
+    pc_off+=4;
     printf("%d\n",pc_off);
     gba->cpu.registers[PC]+=pc_off;
   }
@@ -171,7 +171,7 @@ void arm7tdmi_ADD_impl(arm7tdmi_t* arm, uint32_t dest, uint32_t m, uint32_t n, b
   if(S){
     bool C = SB_BFE(result,32,1);
     uint32_t result2 = (n&0x7fffffff)+(m&0x7fffffff);
-    bool V = SB_BFE(result2,31,1);
+    bool V = ((n ^ ~m) & (n ^ result)) >> 31;
     arm7_update_flags(arm,result,C,V);
   }
 }
@@ -196,6 +196,7 @@ static inline void arm7tdmi_ADD_reg(gba_t *gba, uint32_t opcode){
   int S = SB_BFE(opcode,20,1);
   {
     bool carry;
+    n= arm7_reg_read(&(gba->cpu),n);
     m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
     arm7tdmi_ADD_impl(&(gba->cpu),d,m,n,S);
   }
@@ -312,10 +313,9 @@ static inline void arm7tdmi_CMN_rsr(gba_t *gba, uint32_t opcode){
   gba->cpu.trigger_breakpoint = true;
 }
 void arm7tdmi_cmp_impl(arm7tdmi_t* arm, uint32_t m, uint32_t n){
-  uint64_t result = ((uint64_t)n)-m;
-  bool C = SB_BFE(result,32,1);
-  uint32_t result2 = (n&0x7fffffff)-(m&0x7fffffff);
-  bool V = SB_BFE(result2,31,1);
+  uint32_t result = n-m;
+  bool C = n<m;
+  bool V = ((n ^ m) & (n ^ result)) >> 31;
   arm7_update_flags(arm,result,C,V);
 }
 static inline void arm7tdmi_CMP_imm(gba_t *gba, uint32_t opcode){
@@ -336,6 +336,7 @@ static inline void arm7tdmi_CMP_reg(gba_t *gba, uint32_t opcode){
   {
     bool carry;
     m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
+    n= arm7_reg_read(&(gba->cpu),n);
     arm7tdmi_cmp_impl(&(gba->cpu),m,n); 
   }
 }

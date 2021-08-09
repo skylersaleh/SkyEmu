@@ -182,28 +182,26 @@ bool gba_load_rom(gba_t* gba, const char* filename){
 bool arm7_check_cond_code(gba_t*gba, uint32_t opcode){
   uint32_t cond_code = SB_BFE(opcode,28,4);
   if(cond_code==0xE)return true;
-  // TODO: Fix this...
-  return true;
   uint32_t cpsr = gba->cpu.registers[CPSR];
   bool N = SB_BFE(cpsr,31,1);
   bool Z = SB_BFE(cpsr,30,1);
   bool C = SB_BFE(cpsr,29,1);
   bool V = SB_BFE(cpsr,28,1);
   switch(cond_code){
-    case 0x0: return Z;  
-    case 0x1: return !Z; 
-    case 0x2: return C;  
-    case 0x3: return !C; 
-    case 0x4: return N;  
-    case 0x5: return !N; 
-    case 0x6: return V;  
-    case 0x7: return !V; 
-    case 0x8: return C && !Z;
-    case 0x9: return !C || Z;
-    case 0xA: return N==V;
-    case 0xB: return N!=V;
-    case 0xC: return !Z&&(N==V);
-    case 0xD: return Z||(N!=V);
+    case 0x0: return Z;            //EQ: Equal
+    case 0x1: return !Z;           //NE: !Equal
+    case 0x2: return C;            //CS: Unsigned >=
+    case 0x3: return !C;           //CC: Unsigned <
+    case 0x4: return N;            //MI: Negative
+    case 0x5: return !N;           //PL: Positive or Zero
+    case 0x6: return V;            //VS: Overflow
+    case 0x7: return !V;           //VC: No Overflow
+    case 0x8: return C && !Z;      //HI: Unsigned >
+    case 0x9: return !C || Z;      //LS: Unsigned <=
+    case 0xA: return N==V;         //GE: Signed >=
+    case 0xB: return N!=V;         //LT: Signed <  
+    case 0xC: return !Z&&(N==V);   //GT: Signed >  
+    case 0xD: return Z||(N!=V);    //LE: Signed <= 
   };
   return false; 
 }
@@ -217,12 +215,12 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
       unsigned oldpc = gba->cpu.registers[PC]; 
+      gba->cpu.registers[PC] += 4; 
       uint32_t opcode = gba_read32(gba,oldpc);
       uint32_t cond_code = SB_BFE(opcode,28,4);
       if(arm7_check_cond_code(gba,opcode)) gba_execute_instr(gba, opcode);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
-      if(gba->cpu.registers[PC] == oldpc) gba->cpu.registers[PC] += 4; 
       if(breakpoint){emu->run_mode = SB_MODE_PAUSE; break;}
     }
   }
