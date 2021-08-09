@@ -50,7 +50,9 @@
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 
-// Draw and process scroll bar style edition controls
+#define SYSTEM_UNKNOWN 0
+#define SYSTEM_GB 1
+#define SYSTEM_GBA 2
 
 typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
@@ -58,6 +60,7 @@ typedef struct {
   int pc_breakpoint;     // PC to run until
   int panel_mode;
   bool rom_loaded;
+  int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
 } sb_emu_state_t;
 
 typedef struct {

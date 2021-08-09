@@ -9,6 +9,8 @@
 #include "raylib.h"
 #include "sb_instr_tables.h"
 #include "sb_types.h"
+#include "gba.h"
+#include "gba_tables.h"
 #include <stdint.h>
 #include <math.h>
 #define RAYGUI_IMPLEMENTATION
@@ -105,8 +107,10 @@ const int GUI_ROW_HEIGHT = 30;
 const int GUI_LABEL_HEIGHT = 0;
 const int GUI_LABEL_PADDING = 5;
 
+//TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
 sb_gb_t gb_state = {};
+gba_t gba; 
 
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0;
@@ -352,6 +356,13 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
   return adv_rect;
 }
 
+Rectangle sb_draw_label(Rectangle layout_rect, const char* label){ 
+  Rectangle widget_rect;
+  sb_vertical_adv(layout_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &layout_rect);
+  GuiLabel(widget_rect, label);  
+  return layout_rect;
+}
+
 Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -384,6 +395,7 @@ Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t
                   &widget_rect, &inside_rect);
 
   GuiLabel(widget_rect, "Breakpoint PC");
+  
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
 
@@ -446,7 +458,58 @@ Rectangle sb_draw_flag_state(Rectangle rect, const char *group_name,
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
   return adv_rect;
+}      
+Rectangle gba_draw_arm_opcode(Rectangle rect, uint32_t opcode){
+
+  uint32_t cond_code = SB_BFE(opcode,28,4);
+  const char* cond_code_table[16]=
+    {"EQ","NE","CS","CC","MI","PL","VS","VC","HI","LS","GE","LT","GT","LE","","INV"};
+  const char * cond = cond_code_table[cond_code];
+  int internal_opcode = gba_intern_op(opcode);
+  const char * name = gba_disasm_name[internal_opcode];
+  const char * text = TextFormat("%s %s",name,cond);
+  for(int i=0;i<16;++i){
+    arm7tdmi_param_t p = arm7tdmi_params[internal_opcode];
+    if(p.params[i].name==0)break;
+    int v = SB_BFE(opcode,p.params[i].start,p.params[i].size);
+    text = TextFormat("%s %c:%d",text,p.params[i].name,v);
+  }
+  GuiLabel(rect, text);
 }
+Rectangle gba_draw_instructions(Rectangle rect, gba_t *gba) {
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  Rectangle widget_rect;
+  int pc = gba->cpu.registers[15];
+  //TODO: Disasm Thumb
+  for (int i = -6; i < 5; ++i) {
+    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
+                    &widget_rect, &inside_rect);
+
+    int pc_render = i*4 + pc;
+
+    if (pc_render < 0) {
+      widget_rect.x += 80;
+      GuiLabel(widget_rect, "INVALID");
+    } else {
+      if (i == 0)
+        GuiLabel(widget_rect, "PC->");
+      widget_rect.x += 30;
+      GuiLabel(widget_rect, TextFormat("%09d", pc_render));
+      widget_rect.x += 80;
+      uint32_t opcode = gba_read32(gba, pc_render);
+      gba_draw_arm_opcode(widget_rect,opcode);
+      widget_rect.x += 200;
+      GuiLabel(widget_rect, TextFormat("(%08x)", opcode));
+      widget_rect.x += 50;
+    }
+  }
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "Instructions");
+  return adv_rect;
+}
+ 
 Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
                                sb_gb_t *gb) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
@@ -653,41 +716,28 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
                                   sb_gb_cartridge_t *cart_state) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Title: %s", cart_state->title));
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 10, &widget_rect,
-                  &inside_rect);
-
-  Rectangle wr = widget_rect;wr.width = wr.height = GUI_PADDING;
-
-  GuiCheckBox(wr,
-              TextFormat("Game Boy Color (%s)",
-                         (cart_state->game_boy_color) ? "true" : "false"),
-              cart_state->game_boy_color);
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Cart Type: %x", cart_state->type));
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("ROM Size: %d", cart_state->rom_size));
-         
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Mapped ROM Bank: %d", cart_state->mapped_rom_bank));
-           
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5, &widget_rect,
-                  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Mapped RAM Bank: %d", cart_state->mapped_ram_bank));
-   
+  const char * title = "Unknown";
+  int rom_size = 0; 
+  const char *system = "Unknown";
+  if(emu_state.system==SYSTEM_GB){
+    title = cart_state->title;
+    rom_size = cart_state->rom_size;
+    system = "Game Boy";
+    if(cart_state->game_boy_color)system = "Game Boy Color";
+  }else if (emu_state.system==SYSTEM_GBA){
+    title = gba.cart.title;
+    rom_size = gba.cart.rom_size;
+    system = "Game Boy Advanced";
+  }
+  inside_rect = sb_draw_label(inside_rect, TextFormat("Title: %s", title));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("System: %s", system));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("ROM Size: %d", rom_size));
+  if(emu_state.system== SYSTEM_GB){
+    inside_rect=sb_draw_label(inside_rect, TextFormat("Cart Type: %x", cart_state->type));
+    inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped ROM Bank: %d", cart_state->mapped_rom_bank));
+    inside_rect=sb_draw_label(inside_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
+    inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped RAM Bank: %d", cart_state->mapped_ram_bank));
+  }
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
@@ -767,6 +817,89 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
   GuiGroupBox(state_rect, "CPU State");
   return adv_rect;
 }
+Rectangle gba_draw_arm7_state(Rectangle rect, gba_t* gba) {
+  arm7tdmi_t * arm = &gba->cpu;
+
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+
+  // Split registers into two rects horizontally
+  {
+    Rectangle in_rect[2];
+    const char *sections[] = {"Registers", "Banked Registers"};
+    int orig_y = inside_rect.y;
+    int x_off = 0;
+    for (int i = 0; i < 2; ++i) {
+      in_rect[i] = inside_rect;
+      in_rect[i].width = inside_rect.width / 2 - GUI_PADDING * 1 / 2;
+      in_rect[i].x += x_off;
+      x_off += in_rect[i].width + GUI_PADDING;
+    }
+    const char * reg_names[] = {
+      "R0","R1","R2","R3",
+      "R4","R5","R6","R7",
+      "R8","R9","R10","R11",
+      "R12","R13","R14","R15(PC)",
+      "CPSR",
+      NULL
+    };
+    int reg_vals[17];
+    for(int i=0;i<16;++i)reg_vals[i] = arm->registers[i];
+
+    reg_vals[16]=arm->registers[16]; 
+    const char * banked_regs[] = {
+      "SPSRfiq","SPSRirq","SPSRsvc","SPSRabt","SPSRund",
+      "R8fiq","R9fiq","R10fiq","R11fiq",
+      "R12fiq","R13fiq","R14fiq",
+      "R13irq","R14irq","R13svc","R14svc",
+      "R13abt","R14abt","R13und","R14und",
+      NULL
+    };  
+    /*
+    Banked Reg Table
+    17-23: R8_fiq-R14_fiq
+    24-25: R13_irq-R14_irq
+    26-27: R13_svc-R14_svc
+    28-29: R13_abt-R14_abt
+    30-31: R13_und-R14_und
+    32: SPSR_fiq
+    33: SPSR_irq
+    34: SPSR_svc
+    35: SPSR_abt
+    36: SPSR_und
+    */
+    int banked_vals[20]; 
+    for(int i=0;i<5;++i) banked_vals[i]   = arm->registers[32+i];
+    for(int i=0;i<7;++i) banked_vals[5+i] = arm->registers[17+i];
+    for(int i=0;i<2;++i) banked_vals[12+i]= arm->registers[24+i];
+    for(int i=0;i<2;++i) banked_vals[14+i]= arm->registers[26+i];
+    for(int i=0;i<2;++i) banked_vals[16+i]= arm->registers[28+i];
+    for(int i=0;i<2;++i) banked_vals[18+i]= arm->registers[30+i];
+
+    in_rect[0] = sb_draw_reg_state(in_rect[0], "Registers",
+                                   reg_names, reg_vals);
+    in_rect[1] = sb_draw_reg_state(in_rect[1], "Banked Registers",
+                                   banked_regs, banked_vals);
+     
+    for (int i = 0; i < 2; ++i) {
+      if (inside_rect.y < in_rect[i].y)
+        inside_rect.y = in_rect[i].y;
+    }
+    for (int i = 0; i < 2; ++i) {
+      in_rect[i].height = inside_rect.y - orig_y - GUI_PADDING;
+      in_rect[i].y = orig_y;
+      GuiGroupBox(in_rect[i], sections[i]);
+    }
+    inside_rect.height -= inside_rect.y - orig_y;
+  }
+
+  inside_rect = gba_draw_instructions(inside_rect, gba);
+
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "ARM7 State");
+  return adv_rect;
+}          
 void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
   // FF00 - P1/JOYP - Joypad (R/W)
   //
@@ -1495,7 +1628,7 @@ void sb_tick(){
   }
 
   if (emu_state.rom_loaded&&(emu_state.run_mode == SB_MODE_RUN||emu_state.run_mode ==SB_MODE_STEP)) {
-
+    
     int instructions_to_execute = emu_state.step_instructions;
     if(instructions_to_execute==0)instructions_to_execute=600000;
     int frames_to_draw = 1;
@@ -1706,8 +1839,9 @@ void sb_draw_sidebar(Rectangle rect) {
   if(last_rect.height < rect_inside.height){
     last_rect.width = rect_inside.width-5;
   }else last_rect.width=rect_inside.width- GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH)-5;
+// BeginScissor is broken on non-web platforms... TODO: File bug report            
+#ifdef PLATFORM_WEB
   Rectangle view = GuiScrollPanel(rect_inside, last_rect, &scroll);
-            
   Vector2 view_scale = GetWindowScaleDPI();
   BeginScissorMode(view.x*view_scale.x, view.y*view_scale.y,view.width*view_scale.x, view.height*view_scale.y);
   rect_inside.y+=scroll.y;
@@ -1715,23 +1849,29 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside.y+=GUI_PADDING; 
   rect_inside.x+=GUI_PADDING;
   rect_inside.width = view.width-GUI_PADDING*1.5;
+#endif
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
     rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
     rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
-    rect_inside = sb_draw_interrupt_state(rect_inside, &gb_state);
-    rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
-    rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
+    if(emu_state.system==SYSTEM_GB){
+      rect_inside = sb_draw_interrupt_state(rect_inside, &gb_state);
+      rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
+      rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
+      rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
+    }else if (emu_state.system == SYSTEM_GBA){
+      rect_inside = gba_draw_arm7_state(rect_inside, &gba);
+    }
     rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
-    rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
   }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
     rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
   }
+#ifdef PLATFORM_WEB
   last_rect.width = view.width-GUI_PADDING;
   last_rect.height = rect_inside.y-starty;
   EndScissorMode();
-
+#endif
 }
 void sb_draw_top_panel(Rectangle rect) {
   GuiPanel(rect);
@@ -1985,7 +2125,10 @@ void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
   if(IsAudioStreamProcessed(audio_stream)){
     //Fill up Audio buffer from ring_buffer
     for(int i=0; i< SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS; ++i){
-      unsigned read_entry = (gb->audio.ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    
+      unsigned read_entry =0;
+      if(sb_ring_buffer_size(&gb->audio.ring_buff)>0)
+        read_entry=(gb->audio.ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
       audio_buff[i]= gb->audio.ring_buff.data[read_entry];
     }
 
@@ -1993,8 +2136,9 @@ void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
   }
 }
 
-void sb_load_rom( const char* file_path){
-
+bool sb_load_rom(const char* file_path){
+  if(!IsFileExtension(file_path,".gb") && 
+     !IsFileExtension(file_path,".gbc")) return false; 
   unsigned int bytes = 0;
   unsigned char *data = LoadFileData(file_path, &bytes);
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
@@ -2095,8 +2239,22 @@ void sb_load_rom( const char* file_path){
     printf("Could not find save file: %s\n",save_file);
     memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
   }
+  return true; 
 }
-
+void se_load_rom(char *filename){
+  printf("Loading ROM: %s\n", filename); 
+  emu_state.rom_loaded = false; 
+  if(gba_load_rom(&gba, filename)){
+    emu_state.system = SYSTEM_GBA;
+    emu_state.rom_loaded = true;
+  }
+  if(sb_load_rom(filename)){
+    emu_state.system = SYSTEM_GB;
+    emu_state.rom_loaded = true; 
+  }
+  if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename); 
+  return; 
+}
 void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
 
   static bool last_visible = false;
@@ -2170,7 +2328,7 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
   },button_rect.x,button_rect.y,button_rect.width,button_rect.height);
 
   printf("%s\n",new_path);
-  if(!TextIsEqual("",new_path))sb_load_rom(new_path);
+  if(!TextIsEqual("",new_path))se_load_rom(new_path);
   free(new_path);
   //printf("Open: %s\n",file_name);
   //free(file_name);
@@ -2298,7 +2456,7 @@ void UpdateDrawFrame() {
     int count = 0;
     char **files = GetDroppedFiles(&count);
     if (count > 0) {
-      sb_load_rom(files[0]);
+      se_load_rom(files[0]);
     }
     ClearDroppedFiles();
   }
@@ -2317,24 +2475,14 @@ void UpdateDrawFrame() {
     }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
     gb_state.cart.ram_is_dirty=false;
   }
-  sb_tick();
+  if(emu_state.system == SYSTEM_GB)sb_tick();
+  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
  
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   // Draw
   //-----------------------------------------------------
   BeginDrawing();
 
-  sb_poll_controller_input(&gb_state);
-  Image screenIm = {
-        .data = gb_state.lcd.framebuffer,
-        .width = SB_LCD_W,
-        .height = SB_LCD_H,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-        .mipmaps = 1
-  };
-
-  Texture2D screenTex = LoadTextureFromImage(screenIm);
-  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
   ClearBackground(RAYWHITE);
   int screen_width = GetScreenWidth();
   int screen_height = GetScreenHeight();
@@ -2368,7 +2516,26 @@ void UpdateDrawFrame() {
     lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),GetScreenHeight()-panel_height};
     sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
   }
-
+ 
+  sb_poll_controller_input(&gb_state);
+  Image screenIm = {
+        .data = gb_state.lcd.framebuffer,
+        .width = SB_LCD_W,
+        .height = SB_LCD_H,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+        .mipmaps = 1
+  };
+  if(emu_state.system==SYSTEM_GBA){
+    screenIm = (Image){
+        .data = gba.framebuffer,
+        .width = GBA_LCD_W,
+        .height = GBA_LCD_H,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+        .mipmaps = 1
+    }; 
+  }
+  Texture2D screenTex = LoadTextureFromImage(screenIm); 
+  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255});
   sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
   EndDrawing();
