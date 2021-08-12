@@ -1845,7 +1845,7 @@ void sb_draw_sidebar(Rectangle rect) {
     last_rect.width = rect_inside.width-5;
   }else last_rect.width=rect_inside.width- GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH)-5;
 // BeginScissor is broken on non-web platforms... TODO: File bug report            
-#ifdef PLATFORM_WEB
+//#ifdef PLATFORM_WEB
   Rectangle view = GuiScrollPanel(rect_inside, last_rect, &scroll);
   Vector2 view_scale = GetWindowScaleDPI();
   BeginScissorMode(view.x*view_scale.x, view.y*view_scale.y,view.width*view_scale.x, view.height*view_scale.y);
@@ -1854,7 +1854,7 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside.y+=GUI_PADDING; 
   rect_inside.x+=GUI_PADDING;
   rect_inside.width = view.width-GUI_PADDING*1.5;
-#endif
+//#endif
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
@@ -1872,11 +1872,11 @@ void sb_draw_sidebar(Rectangle rect) {
   }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
     rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
   }
-#ifdef PLATFORM_WEB
+//#ifdef PLATFORM_WEB
   last_rect.width = view.width-GUI_PADDING;
   last_rect.height = rect_inside.y-starty;
   EndScissorMode();
-#endif
+//#endif
 }
 void sb_draw_top_panel(Rectangle rect) {
   GuiPanel(rect);
@@ -2276,6 +2276,7 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
     return;
   }
 
+  DrawRectangleRec(rect, (Color){100,100,100,255});
   last_visible=true;
   Color color = {0,0,0,127};
   const char * label = "Drop ROM";
