@@ -46,16 +46,22 @@ static inline void arm7tdmi_B(gba_t *gba, uint32_t opcode){
     //Shift left and take into account prefetch
     int32_t pc_off = v<<2; 
     pc_off+=4;
-    printf("%d\n",pc_off);
     gba->cpu.registers[PC]+=pc_off;
   }
 }
 static inline void arm7tdmi_BL(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,24);
-  {
-    printf("Hit Unimplemented BL %x\n",opcode);
+  {                                      
+    //Write Link Register
+    arm7_reg_write(&(gba->cpu), LR, gba->cpu.registers[PC]+4);
+    //Sign Extend v
+    if(SB_BFE(v,23,1))v|=0xff000000;
+    //Shift left and take into account prefetch
+    int32_t pc_off = v<<2; 
+    pc_off+=4;
+    printf("%d\n",pc_off);
+    gba->cpu.registers[PC]+=pc_off; 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_BX(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
