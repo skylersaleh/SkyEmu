@@ -59,7 +59,6 @@ static inline void arm7tdmi_BL(gba_t *gba, uint32_t opcode){
     //Shift left and take into account prefetch
     int32_t pc_off = v<<2; 
     pc_off+=4;
-    printf("%d\n",pc_off);
     gba->cpu.registers[PC]+=pc_off; 
   }
 }
@@ -1054,21 +1053,87 @@ static inline void arm7tdmi_STRH_reg(gba_t *gba, uint32_t opcode){
   }
   gba->cpu.trigger_breakpoint = true;
 }
+void arm7_STM_impl(gba_t*gba, uint32_t opcode){
+  
+  int P = SB_BFE(opcode,24,1);
+  int U = SB_BFE(opcode,23,1);
+  int S = SB_BFE(opcode,22,1);
+  int w = SB_BFE(opcode,21,1);
+  int L = SB_BFE(opcode,20,1);
+  int Rn = SB_BFE(opcode,16,4);
+  int reglist = SB_BFE(opcode,0,16);  
+  
+  int addr = arm7_reg_read(&(gba)->cpu,Rn);
+  int increment = U? 4: -4;
+  int new_addr = addr;
+  for(int i=0;i<16;++i) if(SB_BFE(reglist,i,1)==1)new_addr+=increment;   
+  
+  for(int i=0;i<16;++i){
+    if(SB_BFE(reglist,i,1)==0)continue;       
+    //Writeback happens on second cycle
+    //Todo, does post increment force writeback? 
+    if(i==1 && w){
+      arm7_reg_write(&(gba)->cpu,Rn,new_addr); 
+    }
+    // When S is set the registers are read from the user bank
+    int data = S? gba->cpu.registers[i] : arm7_reg_read(&(gba)->cpu,i);
+    // R15 should store PC+12 
+    if(i==15){data+=12;}
+    if(P)  addr+=increment;
+    gba_store32(gba, addr, data);
+    if(!P) {addr+=increment;w=true;}
+  }
+  
+}
+void arm7_LDM_impl(gba_t*gba, uint32_t opcode){
+  
+  int P = SB_BFE(opcode,24,1);
+  int U = SB_BFE(opcode,23,1);
+  int S = SB_BFE(opcode,22,1);
+  int w = SB_BFE(opcode,21,1);
+  int L = SB_BFE(opcode,20,1);
+  int Rn = SB_BFE(opcode,16,4);
+  int reglist = SB_BFE(opcode,0,16);  
+  
+  int addr = arm7_reg_read(&(gba)->cpu,Rn);
+  int increment = U? 4: -4;
+  int new_addr = addr;
+  for(int i=0;i<16;++i) if(SB_BFE(reglist,i,1)==1)new_addr+=increment;   
+  for(int i=0;i<16;++i){
+    if(SB_BFE(reglist,i,1)==0)continue;       
+    //Writeback happens on second cycle
+    //Todo, does post increment force writeback? 
+    if(i==1 && w){
+      arm7_reg_write(&(gba)->cpu,Rn,new_addr); 
+    }
+    if(P)  addr+=increment;
+    int data = gba_read32(gba, addr);
+    // When S is set the registers are read from the user bank
+    int reg_index = S ? i : arm7_reg_index(&gba->cpu,i);
+    gba->cpu.registers[reg_index]=data;
+    // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
+    // the same time as R15 is loaded.
+    if(S&& i==15){
+      gba->cpu.registers[CPSR] = arm7_reg_read(&gba->cpu,SPSR);
+    }
+    if(!P) {addr+=increment;w=true;}
+  }
+  
+}
 static inline void arm7tdmi_LDM(gba_t *gba, uint32_t opcode){
   int x = SB_BFE(opcode,0,16);
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented LDM %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDMDA(gba_t *gba, uint32_t opcode){
   int x = SB_BFE(opcode,0,16);
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented LDMDA %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
   gba->cpu.trigger_breakpoint = true;
 }
@@ -1077,7 +1142,7 @@ static inline void arm7tdmi_LDMDB(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented LDMDB %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
   gba->cpu.trigger_breakpoint = true;
 }
@@ -1086,19 +1151,19 @@ static inline void arm7tdmi_LDMIB(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented LDMIB %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
   gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDM_usr(gba_t *gba, uint32_t opcode){
   {
-    printf("Hit Unimplemented LDM (usr reg) %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
   gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDM_eret(gba_t *gba, uint32_t opcode){
   {
-    printf("Hit Unimplemented LDM (exce ret) %x\n",opcode);
+    arm7_LDM_impl(gba,opcode);
   }
   gba->cpu.trigger_breakpoint = true;
 }
@@ -1107,42 +1172,37 @@ static inline void arm7tdmi_STM(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented STM %x\n",opcode);
+    arm7_STM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STMDA(gba_t *gba, uint32_t opcode){
   int x = SB_BFE(opcode,0,16);
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented STMDA %x\n",opcode);
+    arm7_STM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STMDB(gba_t *gba, uint32_t opcode){
   int x = SB_BFE(opcode,0,16);
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented STMDB %x\n",opcode);
+    arm7_STM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STMIB(gba_t *gba, uint32_t opcode){
   int x = SB_BFE(opcode,0,16);
   int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   {
-    printf("Hit Unimplemented STMIB %x\n",opcode);
+    arm7_STM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STM_usr(gba_t *gba, uint32_t opcode){
   {
-    printf("Hit Unimplemented STM (usr reg) %x\n",opcode);
+    arm7_STM_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_MLA(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,0,4);
