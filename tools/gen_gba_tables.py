@@ -219,6 +219,8 @@ if generate_prototypes:
       f.write(f"static inline void {funct}(gba_t *gba, uint32_t opcode){{\n");
       for p in optable[iop]["params"]:
         f.write(f"  int {p[0]} = SB_BFE(opcode,{p[1]},{p[2]});\n");
+      if "reg" in iop or "rsr" in iop:
+        f.write("bool carry; m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); \n")
       f.write("  {\n");
       f.write(f'    printf("Hit Unimplemented {iop} %x\\n",opcode);\n');
       f.write("  }\n");

@@ -3,11 +3,10 @@ static inline uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
 }
 
 static inline uint32_t arm7tdmi_load_shift_reg(arm7tdmi_t* arm, uint32_t opcode, uint32_t reg, bool* carry){
-  bool shift_reg = SB_BFE(opcode,4,1)==true;
   int shift_type = SB_BFE(opcode,5,2);
   uint32_t value = arm7_reg_read(arm, reg); 
   uint32_t shift_value = 0; 
-  if(shift_reg){
+  if(SB_BFE(opcode,4,1)==true){
     int rs = SB_BFE(opcode,8,4);
     shift_value = arm7_reg_read(arm, rs);
   }else{
@@ -166,7 +165,6 @@ static inline void arm7tdmi_ADC_rsr(gba_t *gba, uint32_t opcode){
 }                    
 void arm7tdmi_ADD_impl(arm7tdmi_t* arm, uint32_t dest, uint32_t m, uint32_t n, bool S){
   uint64_t result = n+m;
-  printf("n: %d + %d\n", n,m);
   arm7_reg_write(arm, dest, result);
   if(S){
     bool C = SB_BFE(result,32,1);
@@ -195,8 +193,8 @@ static inline void arm7tdmi_ADD_reg(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
   {
-    bool carry;
     n= arm7_reg_read(&(gba->cpu),n);
+    bool carry;
     m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
     arm7tdmi_ADD_impl(&(gba->cpu),d,m,n,S);
   }
@@ -209,10 +207,13 @@ static inline void arm7tdmi_ADD_rsr(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
   {
-    printf("Hit Unimplemented ADD (rsr) %x\n",opcode);
+    n= arm7_reg_read(&(gba->cpu),n);
+    bool carry;
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
+    arm7tdmi_ADD_impl(&(gba->cpu),d,m,n,S);   
   }
-  gba->cpu.trigger_breakpoint = true;
 }
+
 static inline void arm7tdmi_AND_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,8);
   int r = SB_BFE(opcode,8,4);
@@ -220,9 +221,13 @@ static inline void arm7tdmi_AND_imm(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
   {
-    printf("Hit Unimplemented AND (imm) %x\n",opcode);
+    n= arm7_reg_read(&(gba->cpu),n);
+    int m= arm7_rotr(v,r*2)&n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, SB_BFE(v,31,1));   
+    } 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_AND_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -231,10 +236,15 @@ static inline void arm7tdmi_AND_reg(gba_t *gba, uint32_t opcode){
   int d = SB_BFE(opcode,12,4);
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
-  {
-    printf("Hit Unimplemented AND (reg) %x\n",opcode);
+  {                          
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)&n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, carry);   
+    } 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_AND_rsr(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -243,10 +253,15 @@ static inline void arm7tdmi_AND_rsr(gba_t *gba, uint32_t opcode){
   int d = SB_BFE(opcode,12,4);
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
-  {
-    printf("Hit Unimplemented AND (rsr) %x\n",opcode);
+  {                           
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)&n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, carry);   
+    }
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_BIC_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,8);
@@ -420,9 +435,13 @@ static inline void arm7tdmi_MOV_rsr(gba_t *gba, uint32_t opcode){
   int d = SB_BFE(opcode,12,4);
   int S = SB_BFE(opcode,20,1);
   {
-    printf("Hit Unimplemented MOV (rsr) %x\n",opcode);
+    bool carry = false;
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, carry);   
+    } 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_MVN_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,8);
@@ -665,19 +684,22 @@ static inline void arm7tdmi_TST_imm(gba_t *gba, uint32_t opcode){
   int r = SB_BFE(opcode,8,4);
   int n = SB_BFE(opcode,16,4);
   {
-    printf("Hit Unimplemented TST (imm) %x\n",opcode);
+    n= arm7_reg_read(&(gba->cpu),n);
+    int m= arm7_rotr(v,r*2)&n; 
+    arm7_update_flags_logical(&(gba->cpu), m, SB_BFE(v,31,1));   
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_TST_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
   int r = SB_BFE(opcode,5,2);
   int v = SB_BFE(opcode,7,5);
   int n = SB_BFE(opcode,16,4);
-  {
-    printf("Hit Unimplemented TST (reg) %x\n",opcode);
+  { 
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)&n; 
+    arm7_update_flags_logical(&(gba->cpu), m, carry);   
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_TST_rsr(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -685,9 +707,11 @@ static inline void arm7tdmi_TST_rsr(gba_t *gba, uint32_t opcode){
   int s = SB_BFE(opcode,8,4);
   int n = SB_BFE(opcode,16,4);
   {
-    printf("Hit Unimplemented TST (rsr) %x\n",opcode);
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)&n; 
+    arm7_update_flags_logical(&(gba->cpu), m, carry);   
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_SVC(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,24);

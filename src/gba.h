@@ -11,6 +11,9 @@
 #define SPSR 17       
 #define GBA_LCD_W 240
 #define GBA_LCD_H 160
+
+#define GBA_DISPSTAT 0x4000004
+
 typedef struct {
   // Registers
   /*
@@ -54,12 +57,15 @@ typedef struct{
   bool a, b, start, select;
   bool l,r;
 } gba_joy_t;
-
+typedef struct{
+  int current_dot; 
+}gba_ppu_t;
 typedef struct {
   gba_mem_t mem;
   arm7tdmi_t cpu;
   gba_cartridge_t cart;
-  gba_joy_t joy;
+  gba_joy_t joy;       
+  gba_ppu_t ppu;
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
                               
@@ -205,13 +211,24 @@ bool arm7_check_cond_code(gba_t*gba, uint32_t opcode){
   };
   return false; 
 }
+    
+void gba_tick_ppu(gba_t* gba, int cycles){
+  // TODO: This is a STUB
+  gba->ppu.current_dot+=cycles; 
+  bool vblank = SB_BFE(gba->ppu.current_dot,8,1);
 
+  uint32_t disp_stat = gba_read32(gba, GBA_DISPSTAT)&~7;
+  disp_stat|= vblank? 0x1: 0;
+
+  gba_store32(gba,GBA_DISPSTAT,disp_stat);
+
+}
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
   }
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    int max_instructions = 100;
+    int max_instructions = 1000;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
       unsigned oldpc = gba->cpu.registers[PC]; 
@@ -219,6 +236,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       uint32_t opcode = gba_read32(gba,oldpc);
       uint32_t cond_code = SB_BFE(opcode,28,4);
       if(arm7_check_cond_code(gba,opcode)) gba_execute_instr(gba, opcode);
+
+      gba_tick_ppu(gba,1);
+
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
       if(breakpoint){emu->run_mode = SB_MODE_PAUSE; break;}
