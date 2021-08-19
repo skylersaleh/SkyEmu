@@ -107,6 +107,9 @@ def match_op(optable, arm_op):
     bits = 0;
     match = True;
     for i in range(0,31):
+      if i>27: continue
+      if i<20 and i>7:continue
+      if i<4: continue; 
       bit1 = bfe(arm_op,i,1);
       pat_bit = pattern[31-i];
       if pat_bit == '-': continue;
@@ -131,6 +134,7 @@ for lookup_op in range(0,4096):
 
   decoded_op = match_op(optable,arm_op);
   opvalue = optable[decoded_op]["intern_op"];
+  if(lookup_op==288): print(lookup_op,optable[decoded_op]["handler"]);
 
   if count==0: decode_table+='   ';
   decode_table+=f' {opvalue},';

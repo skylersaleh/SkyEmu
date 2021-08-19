@@ -2500,7 +2500,8 @@ void UpdateDrawFrame() {
   lcd_rect.y = 0;
   lcd_rect.width = GetScreenWidth()-panel_width;
   lcd_rect.height = GetScreenHeight();
-
+  // Controller polling must happen before handling the onscreen keyboard
+  sb_poll_controller_input(&gb_state);
   float lcd_aspect = 144/160.;
   int panel_height = 30+GUI_PADDING;
   if((screen_width-400)/(float)screen_height>160/144.*0.7){
@@ -2523,7 +2524,6 @@ void UpdateDrawFrame() {
     sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
   }
  
-  sb_poll_controller_input(&gb_state);
   Image screenIm = {
         .data = gb_state.lcd.framebuffer,
         .width = SB_LCD_W,

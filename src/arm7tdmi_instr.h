@@ -65,9 +65,10 @@ static inline void arm7tdmi_BL(gba_t *gba, uint32_t opcode){
 static inline void arm7tdmi_BX(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
   {
-    printf("Hit Unimplemented BX %x\n",opcode);
+    int v = arm7_reg_read(&gba->cpu,m);
+    gba->cpu.registers[PC] = v&~1;
+    gba->cpu.thumb = (v&1)==1;
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_CDP(gba_t *gba, uint32_t opcode){
   int M = SB_BFE(opcode,0,4);
@@ -487,9 +488,13 @@ static inline void arm7tdmi_ORR_imm(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
   {
-    printf("Hit Unimplemented ORR (imm) %x\n",opcode);
+    n= arm7_reg_read(&(gba->cpu),n);
+    int m= arm7_rotr(v,r*2)|n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, SB_BFE(v,31,1));   
+    }  
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_ORR_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -499,9 +504,14 @@ static inline void arm7tdmi_ORR_reg(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,16,4);
   int S = SB_BFE(opcode,20,1);
   {
-    printf("Hit Unimplemented ORR (reg) %x\n",opcode);
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)|n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, carry);   
+    } 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_ORR_rsr(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -512,6 +522,13 @@ static inline void arm7tdmi_ORR_rsr(gba_t *gba, uint32_t opcode){
   int S = SB_BFE(opcode,20,1);
   {
     printf("Hit Unimplemented ORR (rsr) %x\n",opcode);
+    bool carry = false;
+    n= arm7_reg_read(&(gba->cpu),n);
+    m = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry)|n; 
+    arm7_reg_write(&(gba->cpu),d,m);
+    if(S && d !=15 ){
+      arm7_update_flags_logical(&(gba->cpu), m, carry);   
+    }
   }
   gba->cpu.trigger_breakpoint = true;
 }
@@ -779,14 +796,62 @@ static inline void arm7tdmi_STRT(gba_t *gba, uint32_t opcode){
   }
   gba->cpu.trigger_breakpoint = true;
 }
+static inline void arm7_LDR_impl(gba_t*gba, uint32_t opcode){
+  int i = SB_BFE(opcode,25,1);
+  int p = SB_BFE(opcode,24,1);
+  int u = SB_BFE(opcode,23,1);
+  int b = SB_BFE(opcode,22,1);
+  int w = SB_BFE(opcode,21,1);
+  int l = SB_BFE(opcode,20,1);
+  int n = SB_BFE(opcode,16,4);
+  int d = SB_BFE(opcode,12,4);
+  int off = SB_BFE(opcode,0,12);
+  int m = SB_BFE(opcode,0,4);
+  { 
+    bool carry; 
+    if(i)off = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
+    int addr = arm7_reg_read(&(gba)->cpu,n); 
+    int increment = u? off: -off;
+    if(p)  addr+=increment;
+    uint32_t data = b? gba_read32(gba,addr): gba_read8(gba, addr);
+    if(!p) {addr+=increment;w=true;}
+
+    if(w)arm7_reg_write(&(gba->cpu),n,addr); 
+    arm7_reg_write(&(gba->cpu),d,data);  
+  }
+}
+static inline void arm7_STR_impl(gba_t*gba, uint32_t opcode){
+  int i = SB_BFE(opcode,25,1);
+  int p = SB_BFE(opcode,24,1);
+  int u = SB_BFE(opcode,23,1);
+  int b = SB_BFE(opcode,22,1);
+  int w = SB_BFE(opcode,21,1);
+  int l = SB_BFE(opcode,20,1);
+  int n = SB_BFE(opcode,16,4);
+  int d = SB_BFE(opcode,12,4);
+  int off = SB_BFE(opcode,0,12);
+  int m = SB_BFE(opcode,0,4);
+  { 
+    bool carry; 
+    if(i)off = arm7tdmi_load_shift_reg(&(gba->cpu),opcode,m,&carry); 
+    int addr = arm7_reg_read(&(gba)->cpu,n); 
+    int increment = u? off: -off;
+    if(p)  addr+=increment;
+    uint32_t data =arm7_reg_read(&(gba->cpu),d);
+    if(b)gba_store32(gba,addr,data);
+    else gba_store8(gba,addr,data);
+    
+    if(!p) {addr+=increment;w=true;}
+    if(w)arm7_reg_write(&(gba->cpu),n,addr); 
+  }
+}
 static inline void arm7tdmi_LDR_lit(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,12);
   int t = SB_BFE(opcode,12,4);
   int u = SB_BFE(opcode,23,1);
-  {
-    printf("Hit Unimplemented LDR (lit) %x\n",opcode);
+  {       
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDR_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,12);
@@ -796,9 +861,8 @@ static inline void arm7tdmi_LDR_imm(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented LDR (imm) %x\n",opcode);
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDR_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -810,18 +874,16 @@ static inline void arm7tdmi_LDR_reg(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented LDR (reg) %x\n",opcode);
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDRB_lit(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,12);
   int t = SB_BFE(opcode,12,4);
   int u = SB_BFE(opcode,23,1);
   {
-    printf("Hit Unimplemented LDRB (lit) %x\n",opcode);
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDRB_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,12);
@@ -831,9 +893,8 @@ static inline void arm7tdmi_LDRB_imm(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented LDRB (imm) %x\n",opcode);
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDRB_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -845,21 +906,28 @@ static inline void arm7tdmi_LDRB_reg(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented LDRB (reg) %x\n",opcode);
+    arm7_LDR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDRH_lit(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,4);
   int V = SB_BFE(opcode,8,4);
   int t = SB_BFE(opcode,12,4);
+  int n = SB_BFE(opcode,16,4);
   int w = SB_BFE(opcode,21,1);
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented LDRH (lit) %x\n",opcode);
+    int offset = v|(V<<4);
+    int addr = arm7_reg_read(&(gba)->cpu,n); 
+    int increment = u? offset: -offset;
+    if(p)  addr+=increment;
+    uint16_t data = gba_read16(gba, addr);
+    if(!p) {addr+=increment;w=true;}
+
+    if(w)arm7_reg_write(&(gba->cpu),n,addr); 
+    arm7_reg_write(&(gba->cpu),t,data);   
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_LDRH_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,4);
@@ -878,7 +946,7 @@ static inline void arm7tdmi_LDRH_imm(gba_t *gba, uint32_t opcode){
     if(!p) {addr+=increment;w=true;}
 
     if(w)arm7_reg_write(&(gba->cpu),n,addr); 
-    arm7_reg_write(&(gba->cpu),t,data);
+    arm7_reg_write(&(gba->cpu),t,data);   
   }
 }
 static inline void arm7tdmi_LDRH_reg(gba_t *gba, uint32_t opcode){
@@ -971,14 +1039,7 @@ static inline void arm7tdmi_STR_imm(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    int offset = v;
-    int addr = arm7_reg_read(&(gba)->cpu,n); 
-    int data = arm7_reg_read(&(gba)->cpu,t);
-    int increment = u? offset: -offset;
-    if(p)  addr+=increment;
-    gba_store32(gba, addr, data);
-    if(!p) {addr+=increment;w=true;}
-    if(w)arm7_reg_write(&(gba)->cpu,n,addr); 
+    arm7_STR_impl(gba,opcode);
   }
 }
 static inline void arm7tdmi_STR_reg(gba_t *gba, uint32_t opcode){
@@ -991,9 +1052,8 @@ static inline void arm7tdmi_STR_reg(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented STR (reg) %x\n",opcode);
+    arm7_STR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STRB_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,12);
@@ -1003,9 +1063,8 @@ static inline void arm7tdmi_STRB_imm(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented STRB (imm) %x\n",opcode);
+    arm7_STR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STRB_reg(gba_t *gba, uint32_t opcode){
   int m = SB_BFE(opcode,0,4);
@@ -1017,9 +1076,8 @@ static inline void arm7tdmi_STRB_reg(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented STRB (reg) %x\n",opcode);
+    arm7_STR_impl(gba,opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_STRH_imm(gba_t *gba, uint32_t opcode){
   int v = SB_BFE(opcode,0,4);
@@ -1114,6 +1172,7 @@ void arm7_LDM_impl(gba_t*gba, uint32_t opcode){
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
     if(S&& i==15){
+      printf("Restore CPSR\n");
       gba->cpu.registers[CPSR] = arm7_reg_read(&gba->cpu,SPSR);
     }
     if(!P) {addr+=increment;w=true;}
@@ -1287,15 +1346,16 @@ static inline void arm7tdmi_MSR_imm(gba_t *gba, uint32_t opcode){
 }
 static inline void arm7tdmi_MSR_reg(gba_t *gba, uint32_t opcode){
   int n = SB_BFE(opcode,0,4);
-  int m = SB_BFE(opcode,16,4);
+  int P = SB_BFE(opcode,22,1);
   {
-    printf("Hit Unimplemented MSR (reg) %x\n",opcode);
+    int reg = arm7_reg_read(&(gba)->cpu,n);
+    if(P)arm7_reg_write(&gba->cpu,SPSR,reg);
+    else gba->cpu.registers[CPSR]=reg;
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_unknown(gba_t *gba, uint32_t opcode){
   {
-    printf("Hit Unimplemented UNKWN %x\n",opcode);
+    printf("Hit Unimplemented UNKWN %x hash: %d\n",opcode, ((opcode>>4)&0xf) | (((opcode>>20)&0xff)<<4));
   }
   gba->cpu.trigger_breakpoint = true;
 }
