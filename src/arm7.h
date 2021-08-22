@@ -98,6 +98,9 @@ static inline void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode);
 static inline void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode);
 static inline void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode);
 
+static inline void arm7_mrs(arm7_t* cpu, uint32_t opcode);
+static inline void arm7_msr(arm7_t* cpu, uint32_t opcode);
+
 // Thumb Instruction Implementations
 static inline void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode);
 static inline void arm7t_add_sub(arm7_t* cpu, uint32_t opcode);
@@ -136,7 +139,9 @@ static inline void arm7_set_thumb_bit(arm7_t* cpu, bool value);
 
 // ARM7 ARM Classes
 const static arm7_instruction_t arm7_instruction_classes[]={
-   (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc001ooooSnnnnddddrrrrOOOOOOOO"},
+   (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc0010oooSnnnnddddrrrrOOOOOOOO"},
+   (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc00111ooSnnnnddddrrrrOOOOOOOO"},
+   (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc00110oo1nnnnddddrrrrOOOOOOOO"},
    //These duplications are to handle disambiguating bit 5 and 7 set to ones for DP 
    (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc0000oooSnnnnddddsssssss0mmmm"},
    (arm7_instruction_t){arm7_data_processing,      "DP",      "cccc0000oooSnnnnddddssss0tt1mmmm"},
@@ -163,18 +168,40 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    (arm7_instruction_t){arm7_coproc_data_op,       "CDO",     "cccc1110oooonnnndddd####ppp0mmmm"},
    (arm7_instruction_t){arm7_coproc_reg_transfer,  "CRT",     "cccc1110oooLnnnndddd####ppp1mmmm"},
    (arm7_instruction_t){arm7_software_interrupt,   "SWI",     "cccc1111------------------------"},
+   
+   (arm7_instruction_t){arm7_mrs,                  "MRS",     "cccc00010P001111dddd000000000000"},
+   (arm7_instruction_t){arm7_msr,                  "MSR",     "cccc00I10P10100F111100000000mmmm"},
+
+
+
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN1","cccc000001--------------1001----"}, 
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN2","cccc00011---------------1001----"}, 
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN3","cccc00010-1-------------1001----"}, 
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN4","cccc00010-01------------1001----"}, 
    // Handle invalid opcode space in DP
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWN5","cccc00010-00---------------0----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWN6","cccc00010-00------------0--1----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWN7","cccc00010110---------------0----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWN8","cccc00010110------------0--1----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWN9","cccc00010010------------01-1----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWNA","cccc00010010------------0011----"},
-   (arm7_instruction_t){arm7_data_processing,      "UNKNOWNB","cccc00010010---------------0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWN5","cccc00010-00------------1--0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWN6","cccc00010-00------------01-0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWN7","cccc00010-00------------0010----"},
+
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWN8","cccc00010-00------------0--1----"},
+
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWN9","cccc00010110------------1--0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNA","cccc00010110------------01-0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNB","cccc00010110------------0010----"},
+
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNC","cccc00010110------------0--1----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWND","cccc00010010------------01-1----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNE","cccc00010010------------0011----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNF","cccc00010010------------1--0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNG","cccc00010010------------01-0----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNH","cccc00010010------------0010----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNI","----00110--0------------1-------"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNJ","----00110--0------------01------"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNK","----00110--0------------001-----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNL","----00110--0------------0001----"},
+   (arm7_instruction_t){arm7_undefined,            "UNKNOWNM","----00110-00------------0000----"},
+
+
 
 };  
 
@@ -718,6 +745,34 @@ static inline void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
   //Update mode to supervisor
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13;
 }
+
+static inline void arm7_mrs(arm7_t* cpu, uint32_t opcode){
+  int P = ARM7_BFE(opcode,22,1);
+  int Rd= ARM7_BFE(opcode,12,4);
+  int data = arm7_reg_read(cpu,P ? SPSR: CPSR);
+  arm7_reg_write(cpu,Rd,data);
+}
+static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
+  int P = ARM7_BFE(opcode,22,1);
+  int flags_only = ARM7_BFE(opcode,16,1);
+  int I = ARM7_BFE(opcode,25,1);
+  int data = 0;
+  int dest_reg = P ? SPSR: CPSR;
+  if(I){
+    int imm = ARM7_BFE(opcode,0,8);
+    int rot = ARM7_BFE(opcode,8,4)*2;
+    data = arm7_rotr(imm,rot);
+  }else data = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
+
+  if(flags_only){
+    int old_data = arm7_reg_read(cpu,dest_reg);
+    int flag_mask = 0xf0000000;
+    data&=flag_mask;
+    data|=old_data&~flag_mask; 
+  }
+  arm7_reg_write(cpu,dest_reg,data);
+}
+
 
 // Thumb Instruction Implementations
 static inline void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode){
