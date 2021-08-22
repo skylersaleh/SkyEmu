@@ -750,9 +750,7 @@ static inline void arm7tdmi_UDF(gba_t *gba, uint32_t opcode){
 }
 static inline void arm7tdmi_NOP(gba_t *gba, uint32_t opcode){
   {
-    printf("Hit Unimplemented Reserved Hint %x\n",opcode);
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 static inline void arm7tdmi_SWP(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,0,4);
@@ -1107,9 +1105,16 @@ static inline void arm7tdmi_STRH_reg(gba_t *gba, uint32_t opcode){
   int u = SB_BFE(opcode,23,1);
   int p = SB_BFE(opcode,24,1);
   {
-    printf("Hit Unimplemented STRH (reg) %x\n",opcode);
+    int offset = arm7_reg_read(&(gba)->cpu,m);
+    int addr = arm7_reg_read(&(gba)->cpu,n); 
+    int data = arm7_reg_read(&(gba)->cpu,t);
+    int increment = u? offset: -offset;
+    if(p)  addr+=increment;
+    gba_store16(gba, addr, data);
+    if(!p) {addr+=increment;w=true;}
+
+    if(w)arm7_reg_write(&(gba)->cpu,n,addr); 
   }
-  gba->cpu.trigger_breakpoint = true;
 }
 void arm7_STM_impl(gba_t*gba, uint32_t opcode){
   

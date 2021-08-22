@@ -4,6 +4,7 @@
 #include "sb_types.h"
 #include <string.h>
 
+#include "arm7.h"
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 #define LR 14
@@ -15,29 +16,8 @@
 
 #define GBA_DISPCNT  0x4000000
 #define GBA_DISPSTAT 0x4000004
-#define GBA_VCOUNT     0x4000006
-#define GBA_BG_PALETTE 0x5000000
-
-typedef struct {
-  // Registers
-  /*
-  0-15: R0-R15
-  16: CPSR
-  17-23: R8_fiq-R14_fiq
-  24-25: R13_irq-R14_irq
-  26-27: R13_svc-R14_svc
-  28-29: R13_abt-R14_abt
-  30-31: R13_und-R14_und
-  32: SPSR_fiq
-  33: SPSR_irq
-  34: SPSR_svc
-  35: SPSR_abt
-  36: SPSR_und
-  */
-  uint32_t registers[37];
-  bool thumb;
-  bool trigger_breakpoint;
-} arm7tdmi_t;       
+#define GBA_VCOUNT   0x4000006
+#define GBA_BG_PALETTE 0x5000000      
 
 typedef struct {     
   uint8_t bios[16*1024];
@@ -63,23 +43,17 @@ typedef struct{
   bool l,r;
 } gba_joy_t;
 typedef struct{
-  int current_dot; 
+  int scan_clock; 
 }gba_ppu_t;
 typedef struct {
   gba_mem_t mem;
-  arm7tdmi_t cpu;
+  arm7_t cpu;
   gba_cartridge_t cart;
   gba_joy_t joy;       
   gba_ppu_t ppu;
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
                               
-
-// Returns mapping of an ARM register to the register array in the CPU struct
-unsigned arm7_reg_index(arm7tdmi_t* cpu, unsigned reg);
-uint32_t arm7_reg_read(arm7tdmi_t*cpu, unsigned reg);
-void arm7_reg_write(arm7tdmi_t*cpu, unsigned reg, uint32_t value);
-uint32_t arm7_read_reg(arm7tdmi_t* cpu, unsigned reg);
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
 uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr);
@@ -87,65 +61,35 @@ inline uint32_t gba_read32(gba_t*gba, unsigned baddr){return *gba_dword_lookup(g
 inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
   uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC);
   int offset = SB_BFE(baddr,1,1);
-  return ((*val)>>(16*offset))&0xffff;
+  return ((uint16_t*)val)[offset];
 }
 inline uint16_t gba_read8(gba_t*gba, unsigned baddr){
   uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC);
   int offset = SB_BFE(baddr,0,2);
-  return ((*val)>>(8*offset))&0xff;
+  return ((uint8_t*)val)[offset];
 }            
 inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){*gba_dword_lookup(gba,baddr) = data;}
 inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
   uint32_t* val = gba_dword_lookup(gba,baddr);
   int offset = SB_BFE(baddr,1,1);
-  *val&= ~(0xffff<<(offset*16));
-  *val|= (data&0xffff)<<(offset*16);
+  ((uint16_t*)val)[offset]=data; 
 }
 inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   uint32_t *val = gba_dword_lookup(gba,baddr);
   int offset = SB_BFE(baddr,0,2);
-  *val&= (0xff<<(offset*8));
-  *val|= (data&0xff)<<(offset*8);
+  ((uint8_t*)val)[offset]=data; 
 } 
+
+// Memory IO functions for the emulated CPU
+static uint32_t arm7_read32(void* user_data, uint32_t address){return gba_read32((gba_t*)user_data,address);/*TODO handle unaligned loads*/}
+static uint16_t arm7_read16(void* user_data, uint32_t address){return gba_read16((gba_t*)user_data,address);}
+static uint8_t arm7_read8(void* user_data, uint32_t address){return gba_read8((gba_t*)user_data,address);}
+static void arm7_write32(void* user_data, uint32_t address, uint32_t data){gba_store32((gba_t*)user_data,address,data);}
+static void arm7_write16(void* user_data, uint32_t address, uint16_t data){gba_store16((gba_t*)user_data,address,data);}
+static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {gba_store8((gba_t*)user_data,address,data);}
 // Try to load a GBA rom, return false on invalid rom
 bool gba_load_rom(gba_t* gba, const char * filename);
 void gba_reset(gba_t*gba);
-
-#include "gba_tables.h"
-
-unsigned arm7_reg_index(arm7tdmi_t* cpu, unsigned reg){
-  if(reg<8 ||reg == 15 || reg==16)return reg;
-  int mode = SB_BFE(cpu->registers[CPSR],0,5);
-  if(mode == 0x10)mode=0;      // User
-  else if(mode == 0x11)mode=1; // FIQ
-  else if(mode == 0x12)mode=2; // IRQ
-  else if(mode == 0x13)mode=3; // Supervisor
-  else if(mode == 0x17)mode=4; // Abort
-  else if(mode == 0x1b)mode=5; // Undefined
-  else if(mode == 0x1f)mode=6; // System
-  else {
-    cpu->trigger_breakpoint=true;
-    printf("Undefined ARM mode: %d\n",mode);
-    return 0; 
-  }
-  // System and User mapping
-  if(mode == 0 ||mode ==6) return reg; 
-  // FIQ specific registers
-  if(mode == 1 && reg<15) return reg+17-8; 
-  // SPSR
-  if(reg==SPSR)return 32+mode-1;
-  // 13 && 14
-  if(reg==13 || reg ==14 )return 17+mode*2 + (reg-13);
-
-  printf("Undefined register: %d for ARM mode: %d\n",reg,mode);
-  return 0; 
-}
-void arm7_reg_write(arm7tdmi_t*cpu, unsigned reg, uint32_t value){
-  cpu->registers[arm7_reg_index(cpu,reg)] = value;
-} 
-uint32_t arm7_reg_read(arm7tdmi_t*cpu, unsigned reg){
-  return cpu->registers[arm7_reg_index(cpu,reg)];
-}
  
 uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   baddr&=0xfffffffc;
@@ -196,107 +140,80 @@ bool gba_load_rom(gba_t* gba, const char* filename){
   for(int i=0;i<sizeof(gba->mem.cart_sram);++i) gba->mem.cart_sram[i]=0;
   return true; 
 }  
-bool arm7_check_cond_code(gba_t*gba, uint32_t opcode){
-  uint32_t cond_code = SB_BFE(opcode,28,4);
-  if(cond_code==0xE)return true;
-  uint32_t cpsr = gba->cpu.registers[CPSR];
-  bool N = SB_BFE(cpsr,31,1);
-  bool Z = SB_BFE(cpsr,30,1);
-  bool C = SB_BFE(cpsr,29,1);
-  bool V = SB_BFE(cpsr,28,1);
-  switch(cond_code){
-    case 0x0: return Z;            //EQ: Equal
-    case 0x1: return !Z;           //NE: !Equal
-    case 0x2: return C;            //CS: Unsigned >=
-    case 0x3: return !C;           //CC: Unsigned <
-    case 0x4: return N;            //MI: Negative
-    case 0x5: return !N;           //PL: Positive or Zero
-    case 0x6: return V;            //VS: Overflow
-    case 0x7: return !V;           //VC: No Overflow
-    case 0x8: return C && !Z;      //HI: Unsigned >
-    case 0x9: return !C || Z;      //LS: Unsigned <=
-    case 0xA: return N==V;         //GE: Signed >=
-    case 0xB: return N!=V;         //LT: Signed <  
-    case 0xC: return !Z&&(N==V);   //GT: Signed >  
-    case 0xD: return Z||(N!=V);    //LE: Signed <= 
-  };
-  return false; 
-}
+
     
 void gba_tick_ppu(gba_t* gba, int cycles){
   // TODO: This is a STUB
-  gba->ppu.current_dot+=1; 
+  gba->ppu.scan_clock+=cycles;
+  while(gba->ppu.scan_clock>280896) gba->ppu.scan_clock-=280896;
+  //Make LCD-y increment during h-blank (fixes BEEG.gba)
+  int lcd_y = (gba->ppu.scan_clock+272)/1232;
+  int lcd_x = (gba->ppu.scan_clock%1232)/4;
 
   uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0xffff;
+  uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+  bool vblank = lcd_y>=160&& lcd_y>=227;
+  bool hblank = lcd_x>=240;
+  disp_stat|= vblank ? 0x1: 0; 
+  disp_stat|= hblank ? 0x2: 0;      
+  disp_stat|= lcd_y==vcount_cmp ? 0x4: 0;   
 
-  int vcount = SB_BFE(gba->ppu.current_dot,5,8);
-  bool vblank = vcount>160;
-  bool hblank = SB_BFE(gba->ppu.current_dot,0,5)>25;
-  disp_stat|= vblank? 0x7: 0;      
   gba_store16(gba,GBA_DISPSTAT,disp_stat);
-  gba_store16(gba,GBA_VCOUNT,vcount);
-   
+  gba_store16(gba,GBA_VCOUNT,lcd_y);   
+
+  uint32_t dispcnt = gba_read32(gba, GBA_DISPCNT);
+  int bg_mode = SB_BFE(dispcnt,0,3);
+  int frame_sel = SB_BFE(dispcnt,4,1);
+  int p = lcd_x+lcd_y*240;
+  bool visible = lcd_x<240 && lcd_y<160;
+  if(visible){
+    if(bg_mode==3){
+      int addr = 0x06000000+p*2; 
+      uint16_t data = gba_read16(gba,addr);
+      int r = SB_BFE(data,0,5)*7;
+      int g = SB_BFE(data,5,5)*7;
+      int b = SB_BFE(data,10,5)*7;
+      gba->framebuffer[p*3+0] = r;
+      gba->framebuffer[p*3+1] = g;
+      gba->framebuffer[p*3+2] = b;
+    }else if(bg_mode==4){
+      int addr = 0x06000000+p*1+0xA000; 
+      uint8_t pallete_id = gba_read8(gba,addr);
+      uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
+
+      int r = SB_BFE(pallete,0,5)*7;
+      int g = SB_BFE(pallete,5,5)*7;
+      int b = SB_BFE(pallete,10,5)*7;
+
+      gba->framebuffer[p*3+0] = r;
+      gba->framebuffer[p*3+1] = g;
+      gba->framebuffer[p*3+2] = b;
+    }else if(bg_mode!=0) printf("Unsupported background mode: %d\n",bg_mode);
+  }
 }
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
   }
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    int max_instructions = 1000;
+    int max_instructions = 10000;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
-      unsigned oldpc = gba->cpu.registers[PC]; 
-      gba->cpu.registers[PC] += 4; 
-      uint32_t opcode = gba_read32(gba,oldpc);
-      uint32_t cond_code = SB_BFE(opcode,28,4);
-      if(arm7_check_cond_code(gba,opcode)) gba_execute_instr(gba, opcode);
-
+      arm7_exec_instruction(&gba->cpu); 
       gba_tick_ppu(gba,1);
-
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
       gba->cpu.trigger_breakpoint=false;
       if(breakpoint){emu->run_mode = SB_MODE_PAUSE; break;}
     }
   }                  
-  uint32_t dispcnt = gba_read32(gba, GBA_DISPCNT);
-  int bg_mode = SB_BFE(dispcnt,0,3);
-  int frame_sel = SB_BFE(dispcnt,4,1);
-
-  if(bg_mode==3){
-    
-    for(int p = 0; p< GBA_LCD_W*GBA_LCD_H;++p){
-      int addr = 0x06000000+p*2; 
-      uint16_t data = gba_read16(gba,addr);
-      int r = SB_BFE(data,0,5)*8;
-      int g = SB_BFE(data,5,5)*8;
-      int b = SB_BFE(data,10,5)*8;
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
-    }
-  }else if(bg_mode==4){
   
-    for(int p = 0; p< GBA_LCD_W*GBA_LCD_H;++p){
-      int addr = 0x06000000+p*1+0xA000; 
-      uint8_t pallete_id = gba_read8(gba,addr);
-      uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
-
-      int r = SB_BFE(pallete,0,5)*4;
-      int g = SB_BFE(pallete,5,5)*4;
-      int b = SB_BFE(pallete,10,5)*4;
-
-      b = frame_sel*255;
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
-    }
-  }else if(bg_mode!=0) printf("Unsupported background mode: %d\n",bg_mode);
   if(emu->run_mode == SB_MODE_STEP) emu->run_mode = SB_MODE_PAUSE; 
 }
 
 void gba_reset(gba_t*gba){
   *gba = (gba_t){0};
+  gba->cpu = arm7_init(gba);
   gba->cpu.registers[PC]= 0x8000000; 
   gba->cpu.registers[CPSR]= 0xE0000010; 
 }

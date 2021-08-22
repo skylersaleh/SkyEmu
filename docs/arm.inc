@@ -107,8 +107,8 @@ INST(arm_SEVL,          "SEVL",                "----0011001000001111000000000101
 INST(arm_WFE,           "WFE",                 "----0011001000001111000000000010") // v6K
 INST(arm_WFI,           "WFI",                 "----0011001000001111000000000011") // v6K
 INST(arm_YIELD,         "YIELD",               "----0011001000001111000000000001") // v6K
-INST(arm_NOP,           "Reserved Hint",       "----0011001000001111------------")
-INST(arm_NOP,           "Reserved Hint",       "----001100100000111100000000----")
+// INST(arm_NOP,           "Reserved Hint",       "----0011001000001111------------")
+// INST(arm_NOP,           "Reserved Hint",       "----001100100000111100000000----")
 
 // Synchronization Primitive instructions
 INST(arm_CLREX,         "CLREX",               "11110101011111111111000000011111") // v6K

@@ -2,14 +2,14 @@
 INST(thumb16_LSL_imm,        "LSL (imm)",                "00000vvvvvmmmddd")
 INST(thumb16_LSR_imm,        "LSR (imm)",                "00001vvvvvmmmddd")
 INST(thumb16_ASR_imm,        "ASR (imm)",                "00010vvvvvmmmddd")
-INST(thumb16_ADD_reg_t1,     "ADD (reg, T1)",            "0001100mmmnnnddd")
+INST(thumb16_ADD_reg_t1,     "ADD (reg T1)",            "0001100mmmnnnddd")
 INST(thumb16_SUB_reg,        "SUB (reg)",                "0001101mmmnnnddd")
-INST(thumb16_ADD_imm_t1,     "ADD (imm, T1)",            "0001110vvvnnnddd")
-INST(thumb16_SUB_imm_t1,     "SUB (imm, T1)",            "0001111vvvnnnddd")
+INST(thumb16_ADD_imm_t1,     "ADD (imm T1)",            "0001110vvvnnnddd")
+INST(thumb16_SUB_imm_t1,     "SUB (imm T1)",            "0001111vvvnnnddd")
 INST(thumb16_MOV_imm,        "MOV (imm)",                "00100dddvvvvvvvv")
 INST(thumb16_CMP_imm,        "CMP (imm)",                "00101nnnvvvvvvvv")
-INST(thumb16_ADD_imm_t2,     "ADD (imm, T2)",            "00110dddvvvvvvvv")
-INST(thumb16_SUB_imm_t2,     "SUB (imm, T2)",            "00111dddvvvvvvvv")
+INST(thumb16_ADD_imm_t2,     "ADD (imm T2)",            "00110dddvvvvvvvv")
+INST(thumb16_SUB_imm_t2,     "SUB (imm T2)",            "00111dddvvvvvvvv")
 
  // Data-processing instructions
 INST(thumb16_AND_reg,        "AND (reg)",                "0100000000mmmddd")
@@ -22,7 +22,7 @@ INST(thumb16_SBC_reg,        "SBC (reg)",                "0100000110mmmddd")
 INST(thumb16_ROR_reg,        "ROR (reg)",                "0100000111sssddd")
 INST(thumb16_TST_reg,        "TST (reg)",                "0100001000mmmnnn")
 INST(thumb16_RSB_imm,        "RSB (imm)",                "0100001001nnnddd")
-INST(thumb16_CMP_reg_t1,     "CMP (reg, T1)",            "0100001010mmmnnn")
+INST(thumb16_CMP_reg_t1,     "CMP (reg T1)",            "0100001010mmmnnn")
 INST(thumb16_CMN_reg,        "CMN (reg)",                "0100001011mmmnnn")
 INST(thumb16_ORR_reg,        "ORR (reg)",                "0100001100mmmddd")
 INST(thumb16_MUL_reg,        "MUL (reg)",                "0100001101nnnddd")
@@ -30,8 +30,8 @@ INST(thumb16_BIC_reg,        "BIC (reg)",                "0100001110mmmddd")
 INST(thumb16_MVN_reg,        "MVN (reg)",                "0100001111mmmddd")
 
 // Special data instructions
-INST(thumb16_ADD_reg_t2,     "ADD (reg, T2)",            "01000100Dmmmmddd") // v4T, Low regs: v6T2
-INST(thumb16_CMP_reg_t2,     "CMP (reg, T2)",            "01000101Nmmmmnnn") // v4T
+INST(thumb16_ADD_reg_t2,     "ADD (reg T2)",            "01000100Dmmmmddd") // v4T, Low regs: v6T2
+INST(thumb16_CMP_reg_t2,     "CMP (reg T2)",            "01000101Nmmmmnnn") // v4T
 INST(thumb16_MOV_reg,        "MOV (reg)",                "01000110Dmmmmddd") // v4T, Low regs: v6
 
 // Store/Load single data item instructions
@@ -44,19 +44,19 @@ INST(thumb16_LDR_reg,        "LDR (reg)",                "0101100mmmnnnttt")
 INST(thumb16_LDRH_reg,       "LDRH (reg)",               "0101101mmmnnnttt")
 INST(thumb16_LDRB_reg,       "LDRB (reg)",               "0101110mmmnnnttt")
 INST(thumb16_LDRSH_reg,      "LDRSH (reg)",              "0101111mmmnnnttt")
-INST(thumb16_STR_imm_t1,     "STR (imm, T1)",            "01100vvvvvnnnttt")
-INST(thumb16_LDR_imm_t1,     "LDR (imm, T1)",            "01101vvvvvnnnttt")
+INST(thumb16_STR_imm_t1,     "STR (imm T1)",            "01100vvvvvnnnttt")
+INST(thumb16_LDR_imm_t1,     "LDR (imm T1)",            "01101vvvvvnnnttt")
 INST(thumb16_STRB_imm,       "STRB (imm)",               "01110vvvvvnnnttt")
 INST(thumb16_LDRB_imm,       "LDRB (imm)",               "01111vvvvvnnnttt")
 INST(thumb16_STRH_imm,       "STRH (imm)",               "10000vvvvvnnnttt")
 INST(thumb16_LDRH_imm,       "LDRH (imm)",               "10001vvvvvnnnttt")
-INST(thumb16_STR_imm_t2,     "STR (imm, T2)",            "10010tttvvvvvvvv")
-INST(thumb16_LDR_imm_t2,     "LDR (imm, T2)",            "10011tttvvvvvvvv")
+INST(thumb16_STR_imm_t2,     "STR (imm T2)",            "10010tttvvvvvvvv")
+INST(thumb16_LDR_imm_t2,     "LDR (imm T2)",            "10011tttvvvvvvvv")
 
 // Generate relative address instructions
 INST(thumb16_ADR,            "ADR",                      "10100dddvvvvvvvv")
-INST(thumb16_ADD_sp_t1,      "ADD (SP plus imm, T1)",    "10101dddvvvvvvvv")
-INST(thumb16_ADD_sp_t2,      "ADD (SP plus imm, T2)",    "101100000vvvvvvv") // v4T
+INST(thumb16_ADD_sp_t1,      "ADD (SP plus imm T1)",    "10101dddvvvvvvvv")
+INST(thumb16_ADD_sp_t2,      "ADD (SP plus imm T2)",    "101100000vvvvvvv") // v4T
 INST(thumb16_SUB_sp,         "SUB (SP minus imm)",       "101100001vvvvvvv") // v4T
 
 // Hint instructions

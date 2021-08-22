@@ -10,7 +10,6 @@
 #include "sb_instr_tables.h"
 #include "sb_types.h"
 #include "gba.h"
-#include "gba_tables.h"
 #include <stdint.h>
 #include <math.h>
 #define RAYGUI_IMPLEMENTATION
@@ -459,8 +458,8 @@ Rectangle sb_draw_flag_state(Rectangle rect, const char *group_name,
                   &adv_rect);
   return adv_rect;
 }      
+/*
 Rectangle gba_draw_arm_opcode(Rectangle rect, uint32_t opcode){
-
   uint32_t cond_code = SB_BFE(opcode,28,4);
   const char* cond_code_table[16]=
     {"EQ","NE","CS","CC","MI","PL","VS","VC","HI","LS","GE","LT","GT","LE","","INV"};
@@ -476,16 +475,18 @@ Rectangle gba_draw_arm_opcode(Rectangle rect, uint32_t opcode){
   }
   GuiLabel(rect, text);
 }
+*/
 Rectangle gba_draw_instructions(Rectangle rect, gba_t *gba) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
   int pc = gba->cpu.registers[15];
   //TODO: Disasm Thumb
+  bool thumb = arm7_get_thumb_bit(&gba->cpu);
   for (int i = -6; i < 5; ++i) {
     sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
                     &widget_rect, &inside_rect);
 
-    int pc_render = i*4 + pc;
+    int pc_render = i*(thumb?2:4) + pc;
 
     if (pc_render < 0) {
       widget_rect.x += 80;
@@ -496,10 +497,12 @@ Rectangle gba_draw_instructions(Rectangle rect, gba_t *gba) {
       widget_rect.x += 30;
       GuiLabel(widget_rect, TextFormat("%09d", pc_render));
       widget_rect.x += 80;
-      uint32_t opcode = gba_read32(gba, pc_render);
-      gba_draw_arm_opcode(widget_rect,opcode);
+      uint32_t opcode = thumb? gba_read16(gba, pc_render): gba_read32(gba, pc_render);
+      char disasm[64];
+      arm7_get_disasm(&gba->cpu,pc_render,disasm,64);
+      GuiLabel(widget_rect, disasm);
       widget_rect.x += 200;
-      GuiLabel(widget_rect, TextFormat("(%08x)", opcode));
+      GuiLabel(widget_rect, TextFormat(thumb? "(%04x)":"(%08x)", opcode));
       widget_rect.x += 50;
     }
   }
@@ -818,7 +821,7 @@ Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
   return adv_rect;
 }
 Rectangle gba_draw_arm7_state(Rectangle rect, gba_t* gba) {
-  arm7tdmi_t * arm = &gba->cpu;
+  arm7_t * arm = &gba->cpu;
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
 
