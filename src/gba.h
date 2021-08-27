@@ -214,8 +214,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 void gba_reset(gba_t*gba){
   *gba = (gba_t){0};
   gba->cpu = arm7_init(gba);
+  gba->cpu.registers[13] = 0x03007f00;
   gba->cpu.registers[PC]= 0x8000000; 
-  gba->cpu.registers[CPSR]= 0xE0000010; 
+  gba->cpu.registers[CPSR]= 0x000000df; 
 }
 #undef PC
 #undef CPSR

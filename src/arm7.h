@@ -52,6 +52,7 @@ typedef struct {
   uint64_t executed_instructions;
   bool trigger_breakpoint;
   void* user_data;
+  FILE* log_cmp_file;
 } arm7_t;     
 
 typedef void (*arm7_handler_t)(arm7_t *cpu, uint32_t opcode);
@@ -126,10 +127,12 @@ static inline void arm7t_unknown(arm7_t* cpu, uint32_t opcode);
 // Internal functions
 static inline bool arm7_check_cond_code(arm7_t* cpu, uint32_t opcode);
 static inline uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg);
+static inline uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int r15_off);
 static inline void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value);
 static inline unsigned arm7_reg_index(arm7_t* cpu, unsigned reg);
 static int arm7_lookup_arm_instruction_class(uint32_t opcode_key);
 static int arm7_lookup_thumb_instruction_class(uint32_t opcode_key);
+static inline uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint32_t value, uint32_t shift_value, int* carry);
 static inline uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* carry);
 static inline uint32_t arm7_rotr(uint32_t value, uint32_t rotate);
 static inline bool arm7_get_thumb_bit(arm7_t* cpu);
@@ -200,9 +203,6 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    (arm7_instruction_t){arm7_undefined,            "UNKNOWNK","----00110--0------------001-----"},
    (arm7_instruction_t){arm7_undefined,            "UNKNOWNL","----00110--0------------0001----"},
    (arm7_instruction_t){arm7_undefined,            "UNKNOWNM","----00110-00------------0000----"},
-
-
-
 };  
 
 // ARM7 Thumb Classes
@@ -272,17 +272,17 @@ unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
     printf("Undefined ARM mode: %d\n",mode);
     return 0; 
   }
-  // System and User mapping
-  if(mode == 0 ||mode ==6) return reg; 
+  
+  // System and User mapping (SPSR returns CPSR)
+  if(mode == 0 ||mode ==6) return reg==17? 16: reg; 
   // FIQ specific registers
   if(mode == 1 && reg<15) return reg+17-8; 
   // SPSR
   if(reg==SPSR)return 32+mode-1;
-  // 13 && 14
-  if(reg==13 || reg ==14 )return 17+mode*2 + (reg-13);
 
-  printf("Undefined register: %d for ARM mode: %d\n",reg,mode);
-  return 0; 
+  if(reg==13 || reg ==14 )return 22+(mode-1)*2 + (reg-13);
+
+  return reg; 
 }
 void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
   cpu->registers[arm7_reg_index(cpu,reg)] = value;
@@ -290,6 +290,12 @@ void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
 uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg){
   return cpu->registers[arm7_reg_index(cpu,reg)];
 }
+static inline uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int r15_off){
+  uint32_t v = arm7_reg_read(cpu,reg);
+  if(reg==15)v+=r15_off;
+  return v; 
+}
+
 static int arm7_lookup_arm_instruction_class(uint32_t opcode_key){
   int key_bits[] = {4,5,6,7, 20,21,22,23,24,25,26,27};
   int matched_class = -1; 
@@ -383,12 +389,14 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
+  arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/thumb-gang-log.bin","rb");
+
   return arm;
 
 }
 static inline bool arm7_get_thumb_bit(arm7_t* cpu){return ARM7_BFE(cpu->registers[CPSR],5,1);}
 static inline void arm7_set_thumb_bit(arm7_t* cpu, bool value){
-  cpu->registers[CPSR] &= 1<<5;
+  cpu->registers[CPSR] &= ~(1<<5);
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size){
@@ -450,18 +458,59 @@ static inline bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
   return false; 
 }
 static inline void arm7_exec_instruction(arm7_t* cpu){
+  if(cpu->log_cmp_file){
+    fseek(cpu->log_cmp_file,(cpu->executed_instructions+2)*18*4,SEEK_SET);
+    uint32_t cmp_regs[18];
+    fread(cmp_regs,18*4,1,cpu->log_cmp_file);
+    uint32_t regs[18];
+    for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
+    regs[15]=cmp_regs[15];
+
+    bool matches = true;
+    for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
+    if(!matches){
+      cpu->trigger_breakpoint =true;
+      printf("Log mismatch detected\n");
+      printf("=====================\n");
+
+      printf("After %llu executed_instructions\n",cpu->executed_instructions);
+
+      char * rnames[18]={
+        "R0","R1","R2","R3","R4","R5","R6","R7",
+        "R8","R9","R10","R11","R12","R13","R14","R15",
+        "CPSR","SPSR"
+      };
+      for(int i=0;i<18;++i)
+        printf("%s %d (%08x) Log Value = %d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i]);
+      uint32_t log_cpsr = cmp_regs[16];
+      uint32_t cpsr = regs[16];
+      printf("N:%d LogN:%d Z:%d LogZ:%d C:%d LogC:%d V:%d LogV:%d\n",
+        SB_BFE(cpsr,31,1), SB_BFE(log_cpsr,31,1),
+        SB_BFE(cpsr,30,1), SB_BFE(log_cpsr,30,1),
+        SB_BFE(cpsr,29,1), SB_BFE(log_cpsr,29,1),
+        SB_BFE(cpsr,28,1), SB_BFE(log_cpsr,28,1)
+      ); 
+      for(int i=0;i<18;++i)arm7_reg_write(cpu,i,cmp_regs[i]);
+    }
+
+  }
   if(arm7_get_thumb_bit(cpu)==false){
     unsigned oldpc = cpu->registers[PC]; 
     cpu->registers[PC] += 4; 
     uint32_t opcode = arm7_read32(cpu->user_data,oldpc);
-    if(arm7_check_cond_code(cpu,opcode)==false)return; 
-  	uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-  	arm7_lookup_table[key](cpu,opcode);
+      printf("OPCODE: %08x\n",opcode);
+
+    if(arm7_check_cond_code(cpu,opcode)){
+    	uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
+    	arm7_lookup_table[key](cpu,opcode);
+    }
   }else{
     unsigned oldpc = cpu->registers[PC]; 
     cpu->registers[PC] += 2; 
     uint32_t opcode = arm7_read16(cpu->user_data,oldpc);
     uint32_t key = ((opcode>>8)&0xff);
+    printf("THUMB OPCODE: %04x\n",opcode);
+
     arm7t_lookup_table[key](cpu,opcode);
   }
   cpu->executed_instructions++;
@@ -471,7 +520,6 @@ static inline uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
     return (value >> (rotate &31)) | (value << (32-(rotate&31)));
 }
 static inline uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* carry){
-  int shift_type = ARM7_BFE(opcode,5,2);
   uint32_t value = arm7_reg_read(arm, ARM7_BFE(opcode,0,4)); 
   uint32_t shift_value = 0; 
   if(ARM7_BFE(opcode,4,1)==true){
@@ -480,24 +528,28 @@ static inline uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* ca
   }else{
     shift_value = ARM7_BFE(opcode,7,5);
   }
+  return arm7_shift(arm,opcode,value,shift_value,carry);
+}
+static inline uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint32_t value, uint32_t shift_value, int* carry){
+  int shift_type = ARM7_BFE(opcode,5,2);
   switch(shift_type){
-    case 0: *carry = ARM7_BFE(value, 32-shift_value,1); value = value<<shift_value; break; 
-    case 1: *carry = shift_value==0? -1: ARM7_BFE(value, shift_value-1,1); value = value>>shift_value; break; 
-    case 2: *carry = shift_value==0? -1: ARM7_BFE(value, shift_value-1,1); value = ((int32_t)value)>>shift_value; break; 
+    case 0: *carry = shift_value==0? -1: ARM7_BFE(value, 32-shift_value,1); value = value<<shift_value; break; 
+    case 1: *carry = ARM7_BFE(value, shift_value-1,1); value = value>>shift_value; break; 
+    case 2: *carry = ARM7_BFE(value, shift_value-1,1); value = ((int32_t)value)>>shift_value; break; 
     case 3: value = arm7_rotr(value,shift_value); *carry = ARM7_BFE(value,31,1); break; 
   }                               
   return value;
 }
 static inline void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
 
-  // TODO: Handle R15 operand read behavior 
   // If it's used as anything but the shift amount in an operation with a register-specified shift, r15 will be PC + 12
   // I.e. add r0, r15, r15, lsl r15 would set r0 to PC + 12 + ((PC + 12) << (PC + 8))
   uint64_t Rd = ARM7_BFE(opcode,12,4);
-  uint64_t Rn = arm7_reg_read(cpu, ARM7_BFE(opcode,16,4));
   int S = ARM7_BFE(opcode,20,1);
   int I = ARM7_BFE(opcode,25,1);
   int op = ARM7_BFE(opcode,21,4);
+
+  int r15_off = 4; 
 
   // Load Second Operand
   uint64_t Rm = 0;
@@ -505,7 +557,18 @@ static inline void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   if(I){
     uint32_t imm = ARM7_BFE(opcode,0,8);
     Rm = arm7_rotr(imm, ARM7_BFE(opcode,8,4)*2);
-  }else Rm = arm7_load_shift_reg(cpu, opcode, &barrel_shifter_carry); 
+  }else{
+    uint32_t shift_value = 0; 
+    if(ARM7_BFE(opcode,4,1)==true){
+      int rs = ARM7_BFE(opcode,8,4);
+      shift_value = arm7_reg_read_r15_adj(cpu, rs,r15_off);
+      r15_off+=4; //Using r15 for a shift adds 4 cycles
+    }else shift_value = ARM7_BFE(opcode,7,5);  
+    uint32_t value = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off); 
+
+    Rm = arm7_shift(cpu, opcode, value, shift_value, &barrel_shifter_carry); 
+  }
+  uint64_t Rn = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,16,4), r15_off);
 
   uint64_t result = 0; 
 
@@ -562,7 +625,7 @@ static inline void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
       /*SUB*/ case 2: 
       /*SBC*/ case 6:  
       /*CMP*/ case 10: 
-        C = SB_BFE(result,32,1);
+        C = !SB_BFE(result,32,1);
         // if (Rn has a different sign as Rm and result has a differnt sign to Rn)
         V = ((Rn ^ Rm) & (Rn ^ result)) >> 31;
         break;
@@ -608,7 +671,7 @@ static inline void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
 }
 static inline void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
-  cpu->registers[PC] = v&~1;
+  cpu->registers[PC] = (v&~1)+4;
   arm7_set_thumb_bit(cpu,(v&1)==1);
 }
 static inline void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
@@ -689,22 +752,29 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   
   int addr = arm7_reg_read(cpu,Rn);
   int increment = U? 4: -4;
-  int new_addr = addr;
-  for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)new_addr+=increment;   
+  int num_regs = 0; 
+  for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
+  int base_addr = addr;
+  if(!U)base_addr+=(num_regs)*increment;
+  addr = base_addr; 
+  if(U)base_addr+= (num_regs)*4;
   for(int i=0;i<16;++i){
-    if(ARM7_BFE(reglist,i,1)==0)continue;       
+    if(ARM7_BFE(reglist,i,1)==0)continue;  
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
     if(i==1 && w){
-      arm7_reg_write(cpu,Rn,new_addr); 
+      arm7_reg_write(cpu,Rn,base_addr); 
     }
-    if(P)  addr+=increment;
 
     // When S is set the registers are read from the user bank
     int reg_index = S ? i : arm7_reg_index(cpu,i);
 
+    printf("BTD: %d L:%d U:%d P:%d addr: %d base_addr: %d\n",i,L,U,P,addr,base_addr);     
+
     if(L) cpu->registers[reg_index]=arm7_read32(cpu->user_data, addr);
     else arm7_write32(cpu->user_data, addr,cpu->registers[reg_index]);
+
+    addr+=4;
     
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
@@ -712,7 +782,6 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
       printf("Restore CPSR\n");
       cpu->registers[CPSR] = arm7_reg_read(cpu->user_data,SPSR);
     }
-    if(!P) {addr+=increment;w=true;}
   }
 }
 static inline void arm7_branch(arm7_t* cpu, uint32_t opcode){
@@ -754,7 +823,7 @@ static inline void arm7_mrs(arm7_t* cpu, uint32_t opcode){
 }
 static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
   int P = ARM7_BFE(opcode,22,1);
-  int flags_only = ARM7_BFE(opcode,16,1);
+  int flags_only = !ARM7_BFE(opcode,16,1);
   int I = ARM7_BFE(opcode,25,1);
   int data = 0;
   int dest_reg = P ? SPSR: CPSR;
@@ -897,8 +966,28 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   arm7_data_processing(cpu, arm_op);
 }
 static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_hi_reg_op) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  printf("Hi op\n");
+  int op = ARM7_BFE(opcode,8,2);
+  int H1 = ARM7_BFE(opcode,7,1);
+  int H2 = ARM7_BFE(opcode,6,1);
+  int Rs = ARM7_BFE(opcode,3,3);
+  int Rd = ARM7_BFE(opcode,0,3);
+
+  Rs|= H2<<3;
+  Rd|= H1<<3;
+  if(op==4){
+    // Only the Rs field is populated since that is all that is needed for
+    // arm7_branch_exchange
+    int arm_op= Rs;
+    arm7_branch_exchange(cpu,arm_op);
+  }else{
+    int S= op==1;
+    int op_mapping[3]={/*Add*/4, /*CMP*/10,/*MOV*/13 };
+    op = op_mapping[op];
+    //cccc 001o oooS nnnn dddd rrrr OOOO OOOO
+    uint32_t arm_op = (0xD2<<24)|(op<<21)|(S<<20)|(Rd<<16)|(Rd<<12)|(Rs<<0);
+    arm7_data_processing(cpu, arm_op);
+  }
 }
 static inline void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Thumb Instruction Class: (arm7t_pc_rel_ldst) Opcode %x\n",opcode);
@@ -951,8 +1040,15 @@ static inline void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   cpu->trigger_breakpoint=true;
 }
 static inline void arm7t_load_addr(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_load_addr) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  bool SP = ARM7_BFE(opcode,11,1);
+  int Rd = ARM7_BFE(opcode,8,3);
+  int imm = ARM7_BFE(opcode,0,8)*4;
+
+  uint32_t v = arm7_reg_read(cpu,SP?13:15);
+  if(!SP)v&= ~2; //Bit 1 of PC always read as 0
+  v+=imm;
+  printf("SP: %d Rd: %d imm: %d\n",SP,Rd,imm);
+  arm7_reg_write(cpu,Rd, v);
 }
 static inline void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Thumb Instruction Class: (arm7t_add_off_sp) Opcode %x\n",opcode);

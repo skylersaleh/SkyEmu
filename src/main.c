@@ -2560,7 +2560,7 @@ int main(void) {
   const int screenHeight = 700;
 
   // Set configuration flags for window creation
-  SetConfigFlags(FLAG_VSYNC_HINT  |FLAG_WINDOW_HIGHDPI| FLAG_WINDOW_RESIZABLE);
+  SetConfigFlags(FLAG_VSYNC_HINT  |FLAG_WINDOW_HIGHDPI| FLAG_WINDOW_RESIZABLE );
   InitWindow(screenWidth, screenHeight, "SkyBoy");
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();
