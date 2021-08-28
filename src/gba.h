@@ -215,10 +215,11 @@ void gba_reset(gba_t*gba){
   *gba = (gba_t){0};
   gba->cpu = arm7_init(gba);
   gba->cpu.registers[13] = 0x03007f00;
+  gba->cpu.registers[R13_irq] = 0x03007FA0;
+  gba->cpu.registers[R13_svc] = 0x03007FE0;
+  gba->cpu.registers[R13_und] = 0x03007FF0;
   gba->cpu.registers[PC]= 0x8000000; 
   gba->cpu.registers[CPSR]= 0x000000df; 
 }
-#undef PC
-#undef CPSR
-#undef SPSR
+
 #endif

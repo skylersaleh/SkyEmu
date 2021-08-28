@@ -389,7 +389,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/thumb-gang-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/arm-log.bin","rb");
 
   return arm;
 
@@ -464,7 +464,13 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     fread(cmp_regs,18*4,1,cpu->log_cmp_file);
     uint32_t regs[18];
     for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
-    regs[15]=cmp_regs[15];
+    if(arm7_get_thumb_bit(cpu)==false){
+      unsigned oldpc = cpu->registers[PC]; 
+      cmp_regs[15]-=8;
+    }else{
+      unsigned oldpc = cpu->registers[PC]; 
+      cmp_regs[15]-=4;
+    }
 
     bool matches = true;
     for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
@@ -671,8 +677,10 @@ static inline void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
 }
 static inline void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
-  cpu->registers[PC] = (v&~1)+4;
-  arm7_set_thumb_bit(cpu,(v&1)==1);
+  bool thumb = (v&1)==1;
+  if(thumb)cpu->registers[PC] = (v&~1);
+  else cpu->registers[PC] = (v&~3)+4;
+  arm7_set_thumb_bit(cpu,thumb);
 }
 static inline void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   bool P = ARM7_BFE(opcode,24,1);
@@ -845,23 +853,24 @@ static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
 
 // Thumb Instruction Implementations
 static inline void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode){
-  int op = ARM7_BFE(opcode,11,2);
-  int offset= ARM7_BFE(opcode,6,5);
-  int Rs = arm7_reg_read(cpu,ARM7_BFE(opcode,3,3));
-  int Rd = ARM7_BFE(opcode,3,0);
-  int result = 0;
+  uint32_t op = ARM7_BFE(opcode,11,2);
+  uint32_t offset= ARM7_BFE(opcode,6,5);
+  uint32_t Rs = arm7_reg_read(cpu,ARM7_BFE(opcode,3,3));
+  uint32_t Rd = ARM7_BFE(opcode,0,3);
+  uint32_t result = 0;
   switch(op){
-    case 00: result = Rs<<offset; 
-    case 01: result = ((uint32_t)Rs)>>offset; 
-    case 10: result = ((int32_t)Rs)>>offset; 
+    case 00: result = Rs<<offset; break;
+    case 01: result = ((uint32_t)Rs)>>offset; break;
+    case 10: result = ((int32_t)Rs)>>offset; break;
   }
+  printf("Rs: %u Offset: %u op:%u result: %u, Rd: %u\n",Rs,offset,op,result,Rd);
   arm7_reg_write(cpu,Rd,result);
 }
 static inline void arm7t_add_sub(arm7_t* cpu, uint32_t opcode){
   bool I = ARM7_BFE(opcode,10,1);
   int op = ARM7_BFE(opcode,9,1);
   int Rn = ARM7_BFE(opcode,6,3);
-  int Rs = ARM7_BFE(opcode,3,3);
+  int Rs = arm7_reg_read(cpu,ARM7_BFE(opcode,3,3));
   int Rd = ARM7_BFE(opcode,0,3);
 
   if(!I) Rn = arm7_reg_read(cpu,Rn);
@@ -961,20 +970,23 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   int op = ARM7_BFE(opcode,6,4);
   int Rs = ARM7_BFE(opcode,3,3);
   int Rd = ARM7_BFE(opcode,3,0);
-  //cccc 001o oooS nnnn ddddrrrrOOOOOOOO
-  uint32_t arm_op = (0xD2<<24)|(op<<21)|(1<<20)|(Rd<<16)|(Rd<<12)|(Rs<<0);
+  uint32_t arm_op = (0xD0<<24)|(op<<21)|(1<<20)|(Rd<<16)|(Rd<<12)|(Rs<<0);
+  printf("ARM OP: %08x\n",arm_op);
   arm7_data_processing(cpu, arm_op);
 }
 static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
-  printf("Hi op\n");
   int op = ARM7_BFE(opcode,8,2);
   int H1 = ARM7_BFE(opcode,7,1);
   int H2 = ARM7_BFE(opcode,6,1);
   int Rs = ARM7_BFE(opcode,3,3);
   int Rd = ARM7_BFE(opcode,0,3);
 
+
   Rs|= H2<<3;
   Rd|= H1<<3;
+
+  printf("Hi op: %d Rs:%d Rd:%d\n",op,Rs, Rd);
+
   if(op==4){
     // Only the Rs field is populated since that is all that is needed for
     // arm7_branch_exchange
@@ -985,7 +997,7 @@ static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
     int op_mapping[3]={/*Add*/4, /*CMP*/10,/*MOV*/13 };
     op = op_mapping[op];
     //cccc 001o oooS nnnn dddd rrrr OOOO OOOO
-    uint32_t arm_op = (0xD2<<24)|(op<<21)|(S<<20)|(Rd<<16)|(Rd<<12)|(Rs<<0);
+    uint32_t arm_op = (0xD0<<24)|(op<<21)|(S<<20)|(Rd<<16)|(Rd<<12)|(Rs<<0);
     arm7_data_processing(cpu, arm_op);
   }
 }
@@ -1047,7 +1059,6 @@ static inline void arm7t_load_addr(arm7_t* cpu, uint32_t opcode){
   uint32_t v = arm7_reg_read(cpu,SP?13:15);
   if(!SP)v&= ~2; //Bit 1 of PC always read as 0
   v+=imm;
-  printf("SP: %d Rd: %d imm: %d\n",SP,Rd,imm);
   arm7_reg_write(cpu,Rd, v);
 }
 static inline void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode){
@@ -1065,11 +1076,11 @@ static inline void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode){
 static inline void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode){
   int cond = ARM7_BFE(opcode,8,4);
   int s_off = ARM7_BFE(opcode,0,8);
-  if(ARM7_BFE(s_off,8,1))s_off|=0x00FFFFFF;
+  if(ARM7_BFE(s_off,7,1))s_off|=0xFFFFFF00;
   //ARM equv: cccc 1010 OOOO OOOO OOOO OOOO OOOO OOOO
-  uint32_t arm_op = (cond<<28)|(0xA<<24)|s_off; 
+  uint32_t arm_op = (cond<<28)|(0xA<<24); 
   if(arm7_check_cond_code(cpu,arm_op)){
-    arm7_branch(cpu,arm_op);
+    cpu->registers[PC]+=s_off*2+2;
   }
 }
 static inline void arm7t_soft_interrupt(arm7_t* cpu, uint32_t opcode){
