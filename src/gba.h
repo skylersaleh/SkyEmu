@@ -81,8 +81,14 @@ inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
 } 
 
 // Memory IO functions for the emulated CPU
-static uint32_t arm7_read32(void* user_data, uint32_t address){return gba_read32((gba_t*)user_data,address);/*TODO handle unaligned loads*/}
-static uint16_t arm7_read16(void* user_data, uint32_t address){return gba_read16((gba_t*)user_data,address);}
+static uint32_t arm7_read32(void* user_data, uint32_t address){ 
+  uint32_t value = gba_read32((gba_t*)user_data,address);
+  return arm7_rotr(value,(address&0x3)*8);
+}
+static uint32_t arm7_read16(void* user_data, uint32_t address){
+  uint32_t value = gba_read16((gba_t*)user_data,address);
+  return arm7_rotr(value,(address&0x1)*8);
+}
 static uint8_t arm7_read8(void* user_data, uint32_t address){return gba_read8((gba_t*)user_data,address);}
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data){gba_store32((gba_t*)user_data,address,data);}
 static void arm7_write16(void* user_data, uint32_t address, uint16_t data){gba_store16((gba_t*)user_data,address,data);}
@@ -106,7 +112,7 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   else if(baddr>=0xE000000 && baddr<=0xE00FFFF )return (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
 
   //printf("Access to openbus memory region: %x\n",baddr);
-  return &gba->mem.openbus_dword;
+  return gba_dword_lookup(gba,gba->cpu.registers[PC]+4);
 }
 
 bool gba_load_rom(gba_t* gba, const char* filename){

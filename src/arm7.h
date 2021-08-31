@@ -71,7 +71,7 @@ static arm7_t arm7_init(void* user_data);
 static inline void arm7_exec_instruction(arm7_t* cpu);
 // Memory IO functions for the emulated CPU (these must be defined by the user)
 static uint32_t arm7_read32(void* user_data, uint32_t address);
-static uint16_t arm7_read16(void* user_data, uint32_t address);
+static uint32_t arm7_read16(void* user_data, uint32_t address);
 static uint8_t arm7_read8(void* user_data, uint32_t address);
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data);
 static void arm7_write16(void* user_data, uint32_t address, uint16_t data);
@@ -558,7 +558,7 @@ static inline uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t value, 
       if(shift_value==0){
         uint32_t cpsr=arm->registers[CPSR];
         int C = ARM7_BFE(cpsr,29,1); 
-        //Rotate Extended
+        //Rotate Extended (RRX)
         *carry = ARM7_BFE(value,0,1); value = (value>>1)|(C<<31);
 
       }else{
@@ -708,11 +708,12 @@ static inline void arm7_multiply(arm7_t* cpu, uint32_t opcode){
   arm7_reg_write(cpu,Rd,result);
 
   if(S){
-    uint32_t cpsr = cpu->registers[CPSR] & 0x0fffffff;
+    uint32_t cpsr = cpu->registers[CPSR];
     bool N = ARM7_BFE(result,31,1);
     bool Z = (result&0xffffffff)==0;
     bool C = ARM7_BFE(cpsr,29,1);
     bool V = ARM7_BFE(cpsr,28,1);
+    cpsr&= 0x0ffffff;
     cpsr|= (N?1:0)<<31;   
     cpsr|= (Z?1:0)<<30;
     cpsr|= (C?1:0)<<29; 
@@ -721,8 +722,42 @@ static inline void arm7_multiply(arm7_t* cpu, uint32_t opcode){
   }
 }
 static inline void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Instruction Class (arm7_multiply_long) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  bool U = ARM7_BFE(opcode,22,1);
+  bool A = ARM7_BFE(opcode,21,1);
+  bool S = ARM7_BFE(opcode,20,1);
+  int64_t RdHi = ARM7_BFE(opcode,16,4);
+  int64_t RdLo = ARM7_BFE(opcode,12,4);
+  int64_t Rs = arm7_reg_read(cpu,ARM7_BFE(opcode,8,4));
+  int64_t Rm = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
+
+  int64_t RdHiLo = arm7_reg_read(cpu,RdHi);
+  RdHiLo = (RdHiLo<<32)| arm7_reg_read(cpu,RdLo);
+
+  if(U){
+    Rm = (int32_t)Rm;
+    Rs = (int32_t)Rs;
+  }
+  int64_t result =  Rm*Rs;
+  if(A)result+=RdHiLo;
+
+  printf("Rm: %lld Rs: %lld RdHiLo:%lld Result: %lld\n",Rm,Rs, RdHiLo,result);
+  arm7_reg_write(cpu,RdHi,result>>32);
+  arm7_reg_write(cpu,RdLo,result&0xffffffff);
+
+  if(S){
+    uint32_t cpsr = cpu->registers[CPSR];
+    bool N = ARM7_BFE(result,31,1);
+    bool Z = (result&0xffffffff)==0;
+    bool C = ARM7_BFE(cpsr,29,1);
+    bool V = ARM7_BFE(cpsr,28,1);
+    cpsr&= 0x0ffffff;
+    cpsr|= (N?1:0)<<31;   
+    cpsr|= (Z?1:0)<<30;
+    cpsr|= (C?1:0)<<29; 
+    cpsr|= (V?1:0)<<28;
+    cpu->registers[CPSR] = cpsr;
+  }
+
 }
 static inline void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_single_data_swap) Opcode: %x\n",opcode);
@@ -755,20 +790,27 @@ static inline void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
 
   int increment = U? offset: -offset;
   if(P) addr += increment;
-  if(L==0){ // Store
+  // Store before writeback
+  if(L==0){ 
     uint32_t data = arm7_reg_read(cpu,Rd);
     if(H==1)arm7_write16(cpu->user_data,addr,data);
     else arm7_write8(cpu->user_data,addr,data);
-  }else{ // Load
+  }
+  uint32_t write_back_addr = addr;
+  if(!P) {write_back_addr+=increment;W=true;}
+  if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
+  if(L==1){ // Load
     uint32_t data = H ? arm7_read16(cpu->user_data,addr): arm7_read8(cpu->user_data,addr);
     if(S){
-      if(H) data|= 0xffff0000*ARM7_BFE(data,15,1);
+      // Unaligned signed half words and signed byte loads sign extend the byte 
+      if(H&& !(addr&1)) {
+        data|= 0xffff0000*ARM7_BFE(data,15,1);
+      }
       else  data|= 0xffffff00*ARM7_BFE(data,7,1);
     }
     arm7_reg_write(cpu,Rd,data);  
   }
-  if(!P) {addr+=increment;W=true;}
-  if(W)arm7_reg_write(cpu,Rn,addr); 
+  
 }
 static inline void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode){
   bool I = ARM7_BFE(opcode,25,1);
@@ -783,20 +825,28 @@ static inline void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode){
                arm7_load_shift_reg(cpu, opcode, &carry);
   
   uint64_t Rd = ARM7_BFE(opcode,12,4);
-  uint32_t addr = arm7_reg_read(cpu, Rn);
-
+  uint32_t addr = arm7_reg_read_r15_adj(cpu, Rn,4);
   int increment = U? offset: -offset;
+  printf("Addr: %d (%08x), increment: %d (%08x)\n",addr,addr,increment,increment);
+
   if(P) addr += increment;
-  if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+
+  // Store before write back
+  if(L==0){ 
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(B==1)arm7_write8(cpu->user_data,addr,data);
     else arm7_write32(cpu->user_data,addr,data);
-  }else{ // Load
+  }
+
+  //Write back address before load
+  uint32_t write_back_addr = addr; 
+  if(!P) {write_back_addr+=increment;W=true;}
+  if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
+
+  if(L==1){ // Load
     uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
   }
-  if(!P) {addr+=increment;W=true;}
-  if(W)arm7_reg_write(cpu,Rn,addr); 
 }
 static inline void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x\n",opcode);
