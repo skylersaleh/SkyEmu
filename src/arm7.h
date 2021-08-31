@@ -760,8 +760,19 @@ static inline void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
 
 }
 static inline void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Instruction Class (arm7_single_data_swap) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  bool B = ARM7_BFE(opcode, 22,1);
+  uint32_t addr = arm7_reg_read_r15_adj(cpu,ARM7_BFE(opcode,16,4),4);
+  uint32_t Rd = ARM7_BFE(opcode,12,4);
+  uint32_t Rm = ARM7_BFE(opcode,0,4);
+  // Load
+  uint32_t read_data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+
+  uint32_t store_data = arm7_reg_read_r15_adj(cpu,Rm,8);
+  if(B==1)arm7_write8(cpu->user_data,addr,store_data);
+  else arm7_write32(cpu->user_data,addr,store_data);
+
+  arm7_reg_write(cpu,Rd,read_data);  
+  
 }
 static inline void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
