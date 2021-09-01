@@ -183,7 +183,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       gba->framebuffer[p*3+1] = g;
       gba->framebuffer[p*3+2] = b;
     }else if(bg_mode==4){
-      int addr = 0x06000000+p*1+0xA000; 
+      int addr = 0x06000000+p*1+0xA000*frame_sel; 
       uint8_t pallete_id = gba_read8(gba,addr);
       uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
