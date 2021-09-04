@@ -392,7 +392,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/thumb-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/thumb-log.bin","rb");
 
   return arm;
 
@@ -515,16 +515,14 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 4;
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     int inst_class = arm7_lookup_arm_instruction_class(key);
-    printf("OPCODE(%08x): %04x (%s)\n",old_pc,opcode, arm7_instruction_classes[inst_class].name);
     if(arm7_check_cond_code(cpu,opcode)){
     	arm7_lookup_table[key](cpu,opcode);
-    }else printf("Skipped opcode\n");
+    }
   }else{
     uint32_t opcode = arm7_read16(cpu->user_data,cpu->registers[PC]);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
     int inst_class = arm7_lookup_thumb_instruction_class(key);
-    printf("THUMB OPCODE(%08x): %04x (%s)\n",old_pc,opcode, arm7t_instruction_classes[inst_class].name);
     arm7t_lookup_table[key](cpu,opcode);
   }
   //Bit 0 of PC is always 0
@@ -674,8 +672,6 @@ static inline void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
         V = (((Rm ^ ~Rn) & (Rm ^ result)) >> 31)&1;
         break;
       }
-      printf("Result: %d %lld\n",(int32_t)result,result);
-
       cpsr&= 0x0fffffff;
       cpsr|= (N?1:0)<<31;   
       cpsr|= (Z?1:0)<<30;
@@ -741,7 +737,6 @@ static inline void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
   int64_t result =  Rm*Rs;
   if(A)result+=RdHiLo;
 
-  printf("Rm: %lld Rs: %lld RdHiLo:%lld Result: %lld\n",Rm,Rs, RdHiLo,result);
   arm7_reg_write(cpu,RdHi,result>>32);
   arm7_reg_write(cpu,RdLo,result&0xffffffff);
 
@@ -839,7 +834,6 @@ static inline void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode){
   uint64_t Rd = ARM7_BFE(opcode,12,4);
   uint32_t addr = arm7_reg_read_r15_adj(cpu, Rn,4);
   int increment = U? offset: -offset;
-  printf("Addr: %d (%08x), increment: %d (%08x)\n",addr,addr,increment,increment);
 
   if(P) addr += increment;
 
@@ -915,8 +909,9 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   
   if(!(P^U))addr+=4;
 
-  printf("Begin block transfer: %02x\n",reglist);     
-
+  // TODO: For some reason r15 is only offset by 4 in thumb mode. 
+  // Check if other people do this to. 
+  int r15_off = arm7_get_thumb_bit(cpu)? 4:8;
   // Address are word aligned
   addr&=~3;
   int cycle = 0; 
@@ -928,17 +923,13 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
 
     // When S is set the registers are read from the user bank
     int reg_index = S ? i : arm7_reg_index(cpu,i);
-    printf("BTD: %d L:% dU:%d P:%d addr: %d base_addr: %d\n",i,L,U,P,addr,base_addr);     
-
     //Store happens before writeback 
-    int r15_off = i==15? 8:0;
-    if(!L) arm7_write32(cpu->user_data, addr,cpu->registers[reg_index] + r15_off);
+    if(!L) arm7_write32(cpu->user_data, addr,cpu->registers[reg_index] + (i==15?r15_off:0));
 
     //Writeback happens on second cycle
     if(++cycle==1 && w){
       arm7_reg_write(cpu,Rn,base_addr); 
     }
-
 
     // R15 is stored at PC+12
     if(L) cpu->registers[reg_index]=arm7_read32(cpu->user_data, addr);
@@ -948,7 +939,6 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
     if(L&& S&& i==15){
-      printf("Restore CPSR\n");
       cpu->registers[CPSR] = arm7_reg_read(cpu->user_data,SPSR);
     }
   }
@@ -1027,7 +1017,6 @@ static inline void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode){
 
   uint32_t arm_op = (0xD<<21)|(1<<20)|(Rd<<12)|(offset<<7)|(op<<5)|(Rs);
   arm7_data_processing(cpu,arm_op);
-  printf("ARM OP %08x\n",arm_op);
 }
 static inline void arm7t_add_sub(arm7_t* cpu, uint32_t opcode){
   bool I = ARM7_BFE(opcode,10,1);
@@ -1037,7 +1026,6 @@ static inline void arm7t_add_sub(arm7_t* cpu, uint32_t opcode){
   int Rd = ARM7_BFE(opcode,0,3);
   uint32_t arm_op = (I<<25)|(op<<21)|(1<<20)|(Rs<<16)|(Rd<<12)|(Rn);
   arm7_data_processing(cpu,arm_op);
-  printf("ARM OP %08x\n",arm_op);
 }
 static inline void arm7t_mov_cmp_add_sub_imm(arm7_t* cpu, uint32_t opcode){
   int op = ARM7_BFE(opcode,11,2);
@@ -1051,7 +1039,6 @@ static inline void arm7t_mov_cmp_add_sub_imm(arm7_t* cpu, uint32_t opcode){
     /*SUB*/ case 3: op = 0x2; break;
   }
   uint32_t arm_op = (1<<25)|(op<<21)|(1<<20)|(Rd<<16)|(Rd<<12)|(imm);
-  printf("ARM OP: %08x\n",arm_op);
   arm7_data_processing(cpu, arm_op);
 }
 static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
@@ -1101,7 +1088,6 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   int Rn = (op==9)?Rs:Rd;
   if(alu_op==16){
     uint32_t arm_op = (0xE<<28)|(1<<20)|(Rd<<16)|(Rn<<8)|(9<<4)|(Rs);
-    printf("ARM OP: %08x\n",arm_op);
     arm7_multiply(cpu, arm_op);
     return; 
   }
@@ -1111,7 +1097,6 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   if(alu_op==13)arm_op |= (Rs<<8)|(1<<4)|Rd; // Special case shifts
   else if(op==9)arm_op |= 1<<25;          // Special case MVN
   else arm_op|=Rs;
-  printf("ARM OP: %08x\n",arm_op);
   arm7_data_processing(cpu, arm_op);
 }
 static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
@@ -1121,11 +1106,8 @@ static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
   int Rs = ARM7_BFE(opcode,3,3);
   int Rd = ARM7_BFE(opcode,0,3);
 
-
   Rs|= H2<<3;
   Rd|= H1<<3;
-
-  printf("Hi op: %d Rs:%d Rd:%d\n",op,Rs, Rd);
 
   if(op==3){
     // Only the Rs field is populated since that is all that is needed for
@@ -1138,7 +1120,6 @@ static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
     op = op_mapping[op];
     //cccc 001o oooS nnnn dddd rrrr OOOO OOOO
     uint32_t arm_op = (op<<21)|(S<<20)|(op==13?0:(Rd<<16))|(Rd<<12)|(Rs<<0);
-    printf("ARM OP: %08x  op:%d\n",arm_op,op);
     arm7_data_processing(cpu, arm_op);
   }
 }
@@ -1147,7 +1128,6 @@ static inline void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode){
   int Rd = ARM7_BFE(opcode,8,3);
   uint32_t addr = (cpu->registers[PC]+offset+2)&(~3);
   uint32_t data = arm7_read32(cpu->user_data,addr);
-  printf("RelLoad: Addr: %08x Rd:%d Data:%08x\n",addr,Rd,data);
   arm7_reg_write(cpu,Rd,data);  
 }
 static inline void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
@@ -1162,16 +1142,13 @@ static inline void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
   Rb = arm7_reg_read_r15_adj(cpu,Rb,r15_off);
 
   uint32_t addr = Ro+Rb;
-  printf("Addr: %d (%08x) Ro:%08x Rb: %08x B:%d, L:%d\n",addr,addr,Ro, Rb, B, L);
   // Store before write back
   if(L==0){ 
     uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,r15_off);
-    printf("Data: %08x\n",data);
     if(B==1)arm7_write8(cpu->user_data,addr,data);
     else arm7_write32(cpu->user_data,addr,data);
   }else{ // Load
     uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
-    printf("Data: %08x\n",data);
     arm7_reg_write(cpu,Rd,data);  
   }
 
@@ -1187,7 +1164,6 @@ static inline void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode){
   Rb = arm7_reg_read_r15_adj(cpu,Rb,r15_off);
                                      
   uint32_t addr = Ro+Rb;
-  printf("Addr: %d (%08x) Ro:%08x Rb: %08x op:%d\n",addr,addr,Ro, Rb, op);
          
   uint32_t data; 
   switch(op){
@@ -1208,7 +1184,6 @@ static inline void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode){
       else if(ARM7_BFE(data,15,1))data|=0xffff0000;
       break; 
   }
-  printf("Data %08x (%d)\n",data,data);
   if(op==0)arm7_write16(cpu->user_data,addr,data);
   else arm7_reg_write(cpu,Rd,data);
 }
@@ -1223,7 +1198,6 @@ static inline void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   //Offset is in 4B increments for word loads
   if(!B)offset*=4;
   addr += offset;
-  printf("Addr: %d (%08x) offset:%d Rd:%d L:%d B:%d\n",addr,addr, offset, Rd, L, B);
   if(L==0){ // Store
     uint32_t data = arm7_reg_read(cpu,Rd);
     if(B==1)arm7_write8(cpu->user_data,addr,data);
@@ -1241,7 +1215,6 @@ static inline void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
   uint32_t addr = arm7_reg_read(cpu, ARM7_BFE(opcode,3,3));
 
   addr += offset*2;
-  printf("Addr: %d (%08x) offset:%d Rd:%d L:%d\n",addr,addr, offset, Rd, L);
   uint32_t data=0;
   if(L==0){ // Store
     data = arm7_reg_read(cpu,Rd);
@@ -1250,7 +1223,6 @@ static inline void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
     data = arm7_read16(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
   }
-  printf("Data(bh): %d (%08x)\n",data,data);
 }
 static inline void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   bool L = ARM7_BFE(opcode,11,1);
@@ -1282,7 +1254,6 @@ static inline void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode){
   int32_t offset = ARM7_BFE(opcode,0,7)*4;
   int sign = ARM7_BFE(opcode,7,1);
   if(sign)offset=-offset;
-  printf("Offset: %d\n",offset);
   uint32_t value = arm7_reg_read(cpu,13);
   arm7_reg_write(cpu,13,value+offset);
 }
@@ -1296,7 +1267,6 @@ static inline void arm7t_push_pop_reg(arm7_t* cpu, uint32_t opcode){
 
   uint32_t arm_op = (0xe<<28)|(4<<25)|(P<<24)|(U<<23)|(W<<21)|(push_or_pop<<20)|(13<<16)|r_list;
   if(include_pc_lr)arm_op|=push_or_pop? 0x8000 : 0x4000;
-  printf("ARM Opcode %x\n",arm_op);
   arm7_block_transfer(cpu,arm_op);
 }
 static inline void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode){
@@ -1309,7 +1279,6 @@ static inline void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode){
   int W = 1;
   // Maps to LDMIA, STMIA opcode
   uint32_t arm_op = (0xe<<28)|(4<<25)|(P<<24)|(U<<23)|(W<<21)|(write_or_read<<20)|(Rb<<16)|r_list;
-  printf("ARM Opcode %x\n",arm_op);
   arm7_block_transfer(cpu,arm_op);
 }
 static inline void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode){
@@ -1336,7 +1305,6 @@ static inline void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
   int thumb_branch = ARM7_BFE(opcode,12,1);
   uint32_t link_reg = arm7_reg_read(cpu,LR);
   // TODO: Is this +4 supposed to be +2 ARM7TDMI page 5-40
-  printf("BL H:%d offset:%d thumb_branch:%d\n",H,offset,thumb_branch);
   if(H==0){
     offset <<= 12;
     if (offset& 0x400000) offset |= 0xFF800000;
