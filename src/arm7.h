@@ -742,8 +742,8 @@ static inline void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
 
   if(S){
     uint32_t cpsr = cpu->registers[CPSR];
-    bool N = ARM7_BFE(result,31,1);
-    bool Z = (result&0xffffffff)==0;
+    bool N = ARM7_BFE(result,63,1);
+    bool Z = result==0;
     bool C = ARM7_BFE(cpsr,29,1);
     bool V = ARM7_BFE(cpsr,28,1);
     cpsr&= 0x0ffffff;

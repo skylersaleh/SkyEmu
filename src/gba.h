@@ -213,7 +213,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     emu->run_mode = SB_MODE_PAUSE;
   }
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    int max_instructions = 10000;
+    int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
       arm7_exec_instruction(&gba->cpu); 
