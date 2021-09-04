@@ -551,9 +551,36 @@ static inline uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t value, 
   // and the old value of the CPSR C flag will be passed on as the shifter carry output.
   if(shift_value==0&&ARM7_BFE(opcode,4,1)){*carry=-1;return value;}
   switch(shift_type){
-    case 0: *carry = shift_value==0? -1: ARM7_BFE(value, 32-shift_value,1); value = value<<shift_value; break; 
-    case 1: if(shift_value ==0){shift_value=32;} *carry = ARM7_BFE(value, shift_value-1,1); value = value>>shift_value; break; 
-    case 2: if(shift_value ==0){shift_value=32;} *carry = ARM7_BFE(value, shift_value-1,1); value = (int64_t)((int32_t)value)>>shift_value; break; 
+    case 0:
+      if(shift_value>32){
+        *carry = 0; 
+        value = 0;
+      }else{
+        *carry = shift_value==0? -1: ARM7_BFE(value, 32-shift_value,1);
+        value = value<<shift_value;
+      }
+      break;
+    case 1: 
+      if(shift_value>32){
+        *carry = 0;
+        value = 0; 
+      }else{
+        if(shift_value ==0){shift_value=32;}
+        *carry = ARM7_BFE(value, shift_value-1,1);
+        value = value>>shift_value;
+      }
+      break; 
+    case 2:
+      if(shift_value>32){
+        bool b31 = ARM7_BFE(value,31,1);
+        value= b31? 0xffffffff :0;
+        *carry= b31;
+      }else{
+        if(shift_value ==0){shift_value=32;}
+        *carry = ARM7_BFE(value, shift_value-1,1);
+        value = (int64_t)((int32_t)value)>>shift_value;
+      }
+      break; 
     case 3: 
       if(shift_value==0){
         uint32_t cpsr=arm->registers[CPSR];
