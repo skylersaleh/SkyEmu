@@ -57,7 +57,7 @@ typedef struct {
 typedef void (*arm7_handler_t)(arm7_t *cpu, uint32_t opcode);
 typedef struct{
 	arm7_handler_t handler;
-	char name[11];
+	char name[12];
 	char bitfield[33];
 }arm7_instruction_t;
 
@@ -69,12 +69,12 @@ typedef struct{
 static arm7_t arm7_init(void* user_data);
 static inline void arm7_exec_instruction(arm7_t* cpu);
 // Memory IO functions for the emulated CPU (these must be defined by the user)
-static uint32_t arm7_read32(void* user_data, uint32_t address);
-static uint32_t arm7_read16(void* user_data, uint32_t address);
-static uint8_t arm7_read8(void* user_data, uint32_t address);
-static void arm7_write32(void* user_data, uint32_t address, uint32_t data);
-static void arm7_write16(void* user_data, uint32_t address, uint16_t data);
-static void arm7_write8(void* user_data, uint32_t address, uint8_t data);
+static inline uint32_t arm7_read32(void* user_data, uint32_t address);
+static inline uint32_t arm7_read16(void* user_data, uint32_t address);
+static inline uint8_t arm7_read8(void* user_data, uint32_t address);
+static inline void arm7_write32(void* user_data, uint32_t address, uint32_t data);
+static inline void arm7_write16(void* user_data, uint32_t address, uint16_t data);
+static inline void arm7_write8(void* user_data, uint32_t address, uint8_t data);
 // Write the dissassembled opcode from mem_address into the out_disasm string up to out_size characters
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size);
 
@@ -219,7 +219,7 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    (arm7_instruction_t){arm7t_reg_off_ldst,       "LDST[RD]",  "0101LB0ooobbbddd"},
    (arm7_instruction_t){arm7t_ldst_bh,            "SLDST[RD]", "0101HS1ooobbbddd"},
    (arm7_instruction_t){arm7t_imm_off_ldst,       "LDST[IMM]", "011BLOOOOObbbddd"},
-   (arm7_instruction_t){arm7t_imm_off_ldst_bh,    "SLDST[IMM]","1000LOOOOObbbddd"},
+   (arm7_instruction_t){arm7t_imm_off_ldst_bh,    "SLDSTH[IMM]","1000LOOOOObbbddd"},
    (arm7_instruction_t){arm7t_stack_off_ldst,     "LDST[SP]",  "1001LdddOOOOOOOO"},
    (arm7_instruction_t){arm7t_load_addr,          "LDADDR",    "1010SdddOOOOOOOO"},
    (arm7_instruction_t){arm7t_add_off_sp,         "SP+=OFF",   "10110000SOOOOOOO"},
@@ -257,7 +257,7 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
 static arm7_handler_t arm7_lookup_table[4096] = {};
 static arm7_handler_t arm7t_lookup_table[4096] = {};
 
-unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
+static inline unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8 ||reg == 15 || reg==16)return reg;
   int mode = ARM7_BFE(cpu->registers[CPSR],0,5);
   if(mode == 0x10)mode=0;      // User
@@ -284,10 +284,10 @@ unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
 
   return reg; 
 }
-void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
+static inline void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
   cpu->registers[arm7_reg_index(cpu,reg)] = value;
 } 
-uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg){
+static inline uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg){
   return cpu->registers[arm7_reg_index(cpu,reg)];
 }
 static inline uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int r15_off){
@@ -533,7 +533,7 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
 
 }
 static inline uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
-    return (value >> (rotate &31)) | (value << (32-(rotate&31)));
+  return ((uint64_t)value >> (rotate &31)) | ((uint64_t)value << (32-(rotate&31)));
 }
 static inline uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* carry){
   uint32_t value = arm7_reg_read(arm, ARM7_BFE(opcode,0,4)); 
@@ -552,7 +552,6 @@ static inline uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t value, 
   // If this byte is zero, the unchanged contents of Rm will be used as the second operand,
   // and the old value of the CPSR C flag will be passed on as the shifter carry output.
   if(shift_value==0&&ARM7_BFE(opcode,4,1)){*carry=-1;return value;}
-  printf("val:%llu shift_val:%d type: %d\n",value,shift_value,shift_type);
   switch(shift_type){
     case 0: *carry = shift_value==0? -1: ARM7_BFE(value, 32-shift_value,1); value = value<<shift_value; break; 
     case 1: if(shift_value ==0){shift_value=32;} *carry = ARM7_BFE(value, shift_value-1,1); value = value>>shift_value; break; 
@@ -607,7 +606,6 @@ static inline void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   uint64_t Rn = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,16,4), r15_off);
 
   uint64_t result = 0; 
-  printf("Op: %d S:%d Rn: %llx Rm: %llx = %llx\n",op,S, Rn,Rm, Rn-Rm);
   // Perform main operation
   uint32_t cpsr=cpu->registers[CPSR];
   int C = ARM7_BFE(cpsr,29,1); 
@@ -1101,11 +1099,17 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   int alu_op = op_mapping[op];
   int shift_op = shift_mapping[op];
   int Rn = (op==9)?Rs:Rd;
+  if(alu_op==16){
+    uint32_t arm_op = (0xE<<28)|(1<<20)|(Rd<<16)|(Rn<<8)|(9<<4)|(Rs);
+    printf("ARM OP: %08x\n",arm_op);
+    arm7_multiply(cpu, arm_op);
+    return; 
+  }
 
-  uint32_t arm_op = (0xD<<28)|(alu_op<<21)|(1<<20)|(Rn<<16)|(Rd<<12)|(shift_op<<5);
-  // Special case shifts
-  if(alu_op==13)arm_op |= (Rs<<8)|(1<<4);
-  else if(op==9)arm_op |= 1<<25;
+  uint32_t arm_op = (0xE<<28)|(alu_op<<21)|(1<<20)|(Rn<<16)|(Rd<<12)|(shift_op<<5);
+  
+  if(alu_op==13)arm_op |= (Rs<<8)|(1<<4)|Rd; // Special case shifts
+  else if(op==9)arm_op |= 1<<25;          // Special case MVN
   else arm_op|=Rs;
   printf("ARM OP: %08x\n",arm_op);
   arm7_data_processing(cpu, arm_op);
@@ -1141,28 +1145,85 @@ static inline void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode){
 static inline void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode){
   int offset = ARM7_BFE(opcode,0,8)*4;
   int Rd = ARM7_BFE(opcode,8,3);
-  uint32_t addr = (cpu->registers[PC]+offset+4)&(~3);
+  uint32_t addr = (cpu->registers[PC]+offset+2)&(~3);
   uint32_t data = arm7_read32(cpu->user_data,addr);
   printf("RelLoad: Addr: %08x Rd:%d Data:%08x\n",addr,Rd,data);
   arm7_reg_write(cpu,Rd,data);  
 }
 static inline void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_reg_off_ldst) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  bool B = ARM7_BFE(opcode,10,1);
+  bool L = ARM7_BFE(opcode,11,1);
+  int Ro = ARM7_BFE(opcode,6,3);
+  int Rb = ARM7_BFE(opcode,3,3);
+  int Rd = ARM7_BFE(opcode,0,3);
+
+  int r15_off = 2; 
+  Ro = arm7_reg_read_r15_adj(cpu,Ro,r15_off);
+  Rb = arm7_reg_read_r15_adj(cpu,Rb,r15_off);
+
+  uint32_t addr = Ro+Rb;
+  printf("Addr: %d (%08x) Ro:%08x Rb: %08x B:%d, L:%d\n",addr,addr,Ro, Rb, B, L);
+  // Store before write back
+  if(L==0){ 
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,r15_off);
+    printf("Data: %08x\n",data);
+    if(B==1)arm7_write8(cpu->user_data,addr,data);
+    else arm7_write32(cpu->user_data,addr,data);
+  }else{ // Load
+    uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+    printf("Data: %08x\n",data);
+    arm7_reg_write(cpu,Rd,data);  
+  }
+
 }
 static inline void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_ldst_bh) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  int op = ARM7_BFE(opcode,10,2);
+  int Ro = ARM7_BFE(opcode,6,3);
+  int Rb = ARM7_BFE(opcode,3,3);
+  int Rd = ARM7_BFE(opcode,0,3);
+
+  int r15_off = 2; 
+  Ro = arm7_reg_read_r15_adj(cpu,Ro,r15_off);
+  Rb = arm7_reg_read_r15_adj(cpu,Rb,r15_off);
+                                     
+  uint32_t addr = Ro+Rb;
+  printf("Addr: %d (%08x) Ro:%08x Rb: %08x op:%d\n",addr,addr,Ro, Rb, op);
+         
+  uint32_t data; 
+  switch(op){
+    case 0: //Store Halfword
+      data = arm7_reg_read_r15_adj(cpu,Rd,r15_off);
+      break;
+    case 1: //Load Sign Extended Byte
+      data = arm7_read8(cpu->user_data,addr);
+      if(ARM7_BFE(data,7,1))data|=0xffffff00;
+      break; 
+    case 2: //Load Halfword
+      data = arm7_read16(cpu->user_data,addr);
+      break;          
+    case 3: //Load Sign Extended Half
+      data = arm7_read16(cpu->user_data,addr);
+      //Unaligned halfwords sign extend the byte
+      if((addr&1)&&ARM7_BFE(data,7,1))data|=0xffffff00;
+      else if(ARM7_BFE(data,15,1))data|=0xffff0000;
+      break; 
+  }
+  printf("Data %08x (%d)\n",data,data);
+  if(op==0)arm7_write16(cpu->user_data,addr,data);
+  else arm7_reg_write(cpu,Rd,data);
 }
 static inline void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   bool B = ARM7_BFE(opcode,12,1);
-  bool L = ARM7_BFE(opcode,13,1);
+  bool L = ARM7_BFE(opcode,11,1);
   int offset = ARM7_BFE(opcode,6,5);
   
-  uint64_t Rd = ARM7_BFE(opcode,0,3);
-  uint32_t addr = arm7_reg_read(cpu, ARM7_BFE(opcode,3,3));
-
+  uint32_t Rd = ARM7_BFE(opcode,0,3);
+  uint32_t Rb = ARM7_BFE(opcode,3,3);
+  uint32_t addr = arm7_reg_read(cpu, Rb);
+  //Offset is in 4B increments for word loads
+  if(!B)offset*=4;
   addr += offset;
+  printf("Addr: %d (%08x) offset:%d Rd:%d L:%d B:%d\n",addr,addr, offset, Rd, L, B);
   if(L==0){ // Store
     uint32_t data = arm7_reg_read(cpu,Rd);
     if(B==1)arm7_write8(cpu->user_data,addr,data);
@@ -1173,24 +1234,39 @@ static inline void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   }
 }
 static inline void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
-  bool L = ARM7_BFE(opcode,13,1);
+  bool L = ARM7_BFE(opcode,11,1);
   int offset = ARM7_BFE(opcode,6,5);
   
-  uint64_t Rd = ARM7_BFE(opcode,0,3);
+  uint32_t Rd = ARM7_BFE(opcode,0,3);
   uint32_t addr = arm7_reg_read(cpu, ARM7_BFE(opcode,3,3));
 
-  addr += offset;
+  addr += offset*2;
+  printf("Addr: %d (%08x) offset:%d Rd:%d L:%d\n",addr,addr, offset, Rd, L);
+  uint32_t data=0;
   if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read(cpu,Rd);
     arm7_write16(cpu->user_data,addr,data);
   }else{ // Load
-    uint32_t data = arm7_read16(cpu->user_data,addr);
+    data = arm7_read16(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
   }
+  printf("Data(bh): %d (%08x)\n",data,data);
 }
 static inline void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_stack_off_ldst) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  bool L = ARM7_BFE(opcode,11,1);
+  uint64_t Rd = ARM7_BFE(opcode,8,3);
+  int offset = ARM7_BFE(opcode,0,8);
+  uint32_t addr = arm7_reg_read(cpu,13);
+
+  addr += offset*4;
+  uint32_t data; 
+  if(L==0){ // Store
+    data = arm7_reg_read(cpu,Rd);
+    arm7_write32(cpu->user_data,addr,data);
+  }else{ // Load
+    data = arm7_read32(cpu->user_data,addr);
+    arm7_reg_write(cpu,Rd,data);  
+  }
 }
 static inline void arm7t_load_addr(arm7_t* cpu, uint32_t opcode){
   bool SP = ARM7_BFE(opcode,11,1);
@@ -1211,12 +1287,30 @@ static inline void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode){
   arm7_reg_write(cpu,13,value+offset);
 }
 static inline void arm7t_push_pop_reg(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_push_pop_reg) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  bool push_or_pop = ARM7_BFE(opcode,11,1);
+  bool include_pc_lr = ARM7_BFE(opcode,8,1);
+  uint32_t r_list = ARM7_BFE(opcode,0,8);
+  int P = push_or_pop; 
+  int W = 1;
+  int U = push_or_pop; 
+
+  uint32_t arm_op = (0xe<<28)|(4<<25)|(P<<24)|(U<<23)|(W<<21)|(push_or_pop<<20)|(13<<16)|r_list;
+  if(include_pc_lr)arm_op|=push_or_pop? 0x8000 : 0x4000;
+  printf("ARM Opcode %x\n",arm_op);
+  arm7_block_transfer(cpu,arm_op);
 }
 static inline void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_mult_ldst) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  bool write_or_read = ARM7_BFE(opcode,11,1);
+  int Rb = ARM7_BFE(opcode,8,3);
+  uint32_t r_list = ARM7_BFE(opcode,0,8);
+                                
+  int P = 0; 
+  int U = 1;                                         
+  int W = 1;
+  // Maps to LDMIA, STMIA opcode
+  uint32_t arm_op = (0xe<<28)|(4<<25)|(P<<24)|(U<<23)|(W<<21)|(write_or_read<<20)|(Rb<<16)|r_list;
+  printf("ARM Opcode %x\n",arm_op);
+  arm7_block_transfer(cpu,arm_op);
 }
 static inline void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode){
   int cond = ARM7_BFE(opcode,8,4);
@@ -1229,8 +1323,7 @@ static inline void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode){
   }
 }
 static inline void arm7t_soft_interrupt(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Thumb Instruction Class: (arm7t_soft_interrupt) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  arm7_software_interrupt(cpu,opcode);
 }
 static inline void arm7t_branch(arm7_t* cpu, uint32_t opcode){
   int offset = ARM7_BFE(opcode,0,11)<<1;
@@ -1240,14 +1333,20 @@ static inline void arm7t_branch(arm7_t* cpu, uint32_t opcode){
 static inline void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
   bool H = ARM7_BFE(opcode,11,1);
   int offset = ARM7_BFE(opcode,0,11);
+  int thumb_branch = ARM7_BFE(opcode,12,1);
   uint32_t link_reg = arm7_reg_read(cpu,LR);
   // TODO: Is this +4 supposed to be +2 ARM7TDMI page 5-40
-  if(H==0) link_reg = cpu->registers[PC] + (offset<<12)+2;
-  else{
+  printf("BL H:%d offset:%d thumb_branch:%d\n",H,offset,thumb_branch);
+  if(H==0){
+    offset <<= 12;
+    if (offset& 0x400000) offset |= 0xFF800000;
+    arm7_reg_write(cpu,LR,cpu->registers[PC] + offset+2);
+  }else{
     link_reg += (offset<<1);
     uint32_t pc = cpu->registers[PC];
     cpu->registers[PC]= link_reg;
-    arm7_reg_write(cpu,LR,(pc)|1);
+    arm7_reg_write(cpu,LR,(pc|thumb_branch));
+    if(!thumb_branch)arm7_set_thumb_bit(cpu,false);
   }
 }
 static inline void arm7t_unknown(arm7_t* cpu, uint32_t opcode){

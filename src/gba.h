@@ -63,7 +63,7 @@ inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
-inline uint16_t gba_read8(gba_t*gba, unsigned baddr){
+inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
   uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
@@ -81,12 +81,12 @@ inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
 } 
 
 // Memory IO functions for the emulated CPU
-static uint32_t arm7_read32(void* user_data, uint32_t address){ 
+static inline uint32_t arm7_read32(void* user_data, uint32_t address){ 
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
-static uint32_t arm7_read16(void* user_data, uint32_t address){
-  uint32_t value = gba_read16((gba_t*)user_data,address);
+static inline uint32_t arm7_read16(void* user_data, uint32_t address){
+  uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
 static uint8_t arm7_read8(void* user_data, uint32_t address){return gba_read8((gba_t*)user_data,address);}
@@ -185,6 +185,17 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     }else if(bg_mode==4){
       int addr = 0x06000000+p*1+0xA000*frame_sel; 
       uint8_t pallete_id = gba_read8(gba,addr);
+      uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
+
+      int r = SB_BFE(pallete,0,5)*7;
+      int g = SB_BFE(pallete,5,5)*7;
+      int b = SB_BFE(pallete,10,5)*7;
+
+      gba->framebuffer[p*3+0] = r;
+      gba->framebuffer[p*3+1] = g;
+      gba->framebuffer[p*3+2] = b;
+    }else if(bg_mode==6 ||bg_mode==7){
+      uint8_t pallete_id = 0;
       uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
       int r = SB_BFE(pallete,0,5)*7;
