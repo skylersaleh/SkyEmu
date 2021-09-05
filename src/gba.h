@@ -17,8 +17,10 @@
 #define GBA_DISPCNT  0x4000000
 #define GBA_DISPSTAT 0x4000004
 #define GBA_VCOUNT   0x4000006
+#define GBA_KEYINPUT 0x4000130
 #define GBA_BG_PALETTE 0x5000000      
-
+  
+  
 typedef struct {     
   uint8_t bios[16*1024];
   uint8_t wram0[256*1024];
@@ -208,11 +210,26 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     }else if(bg_mode!=0) printf("Unsupported background mode: %d\n",bg_mode);
   }
 }
+void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
+  uint16_t reg_value = 0;
+  reg_value|= !(joy->a)     <<0;
+  reg_value|= !(joy->b)     <<1;
+  reg_value|= !(joy->select)<<2;
+  reg_value|= !(joy->start) <<3;
+  reg_value|= !(joy->right) <<4;
+  reg_value|= !(joy->left)  <<5;
+  reg_value|= !(joy->up)    <<6;
+  reg_value|= !(joy->down)  <<7;
+  reg_value|= !(joy->r)     <<8;
+  reg_value|= !(joy->l)     <<9;
+  gba_store16(gba, GBA_KEYINPUT, reg_value);
+}
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
   }
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
+    gba_tick_keypad(&emu->joy,gba);
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){

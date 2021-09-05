@@ -53,7 +53,12 @@
 #define SYSTEM_UNKNOWN 0
 #define SYSTEM_GB 1
 #define SYSTEM_GBA 2
-
+typedef struct{
+  bool up,down,left,right;
+  bool a, b, start, select;
+  bool l, r; 
+} sb_joy_t;
+  
 typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
@@ -61,6 +66,7 @@ typedef struct {
   int panel_mode;
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
+  sb_joy_t joy;
 } sb_emu_state_t;
 
 typedef struct {
@@ -94,10 +100,6 @@ typedef struct {
   int rom_size;
   int ram_size;
 } sb_gb_cartridge_t;
-typedef struct{
-  bool up,down,left,right;
-  bool a, b, start, select;  
-} sb_gb_joy_t;
 
 typedef struct{
   unsigned int scanline_cycles;
@@ -147,7 +149,6 @@ typedef struct{
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
-  sb_gb_joy_t joy; 
   sb_gb_mem_t mem;
   sb_lcd_ppu_t lcd;
   sb_timer_t timers;

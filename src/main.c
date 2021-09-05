@@ -547,7 +547,7 @@ Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
   return adv_rect;
 }
 
-Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
+Rectangle sb_draw_joypad_state(Rectangle rect, sb_joy_t *joy) {
 
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
@@ -567,7 +567,10 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
   wr.y=widget_rect.y;
   GuiCheckBox(wr,"Right",joy->right);
-
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Shoulder-L",joy->l);
+   
   inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   inside_rect.x +=rect.width/2;
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
@@ -584,7 +587,10 @@ Rectangle sb_draw_joypad_state(Rectangle rect, sb_gb_joy_t *joy) {
   wr.y=widget_rect.y;
   GuiCheckBox(wr,"Select",joy->select);
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-
+  wr.y=widget_rect.y;
+  GuiCheckBox(wr,"Shoulder-R",joy->r);
+  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
+   
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                   &adv_rect);
@@ -920,8 +926,8 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
   // Bit 1 - P11 Input: Left  or B        (0=Pressed) (Read Only)
   // Bit 0 - P10 Input: Right or A        (0=Pressed) (Read Only)
 
-  uint8_t data_dir =    ((!gb->joy.down)<<3)| ((!gb->joy.up)<<2)    |((!gb->joy.left)<<1)|((!gb->joy.right));
-  uint8_t data_action = ((!gb->joy.start)<<3)|((!gb->joy.select)<<2)|((!gb->joy.b)<<1)   |(!gb->joy.a);
+  uint8_t data_dir =    ((!state->joy.down)<<3)| ((!state->joy.up)<<2)    |((!state->joy.left)<<1)|((!state->joy.right));
+  uint8_t data_action = ((!state->joy.start)<<3)|((!state->joy.select)<<2)|((!state->joy.b)<<1)   |(!state->joy.a);
 
   uint8_t data = gb->mem.data[SB_IO_JOYPAD];
 
@@ -933,17 +939,17 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
   gb->mem.data[SB_IO_JOYPAD] = data;
 
 }
-void sb_poll_controller_input(sb_gb_t* gb){
-
-  gb->joy.left  = IsKeyDown(KEY_A);
-  gb->joy.right = IsKeyDown(KEY_D);
-  gb->joy.up    = IsKeyDown(KEY_W);
-  gb->joy.down  = IsKeyDown(KEY_S);
-  gb->joy.a = IsKeyDown(KEY_J);
-  gb->joy.b = IsKeyDown(KEY_K);
-  gb->joy.start = IsKeyDown(KEY_ENTER);
-  gb->joy.select = IsKeyDown(KEY_APOSTROPHE);
-
+void sb_poll_controller_input(sb_joy_t* joy){
+  joy->left  = IsKeyDown(KEY_A);
+  joy->right = IsKeyDown(KEY_D);
+  joy->up    = IsKeyDown(KEY_W);
+  joy->down  = IsKeyDown(KEY_S);
+  joy->a = IsKeyDown(KEY_J);
+  joy->b = IsKeyDown(KEY_K);
+  joy->start = IsKeyDown(KEY_ENTER);
+  joy->select = IsKeyDown(KEY_APOSTROPHE);
+  joy->l = IsKeyDown(KEY_U);
+  joy->r = IsKeyDown(KEY_I);
 }
 
 bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
@@ -1871,7 +1877,7 @@ void sb_draw_sidebar(Rectangle rect) {
     }else if (emu_state.system == SYSTEM_GBA){
       rect_inside = gba_draw_arm7_state(rect_inside, &gba);
     }
-    rect_inside = sb_draw_joypad_state(rect_inside, &gb_state.joy);
+    rect_inside = sb_draw_joypad_state(rect_inside, &emu_state.joy);
   }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
     rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
   }
@@ -2350,7 +2356,7 @@ float sb_distance(Vector2 a, Vector2 b){
   return sqrt(a.x*a.x+a.y*a.y);
 }
 
-void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
+void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
   Color fill_color = {200,200,200,255};
   Color sel_color = {150,150,150,255};
   Color line_color = {127,127,127,255};
@@ -2450,14 +2456,14 @@ void sb_draw_onscreen_controller(sb_gb_t*gb, Rectangle rect){
     GuiDrawRectangle(bounds, GuiGetStyle(BASE, BORDER_WIDTH), Fade(GetColor(GuiGetStyle(BUTTON, BORDER + state)), guiAlpha), Fade(GetColor(GuiGetStyle(BUTTON, BASE + state*3)), guiAlpha));
     GuiDrawText(button_name[b], GetTextBounds(BUTTON, bounds), GuiGetStyle(BUTTON, TEXT_ALIGNMENT), Fade(GetColor(GuiGetStyle(BUTTON, TEXT + state)), guiAlpha));
   }
-  gb->joy.left  |= left;
-  gb->joy.right |= right;
-  gb->joy.up    |= up;
-  gb->joy.down  |= down;
-  gb->joy.a |= a;
-  gb->joy.b |= b;
-  gb->joy.start |= SB_BFE(button_press,0,1);
-  gb->joy.select |= SB_BFE(button_press,1,1);
+  state->joy.left  |= left;
+  state->joy.right |= right;
+  state->joy.up    |= up;
+  state->joy.down  |= down;
+  state->joy.a |= a;
+  state->joy.b |= b;
+  state->joy.start |= SB_BFE(button_press,0,1);
+  state->joy.select |= SB_BFE(button_press,1,1);
 }
 
 void UpdateDrawFrame() {
@@ -2494,7 +2500,7 @@ void UpdateDrawFrame() {
 
   ClearBackground(RAYWHITE);
   int screen_width = GetScreenWidth();
-  int screen_height = GetScreenHeight();
+  int screen_height = GetScreenHeight();     
 
 
   int panel_width = 430;
@@ -2504,7 +2510,7 @@ void UpdateDrawFrame() {
   lcd_rect.width = GetScreenWidth()-panel_width;
   lcd_rect.height = GetScreenHeight();
   // Controller polling must happen before handling the onscreen keyboard
-  sb_poll_controller_input(&gb_state);
+  sb_poll_controller_input(&emu_state.joy);
   float lcd_aspect = 144/160.;
   int panel_height = 30+GUI_PADDING;
   if((screen_width-400)/(float)screen_height>160/144.*0.7){
@@ -2520,7 +2526,7 @@ void UpdateDrawFrame() {
     cont_rect.y = lcd_rect.y+lcd_rect.height;
     cont_rect.width = GetScreenWidth();
     cont_rect.height= GetScreenHeight()-cont_rect.y;
-    sb_draw_onscreen_controller(&gb_state,cont_rect);
+    sb_draw_onscreen_controller(&emu_state,cont_rect);
   }else{
     // Square Screen
     lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),GetScreenHeight()-panel_height};
