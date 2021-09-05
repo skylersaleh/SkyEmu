@@ -31,7 +31,7 @@ typedef struct {
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
   uint8_t cart_sram[64*1024];
-  uint32_t openbus_dword; 
+  uint32_t openbus_word; 
 } gba_mem_t;
 
 typedef struct {
@@ -114,7 +114,7 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   else if(baddr>=0xE000000 && baddr<=0xE00FFFF )return (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
 
   //printf("Access to openbus memory region: %x\n",baddr);
-  return gba_dword_lookup(gba,gba->cpu.registers[PC]+4);
+  return &(gba->mem.openbus_word);
 }
 
 bool gba_load_rom(gba_t* gba, const char* filename){
@@ -233,6 +233,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
+      gba->mem.openbus_word= gba_read32(gba,gba->cpu.registers[PC]+4);
       arm7_exec_instruction(&gba->cpu); 
       gba_tick_ppu(gba,1);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
