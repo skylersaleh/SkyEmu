@@ -1288,7 +1288,7 @@ static inline void arm7t_push_pop_reg(arm7_t* cpu, uint32_t opcode){
   bool push_or_pop = ARM7_BFE(opcode,11,1);
   bool include_pc_lr = ARM7_BFE(opcode,8,1);
   uint32_t r_list = ARM7_BFE(opcode,0,8);
-  int P = push_or_pop; 
+  int P = !push_or_pop; 
   int W = 1;
   int U = push_or_pop; 
 

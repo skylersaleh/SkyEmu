@@ -31,7 +31,7 @@ typedef struct {
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
   uint8_t cart_sram[64*1024];
-  uint32_t openbus_word; 
+  uint32_t* openbus_word; 
 } gba_mem_t;
 
 typedef struct {
@@ -101,20 +101,20 @@ void gba_reset(gba_t*gba);
  
 uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   baddr&=0xfffffffc;
+  uint32_t *ret = gba->mem.openbus_word;
   if(baddr<0x4000)return (uint32_t*)(gba->mem.bios+baddr-0x0);
-  else if(baddr>=0x2000000 && baddr<=0x203FFFF )return (uint32_t*)(gba->mem.wram0+baddr-0x2000000);
-  else if(baddr>=0x3000000 && baddr<=0x3007FFF )return (uint32_t*)(gba->mem.wram1+baddr-0x3000000);
-  else if(baddr>=0x4000000 && baddr<=0x40003FE )return (uint32_t*)(gba->mem.io+baddr-0x4000000);
-  else if(baddr>=0x5000000 && baddr<=0x50003FF )return (uint32_t*)(gba->mem.palette+baddr-0x5000000);
-  else if(baddr>=0x6000000 && baddr<=0x6017FFF )return (uint32_t*)(gba->mem.vram+baddr-0x6000000);
-  else if(baddr>=0x7000000 && baddr<=0x70003FF )return (uint32_t*)(gba->mem.oam+baddr-0x7000000);
-  else if(baddr>=0x8000000 && baddr<=0x9FFFFFF )return (uint32_t*)(gba->mem.cart_rom+baddr-0x8000000);
-  else if(baddr>=0xA000000 && baddr<=0xBFFFFFF )return (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);
-  else if(baddr>=0xC000000 && baddr<=0xDFFFFFF )return (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);
-  else if(baddr>=0xE000000 && baddr<=0xE00FFFF )return (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
+  else if(baddr>=0x2000000 && baddr<=0x203FFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
+  else if(baddr>=0x3000000 && baddr<=0x3007FFF )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
+  else if(baddr>=0x4000000 && baddr<=0x40003FE )ret = (uint32_t*)(gba->mem.io+baddr-0x4000000);
+  else if(baddr>=0x5000000 && baddr<=0x50003FF )ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff));
+  else if(baddr>=0x6000000 && baddr<=0x6017FFF )ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
+  else if(baddr>=0x7000000 && baddr<=0x70003FF )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
+  else if(baddr>=0x8000000 && baddr<=0x9FFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0x8000000);
+  else if(baddr>=0xA000000 && baddr<=0xBFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);
+  else if(baddr>=0xC000000 && baddr<=0xDFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);
+  else if(baddr>=0xE000000 && baddr<=0xE00FFFF )ret = (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
 
-  //printf("Access to openbus memory region: %x\n",baddr);
-  return &(gba->mem.openbus_word);
+  return gba->mem.openbus_word=ret;
 }
 
 bool gba_load_rom(gba_t* gba, const char* filename){
@@ -233,7 +233,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
-      gba->mem.openbus_word= gba_read32(gba,gba->cpu.registers[PC]+4);
       arm7_exec_instruction(&gba->cpu); 
       gba_tick_ppu(gba,1);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
@@ -255,6 +254,7 @@ void gba_reset(gba_t*gba){
   gba->cpu.registers[R13_und] = 0x03007FF0;
   gba->cpu.registers[PC]= 0x8000000; 
   gba->cpu.registers[CPSR]= 0x000000df; 
+  gba->mem.openbus_word = (uint32_t*)&gba->mem.cart_rom[0];
 }
 
 #endif
