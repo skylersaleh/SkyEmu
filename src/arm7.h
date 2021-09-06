@@ -77,7 +77,8 @@ static inline void arm7_write16(void* user_data, uint32_t address, uint16_t data
 static inline void arm7_write8(void* user_data, uint32_t address, uint8_t data);
 // Write the dissassembled opcode from mem_address into the out_disasm string up to out_size characters
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size);
-
+// Used to send an interrupt to the emulated CPU. The n'th set bit triggers the n'th interrupt
+static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts);
 ///////////////////////////////////////////
 // Functions for Internal Implementation //
 ///////////////////////////////////////////
@@ -401,6 +402,21 @@ static inline bool arm7_get_thumb_bit(arm7_t* cpu){return ARM7_BFE(cpu->register
 static inline void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   cpu->registers[CPSR] &= ~(1<<5);
   if(value)cpu->registers[CPSR]|= 1<<5;
+}
+static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+  uint32_t cpsr = cpu->registers[CPSR];
+  bool I = ARM7_BFE(cpsr,7,1);
+  if(I==0 && interrupts){
+    //Interrupts are enabled when I ==0
+    cpu->registers[R14_svc] = cpu->registers[PC];
+    cpu->registers[PC] = 0x18; 
+    cpu->registers[SPSR_svc] = cpsr;
+    //Update mode to supervisor
+    cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13;
+    //Disable interrupts(set I bit)
+    cpu->registers[CPSR] |= 1<<7;
+    arm7_set_thumb_bit(cpu,false); 
+  }
 }
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size){
   out_disasm[0]='\0';
@@ -999,6 +1015,7 @@ static inline void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
   cpu->registers[SPSR_svc] = cpsr;
   //Update mode to supervisor
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13;
+  arm7_set_thumb_bit(cpu,false);
 }
 
 static inline void arm7_mrs(arm7_t* cpu, uint32_t opcode){
