@@ -236,17 +236,20 @@ static uint8_t arm7_read8(void* user_data, uint32_t address){return gba_read8((g
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data){
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
-  }else gba_store32((gba_t*)user_data,address,data);
+  }
+  gba_store32((gba_t*)user_data,address,data);
 }
 static void arm7_write16(void* user_data, uint32_t address, uint16_t data){
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
-  }else gba_store16((gba_t*)user_data,address,data);
+  }
+  gba_store16((gba_t*)user_data,address,data);
 }
 static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
-  }else gba_store8((gba_t*)user_data,address,data);
+  }
+  gba_store8((gba_t*)user_data,address,data);
 }
 // Try to load a GBA rom, return false on invalid rom
 bool gba_load_rom(gba_t* gba, const char * filename);
@@ -289,6 +292,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     // Writing to IF actually clears the bits set to 1
     r &= ~(dword_data);
     gba_store32(gba,GBA_IF,r);
+    return true; 
   }
 
   return false;
