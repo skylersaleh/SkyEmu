@@ -185,6 +185,7 @@ typedef struct{
   int scan_clock; 
   bool last_vblank;
   bool last_hblank;
+  int last_lcd_y; 
 }gba_ppu_t;
 typedef struct {
   gba_mem_t mem;
@@ -260,38 +261,43 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   uint32_t *ret = gba->mem.openbus_word;
   if(baddr<0x4000)return (uint32_t*)(gba->mem.bios+baddr-0x0);
   else if(baddr>=0x2000000 && baddr<=0x203FFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
-  else if(baddr>=0x3000000 && baddr<=0x3007FFF )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
+  else if(baddr>=0x3000000 && baddr<=0x3ffffff )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
   else if(baddr>=0x4000000 && baddr<=0x40003FE )ret = (uint32_t*)(gba->mem.io+baddr-0x4000000);
-  else if(baddr>=0x5000000 && baddr<=0x50003FF )ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff));
-  else if(baddr>=0x6000000 && baddr<=0x6017FFF )ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
-  else if(baddr>=0x7000000 && baddr<=0x70003FF )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
+  else if(baddr>=0x5000000 && baddr<=0x5ffffff )ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff));
+  else if(baddr>=0x6000000 && baddr<=0x6ffffff )ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
+  else if(baddr>=0x7000000 && baddr<=0x7ffffff )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
   else if(baddr>=0x8000000 && baddr<=0x9FFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0x8000000);
   else if(baddr>=0xA000000 && baddr<=0xBFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);
   else if(baddr>=0xC000000 && baddr<=0xDFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);
-  else if(baddr>=0xE000000 && baddr<=0xE00FFFF )ret = (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
+  else if(baddr>=0xE000000 && baddr<=0xEffffff )ret = (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
 
   return gba->mem.openbus_word=ret;
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
   uint32_t address_u16 = address&~1; 
-  uint32_t dword_mask = 0xffffffff;
-  uint32_t dword_data = data; 
+  uint32_t word_mask = 0xffffffff;
+  uint32_t word_data = data; 
   if(req_size_bytes==2){
-    dword_data<<= (address&2)*8;
-    dword_mask =0x0000ffff<< ((address&2)*8);
+    word_data<<= (address&2)*8;
+    word_mask =0x0000ffff<< ((address&2)*8);
   }else if(req_size_bytes==1){
-    dword_data<<= (address&3)*8;
-    dword_mask =0x000000ff<< ((address&2)*8);
+    word_data<<= (address&3)*8;
+    word_mask =0x000000ff<< ((address&3)*8);
   }
 
-  dword_data&=dword_mask;
+  word_data&=word_mask;
 
-  if(address_u32== GBA_IF){
-    uint32_t r = gba_read32(gba,GBA_IF);
-    // Writing to IF actually clears the bits set to 1
-    r &= ~(dword_data);
-    gba_store32(gba,GBA_IF,r);
+  if(address_u32== GBA_IE){
+    uint16_t IE = gba_read16(gba,GBA_IE);
+    uint16_t IF = gba_read16(gba,GBA_IF);
+  
+    IE = ((IE&~word_mask)|(word_data&word_mask))>>0;
+    IF &= ~((word_data)>>16);
+    printf("IE: %04x IF: %04x word_data: %08x\n",IE,IF,word_data);
+    gba_store16(gba,GBA_IE,IE);
+    gba_store16(gba,GBA_IF,IF);
+
     return true; 
   }
 
@@ -389,17 +395,22 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       gba->framebuffer[p*3+2] = b;
     }else if(bg_mode!=0) printf("Unsupported background mode: %d\n",bg_mode);
   }
-  uint32_t new_if = gba_read32(gba,GBA_IF); 
-  uint32_t int_en = gba_read32(gba,GBA_IE);
+  uint32_t new_if = gba_read16(gba,GBA_IF); 
+  uint32_t int_en = gba_read16(gba,GBA_IE);
   if(vblank!=gba->ppu.last_vblank){
     if(vblank&& SB_BFE(int_en,GBA_INT_LCD_VBLANK,1)) new_if|= 1<< GBA_INT_LCD_VBLANK; 
   }
   if(hblank!=gba->ppu.last_hblank){
     if(hblank&& SB_BFE(int_en,GBA_INT_LCD_HBLANK,1)) new_if|= 1<< GBA_INT_LCD_HBLANK; 
   }
+  if(lcd_y != gba->ppu.last_lcd_y){
+    if(lcd_y==vcount_cmp) new_if |= 1<<GBA_INT_LCD_VCOUNT;
+  }
   gba->ppu.last_vblank = vblank;
   gba->ppu.last_hblank = hblank;
-  gba_store32(gba,GBA_IF,new_if);
+  gba->ppu.last_lcd_y  = lcd_y;
+
+  gba_store16(gba,GBA_IF,new_if);
 
 }
 void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
@@ -425,8 +436,11 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
-      uint32_t int_if = gba_read32(gba,GBA_IF);
-      arm7_process_interrupts(&gba->cpu, int_if);
+      uint32_t ime = gba_read32(gba,GBA_IME);
+      if(SB_BFE(ime,0,1)==1){
+        uint32_t int_if = gba_read32(gba,GBA_IF);
+        arm7_process_interrupts(&gba->cpu, int_if);
+      }
       arm7_exec_instruction(&gba->cpu); 
       gba_tick_ppu(gba,1);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
@@ -445,7 +459,7 @@ void gba_reset(gba_t*gba){
   gba->cpu.registers[13] = 0x03007f00;
   gba->cpu.registers[R13_irq] = 0x03007FA0;
   gba->cpu.registers[R13_svc] = 0x03007FE0;
-  gba->cpu.registers[R13_und] = 0x03007FF0;
+  gba->cpu.registers[R13_und] = 0x00000000;
   gba->cpu.registers[PC]= 0x8000000; 
   gba->cpu.registers[CPSR]= 0x000000df; 
   memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));

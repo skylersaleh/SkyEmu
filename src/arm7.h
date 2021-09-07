@@ -393,7 +393,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/thumb-log.bin","rb");
+  arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/irqdemo1-log.bin","rb");
 
   return arm;
 
@@ -407,12 +407,18 @@ static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
   if(I==0 && interrupts){
+    //cpu->trigger_breakpoint=true;
+    uint32_t v1 = arm7_read32(cpu->user_data, 0x03007ffc);
+    uint32_t v2 = arm7_read32(cpu->user_data, 0x04000000-4);
+
+    printf("Interrupt triggered! Mem[0x0300'7ffc]:%08x Mem[0x04000000-5]:%08x \n",v1,v2);
     //Interrupts are enabled when I ==0
-    cpu->registers[R14_svc] = cpu->registers[PC];
+    bool thumb = arm7_get_thumb_bit(cpu);
+    cpu->registers[R14_irq] = cpu->registers[PC]+4;
     cpu->registers[PC] = 0x18; 
-    cpu->registers[SPSR_svc] = cpsr;
-    //Update mode to supervisor
-    cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13;
+    cpu->registers[SPSR_irq] = cpsr;
+    //Update mode to IRQ
+    cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x12;
     //Disable interrupts(set I bit)
     cpu->registers[CPSR] |= 1<<7;
     arm7_set_thumb_bit(cpu,false); 
@@ -531,11 +537,13 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 4;
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     int inst_class = arm7_lookup_arm_instruction_class(key);
+    if(cpu->log_cmp_file) printf("ARM OP: %08x\n",opcode);
     if(arm7_check_cond_code(cpu,opcode)){
     	arm7_lookup_table[key](cpu,opcode);
     }
   }else{
     uint32_t opcode = arm7_read16(cpu->user_data,cpu->registers[PC]);
+    if(cpu->log_cmp_file)printf("THUMB OP: %04x\n",opcode);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
     int inst_class = arm7_lookup_thumb_instruction_class(key);
@@ -1009,12 +1017,13 @@ static inline void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode){
   cpu->trigger_breakpoint = true;
 }
 static inline void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
-  cpu->registers[R14_svc] = cpu->registers[PC];
+  bool thumb = arm7_get_thumb_bit(cpu);
+  cpu->registers[R14_svc] = cpu->registers[PC]-(thumb?0:4);
   cpu->registers[PC] = 0x8; 
   uint32_t cpsr = cpu->registers[CPSR];
   cpu->registers[SPSR_svc] = cpsr;
-  //Update mode to supervisor
-  cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13;
+  //Update mode to supervisor and block irqs
+  cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13|0x80;
   arm7_set_thumb_bit(cpu,false);
 }
 
@@ -1037,6 +1046,15 @@ static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
   mask|= 0x00ff0000*ARM7_BFE(opcode,18,1);
   mask|= 0x0000ff00*ARM7_BFE(opcode,17,1);
   mask|= 0x000000ff*ARM7_BFE(opcode,16,1);
+
+  int mode = cpu->registers[CPSR]&0x1f;
+  printf("MSR: mode: %02x P: %d\n",mode,P);
+  
+  // There is no SPSR in user or system mode
+  if(P && (mode==0x10 ||mode==0x1f)) return; 
+  //User mode can only change the flags
+  if(mode == 0x10)mask &=0xf0000000;
+  
 
   if(I){
     int imm = ARM7_BFE(opcode,0,8);
