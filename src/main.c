@@ -1049,7 +1049,47 @@ uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
 }
 
+Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
+  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
+  uint16_t dispcnt = gba_read16(gba, GBA_DISPCNT);
+
+  Rectangle r =inside_rect;
+  r=sb_draw_label(r, "DISPCNT");
+  r=sb_draw_label(r, TextFormat("  Mode:%d  Frame:%d HBFree:%d OBJMAP:%d FBLNK:%d",
+                                       SB_BFE(dispcnt,0,3),SB_BFE(dispcnt,3,1),SB_BFE(dispcnt,4,1),SB_BFE(dispcnt,5,1),
+                                       SB_BFE(dispcnt,6,1),SB_BFE(dispcnt,7,1)));
+
+  r=sb_draw_label(r, TextFormat("  Bg0En:%d Bg1En:%d Bg2En:%d  Bg3En:%d  ObjEn:%d W0En:%d W1En:%d ObjWinEn:%d",
+                                       SB_BFE(dispcnt,8,1),SB_BFE(dispcnt,9,1),SB_BFE(dispcnt,10,1),
+                                       SB_BFE(dispcnt,11,1),SB_BFE(dispcnt,12,1),SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,1),SB_BFE(dispcnt,15,1))); 
+  
+
+  for(int b=0;b<4;++b){
+    r=sb_draw_label(r,TextFormat("BG%dCNT",b));
+    uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*b);
+  
+    r=sb_draw_label(r, TextFormat("  Priority:%d  CharBase:%d Mosaic:%d Colors:%d ScreenBase:%d",
+                                       SB_BFE(dispcnt,0,2),SB_BFE(dispcnt,2,4),SB_BFE(dispcnt,6,1),SB_BFE(dispcnt,7,1),
+                                       SB_BFE(dispcnt,8,5)));
+   
+    r=sb_draw_label(r, TextFormat("  OverflowMode:%d  ScreenSize:%d",
+                                       SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,2)));
+
+    uint16_t x_off = gba_read16(gba,GBA_BG0HOFS+4*b);
+    uint16_t y_off = gba_read16(gba,GBA_BG0VOFS+4*b);
+
+    r=sb_draw_label(r, TextFormat("BG%dHOFS:%d  BG%dVOFS:%d",b,SB_BFE(x_off,0,9),b,SB_BFE(y_off,0,9)));
+                                        
+  }
+  inside_rect = r; 
+  Rectangle state_rect, adv_rect;
+  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
+                  &adv_rect);
+  GuiGroupBox(state_rect, "LCD State"); 
+  return adv_rect;
+}
 Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
+  if(emu_state.system == SYSTEM_GBA) return gba_draw_tile_map_state(rect, &gba); 
   static uint8_t tmp_image[512*512*3];
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
@@ -1864,8 +1904,9 @@ void sb_draw_sidebar(Rectangle rect) {
   rect_inside.x+=GUI_PADDING;
   rect_inside.width = view.width-GUI_PADDING*1.5;
 #endif
-  if(emu_state.panel_mode==SB_PANEL_TILEMAPS) rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
-  else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
+  if(emu_state.panel_mode==SB_PANEL_TILEMAPS){
+    rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
+  }else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
     rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
     rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);

@@ -37,3 +37,4 @@ build*
 *_template.h
 *.swo 
 *.swn
+.vscode

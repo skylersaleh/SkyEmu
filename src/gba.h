@@ -164,11 +164,11 @@ typedef struct {
   uint8_t wram1[32*1024];
   uint8_t io[1024];
   uint8_t palette[1024];
-  uint8_t vram[96*1024];
+  uint8_t vram[128*1024];
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
   uint8_t cart_sram[64*1024];
-  uint32_t* openbus_word; 
+  uint32_t openbus_word; 
 } gba_mem_t;
 
 typedef struct {
@@ -182,6 +182,13 @@ typedef struct{
   bool l,r;
 } gba_joy_t;
 typedef struct{
+  int source_addr;
+  int dest_addr;
+  int length;
+  int current_word;
+  bool last_enable;
+} gba_dma_t; 
+typedef struct{
   int scan_clock; 
   bool last_vblank;
   bool last_hblank;
@@ -193,6 +200,7 @@ typedef struct {
   gba_cartridge_t cart;
   gba_joy_t joy;       
   gba_ppu_t ppu;
+  gba_dma_t dma[4]; 
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
                               
@@ -258,7 +266,7 @@ void gba_reset(gba_t*gba);
  
 uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   baddr&=0xfffffffc;
-  uint32_t *ret = gba->mem.openbus_word;
+  uint32_t *ret = &gba->mem.openbus_word;
   if(baddr<0x4000)return (uint32_t*)(gba->mem.bios+baddr-0x0);
   else if(baddr>=0x2000000 && baddr<=0x203FFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
   else if(baddr>=0x3000000 && baddr<=0x3ffffff )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
@@ -270,8 +278,8 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
   else if(baddr>=0xA000000 && baddr<=0xBFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);
   else if(baddr>=0xC000000 && baddr<=0xDFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);
   else if(baddr>=0xE000000 && baddr<=0xEffffff )ret = (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
-
-  return gba->mem.openbus_word=ret;
+  gba->mem.openbus_word=*ret;
+  return ret;
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
@@ -355,7 +363,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   gba_store16(gba,GBA_DISPSTAT,disp_stat);
   gba_store16(gba,GBA_VCOUNT,lcd_y);   
 
-  uint32_t dispcnt = gba_read32(gba, GBA_DISPCNT);
+  uint16_t dispcnt = gba_read16(gba, GBA_DISPCNT);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int frame_sel = SB_BFE(dispcnt,4,1);
   int p = lcd_x+lcd_y*240;
@@ -393,7 +401,81 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       gba->framebuffer[p*3+0] = r;
       gba->framebuffer[p*3+1] = g;
       gba->framebuffer[p*3+2] = b;
-    }else if(bg_mode!=0) printf("Unsupported background mode: %d\n",bg_mode);
+    }else if (bg_mode<3){
+      int r = 255;
+      int g = 100;
+      int b = 0;
+         
+      for(int bg = 0; bg<4;++bg){
+        bool bg_en = SB_BFE(dispcnt,8+bg,1);
+        if(!bg_en)continue;
+        uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
+        int priority = SB_BFE(bgcnt,0,2);
+        int character_base = SB_BFE(bgcnt,2,2);
+        bool mosaic = SB_BFE(bgcnt,6,1);
+        bool colors = SB_BFE(bgcnt,7,1);
+        int screen_base = SB_BFE(bgcnt,8,5);
+        bool display_overflow =SB_BFE(bgcnt,13,1);
+        int screen_size = SB_BFE(bgcnt,14,2);
+
+        int screen_base_addr =    0x6000000 + screen_base*2048;
+        int character_base_addr = 0x6000000 + character_base*16*1024;
+
+        int screen_size_x = (screen_size&1)?512:256;
+        int screen_size_y = (screen_size>=2)?512:256;
+
+        uint16_t hoff = gba_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
+        uint16_t voff = gba_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
+        int bg_x = (hoff+lcd_x)%screen_size_x;
+        int bg_y = (voff+lcd_y)%screen_size_y;
+        int bg_tile_x = bg_x/8;
+        int bg_tile_y = bg_y/8;
+
+        int tile_off = bg_tile_y*32+bg_tile_x;
+
+        uint16_t tile_data = gba_read16(gba,screen_base_addr+tile_off*2);
+        int tile_id = SB_BFE(tile_data,0,9);
+        int h_flip = SB_BFE(tile_data,10,1);
+        int v_flip = SB_BFE(tile_data,11,1);
+        int palette = SB_BFE(tile_data,12,4);
+
+        int px = bg_x%8;
+        int py = bg_y%8;
+        
+        if(h_flip)px=7-px;
+        if(v_flip)py=7-py;
+
+        uint8_t tile_d=tile_id;
+        if(colors==false){
+          tile_d=gba_read8(gba,character_base_addr+tile_id*8*8/2+px/2+py*4);
+          tile_d= (tile_d>>((px&1)*4))&0xf;
+          tile_d+=palette*16;
+        }else{
+          tile_d=gba_read8(gba,character_base_addr+tile_id*8*8+px+py*8);
+        }
+         
+
+        uint8_t pallete_id = tile_d;
+        uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
+
+        r = SB_BFE(pallete,0,5)*7;
+        g = SB_BFE(pallete,5,5)*7;
+        b = SB_BFE(pallete,10,5)*7;
+      }
+ 
+      gba->framebuffer[p*3+0] = r;
+      gba->framebuffer[p*3+1] = g;
+      gba->framebuffer[p*3+2] = b; 
+    }else if(bg_mode!=0){
+      printf("Unsupported background mode: %d\n",bg_mode);
+      int r = 255;
+      int g = 100;
+      int b = 0;
+
+      gba->framebuffer[p*3+0] = r;
+      gba->framebuffer[p*3+1] = g;
+      gba->framebuffer[p*3+2] = b;
+    } 
   }
   uint32_t new_if = gba_read16(gba,GBA_IF); 
   uint32_t int_en = gba_read16(gba,GBA_IE);
@@ -427,6 +509,32 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   reg_value|= !(joy->l)     <<9;
   gba_store16(gba, GBA_KEYINPUT, reg_value);
 }
+bool gba_tick_dma(gba_t*gba){
+  for(int i=0;i<4;++i){
+    uint16_t cnt_h=gba_read16(gba, GBA_DMA0CNT_H+12*i);
+    bool enable = SB_BFE(cnt_h,15,1);
+    if(enable&& gba->dma[i].last_enable==false){
+      uint32_t src = gba_read32(gba,GBA_DMA0SAD+12*i);
+      uint32_t dst = gba_read32(gba,GBA_DMA0DAD+12*i);
+      uint16_t cnt = gba_read16(gba,GBA_DMA0CNT_L+12*i);
+      
+      if(cnt==0)cnt = 0xffff;
+      if(i!=4)cnt&=0x3fff;
+
+      printf("DMA: src:%08x dst:%08x len:%04x\n",src,dst,cnt);
+      bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
+
+      for(int i=0;i<cnt;++i){
+        if(type)gba_store32(gba,dst+i*4,gba_read32(gba,src+i*4));
+        else gba_store16(gba,dst+i*2,gba_read16(gba,src+i*2));
+      }
+      cnt_h&=0x7fff;
+    }
+    gba_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
+    gba->dma[i].last_enable = enable;
+  }
+  return false; 
+}
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
@@ -436,12 +544,15 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     for(int i = 0;i<max_instructions;++i){
-      uint32_t ime = gba_read32(gba,GBA_IME);
-      if(SB_BFE(ime,0,1)==1){
-        uint32_t int_if = gba_read32(gba,GBA_IF);
-        arm7_process_interrupts(&gba->cpu, int_if);
+      bool tick_dma = gba_tick_dma(gba);
+      if(!tick_dma){
+        uint32_t ime = gba_read32(gba,GBA_IME);
+        if(SB_BFE(ime,0,1)==1){
+          uint32_t int_if = gba_read32(gba,GBA_IF);
+          arm7_process_interrupts(&gba->cpu, int_if);
+        }
+        arm7_exec_instruction(&gba->cpu); 
       }
-      arm7_exec_instruction(&gba->cpu); 
       gba_tick_ppu(gba,1);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
@@ -463,7 +574,7 @@ void gba_reset(gba_t*gba){
   gba->cpu.registers[PC]= 0x8000000; 
   gba->cpu.registers[CPSR]= 0x000000df; 
   memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
-  gba->mem.openbus_word = (uint32_t*)&gba->mem.cart_rom[0];
+  gba->mem.openbus_word = gba->mem.cart_rom[0];
 }
 
 #endif

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 ////////////////
 // Data Types //
@@ -393,7 +394,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/irqdemo1-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/irqdemo1-log.bin","rb");
 
   return arm;
 
@@ -537,13 +538,13 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 4;
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     int inst_class = arm7_lookup_arm_instruction_class(key);
-    if(cpu->log_cmp_file) printf("ARM OP: %08x\n",opcode);
+    if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,old_pc);
     if(arm7_check_cond_code(cpu,opcode)){
     	arm7_lookup_table[key](cpu,opcode);
     }
   }else{
     uint32_t opcode = arm7_read16(cpu->user_data,cpu->registers[PC]);
-    if(cpu->log_cmp_file)printf("THUMB OP: %04x\n",opcode);
+    if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,old_pc);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
     int inst_class = arm7_lookup_thumb_instruction_class(key);
@@ -990,7 +991,7 @@ static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
     if(L&& S&& i==15){
-      cpu->registers[CPSR] = arm7_reg_read(cpu->user_data,SPSR);
+      cpu->registers[CPSR] = arm7_reg_read(cpu,SPSR);
     }
   }
 }
