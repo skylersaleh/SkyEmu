@@ -1064,9 +1064,9 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
                                        SB_BFE(dispcnt,11,1),SB_BFE(dispcnt,12,1),SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,1),SB_BFE(dispcnt,15,1))); 
   
 
-  for(int b=0;b<4;++b){
-    r=sb_draw_label(r,TextFormat("BG%dCNT",b));
-    uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*b);
+  for(int bg=0;bg<4;++bg){
+    r=sb_draw_label(r,TextFormat("BG%dCNT",bg));
+    uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*bg);
   
     r=sb_draw_label(r, TextFormat("  Priority:%d  CharBase:%d Mosaic:%d Colors:%d ScreenBase:%d",
                                        SB_BFE(bgcnt,0,2),SB_BFE(bgcnt,2,4),SB_BFE(bgcnt,6,1),SB_BFE(bgcnt,7,1),
@@ -1075,10 +1075,43 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
     r=sb_draw_label(r, TextFormat("  OverflowMode:%d  ScreenSize:%d",
                                        SB_BFE(bgcnt,13,1),SB_BFE(bgcnt,14,2)));
 
-    uint16_t x_off = gba_read16(gba,GBA_BG0HOFS+4*b);
-    uint16_t y_off = gba_read16(gba,GBA_BG0VOFS+4*b);
+    uint16_t x_off = gba_read16(gba,GBA_BG0HOFS+4*bg);
+    uint16_t y_off = gba_read16(gba,GBA_BG0VOFS+4*bg);
 
-    r=sb_draw_label(r, TextFormat("BG%dHOFS:%d  BG%dVOFS:%d",b,SB_BFE(x_off,0,9),b,SB_BFE(y_off,0,9)));
+    r=sb_draw_label(r, TextFormat("BG%dHOFS:%d  BG%dVOFS:%d",bg,SB_BFE(x_off,0,9),bg,SB_BFE(y_off,0,9)));
+    if(bg>=2){
+      int32_t bgx = gba_read32(gba,GBA_BG2X+(bg-2)*0x10);
+      int32_t bgy = gba_read32(gba,GBA_BG2Y+(bg-2)*0x10);
+      
+      //Convert signed magnitude to 2's complement
+      bgx = SB_BFE(bgx,0,27)*(SB_BFE(bgx,27,1)?-1:1);
+      bgy = SB_BFE(bgy,0,27)*(SB_BFE(bgy,27,1)?-1:1);
+
+      int32_t a = gba_read16(gba,GBA_BG2PA+(bg-2)*0x10);
+      int32_t b = gba_read16(gba,GBA_BG2PB+(bg-2)*0x10);
+      int32_t c = gba_read16(gba,GBA_BG2PC+(bg-2)*0x10);
+      int32_t d = gba_read16(gba,GBA_BG2PD+(bg-2)*0x10);
+ 
+      //Convert signed magnitude to 2's complement
+      a = SB_BFE(a,0,15)*(SB_BFE(a,15,1)?-1:1);
+      b = SB_BFE(b,0,15)*(SB_BFE(b,15,1)?-1:1);
+      c = SB_BFE(c,0,15)*(SB_BFE(c,15,1)?-1:1);
+      d = SB_BFE(d,0,15)*(SB_BFE(d,15,1)?-1:1); 
+
+      float bgx_v = bgx/256.;
+      float bgy_v = bgy/256.;
+
+ 
+      float a_v = a/256.;
+      float b_v = b/256.;
+      float c_v = c/256.;
+      float d_v = d/256.;
+
+      
+      r=sb_draw_label(r, TextFormat("  BGX:%f  BGY:%f",bgx_v,bgy_v));
+      r=sb_draw_label(r, TextFormat("  A:%f B:%f C:%f D:%f",a_v,b_v,c_v,d_v));
+      
+    }
                                         
   }
 

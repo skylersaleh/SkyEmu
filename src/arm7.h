@@ -394,7 +394,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/yoshi_dma-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/kirby-boot-log.bin","rb");
 
   return arm;
 
@@ -408,11 +408,7 @@ static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
   if(I==0 && interrupts){
-    //cpu->trigger_breakpoint=true;
-    uint32_t v1 = arm7_read32(cpu->user_data, 0x03007ffc);
-    uint32_t v2 = arm7_read32(cpu->user_data, 0x04000000-4);
 
-    printf("Interrupt triggered! Mem[0x0300'7ffc]:%08x Mem[0x04000000-5]:%08x \n",v1,v2);
     //Interrupts are enabled when I ==0
     bool thumb = arm7_get_thumb_bit(cpu);
     cpu->registers[R14_irq] = cpu->registers[PC]+4;
@@ -540,15 +536,21 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     int inst_class = arm7_lookup_arm_instruction_class(key);
     if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,old_pc);
     if(arm7_check_cond_code(cpu,opcode)){
+      uint32_t old_pc = cpu->registers[PC];
     	arm7_lookup_table[key](cpu,opcode);
+      uint32_t new_pc = cpu->registers[PC];
+      //if(old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
     }
   }else{
     uint32_t opcode = arm7_read16(cpu->user_data,cpu->registers[PC]);
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,old_pc);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
-    int inst_class = arm7_lookup_thumb_instruction_class(key);
+    int inst_class = arm7_lookup_thumb_instruction_class(key); 
+    uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
+    uint32_t new_pc = cpu->registers[PC];
+    //if(old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
   }
   //Bit 0 of PC is always 0
   cpu->registers[PC]&= ~1; 
@@ -1049,14 +1051,12 @@ static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
   mask|= 0x000000ff*ARM7_BFE(opcode,16,1);
 
   int mode = cpu->registers[CPSR]&0x1f;
-  printf("MSR: mode: %02x P: %d\n",mode,P);
   
   // There is no SPSR in user or system mode
   if(P && (mode==0x10 ||mode==0x1f)) return; 
   //User mode can only change the flags
   if(mode == 0x10)mask &=0xf0000000;
   
-
   if(I){
     int imm = ARM7_BFE(opcode,0,8);
     int rot = ARM7_BFE(opcode,8,4)*2;
@@ -1066,7 +1066,7 @@ static inline void arm7_msr(arm7_t* cpu, uint32_t opcode){
   int old_data = arm7_reg_read(cpu,dest_reg);
   data&=mask;
   data|=old_data&~mask; 
-  
+   
   arm7_reg_write(cpu,dest_reg,data);
 }
 

@@ -302,7 +302,6 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   
     IE = ((IE&~word_mask)|(word_data&word_mask))>>0;
     IF &= ~((word_data)>>16);
-    printf("IE: %04x IF: %04x word_data: %08x\n",IE,IF,word_data);
     gba_store16(gba,GBA_IE,IE);
     gba_store16(gba,GBA_IF,IF);
 
@@ -443,6 +442,40 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         }
         int bg_x = (hoff+lcd_x)%screen_size_x;
         int bg_y = (voff+lcd_y)%screen_size_y;
+        
+        if(rot_scale){
+          int32_t bgx = gba_read32(gba,GBA_BG2X+(bg-2)*0x10);
+          int32_t bgy = gba_read32(gba,GBA_BG2Y+(bg-2)*0x10);
+          
+          //Convert signed magnitude to 2's complement
+          bgx = SB_BFE(bgx,0,27)*(SB_BFE(bgx,27,1)?-1:1);
+          bgy = SB_BFE(bgy,0,27)*(SB_BFE(bgy,27,1)?-1:1);
+
+          int32_t a = gba_read16(gba,GBA_BG2PA+(bg-2)*0x10);
+          int32_t b = gba_read16(gba,GBA_BG2PB+(bg-2)*0x10);
+          int32_t c = gba_read16(gba,GBA_BG2PC+(bg-2)*0x10);
+          int32_t d = gba_read16(gba,GBA_BG2PD+(bg-2)*0x10);
+ 
+          //Convert signed magnitude to 2's complement
+          a = SB_BFE(a,0,15)*(SB_BFE(a,15,1)?-1:1);
+          b = SB_BFE(b,0,15)*(SB_BFE(b,15,1)?-1:1);
+          c = SB_BFE(c,0,15)*(SB_BFE(c,15,1)?-1:1);
+          d = SB_BFE(d,0,15)*(SB_BFE(d,15,1)?-1:1);
+
+          // Shift lcd_coords into fixed point
+          int64_t x1 = lcd_x<<8;
+          int64_t y1 = lcd_y<<8;
+          int64_t x2 = a*(x1-bgx) + b*(y1-bgy) + (bgx<<8);
+          int64_t y2 = c*(x1-bgx) + d*(y1-bgy) + (bgy<<8);
+
+          //bg_x = (x2>>16)%screen_size_x;
+          //bg_y = (y2>>16)%screen_size_y;
+
+          bg_x = (x1+bgx)>>8;
+          bg_y = (y1+bgy)>>8;
+                                              
+        }
+
         int bg_tile_x = bg_x/8;
         int bg_tile_y = bg_y/8;
 
@@ -568,8 +601,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       if(!tick_dma){
         uint32_t ime = gba_read32(gba,GBA_IME);
         if(SB_BFE(ime,0,1)==1){
-          uint32_t int_if = gba_read32(gba,GBA_IF);
-          arm7_process_interrupts(&gba->cpu, int_if);
+          uint16_t int_if = gba_read16(gba,GBA_IF);
+          uint16_t int_ie = gba_read16(gba,GBA_IE);
+          arm7_process_interrupts(&gba->cpu, int_if&int_ie);
         }
         arm7_exec_instruction(&gba->cpu); 
       }
