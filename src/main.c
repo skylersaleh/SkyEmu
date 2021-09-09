@@ -1069,11 +1069,11 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
     uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*b);
   
     r=sb_draw_label(r, TextFormat("  Priority:%d  CharBase:%d Mosaic:%d Colors:%d ScreenBase:%d",
-                                       SB_BFE(dispcnt,0,2),SB_BFE(dispcnt,2,4),SB_BFE(dispcnt,6,1),SB_BFE(dispcnt,7,1),
-                                       SB_BFE(dispcnt,8,5)));
+                                       SB_BFE(bgcnt,0,2),SB_BFE(bgcnt,2,4),SB_BFE(bgcnt,6,1),SB_BFE(bgcnt,7,1),
+                                       SB_BFE(bgcnt,8,5)));
    
     r=sb_draw_label(r, TextFormat("  OverflowMode:%d  ScreenSize:%d",
-                                       SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,2)));
+                                       SB_BFE(bgcnt,13,1),SB_BFE(bgcnt,14,2)));
 
     uint16_t x_off = gba_read16(gba,GBA_BG0HOFS+4*b);
     uint16_t y_off = gba_read16(gba,GBA_BG0VOFS+4*b);
@@ -1081,6 +1081,7 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
     r=sb_draw_label(r, TextFormat("BG%dHOFS:%d  BG%dVOFS:%d",b,SB_BFE(x_off,0,9),b,SB_BFE(y_off,0,9)));
                                         
   }
+
   inside_rect = r; 
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,

@@ -407,6 +407,10 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       int b = 0;
          
       for(int bg = 0; bg<4;++bg){
+
+        bool rot_scale = false;
+        if(bg_mode==2&&bg>=2)rot_scale = true;
+
         bool bg_en = SB_BFE(dispcnt,8+bg,1);
         if(!bg_en)continue;
         uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
@@ -423,17 +427,31 @@ void gba_tick_ppu(gba_t* gba, int cycles){
 
         int screen_size_x = (screen_size&1)?512:256;
         int screen_size_y = (screen_size>=2)?512:256;
-
+                            
+        
         uint16_t hoff = gba_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
         uint16_t voff = gba_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
+        
+        if(rot_scale){
+          switch(screen_size){
+            case 0: screen_size_x=screen_size_y=16*8;break;
+            case 1: screen_size_x=screen_size_y=32*8;break;
+            case 2: screen_size_x=screen_size_y=64*8;break;
+            case 3: screen_size_x=screen_size_y=128*8;break;
+          }
+          colors = true;
+        }
         int bg_x = (hoff+lcd_x)%screen_size_x;
         int bg_y = (voff+lcd_y)%screen_size_y;
         int bg_tile_x = bg_x/8;
         int bg_tile_y = bg_y/8;
 
-        int tile_off = bg_tile_y*32+bg_tile_x;
+        int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-        uint16_t tile_data = gba_read16(gba,screen_base_addr+tile_off*2);
+        
+        uint16_t tile_data =0;
+        if(rot_scale)tile_data=gba_read8(gba,screen_base_addr+tile_off);
+        else tile_data=gba_read16(gba,screen_base_addr+tile_off*2);
         int tile_id = SB_BFE(tile_data,0,9);
         int h_flip = SB_BFE(tile_data,10,1);
         int v_flip = SB_BFE(tile_data,11,1);
@@ -447,8 +465,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
 
         uint8_t tile_d=tile_id;
         if(colors==false){
-          tile_d=gba_read8(gba,character_base_addr+tile_id*8*8/2+px/2+py*4);
-          tile_d= (tile_d>>((px&1)*4))&0xf;
+          tile_d=gba_read8(gba,character_base_addr+tile_id*8*4+px/2+py*4);
+          tile_d= (tile_d>>((px&1)?4:0))&0xf;
           tile_d+=palette*16;
         }else{
           tile_d=gba_read8(gba,character_base_addr+tile_id*8*8+px+py*8);
@@ -456,11 +474,11 @@ void gba_tick_ppu(gba_t* gba, int cycles){
          
 
         uint8_t pallete_id = tile_d;
-        uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
+        uint16_t col = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
-        r = SB_BFE(pallete,0,5)*7;
-        g = SB_BFE(pallete,5,5)*7;
-        b = SB_BFE(pallete,10,5)*7;
+        r = SB_BFE(col,0,5)*7;
+        g = SB_BFE(col,5,5)*7;
+        b = SB_BFE(col,10,5)*7;
       }
  
       gba->framebuffer[p*3+0] = r;
@@ -510,30 +528,32 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   gba_store16(gba, GBA_KEYINPUT, reg_value);
 }
 bool gba_tick_dma(gba_t*gba){
+  bool skip_cpu = false;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
     if(enable&& gba->dma[i].last_enable==false){
       uint32_t src = gba_read32(gba,GBA_DMA0SAD+12*i);
       uint32_t dst = gba_read32(gba,GBA_DMA0DAD+12*i);
-      uint16_t cnt = gba_read16(gba,GBA_DMA0CNT_L+12*i);
+      uint32_t cnt = gba_read16(gba,GBA_DMA0CNT_L+12*i);
       
-      if(cnt==0)cnt = 0xffff;
-      if(i!=4)cnt&=0x3fff;
+      if(i!=3)cnt&=0x3fff;
+      if(cnt==0)cnt = i==3? 0x10000: 0x4000;
 
       printf("DMA: src:%08x dst:%08x len:%04x\n",src,dst,cnt);
       bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
 
-      for(int i=0;i<cnt;++i){
-        if(type)gba_store32(gba,dst+i*4,gba_read32(gba,src+i*4));
-        else gba_store16(gba,dst+i*2,gba_read16(gba,src+i*2));
+      for(int x=0;x<cnt;++x){
+        if(type)gba_store32(gba,dst+x*4,gba_read32(gba,src+x*4));
+        else gba_store16(gba,dst+x*2,gba_read16(gba,src+x*2));
       }
       cnt_h&=0x7fff;
+      skip_cpu = true;
     }
     gba_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     gba->dma[i].last_enable = enable;
   }
-  return false; 
+  return skip_cpu; 
 }
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
