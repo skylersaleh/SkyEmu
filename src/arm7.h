@@ -177,8 +177,6 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    (arm7_instruction_t){arm7_msr,                  "MSR",     "cccc00010P10100F111100000000mmmm"},
    (arm7_instruction_t){arm7_msr,                  "MSR",     "cccc00110P10100F1111oooooooooooo"},
 
-
-
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN1","cccc000001--------------1001----"}, 
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN2","cccc00011---------------1001----"}, 
    (arm7_instruction_t){arm7_undefined,            "UNKNOWN3","cccc00010-1-------------1001----"}, 

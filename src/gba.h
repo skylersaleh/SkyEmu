@@ -155,8 +155,11 @@
 #define GBA_INT_KEYPAD     12    
 #define GBA_INT_GAMEPAK    13    
 
-#define GBA_BG_PALETTE 0x5000000      
-  
+#define GBA_BG_PALETTE  0x05000000                    
+#define GBA_OBJ_PALETTE 0x05000200                    
+#define GBA_OBJ_TILES   0x06010000
+#define GBA_OAM         0x07000000
+
   
 typedef struct {     
   uint8_t bios[16*1024];
@@ -362,7 +365,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   gba->ppu.scan_clock+=cycles;
   while(gba->ppu.scan_clock>280896) gba->ppu.scan_clock-=280896;
   //Make LCD-y increment during h-blank (fixes BEEG.gba)
-  int lcd_y = (gba->ppu.scan_clock+272)/1232;
+  int lcd_y = (gba->ppu.scan_clock+80)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
 
   uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0xffff;
@@ -379,48 +382,36 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   uint16_t dispcnt = gba_read16(gba, GBA_DISPCNT);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int frame_sel = SB_BFE(dispcnt,4,1);
+  int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
   int p = lcd_x+lcd_y*240;
   bool visible = lcd_x<240 && lcd_y<160;
   if(visible){
+    int r = 255;
+    int g = 100;
+    int b = 0;
     if(bg_mode==3){
       int addr = 0x06000000+p*2; 
       uint16_t data = gba_read16(gba,addr);
-      int r = SB_BFE(data,0,5)*7;
-      int g = SB_BFE(data,5,5)*7;
-      int b = SB_BFE(data,10,5)*7;
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
+      r = SB_BFE(data,0,5)*7;
+      g = SB_BFE(data,5,5)*7;
+      b = SB_BFE(data,10,5)*7;
     }else if(bg_mode==4){
       int addr = 0x06000000+p*1+0xA000*frame_sel; 
       uint8_t pallete_id = gba_read8(gba,addr);
       uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
-      int r = SB_BFE(pallete,0,5)*7;
-      int g = SB_BFE(pallete,5,5)*7;
-      int b = SB_BFE(pallete,10,5)*7;
-
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
+      r = SB_BFE(pallete,0,5)*7;
+      g = SB_BFE(pallete,5,5)*7;
+      b = SB_BFE(pallete,10,5)*7;
     }else if(bg_mode==6 ||bg_mode==7){
       uint8_t pallete_id = 0;
       uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
-      int r = SB_BFE(pallete,0,5)*7;
-      int g = SB_BFE(pallete,5,5)*7;
-      int b = SB_BFE(pallete,10,5)*7;
-
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
+      r = SB_BFE(pallete,0,5)*7;
+      g = SB_BFE(pallete,5,5)*7;
+      b = SB_BFE(pallete,10,5)*7;
     }else if (bg_mode<3){
-      int r = 255;
-      int g = 100;
-      int b = 0;
-         
       for(int bg = 0; bg<4;++bg){
-
         bool rot_scale = false;
         if(bg_mode>=2&&bg>=2)rot_scale = true;
         if((bg<2&&bg_mode==3)||(bg==3&&bg_mode==2))continue;
@@ -493,13 +484,11 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           bg_y = (y1+bgy)>>8;
                                               
         }
-
         int bg_tile_x = bg_x/8;
         int bg_tile_y = bg_y/8;
 
         int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-        
         uint16_t tile_data =0;
         if(rot_scale)tile_data=gba_read8(gba,screen_base_addr+tile_off);
         else{
@@ -523,33 +512,122 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         if(colors==false){
           tile_d=gba_read8(gba,character_base_addr+tile_id*8*4+px/2+py*4);
           tile_d= (tile_d>>((px&1)?4:0))&0xf;
+          if(tile_d==0)continue;
           tile_d+=palette*16;
         }else{
           tile_d=gba_read8(gba,character_base_addr+tile_id*8*8+px+py*8);
         }
-         
 
         uint8_t pallete_id = tile_d;
+        if(pallete_id==0)continue;
         uint16_t col = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
 
         r = SB_BFE(col,0,5)*7;
         g = SB_BFE(col,5,5)*7;
         b = SB_BFE(col,10,5)*7;
       }
- 
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b; 
     }else if(bg_mode!=0){
       printf("Unsupported background mode: %d\n",bg_mode);
-      int r = 255;
-      int g = 100;
-      int b = 0;
+    }
 
-      gba->framebuffer[p*3+0] = r;
-      gba->framebuffer[p*3+1] = g;
-      gba->framebuffer[p*3+2] = b;
-    } 
+          
+    gba->framebuffer[p*3+0] = r;
+    gba->framebuffer[p*3+1] = g;
+    gba->framebuffer[p*3+2] = b;  
+  }
+  //Render sprites over scanline when it completes
+  if(lcd_y<160 && lcd_x == 240){
+    // Slowest OBJ code in the west
+    for(int o=0;o<128;++o){
+      uint16_t attr0 = gba_read16(gba, GBA_OAM+o*8+0);
+      uint16_t attr1 = gba_read16(gba, GBA_OAM+o*8+2);
+      uint16_t attr2 = gba_read16(gba, GBA_OAM+o*8+4);
+      //Attr0
+      uint8_t y_coord = SB_BFE(attr0,0,8);
+      bool rot_scale =  SB_BFE(attr0,8,1);
+      bool double_size = SB_BFE(attr0,9,1)&&rot_scale;
+      bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
+      if(obj_disable) continue; 
+      int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=Prohibited)
+      bool mosaic  = SB_BFE(attr0,12,1);
+      bool colors_or_palettes = SB_BFE(attr0,13,1);
+      int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
+      //Attr1
+      int x_coord = SB_BFE(attr1,0,9);
+      int rotscale_param = SB_BFE(attr1,9,5);
+      bool h_flip = SB_BFE(attr1,12,1);
+      bool v_flip = SB_BFE(attr1,13,1);
+      int obj_size = SB_BFE(attr1,14,2);
+      // Size  Square   Horizontal  Vertical
+      // 0     8x8      16x8        8x16
+      // 1     16x16    32x8        8x32
+      // 2     32x32    32x16       16x32
+      // 3     64x64    64x32       32x64
+      int xsize_lookup[4][4]={
+        {8,16,8,0},
+        {16,32,8,0},
+        {32,32,16,0},
+        {64,64,32,0}
+      };
+      int ysize_lookup[4][4]={
+        {8,8,16,0},
+        {16,8,32,0},
+        {32,16,32,0},
+        {64,32,64,0}
+      }; 
+
+      int x_size = xsize_lookup[obj_size][obj_shape];
+      int y_size = ysize_lookup[obj_size][obj_shape];
+      //Attr2
+      int tile_base = SB_BFE(attr2,0,10);
+      int priority = SB_BFE(attr2,10,2);
+      int palette = SB_BFE(attr2,12,4);
+
+      if(lcd_y>=y_coord && lcd_y<y_coord+y_size){
+
+        for(int x = x_coord; x< x_coord+x_size;++x){
+          int r = 0;
+          int g = 0;
+          int b = 255;
+
+          int tiles_width = x_size/8;
+          int tiles_height= y_size/8;
+          int sx = x-x_coord;
+          int sy = lcd_y-y_coord;
+          
+          if(h_flip)sx=x_size-sx-1;
+          if(v_flip)sy=y_size-sy-1;
+                      
+          int tx = sx%8;
+          int ty = sy%8;
+          
+          int y_tile_stride = obj_vram_map_2d? 32 : x_size/8;
+          int tile = tile_base + sx/8+(sy/8)*y_tile_stride;
+          uint8_t tile_d=tile;
+          if(colors_or_palettes==false){
+            tile_d=gba_read8(gba,GBA_OBJ_TILES+tile*8*4+tx/2+ty*4);
+            tile_d= (tile_d>>((tx&1)?4:0))&0xf;
+            if(tile_d==0)continue;
+            tile_d+=palette*16;
+          }else{
+            tile_d=gba_read8(gba,GBA_OBJ_TILES+tile*8*8+tx+ty*8);
+          }
+
+          uint8_t pallete_id = tile_d;
+          if(pallete_id==0)continue;
+          uint16_t col = gba_read16(gba, GBA_OBJ_PALETTE+pallete_id*2);
+
+          r = SB_BFE(col,0,5)*7;
+          g = SB_BFE(col,5,5)*7;
+          b = SB_BFE(col,10,5)*7;           
+          int p = x+lcd_y*240; 
+           
+          gba->framebuffer[p*3+0] = r;
+          gba->framebuffer[p*3+1] = g;
+          gba->framebuffer[p*3+2] = b;  
+        }
+      }
+    }
   }
   uint32_t new_if = gba_read16(gba,GBA_IF); 
   uint32_t int_en = gba_read16(gba,GBA_IE);
