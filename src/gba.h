@@ -194,6 +194,11 @@ typedef struct{
   bool last_hblank;
   int last_lcd_y; 
 }gba_ppu_t;
+typedef struct{
+  bool last_enable; 
+  uint16_t reload_value; 
+  uint16_t prescaler_timer;
+}gba_timer_t;
 typedef struct {
   gba_mem_t mem;
   arm7_t cpu;
@@ -201,6 +206,7 @@ typedef struct {
   gba_joy_t joy;       
   gba_ppu_t ppu;
   gba_dma_t dma[4]; 
+  gba_timer_t timers[4];
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
                               
@@ -306,8 +312,16 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     gba_store16(gba,GBA_IF,IF);
 
     return true; 
+  }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
+    if(word_mask&0xffff){
+      int timer_off = (address_u32-GBA_TM0CNT_L)/4;
+      gba->timers[timer_off+0].reload_value &=~(word_mask&0xffff);
+    }
+    if(word_mask&0xffff0000){
+      gba_store16(gba,address_u32+2,(word_data>>16)&0xffff);
+    }
+    return true;
   }
-
   return false;
 }
 bool gba_load_rom(gba_t* gba, const char* filename){
@@ -408,8 +422,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       for(int bg = 0; bg<4;++bg){
 
         bool rot_scale = false;
-        if(bg_mode==2&&bg>=2)rot_scale = true;
-
+        if(bg_mode>=2&&bg>=2)rot_scale = true;
+        if((bg<2&&bg_mode==3)||(bg==3&&bg_mode==2))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1);
         if(!bg_en)continue;
         uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
@@ -440,9 +454,13 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           }
           colors = true;
         }
-        int bg_x = (hoff+lcd_x)%screen_size_x;
-        int bg_y = (voff+lcd_y)%screen_size_y;
-        
+        int bg_x = (hoff+lcd_x);
+        int bg_y = (voff+lcd_y);
+        if(bg<2||display_overflow==1){
+          bg_x = bg_x%screen_size_x;
+          bg_y = bg_y%screen_size_y;
+        }
+        if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue;
         if(rot_scale){
           int32_t bgx = gba_read32(gba,GBA_BG2X+(bg-2)*0x10);
           int32_t bgy = gba_read32(gba,GBA_BG2Y+(bg-2)*0x10);
@@ -484,8 +502,13 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         
         uint16_t tile_data =0;
         if(rot_scale)tile_data=gba_read8(gba,screen_base_addr+tile_off);
-        else tile_data=gba_read16(gba,screen_base_addr+tile_off*2);
-        int tile_id = SB_BFE(tile_data,0,9);
+        else{
+          int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
+          if(bg_tile_x>=32)tile_off+=32*32;
+          if(bg_tile_y>=32)tile_off+=32*32*2;
+          tile_data=gba_read16(gba,screen_base_addr+tile_off*2);
+        }
+        int tile_id = SB_BFE(tile_data,0,10);
         int h_flip = SB_BFE(tile_data,10,1);
         int v_flip = SB_BFE(tile_data,11,1);
         int palette = SB_BFE(tile_data,12,4);
@@ -565,14 +588,13 @@ bool gba_tick_dma(gba_t*gba){
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
-    if(enable&& gba->dma[i].last_enable==false){
+    if(enable){
       uint32_t src = gba_read32(gba,GBA_DMA0SAD+12*i);
       uint32_t dst = gba_read32(gba,GBA_DMA0DAD+12*i);
       uint32_t cnt = gba_read16(gba,GBA_DMA0CNT_L+12*i);
       
       if(i!=3)cnt&=0x3fff;
       if(cnt==0)cnt = i==3? 0x10000: 0x4000;
-
       printf("DMA: src:%08x dst:%08x len:%04x\n",src,dst,cnt);
       bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
 
@@ -587,6 +609,53 @@ bool gba_tick_dma(gba_t*gba){
     gba->dma[i].last_enable = enable;
   }
   return skip_cpu; 
+}                                              
+void gba_tick_timers(gba_t* gba){
+  bool last_timer_overflow = false; 
+  for(int t=0;t<4;++t){ 
+    uint16_t tm_cnt_h = gba_read16(gba,GBA_TM0CNT_H+t*4);
+    bool enable = SB_BFE(tm_cnt_h,7,1);
+    if(enable){
+      uint16_t prescale = SB_BFE(tm_cnt_h,0,2);
+      bool count_up     = SB_BFE(tm_cnt_h,2,1);
+      bool irq_en       = SB_BFE(tm_cnt_h,6,1);
+      uint16_t value = gba_read16(gba,GBA_TM0CNT_L+t*4);
+      if(enable!=gba->timers[t].last_enable){
+        value = gba->timers[t].reload_value;
+        gba->timers[t].prescaler_timer = 0; 
+      }
+      
+      if(count_up){
+        if(last_timer_overflow){
+          value+=1;
+          last_timer_overflow =value==0;
+        }
+      }else{
+        last_timer_overflow=false;
+        const int prescaler_lookup[]={1,64,256,1024};
+        int prescaler_compare = prescaler_lookup[prescale];
+        if(gba->timers[t].prescaler_timer>=prescaler_compare){
+          gba->timers[t].prescaler_timer = 0; 
+          if(value==0){
+            last_timer_overflow=true;
+            value = gba->timers[t].reload_value;
+          }else --value;
+        }
+        gba->timers[t].prescaler_timer++;
+      }
+      if(last_timer_overflow && irq_en){
+        
+        uint16_t if_val = gba_read16(gba,GBA_IF);
+        uint16_t ie_val = gba_read16(gba,GBA_IE);
+        uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
+        if(ie_val & if_bit){
+          if_val |= if_bit;
+          gba_store16(gba,GBA_IF,if_val);
+        }
+      }
+      gba_store16(gba,GBA_TM0CNT_L+t*4,value);
+    }else last_timer_overflow=false;
+  }
 }
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
@@ -608,6 +677,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         arm7_exec_instruction(&gba->cpu); 
       }
       gba_tick_ppu(gba,1);
+      gba_tick_timers(gba);
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
       gba->cpu.trigger_breakpoint=false;
@@ -629,6 +699,9 @@ void gba_reset(gba_t*gba){
   gba->cpu.registers[CPSR]= 0x000000df; 
   memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
   gba->mem.openbus_word = gba->mem.cart_rom[0];
+  //flash stub
+  gba_store8(gba,0x0E000000,0x62);
+  gba_store8(gba,0x0E000001,0x13);
 }
 
 #endif

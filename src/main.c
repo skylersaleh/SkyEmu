@@ -1063,7 +1063,16 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
                                        SB_BFE(dispcnt,8,1),SB_BFE(dispcnt,9,1),SB_BFE(dispcnt,10,1),
                                        SB_BFE(dispcnt,11,1),SB_BFE(dispcnt,12,1),SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,1),SB_BFE(dispcnt,15,1))); 
   
+  for(int w=0;w<2;++w){
+    uint8_t win_y0 = gba_read8(gba,GBA_WIN0H+w*2);
+    uint8_t win_y1 = gba_read8(gba,GBA_WIN0H+1+w*2);
 
+    uint8_t win_x0 = gba_read8(gba,GBA_WIN0V+w*2);
+    uint8_t win_x1 = gba_read8(gba,GBA_WIN0V+1+w*2);
+
+    r=sb_draw_label(r, TextFormat("WIN%d: x0:%d x1:%d y0:%d y1:%d",w,win_x0,win_x1,win_y0,win_y1));
+
+  }
   for(int bg=0;bg<4;++bg){
     r=sb_draw_label(r,TextFormat("BG%dCNT",bg));
     uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*bg);
