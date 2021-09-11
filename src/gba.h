@@ -389,10 +389,12 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   int p = lcd_x+lcd_y*240;
   bool visible = lcd_x<240 && lcd_y<160;
   if(visible){
-    int r = 255;
-    int g = 100;
-    int b = 0;
-    int bg_priority=0;
+    uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+0*2);
+
+    int r = SB_BFE(pallete,0,5)*7;
+    int g = SB_BFE(pallete,5,5)*7;
+    int b = SB_BFE(pallete,10,5)*7; 
+    int bg_priority=4;
     if(bg_mode==3){
       int addr = 0x06000000+p*2; 
       uint16_t data = gba_read16(gba,addr);
@@ -408,12 +410,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       g = SB_BFE(pallete,5,5)*7;
       b = SB_BFE(pallete,10,5)*7;
     }else if(bg_mode==6 ||bg_mode==7){
-      uint8_t pallete_id = 0;
-      uint16_t pallete = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
-
-      r = SB_BFE(pallete,0,5)*7;
-      g = SB_BFE(pallete,5,5)*7;
-      b = SB_BFE(pallete,10,5)*7;
+      //Palette 0 is taken as the background
     }else if (bg_mode<3){              
       for(int bg = 3; bg>=0;--bg){
         bool rot_scale = false;
@@ -423,7 +420,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         if(!bg_en)continue;
         uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
         int priority = SB_BFE(bgcnt,0,2);
-        if(priority<bg_priority)continue;
+        if(priority>bg_priority)continue;
         int character_base = SB_BFE(bgcnt,2,2);
         bool mosaic = SB_BFE(bgcnt,6,1);
         bool colors = SB_BFE(bgcnt,7,1);
@@ -543,7 +540,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   //Render sprites over scanline when it completes
   if(lcd_y<160 && lcd_x == 240){
     // Slowest OBJ code in the west
-    for(int o=0;o<128;++o){
+    for(int o=127;o>=0;--o){
       uint16_t attr0 = gba_read16(gba, GBA_OAM+o*8+0);
       uint16_t attr1 = gba_read16(gba, GBA_OAM+o*8+2);
       uint16_t attr2 = gba_read16(gba, GBA_OAM+o*8+4);
@@ -558,7 +555,10 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       bool colors_or_palettes = SB_BFE(attr0,13,1);
       int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
       //Attr1
-      int x_coord = SB_BFE(attr1,0,9);
+      int16_t x_coord = SB_BFE(attr1,0,9);
+      
+      if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
+
       int rotscale_param = SB_BFE(attr1,9,5);
       bool h_flip = SB_BFE(attr1,12,1);
       bool v_flip = SB_BFE(attr1,13,1);
@@ -586,16 +586,13 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       //Attr2
       int tile_base = SB_BFE(attr2,0,10);
       // Always place sprites as the highest priority
-      int priority = 3-SB_BFE(attr2,10,2)+128;
+      int priority = SB_BFE(attr2,10,2);
       int palette = SB_BFE(attr2,12,4);
 
       if(lcd_y>=y_coord && lcd_y<y_coord+y_size){
-
-        for(int x = x_coord; x< x_coord+x_size;++x){
-          int r = 0;
-          int g = 0;
-          int b = 255;
-
+        int x_start = x_coord>=0?x_coord:0;
+        int x_end   = x_coord+x_size<240?x_coord+x_size:240;
+        for(int x = x_start; x< x_end;++x){
           int tiles_width = x_size/8;
           int tiles_height= y_size/8;
           int sx = x-x_coord;
@@ -609,26 +606,24 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           
           int y_tile_stride = obj_vram_map_2d? 32 : x_size/8;
           int tile = tile_base + sx/8+(sy/8)*y_tile_stride;
-          uint8_t tile_d=tile;
+          uint8_t palette_id;
           if(colors_or_palettes==false){
-            tile_d=gba_read8(gba,GBA_OBJ_TILES+tile*8*4+tx/2+ty*4);
-            tile_d= (tile_d>>((tx&1)?4:0))&0xf;
-            if(tile_d==0)continue;
-            tile_d+=palette*16;
+            palette_id=gba_read8(gba,GBA_OBJ_TILES+tile*8*4+tx/2+ty*4);
+            palette_id= (palette_id>>((tx&1)?4:0))&0xf;
+            if(palette_id==0)continue;
+            palette_id+=palette*16;
           }else{
-            tile_d=gba_read8(gba,GBA_OBJ_TILES+tile*8*8+tx+ty*8);
+            palette_id=gba_read8(gba,GBA_OBJ_TILES+tile*8*8+tx+ty*8);
           }
 
-          uint8_t pallete_id = tile_d;
-          if(pallete_id==0)continue;
-          uint16_t col = gba_read16(gba, GBA_OBJ_PALETTE+pallete_id*2);
+          if(palette_id==0)continue;
+          uint16_t col = gba_read16(gba, GBA_OBJ_PALETTE+palette_id*2);
 
-          r = SB_BFE(col,0,5)*7;
-          g = SB_BFE(col,5,5)*7;
-          b = SB_BFE(col,10,5)*7;           
+          int r = SB_BFE(col,0,5)*7;
+          int g = SB_BFE(col,5,5)*7;
+          int b = SB_BFE(col,10,5)*7;           
           int p = x+lcd_y*240; 
-          if(gba->scanline_priority[x]>priority)continue; 
-          gba->scanline_priority[x] = priority;      
+          if(gba->scanline_priority[x]<priority)continue; 
           gba->framebuffer[p*3+0] = r;
           gba->framebuffer[p*3+1] = g;
           gba->framebuffer[p*3+2] = b;  
@@ -687,8 +682,10 @@ bool gba_tick_dma(gba_t*gba){
       bool irq_enable = SB_BFE(cnt_h,14,1);
 
       int transfer_bytes = type? 4:2; 
-      if(gba->dma[i].last_enable==false&&dst_addr_ctl==3)    
-        gba_store32(gba,GBA_DMA0DAD+12*i,dst+cnt*transfer_bytes);
+      if(gba->dma[i].last_enable==false&&dst_addr_ctl==3){    
+        dst +=cnt*transfer_bytes;
+        gba_store32(gba,GBA_DMA0DAD+12*i,dst);
+      }
       bool last_vblank = gba->dma[i].last_vblank;
       bool last_hblank = gba->dma[i].last_hblank;
       gba->dma[i].last_vblank = gba->ppu.last_vblank;
@@ -696,17 +693,24 @@ bool gba_tick_dma(gba_t*gba){
       if(mode ==1 && !(gba->ppu.last_vblank&&!last_vblank)) continue; 
       if(mode ==2 && !(gba->ppu.last_hblank&&!last_hblank)) continue; 
 
+      int src_dir = 1;
+      if(src_addr_ctl==1)src_dir=-1;
+      if(src_addr_ctl==2)src_dir=0;
+      
+      int dst_dir = 1;
+      if(dst_addr_ctl==1)dst_dir=-1;
+      if(dst_addr_ctl==2)dst_dir=0;
+       
       printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       for(int x=0;x<cnt;++x){
-        if(type)gba_store32(gba,dst+x*4,gba_read32(gba,src+x*4));
-        else gba_store16(gba,dst+x*2,gba_read16(gba,src+x*2));
+        if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
+        else gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
       }
       if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
       else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
       if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
       else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
        
-      printf("DMA%d: src:%08x dst:%08x len:%04x mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       
       gba_store32(gba,GBA_DMA0DAD+12*i,dst);
       gba_store32(gba,GBA_DMA0SAD+12*i,src);
