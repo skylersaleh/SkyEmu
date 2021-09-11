@@ -392,7 +392,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/kirby-boot-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/emerald-boot-log.bin","rb");
 
   return arm;
 
@@ -531,7 +531,6 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     uint32_t opcode = arm7_read32(cpu->user_data,old_pc);
     cpu->registers[PC] += 4;
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    int inst_class = arm7_lookup_arm_instruction_class(key);
     if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,old_pc);
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t old_pc = cpu->registers[PC];
@@ -544,7 +543,6 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,old_pc);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
-    int inst_class = arm7_lookup_thumb_instruction_class(key); 
     uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
     uint32_t new_pc = cpu->registers[PC];

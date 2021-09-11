@@ -190,6 +190,8 @@ typedef struct{
   int length;
   int current_word;
   bool last_enable;
+  bool last_vblank;
+  bool last_hblank;
 } gba_dma_t; 
 typedef struct{
   int scan_clock; 
@@ -210,6 +212,7 @@ typedef struct {
   gba_ppu_t ppu;
   gba_dma_t dma[4]; 
   gba_timer_t timers[4];
+  uint8_t scanline_priority[GBA_LCD_W]; //Used to handle priority settings
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
                               
@@ -389,6 +392,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     int r = 255;
     int g = 100;
     int b = 0;
+    int bg_priority=0;
     if(bg_mode==3){
       int addr = 0x06000000+p*2; 
       uint16_t data = gba_read16(gba,addr);
@@ -410,8 +414,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       r = SB_BFE(pallete,0,5)*7;
       g = SB_BFE(pallete,5,5)*7;
       b = SB_BFE(pallete,10,5)*7;
-    }else if (bg_mode<3){
-      for(int bg = 0; bg<4;++bg){
+    }else if (bg_mode<3){              
+      for(int bg = 3; bg>=0;--bg){
         bool rot_scale = false;
         if(bg_mode>=2&&bg>=2)rot_scale = true;
         if((bg<2&&bg_mode==3)||(bg==3&&bg_mode==2))continue;
@@ -419,6 +423,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         if(!bg_en)continue;
         uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
         int priority = SB_BFE(bgcnt,0,2);
+        if(priority<bg_priority)continue;
         int character_base = SB_BFE(bgcnt,2,2);
         bool mosaic = SB_BFE(bgcnt,6,1);
         bool colors = SB_BFE(bgcnt,7,1);
@@ -477,8 +482,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           int64_t x2 = a*(x1-bgx) + b*(y1-bgy) + (bgx<<8);
           int64_t y2 = c*(x1-bgx) + d*(y1-bgy) + (bgy<<8);
 
-          //bg_x = (x2>>16)%screen_size_x;
-          //bg_y = (y2>>16)%screen_size_y;
+          bg_x = (x2>>16)%screen_size_x;
+          bg_y = (y2>>16)%screen_size_y;
 
           bg_x = (x1+bgx)>>8;
           bg_y = (y1+bgy)>>8;
@@ -521,7 +526,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         uint8_t pallete_id = tile_d;
         if(pallete_id==0)continue;
         uint16_t col = gba_read16(gba, GBA_BG_PALETTE+pallete_id*2);
-
+                        
+        bg_priority = priority;
         r = SB_BFE(col,0,5)*7;
         g = SB_BFE(col,5,5)*7;
         b = SB_BFE(col,10,5)*7;
@@ -529,8 +535,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     }else if(bg_mode!=0){
       printf("Unsupported background mode: %d\n",bg_mode);
     }
-
-          
+    gba->scanline_priority[lcd_x] = bg_priority;      
     gba->framebuffer[p*3+0] = r;
     gba->framebuffer[p*3+1] = g;
     gba->framebuffer[p*3+2] = b;  
@@ -580,7 +585,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       int y_size = ysize_lookup[obj_size][obj_shape];
       //Attr2
       int tile_base = SB_BFE(attr2,0,10);
-      int priority = SB_BFE(attr2,10,2);
+      // Always place sprites as the highest priority
+      int priority = 3-SB_BFE(attr2,10,2)+128;
       int palette = SB_BFE(attr2,12,4);
 
       if(lcd_y>=y_coord && lcd_y<y_coord+y_size){
@@ -621,7 +627,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           g = SB_BFE(col,5,5)*7;
           b = SB_BFE(col,10,5)*7;           
           int p = x+lcd_y*240; 
-           
+          if(gba->scanline_priority[x]>priority)continue; 
+          gba->scanline_priority[x] = priority;      
           gba->framebuffer[p*3+0] = r;
           gba->framebuffer[p*3+1] = g;
           gba->framebuffer[p*3+2] = b;  
@@ -644,7 +651,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   gba->ppu.last_hblank = hblank;
   gba->ppu.last_lcd_y  = lcd_y;
 
-  gba_store16(gba,GBA_IF,new_if);
+  gba_store16(gba,GBA_IF,new_if&int_en);
 
 }
 void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
@@ -670,20 +677,56 @@ bool gba_tick_dma(gba_t*gba){
       uint32_t src = gba_read32(gba,GBA_DMA0SAD+12*i);
       uint32_t dst = gba_read32(gba,GBA_DMA0DAD+12*i);
       uint32_t cnt = gba_read16(gba,GBA_DMA0CNT_L+12*i);
-      
       if(i!=3)cnt&=0x3fff;
       if(cnt==0)cnt = i==3? 0x10000: 0x4000;
-      printf("DMA: src:%08x dst:%08x len:%04x\n",src,dst,cnt);
+      int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
+      int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
+      bool dma_repeat = SB_BFE(cnt_h,9,1); 
       bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
+      int  mode = SB_BFE(cnt_h,12,2);
+      bool irq_enable = SB_BFE(cnt_h,14,1);
 
+      int transfer_bytes = type? 4:2; 
+      if(gba->dma[i].last_enable==false&&dst_addr_ctl==3)    
+        gba_store32(gba,GBA_DMA0DAD+12*i,dst+cnt*transfer_bytes);
+      bool last_vblank = gba->dma[i].last_vblank;
+      bool last_hblank = gba->dma[i].last_hblank;
+      gba->dma[i].last_vblank = gba->ppu.last_vblank;
+      gba->dma[i].last_hblank = gba->ppu.last_hblank;
+      if(mode ==1 && !(gba->ppu.last_vblank&&!last_vblank)) continue; 
+      if(mode ==2 && !(gba->ppu.last_hblank&&!last_hblank)) continue; 
+
+      printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       for(int x=0;x<cnt;++x){
         if(type)gba_store32(gba,dst+x*4,gba_read32(gba,src+x*4));
         else gba_store16(gba,dst+x*2,gba_read16(gba,src+x*2));
       }
-      cnt_h&=0x7fff;
+      if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
+      else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
+      if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
+      else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
+       
+      printf("DMA%d: src:%08x dst:%08x len:%04x mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
+      
+      gba_store32(gba,GBA_DMA0DAD+12*i,dst);
+      gba_store32(gba,GBA_DMA0SAD+12*i,src);
+      
+      if(irq_enable){
+        uint16_t if_val = gba_read16(gba,GBA_IF);
+        uint16_t ie_val = gba_read16(gba,GBA_IE);
+        uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
+        if(ie_val & if_bit){
+          if_val |= if_bit;
+          gba_store16(gba,GBA_IF,if_val);
+        }
+      }
+      if(!dma_repeat||mode==0||mode==3){
+        cnt_h&=0x7fff;
+      }
       skip_cpu = true;
+      gba_store16(gba, GBA_DMA0CNT_L+12*i,0);
+      gba_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
-    gba_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     gba->dma[i].last_enable = enable;
   }
   return skip_cpu; 
@@ -780,6 +823,8 @@ void gba_reset(gba_t*gba){
   //flash stub
   gba_store8(gba,0x0E000000,0x62);
   gba_store8(gba,0x0E000001,0x13);
+  gba_store16(gba,0x04000088,512);
+  gba_store32(gba,0x040000DC,0x84000000);
 }
 
 #endif
