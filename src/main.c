@@ -2467,7 +2467,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
   Vector2 points[max_points]={0};
 
   int p = 0;
-  if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
+  //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
   for(int i=0; i<GetTouchPointCount();++i){
     if(p<max_points)points[p++]=GetTouchPosition(i);
   }

@@ -711,7 +711,7 @@ bool gba_tick_dma(gba_t*gba){
       if(dst_addr_ctl==1)dst_dir=-1;
       if(dst_addr_ctl==2)dst_dir=0;
        
-      printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
+      //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       for(int x=0;x<cnt;++x){
         if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
         else gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
@@ -804,16 +804,21 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       bool tick_dma = gba_tick_dma(gba);
       if(!tick_dma){
         uint32_t ime = gba_read32(gba,GBA_IME);
+        uint16_t int_if = gba_read16(gba,GBA_IF);
+        uint16_t int_ie = gba_read16(gba,GBA_IE);
         if(SB_BFE(ime,0,1)==1){
-          uint16_t int_if = gba_read16(gba,GBA_IF);
-          uint16_t int_ie = gba_read16(gba,GBA_IE);
           arm7_process_interrupts(&gba->cpu, int_if&int_ie);
         }
-        //flash stub
-        gba_store8(gba,0x0E000000,0x62);
-        gba_store8(gba,0x0E000001,0x13);
-   
-        arm7_exec_instruction(&gba->cpu); 
+
+        uint8_t haltcnt = gba_read8(gba,GBA_HALTCNT);
+        if(SB_BFE(haltcnt,7,1)){
+          if(int_if&int_ie)gba_store8(gba,GBA_HALTCNT,haltcnt&0x7f);
+        }else{
+          //flash stub
+          gba_store8(gba,0x0E000001,0x13);
+          gba_store8(gba,0x0E000000,0x62);
+          arm7_exec_instruction(&gba->cpu);
+        }
       }
       gba_tick_ppu(gba,1);
       gba_tick_timers(gba);
