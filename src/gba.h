@@ -170,7 +170,7 @@ typedef struct {
   uint8_t vram[128*1024];
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
-  uint8_t cart_sram[64*1024];
+  uint8_t cart_sram[128*1024];
   uint32_t openbus_word; 
 } gba_mem_t;
 
@@ -218,28 +218,36 @@ typedef struct {
                               
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
-uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr);
-inline uint32_t gba_read32(gba_t*gba, unsigned baddr){return *gba_dword_lookup(gba,baddr);}
+uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
+inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
 inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
-  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC);
+  bool read_only;
+  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
 inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
-  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC);
+  bool read_only;
+  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
-inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){*gba_dword_lookup(gba,baddr) = data;}
+inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
+  bool read_only;
+  uint32_t *val=gba_dword_lookup(gba,baddr,&read_only);
+  if(!read_only)*val= data;
+}
 inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
-  uint32_t* val = gba_dword_lookup(gba,baddr);
+  bool read_only;
+  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
-  ((uint16_t*)val)[offset]=data; 
+  if(!read_only)((uint16_t*)val)[offset]=data; 
 }
 inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
-  uint32_t *val = gba_dword_lookup(gba,baddr);
+  bool read_only;
+  uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
-  ((uint8_t*)val)[offset]=data; 
+  if(!read_only)((uint8_t*)val)[offset]=data; 
 } 
 
 // Memory IO functions for the emulated CPU
@@ -276,20 +284,21 @@ static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
 bool gba_load_rom(gba_t* gba, const char * filename);
 void gba_reset(gba_t*gba);
  
-uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr){
+uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
   baddr&=0xfffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
-  if(baddr<0x4000)return (uint32_t*)(gba->mem.bios+baddr-0x0);
+  *read_only= false; 
+  if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr-0x0);}
   else if(baddr>=0x2000000 && baddr<=0x203FFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
   else if(baddr>=0x3000000 && baddr<=0x3ffffff )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
   else if(baddr>=0x4000000 && baddr<=0x40003FE )ret = (uint32_t*)(gba->mem.io+baddr-0x4000000);
   else if(baddr>=0x5000000 && baddr<=0x5ffffff )ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff));
   else if(baddr>=0x6000000 && baddr<=0x6ffffff )ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
   else if(baddr>=0x7000000 && baddr<=0x7ffffff )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
-  else if(baddr>=0x8000000 && baddr<=0x9FFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0x8000000);
-  else if(baddr>=0xA000000 && baddr<=0xBFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);
-  else if(baddr>=0xC000000 && baddr<=0xDFFFFFF )ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);
-  else if(baddr>=0xE000000 && baddr<=0xEffffff )ret = (uint32_t*)(gba->mem.cart_sram+baddr-0xE000000);
+  else if(baddr>=0x8000000 && baddr<=0x9FFFFFF ){*read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+baddr-0x8000000);}
+  else if(baddr>=0xA000000 && baddr<=0xBFFFFFF ){*read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xA000000);}
+  else if(baddr>=0xC000000 && baddr<=0xDFFFFFF ){*read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+baddr-0xC000000);}
+  else if(baddr>=0xE000000 && baddr<=0xEffffff )ret = (uint32_t*)(gba->mem.cart_sram+(baddr&0x1ffff));
   gba->mem.openbus_word=*ret;
   return ret;
 }
@@ -367,8 +376,9 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   // TODO: This is a STUB
   gba->ppu.scan_clock+=cycles;
   while(gba->ppu.scan_clock>280896) gba->ppu.scan_clock-=280896;
+  if(gba->ppu.scan_clock%4)return;
   //Make LCD-y increment during h-blank (fixes BEEG.gba)
-  int lcd_y = (gba->ppu.scan_clock+80)/1232;
+  int lcd_y = (gba->ppu.scan_clock+46)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
 
   uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0xffff;
@@ -414,8 +424,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     }else if (bg_mode<3){              
       for(int bg = 3; bg>=0;--bg){
         bool rot_scale = false;
-        if(bg_mode>=2&&bg>=2)rot_scale = true;
-        if((bg<2&&bg_mode==3)||(bg==3&&bg_mode==2))continue;
+        if(bg_mode>=1&&bg>=2)rot_scale = true;
+        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1);
         if(!bg_en)continue;
         uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+bg*2);
@@ -560,8 +570,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
 
       int rotscale_param = SB_BFE(attr1,9,5);
-      bool h_flip = SB_BFE(attr1,12,1);
-      bool v_flip = SB_BFE(attr1,13,1);
+      bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
+      bool v_flip = SB_BFE(attr1,13,1)&&!rot_scale;
       int obj_size = SB_BFE(attr1,14,2);
       // Size  Square   Horizontal  Vertical
       // 0     8x8      16x8        8x16
@@ -728,7 +738,7 @@ bool gba_tick_dma(gba_t*gba){
         cnt_h&=0x7fff;
       }
       skip_cpu = true;
-      gba_store16(gba, GBA_DMA0CNT_L+12*i,0);
+      //gba_store16(gba, GBA_DMA0CNT_L+12*i,0);
       gba_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
     gba->dma[i].last_enable = enable;
@@ -799,6 +809,10 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           uint16_t int_ie = gba_read16(gba,GBA_IE);
           arm7_process_interrupts(&gba->cpu, int_if&int_ie);
         }
+        //flash stub
+        gba_store8(gba,0x0E000000,0x62);
+        gba_store8(gba,0x0E000001,0x13);
+   
         arm7_exec_instruction(&gba->cpu); 
       }
       gba_tick_ppu(gba,1);
@@ -824,9 +838,7 @@ void gba_reset(gba_t*gba){
   gba->cpu.registers[CPSR]= 0x000000df; 
   memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
   gba->mem.openbus_word = gba->mem.cart_rom[0];
-  //flash stub
-  gba_store8(gba,0x0E000000,0x62);
-  gba_store8(gba,0x0E000001,0x13);
+  
   gba_store16(gba,0x04000088,512);
   gba_store32(gba,0x040000DC,0x84000000);
 }
