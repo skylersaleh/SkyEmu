@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <math.h>
 #define RAYGUI_IMPLEMENTATION
-#define RAYGUI_SUPPORT_ICONS
+#define RAYGUI_SUPPORT_RICONS
 #include "raygui.h"
 #include "rlgl.h"
 #if defined(PLATFORM_WEB)
@@ -2468,7 +2468,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
 
   int p = 0;
   if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
-  for(int i=0; i<GetTouchPointsCount();++i){
+  for(int i=0; i<GetTouchPointCount();++i){
     if(p<max_points)points[p++]=GetTouchPosition(i);
   }
 

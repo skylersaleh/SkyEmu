@@ -218,32 +218,32 @@ typedef struct {
                               
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
-uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
-inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
-inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
+static uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
+static inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
+static inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
-inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
+static inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
-inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
+static inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   bool read_only;
   uint32_t *val=gba_dword_lookup(gba,baddr,&read_only);
   if(!read_only)*val= data;
 }
-inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
+static inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   if(!read_only)((uint16_t*)val)[offset]=data; 
 }
-inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
+static inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   bool read_only;
   uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
