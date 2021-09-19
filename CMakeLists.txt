@@ -27,7 +27,7 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
   FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/skylersaleh/raylib.git
-    GIT_TAG e9d3d4fa1fa8220ccc7c5e43a4f62f8530c8306d
+    GIT_TAG origin/emscripten-resize
   )
 
   FetchContent_GetProperties(raylib)

@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <math.h>
 #define RAYGUI_IMPLEMENTATION
-#define RAYGUI_SUPPORT_RICONS
+#define RAYGUI_SUPPORT_ICONS
 #include "raygui.h"
 #include "rlgl.h"
 #if defined(PLATFORM_WEB)
@@ -141,8 +141,8 @@ void sb_push_save_state(sb_gb_t* gb){
 inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x4000&&addr<=0x7fff){
     int bank = gb->cart.mapped_rom_bank;
-    if(bank ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)bank = 1;
     bank %= (gb->cart.rom_size)/0x4000;
+    if(bank ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)bank = 1;
     unsigned int bank_off = 0x4000*(bank);
     return gb->cart.data[addr-0x4000+bank_off];
   }else if(addr>=0x8000&&addr<=0x9fff){
@@ -190,7 +190,6 @@ void sb_unmap_ram(sb_gb_t*gb){
   }
 }
 void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
-  static int count = 0;
   if(addr>=0x8000&&addr<=0x9fff){
     uint8_t vbank =sb_read8_direct(gb, SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;;
     gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value;
@@ -1093,8 +1092,12 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
       int32_t bgy = gba_read32(gba,GBA_BG2Y+(bg-2)*0x10);
       
       //Convert signed magnitude to 2's complement
-      bgx = SB_BFE(bgx,0,27)*(SB_BFE(bgx,27,1)?-1:1);
-      bgy = SB_BFE(bgy,0,27)*(SB_BFE(bgy,27,1)?-1:1);
+      bgx = SB_BFE(bgx,0,28);
+      bgy = SB_BFE(bgy,0,28);
+
+      bgx = (bgx<<4)>>4;
+      bgy = (bgy<<4)>>4;
+
 
       int32_t a = gba_read16(gba,GBA_BG2PA+(bg-2)*0x10);
       int32_t b = gba_read16(gba,GBA_BG2PB+(bg-2)*0x10);
@@ -1613,8 +1616,8 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
     uint16_t dma_dst = 0xfe00;
 
     while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
-      uint8_t data = sb_read8_direct(gb,dma_src+gb->dma.oam_bytes_transferred);
-      sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+      uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
+      sb_store8(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
       gb->dma.oam_bytes_transferred++;
     }
     if(gb->dma.oam_bytes_transferred==0xA0)gb->dma.oam_dma_active=false;
@@ -2468,7 +2471,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
 
   int p = 0;
   //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
-  for(int i=0; i<GetTouchPointCount();++i){
+  for(int i=0; i<GetTouchPointsCount();++i){
     if(p<max_points)points[p++]=GetTouchPosition(i);
   }
 
