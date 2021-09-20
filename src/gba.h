@@ -176,7 +176,8 @@ typedef struct {
   uint32_t eeprom_word; 
   uint32_t eeprom_state; 
   uint32_t *page_table[8192]; 
-  uint8_t   page_writabel[8192];
+  uint8_t   page_writabel[8192]; 
+  uint32_t requests;
 } gba_mem_t;
 
 typedef struct {
@@ -255,18 +256,26 @@ static inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if(!read_only)((uint8_t*)val)[offset]=data; 
 } 
 
-// Memory IO functions for the emulated CPU
-static inline uint32_t arm7_read32(void* user_data, uint32_t address){ 
+static inline void gba_compute_access_cycles(void*user_data, uint32_t address){
+  ((gba_t*)user_data)->mem.requests++;
+}
+// Memory IO functions for the emulated CPU                  
+static inline uint32_t arm7_read32(void* user_data, uint32_t address){
+  gba_compute_access_cycles(user_data,address);
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
 static inline uint32_t arm7_read16(void* user_data, uint32_t address){
+  gba_compute_access_cycles(user_data,address);
   uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
-static uint8_t arm7_read8(void* user_data, uint32_t address){return gba_read8((gba_t*)user_data,address);}
+static uint8_t arm7_read8(void* user_data, uint32_t address){
+  gba_compute_access_cycles(user_data,address);
+  return gba_read8((gba_t*)user_data,address);
+}
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data){
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
@@ -388,7 +397,7 @@ bool gba_load_rom(gba_t* gba, const char* filename){
 void gba_tick_ppu(gba_t* gba, int cycles){
   // TODO: This is a STUB
   gba->ppu.scan_clock+=cycles;
-  while(gba->ppu.scan_clock>280896) gba->ppu.scan_clock-=280896;
+  while(gba->ppu.scan_clock>=280896) gba->ppu.scan_clock-=280896;
   if(gba->ppu.scan_clock%4)return;
   //Make LCD-y increment during h-blank (fixes BEEG.gba)
   int lcd_y = (gba->ppu.scan_clock+46)/1232;
@@ -396,8 +405,8 @@ void gba_tick_ppu(gba_t* gba, int cycles){
 
   uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0xffff;
   uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-  bool vblank = lcd_y>=160&& lcd_y>=227;
-  bool hblank = lcd_x>=240;
+  bool vblank = lcd_y>=160&& lcd_y<=227;
+  bool hblank = lcd_x>=240&&lcd_y<160;
   disp_stat|= vblank ? 0x1: 0; 
   disp_stat|= hblank ? 0x2: 0;      
   disp_stat|= lcd_y==vcount_cmp ? 0x4: 0;   
@@ -456,11 +465,13 @@ void gba_tick_ppu(gba_t* gba, int cycles){
 
         int screen_size_x = (screen_size&1)?512:256;
         int screen_size_y = (screen_size>=2)?512:256;
-                            
         
-        uint16_t hoff = gba_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
-        uint16_t voff = gba_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
+        int16_t hoff = gba_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
+        int16_t voff = gba_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
         
+        hoff |= (hoff&0x100)?0xff00:0;
+        voff |= (voff&0x100)?0xff00:0;
+
         if(rot_scale){
           switch(screen_size){
             case 0: screen_size_x=screen_size_y=16*8;break;
@@ -508,11 +519,11 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           //bg_y = (y1+bgy)>>8;
                                               
         }
-        if(!rot_scale||display_overflow==1){
-          bg_x = bg_x%screen_size_x;
-          bg_y = bg_y%screen_size_y;
+        if(rot_scale&&display_overflow==0){
+          if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
         }
-        if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
+        bg_x = bg_x&(screen_size_x-1);
+        bg_y = bg_y&(screen_size_y-1);
         int bg_tile_x = bg_x/8;
         int bg_tile_y = bg_y/8;
 
@@ -523,7 +534,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         else{
           int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
           if(bg_tile_x>=32)tile_off+=32*32;
-          if(bg_tile_y>=32)tile_off+=32*32*2;
+          if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
           tile_data=gba_read16(gba,screen_base_addr+tile_off*2);
         }
         int tile_id = SB_BFE(tile_data,0,10);
@@ -617,20 +628,21 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       int priority = SB_BFE(attr2,10,2);
       int palette = SB_BFE(attr2,12,4);
 
-      if(lcd_y>=y_coord && lcd_y<y_coord+y_size*(double_size?2:1)){
+      if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
         int x_start = x_coord>=0?x_coord:0;
-        int x_end   = x_coord+x_size*(double_size?2:1)<240?x_coord+x_size*(double_size?2:1):240;
+        int x_end   = x_coord+x_size*(double_size?2:1);
+        if(x_end>=240)x_end=239;
         for(int x = x_start; x< x_end;++x){
           int tiles_width = x_size/8;
           int tiles_height= y_size/8;
-          int sx = x-x_coord-(double_size?1.5:0.5)*x_size;
-          int sy = lcd_y-y_coord-(double_size?1.5:0.5)*y_size;
+          int sx = (x-x_coord);
+          int sy = (lcd_y-y_coord)&0xff;
           if(rot_scale){
             uint32_t param_base = GBA_OAM+rotscale_param*0x20; 
-            int32_t a = gba_read16(gba,param_base+0x6);
-            int32_t b = gba_read16(gba,param_base+0xe);
-            int32_t c = gba_read16(gba,param_base+0x16);
-            int32_t d = gba_read16(gba,param_base+0x1e);
+            int32_t a = (int16_t)gba_read16(gba,param_base+0x6);
+            int32_t b = (int16_t)gba_read16(gba,param_base+0xe);
+            int32_t c = (int16_t)gba_read16(gba,param_base+0x16);
+            int32_t d = (int16_t)gba_read16(gba,param_base+0x1e);
  
             //Convert signed magnitude to 2's complement
             a = (int16_t)SB_BFE(a,0,16);
@@ -639,10 +651,11 @@ void gba_tick_ppu(gba_t* gba, int cycles){
             d = (int16_t)SB_BFE(d,0,16);
             int64_t x1 = sx<<8;
             int64_t y1 = sy<<8;
-            int64_t objref_x = 0;(x_size<<8);
-            int64_t objref_y = 0;(y_size<<8);
-            int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y) + (objref_x<<8);
-            int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y) + (objref_y<<8);
+            int64_t objref_x = (x_size<<(double_size?8:7));
+            int64_t objref_y = (y_size<<(double_size?8:7));
+            
+            int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y)+(x_size<<15);
+            int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y)+(y_size<<15);
 
             sx = (x2>>16);
             sy = (y2>>16);
@@ -688,10 +701,10 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   uint32_t new_if = gba_read16(gba,GBA_IF); 
   uint32_t int_en = gba_read16(gba,GBA_IE);
   if(vblank!=gba->ppu.last_vblank){
-    if(vblank&& SB_BFE(int_en,GBA_INT_LCD_VBLANK,1)) new_if|= 1<< GBA_INT_LCD_VBLANK; 
+    if(vblank) new_if|= 1<< GBA_INT_LCD_VBLANK; 
   }
   if(hblank!=gba->ppu.last_hblank){
-    if(hblank&& SB_BFE(int_en,GBA_INT_LCD_HBLANK,1)) new_if|= 1<< GBA_INT_LCD_HBLANK; 
+    if(hblank) new_if|= 1<< GBA_INT_LCD_HBLANK; 
   }
   if(lcd_y != gba->ppu.last_lcd_y){
     if(lcd_y==vcount_cmp) new_if |= 1<<GBA_INT_LCD_VCOUNT;
@@ -743,7 +756,11 @@ bool gba_tick_dma(gba_t*gba){
       gba->dma[i].last_hblank = gba->ppu.last_hblank;
       if(mode ==1 && !(gba->ppu.last_vblank&&!last_vblank)) continue; 
       if(mode ==2 && !(gba->ppu.last_hblank&&!last_hblank)) continue; 
-
+      if(mode==2){
+        int vcount =gba_read16(gba,GBA_VCOUNT);
+        //printf("Trigger Hblank DMA: %d->%d %d\n",last_hblank,gba->ppu.last_hblank,vcount);
+      }
+      //if(mode==2){printf("Trigger Hblank DMA: %d->%d\n",last_hblank,gba->ppu.last_hblank);}
       int src_dir = 1;
       if(src_addr_ctl==1)src_dir=-1;
       if(src_addr_ctl==2)src_dir=0;
@@ -752,7 +769,7 @@ bool gba_tick_dma(gba_t*gba){
       if(dst_addr_ctl==1)dst_dir=-1;
       if(dst_addr_ctl==2)dst_dir=0;
        
-      printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
+      //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       for(int x=0;x<cnt;++x){
         if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
         else gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
@@ -786,6 +803,24 @@ bool gba_tick_dma(gba_t*gba){
   }
   return skip_cpu; 
 }                                              
+static void gba_tick_sio(gba_t* gba){
+  //Just a stub for now;
+  uint16_t siocnt = gba_read16(gba,GBA_SIOCNT);
+  bool active = SB_BFE(siocnt,7,1);
+  bool irq_enabled = SB_BFE(siocnt,14,1);
+  if(active&&irq_enabled){
+   
+    uint16_t if_val = gba_read16(gba,GBA_IF);
+    uint16_t ie_val = gba_read16(gba,GBA_IE);
+    uint16_t if_bit = 1<<(GBA_INT_SERIAL);
+    if(ie_val & if_bit){
+      if_val |= if_bit;
+      gba_store16(gba,GBA_IF,if_val);
+    }
+    siocnt&= ~(1<<7);
+    gba_store16(gba,GBA_SIOCNT,siocnt);
+  }
+}
 void gba_tick_timers(gba_t* gba){
   bool last_timer_overflow = false; 
   for(int t=0;t<4;++t){ 
@@ -796,9 +831,10 @@ void gba_tick_timers(gba_t* gba){
       bool count_up     = SB_BFE(tm_cnt_h,2,1);
       bool irq_en       = SB_BFE(tm_cnt_h,6,1);
       uint16_t value = gba_read16(gba,GBA_TM0CNT_L+t*4);
+      const int prescaler_lookup[]={1,64,256,1024};
       if(enable!=gba->timers[t].last_enable){
         value = gba->timers[t].reload_value;
-        gba->timers[t].prescaler_timer = 0; 
+        gba->timers[t].prescaler_timer = prescaler_lookup[prescale]; 
       }
       
       if(count_up){
@@ -808,16 +844,15 @@ void gba_tick_timers(gba_t* gba){
         }
       }else{
         last_timer_overflow=false;
-        const int prescaler_lookup[]={1,64,256,1024};
-        int prescaler_compare = prescaler_lookup[prescale];
-        if(gba->timers[t].prescaler_timer>=prescaler_compare){
-          gba->timers[t].prescaler_timer = 0; 
+        
+        if(gba->timers[t].prescaler_timer==0){
+          gba->timers[t].prescaler_timer = prescaler_lookup[prescale]; 
           if(value==0){
             last_timer_overflow=true;
             value = gba->timers[t].reload_value;
           }else --value;
         }
-        gba->timers[t].prescaler_timer++;
+        gba->timers[t].prescaler_timer--;
       }
       if(last_timer_overflow && irq_en){
         
@@ -837,12 +872,15 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
   }
+
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     gba_tick_keypad(&emu->joy,gba);
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
+    bool prev_vblank = gba->ppu.last_vblank; 
     for(int i = 0;i<max_instructions;++i){
       bool tick_dma = gba_tick_dma(gba);
+      int ticks = 1; 
       if(!tick_dma){
         uint32_t ime = gba_read32(gba,GBA_IME);
         uint16_t int_if = gba_read16(gba,GBA_IF);
@@ -858,15 +896,25 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           //flash stub
           gba_store8(gba,0x0E000001,0x13);
           gba_store8(gba,0x0E000000,0x62);
+          gba->mem.requests=1;
           arm7_exec_instruction(&gba->cpu);
+          ticks = gba->mem.requests; 
         }
       }
-      gba_tick_ppu(gba,1);
-      gba_tick_timers(gba);
+      for(int t = 0;t<ticks;++t){
+        gba_tick_ppu(gba,1);
+        gba_tick_timers(gba);
+        gba_tick_sio(gba);
+      }
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
       gba->cpu.trigger_breakpoint=false;
       if(breakpoint){emu->run_mode = SB_MODE_PAUSE; break;}
+      if(gba->ppu.last_vblank && !prev_vblank){
+        emu->frame++;
+        if(emu->step_instructions==0)break;
+      }
+      prev_vblank = gba->ppu.last_vblank;
     }
   }                  
   

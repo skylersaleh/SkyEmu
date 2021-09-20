@@ -1635,7 +1635,7 @@ double sb_gb_fps_counter(int tick){
   call+=tick;
   
   if(call>=5){
-    call=0;
+    call-=5;
     double t = GetTime();
     fps = 5./(t-last_t);
     last_t = t;
@@ -1856,7 +1856,7 @@ void sb_tick(){
           emu_state.run_mode = SB_MODE_PAUSE;
           break;
         }
-        if(vblank){--frames_to_draw;sb_gb_fps_counter(1);}
+        if(vblank){--frames_to_draw;emu_state.frame++;}
         
         sb_process_audio(&gb_state,delta_t);
         int size = sb_ring_buffer_size(&gb_state.audio.ring_buff);
@@ -2577,9 +2577,11 @@ void UpdateDrawFrame() {
     }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
     gb_state.cart.ram_is_dirty=false;
   }
+  emu_state.frame=0;
   if(emu_state.system == SYSTEM_GB)sb_tick();
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
  
+  sb_gb_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   // Draw
   //-----------------------------------------------------

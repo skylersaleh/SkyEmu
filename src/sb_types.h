@@ -67,6 +67,7 @@ typedef struct {
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
+  int frame;
 } sb_emu_state_t;
 
 typedef struct {
