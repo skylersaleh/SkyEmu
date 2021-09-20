@@ -425,7 +425,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   int lcd_y = (gba->ppu.scan_clock+46)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
 
-  uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0x3;
+  uint16_t disp_stat = gba_read16(gba, GBA_DISPSTAT)&~0x7;
   uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
   bool vblank = lcd_y>=160&& lcd_y<=227;
   bool hblank = lcd_x>=240&&lcd_y<160;
