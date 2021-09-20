@@ -1635,9 +1635,9 @@ double sb_gb_fps_counter(int tick){
   call+=tick;
   
   if(call>=5){
-    call-=5;
     double t = GetTime();
-    fps = 5./(t-last_t);
+    fps = ((double)call)/(t-last_t);
+    call=0;
     last_t = t;
   }
   return fps; 

@@ -256,39 +256,61 @@ static inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if(!read_only)((uint8_t*)val)[offset]=data; 
 } 
 
-static inline void gba_compute_access_cycles(void*user_data, uint32_t address){
-  ((gba_t*)user_data)->mem.requests++;
+static inline void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+  // TODO: Make the waitstate for the ROM configureable 
+  const int wait_state_table[16*3]={
+    1,1,1, //0x00 (bios)
+    1,1,1, //0x01 (bios)
+    3,3,6, //0x02 (256k WRAM)
+    1,1,1, //0x03 (32k WRAM)
+    1,1,1, //0x04 (IO)
+    1,1,2, //0x05 (BG/OBJ Palette)
+    1,1,2, //0x06 (VRAM)
+    1,1,1, //0x07 (OAM)
+    5,5,8, //0x08 (GAMEPAK ROM)
+    5,5,8, //0x09 (GAMEPAK ROM)
+    5,5,8, //0x0A (GAMEPAK ROM)
+    5,5,8, //0x0B (GAMEPAK ROM)
+    5,5,8, //0x0C (GAMEPAK ROM)
+    5,5,8, //0x0D (GAMEPAK ROM)
+    5,5,5, //0x0E (GAMEPAK SRAM)
+    1,1,1, //0x0F (unused)
+  };
+  ((gba_t*)user_data)->mem.requests+=wait_state_table[SB_BFE(address,24,4)*3+request_size];
 }
 // Memory IO functions for the emulated CPU                  
 static inline uint32_t arm7_read32(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address);
+  gba_compute_access_cycles(user_data,address,2);
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
 static inline uint32_t arm7_read16(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address);
+  gba_compute_access_cycles(user_data,address,1);
   uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 static uint8_t arm7_read8(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address);
+  gba_compute_access_cycles(user_data,address,0);
   return gba_read8((gba_t*)user_data,address);
 }
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data){
+  gba_compute_access_cycles(user_data,address,2);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
   }
   gba_store32((gba_t*)user_data,address,data);
 }
 static void arm7_write16(void* user_data, uint32_t address, uint16_t data){
+  gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
   }
   gba_store16((gba_t*)user_data,address,data);
 }
 static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
+  gba_compute_access_cycles(user_data,address,0);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
