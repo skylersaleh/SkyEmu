@@ -2353,7 +2353,8 @@ void se_load_rom(char *filename){
     emu_state.system = SYSTEM_GB;
     emu_state.rom_loaded = true; 
   }
-  if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename); 
+  if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename);
+  else emu_state.run_mode= SB_MODE_RUN;
   return; 
 }
 void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
