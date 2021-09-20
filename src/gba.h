@@ -731,7 +731,6 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   if(lcd_y != gba->ppu.last_lcd_y){
     if(lcd_y==vcount_cmp) {
       new_if |= 1<<GBA_INT_LCD_VCOUNT;
-      printf("Fire lcd_y==%d irq (last == %d)\n",vcount_cmp,gba->ppu.last_lcd_y);
     }
   }
   gba->ppu.last_vblank = vblank;
