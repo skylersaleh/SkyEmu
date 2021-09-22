@@ -473,11 +473,10 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       //Palette 0 is taken as the background
     }else if (bg_mode<3){              
       for(int bg = 3; bg>=0;--bg){
-        bool rot_scale = false;
-        if(bg_mode>=1&&bg>=2)rot_scale = true;
         if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1);
         if(!bg_en)continue;
+        bool rot_scale = bg_mode>=1&&bg>=2;
         uint16_t bgcnt = gba_io_read16(gba, GBA_BG0CNT+bg*2);
         int priority = SB_BFE(bgcnt,0,2);
         if(priority>bg_priority)continue;
@@ -491,12 +490,6 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         int screen_size_x = (screen_size&1)?512:256;
         int screen_size_y = (screen_size>=2)?512:256;
         
-        int16_t hoff = gba_io_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
-        int16_t voff = gba_io_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
-        
-        hoff |= (hoff&0x100)?0xff00:0;
-        voff |= (voff&0x100)?0xff00:0;
-
         if(rot_scale){
           switch(screen_size){
             case 0: screen_size_x=screen_size_y=16*8;break;
@@ -506,30 +499,23 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           }
           colors = true;
         }
-        int bg_x = (hoff+lcd_x);
-        int bg_y = (voff+lcd_y);
+        int bg_x = 0;
+        int bg_y = 0;
         
         if(rot_scale){
           int32_t bgx = gba_io_read32(gba,GBA_BG2X+(bg-2)*0x10);
           int32_t bgy = gba_io_read32(gba,GBA_BG2Y+(bg-2)*0x10);
           
-          //Convert signed magnitude to 2's complement
           bgx = SB_BFE(bgx,0,28);
           bgy = SB_BFE(bgy,0,28);
 
           bgx = (bgx<<4)>>4;
           bgy = (bgy<<4)>>4;
 
-          int32_t a = gba_io_read16(gba,GBA_BG2PA+(bg-2)*0x10);
-          int32_t b = gba_io_read16(gba,GBA_BG2PB+(bg-2)*0x10);
-          int32_t c = gba_io_read16(gba,GBA_BG2PC+(bg-2)*0x10);
-          int32_t d = gba_io_read16(gba,GBA_BG2PD+(bg-2)*0x10);
- 
-          //Convert signed magnitude to 2's complement
-          a = (int16_t)SB_BFE(a,0,16);
-          b = (int16_t)SB_BFE(b,0,16);
-          c = (int16_t)SB_BFE(c,0,16);
-          d = (int16_t)SB_BFE(d,0,16);
+          int32_t a = (int16_t)gba_io_read16(gba,GBA_BG2PA+(bg-2)*0x10);
+          int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(bg-2)*0x10);
+          int32_t c = (int16_t)gba_io_read16(gba,GBA_BG2PC+(bg-2)*0x10);
+          int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(bg-2)*0x10);
 
           // Shift lcd_coords into fixed point
           int64_t x1 = lcd_x<<8;
@@ -540,13 +526,21 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           bg_x = (x2>>16)%screen_size_x;
           bg_y = (y2>>16)%screen_size_y;
 
-          //bg_x = (x1+bgx)>>8;
-          //bg_y = (y1+bgy)>>8;
-                                              
+          if(display_overflow==0){
+            if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
+          }
+                              
+        }else{
+
+          int16_t hoff = gba_io_read16(gba,GBA_BG0HOFS+bg*4)&0x1ff;
+          int16_t voff = gba_io_read16(gba,GBA_BG0VOFS+bg*4)&0x1ff;
+          
+          hoff |= (hoff&0x100)?0xff00:0;
+          voff |= (voff&0x100)?0xff00:0;
+          bg_x = (hoff+lcd_x);
+          bg_y = (voff+lcd_y);
         }
-        if(rot_scale&&display_overflow==0){
-          if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
-        }
+      
         bg_x = bg_x&(screen_size_x-1);
         bg_y = bg_y&(screen_size_y-1);
         int bg_tile_x = bg_x/8;
@@ -554,28 +548,28 @@ void gba_tick_ppu(gba_t* gba, int cycles){
 
         int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-
-        int screen_base_addr =    0x6000000 + screen_base*2048;
+        int screen_base_addr =    screen_base*2048;
         int character_base_addr = character_base*16*1024;
 
         uint16_t tile_data =0;
-        if(rot_scale)tile_data=gba_read8(gba,screen_base_addr+tile_off);
+
+        int px = bg_x%8;
+        int py = bg_y%8;
+
+        if(rot_scale)tile_data=gba->mem.vram[screen_base_addr+tile_off];
         else{
           int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
           if(bg_tile_x>=32)tile_off+=32*32;
           if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
-          tile_data=gba_read16(gba,screen_base_addr+tile_off*2);
+          tile_data=*(uint16_t*)(gba->mem.vram+screen_base_addr+tile_off*2);
+
+          int h_flip = SB_BFE(tile_data,10,1);
+          int v_flip = SB_BFE(tile_data,11,1);
+          if(h_flip)px=7-px;
+          if(v_flip)py=7-py;
         }
         int tile_id = SB_BFE(tile_data,0,10);
-        int h_flip = SB_BFE(tile_data,10,1);
-        int v_flip = SB_BFE(tile_data,11,1);
         int palette = SB_BFE(tile_data,12,4);
-
-        int px = bg_x%8;
-        int py = bg_y%8;
-        
-        if(h_flip)px=7-px;
-        if(v_flip)py=7-py;
 
         uint8_t tile_d=tile_id;
         if(colors==false){
@@ -635,21 +629,21 @@ void gba_tick_ppu(gba_t* gba, int cycles){
       // 1     16x16    32x8        8x32
       // 2     32x32    32x16       16x32
       // 3     64x64    64x32       32x64
-      int xsize_lookup[4][4]={
-        {8,16,8,0},
-        {16,32,8,0},
-        {32,32,16,0},
-        {64,64,32,0}
+      const int xsize_lookup[16]={
+        8,16,8,0,
+        16,32,8,0,
+        32,32,16,0,
+        64,64,32,0
       };
-      int ysize_lookup[4][4]={
-        {8,8,16,0},
-        {16,8,32,0},
-        {32,16,32,0},
-        {64,32,64,0}
+      const int ysize_lookup[16]={
+        8,8,16,0,
+        16,8,32,0,
+        32,16,32,0,
+        64,32,64,0
       }; 
 
-      int x_size = xsize_lookup[obj_size][obj_shape];
-      int y_size = ysize_lookup[obj_size][obj_shape];
+      int x_size = xsize_lookup[obj_size*4+obj_shape];
+      int y_size = ysize_lookup[obj_size*4+obj_shape];
 
       //Attr2
       int tile_base = SB_BFE(attr2,0,10);
@@ -662,6 +656,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
         int x_end   = x_coord+x_size*(double_size?2:1);
         if(x_end>=240)x_end=239;
         for(int x = x_start; x< x_end;++x){
+          if(gba->scanline_priority[x]<priority)continue; 
           int tiles_width = x_size/8;
           int tiles_height= y_size/8;
           int sx = (x-x_coord);
@@ -673,11 +668,6 @@ void gba_tick_ppu(gba_t* gba, int cycles){
             int32_t c = *(int16_t*)(gba->mem.oam+param_base+0x16);
             int32_t d = *(int16_t*)(gba->mem.oam+param_base+0x1e);
  
-            //Convert signed magnitude to 2's complement
-            a = (int16_t)SB_BFE(a,0,16);
-            b = (int16_t)SB_BFE(b,0,16);
-            c = (int16_t)SB_BFE(c,0,16);
-            d = (int16_t)SB_BFE(d,0,16);
             int64_t x1 = sx<<8;
             int64_t y1 = sy<<8;
             int64_t objref_x = (x_size<<(double_size?8:7));
@@ -719,7 +709,6 @@ void gba_tick_ppu(gba_t* gba, int cycles){
           int b = SB_BFE(col,10,5)*7;   
 
           int p = x+lcd_y*240; 
-          if(gba->scanline_priority[x]<priority)continue; 
           gba->framebuffer[p*3+0] = r;
           gba->framebuffer[p*3+1] = g;
           gba->framebuffer[p*3+2] = b;  
