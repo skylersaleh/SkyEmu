@@ -480,8 +480,8 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
             case 3: screen_size_x=screen_size_y=128*8;break;
           }
           if(bg_mode==3||bg_mode==4){
-            screen_size_x=256;
-            screen_size_y=256;
+            screen_size_x=240;
+            screen_size_y=160;
           }
           colors = true;
         }
@@ -509,11 +509,14 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           int64_t x2 = a*(x1-bgx) + b*(y1-bgy) + (bgx<<8)*2;
           int64_t y2 = c*(x1-bgx) + d*(y1-bgy) + (bgy<<8)*2;
 
-          bg_x = (x2>>16)%screen_size_x;
-          bg_y = (y2>>16)%screen_size_y;
+          bg_x = (x2>>16);
+          bg_y = (y2>>16);
 
           if(display_overflow==0){
             if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
+          }else{
+            bg_x%=screen_size_x;
+            bg_y%=screen_size_y;
           }
                               
         }else{
@@ -526,14 +529,10 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           bg_y = (voff+lcd_y);
         }
         if(bg_mode==3){
-          bg_x = bg_x%240;
-          bg_y = bg_y%160;
           int p = bg_x+bg_y*240;
           int addr = p*2; 
           col  = *(uint16_t*)(gba->mem.vram+addr);
         }else if(bg_mode==4){
-          bg_x = bg_x%240;
-          bg_y = bg_y%160;
           int p = bg_x+bg_y*240;
           int addr = p*1+0xA000*frame_sel; 
           uint8_t pallete_id = gba->mem.vram[addr];

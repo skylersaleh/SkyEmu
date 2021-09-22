@@ -260,17 +260,19 @@ static arm7_handler_t arm7t_lookup_table[4096] = {};
 static inline unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8 ||reg == 15 || reg==16)return reg;
   int mode = ARM7_BFE(cpu->registers[CPSR],0,5);
-  if(mode == 0x10)mode=0;      // User
-  else if(mode == 0x11)mode=1; // FIQ
-  else if(mode == 0x12)mode=2; // IRQ
-  else if(mode == 0x13)mode=3; // Supervisor
-  else if(mode == 0x17)mode=4; // Abort
-  else if(mode == 0x1b)mode=5; // Undefined
-  else if(mode == 0x1f)mode=6; // System
-  else {
-    cpu->trigger_breakpoint=true;
-    printf("Undefined ARM mode: %d\n",mode);
-    return 0; 
+  switch(mode){
+      case 0x0:  mode=0;break; // User
+      case 0x10: mode=0;break; // User
+      case 0x11: mode=1;break; // FIQ
+      case 0x12: mode=2;break; // IRQ
+      case 0x13: mode=3;break; // Supervisor
+      case 0x17: mode=4;break; // Abort
+      case 0x1b: mode=5;break; // Undefined
+      case 0x1f: mode=6;break; // System
+      default:
+        cpu->trigger_breakpoint=true;
+        printf("Undefined ARM mode: %d\n",mode);
+        return 0;
   }
   
   // System and User mapping (SPSR returns CPSR)
