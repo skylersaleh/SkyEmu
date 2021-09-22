@@ -422,7 +422,7 @@ bool gba_load_rom(gba_t* gba, const char* filename){
 }  
 
     
-void gba_tick_ppu(gba_t* gba, int cycles){
+void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   // TODO: This is a STUB
   gba->ppu.scan_clock+=cycles;
   while(gba->ppu.scan_clock>=280896) gba->ppu.scan_clock-=280896;
@@ -447,7 +447,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
   int frame_sel = SB_BFE(dispcnt,4,1);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
   int p = lcd_x+lcd_y*240;
-  bool visible = lcd_x<240 && lcd_y<160;
+  bool visible = lcd_x<240 && lcd_y<160 && !skip_render;
   if(visible){
     uint16_t col = *(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2);
     int bg_priority=4;
@@ -593,7 +593,7 @@ void gba_tick_ppu(gba_t* gba, int cycles){
     gba->framebuffer[p*3+2] = SB_BFE(col,10,5)*7;  
   }
   //Render sprites over scanline when it completes
-  if(lcd_y<160 && lcd_x == 240){
+  if(lcd_y<160 && lcd_x == 240 && !skip_render){
     // Slowest OBJ code in the west
     for(int o=127;o>=0;--o){
       uint16_t attr0 = *(uint16_t*)(gba->mem.oam+o*8+0);
@@ -886,6 +886,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     emu->run_mode = SB_MODE_PAUSE;
   }
+  int frames_to_render= gba->ppu.last_vblank?1:2; 
 
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     gba_tick_keypad(&emu->joy,gba);
@@ -915,7 +916,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         }
       }
       for(int t = 0;t<ticks;++t){
-        gba_tick_ppu(gba,1);
+        gba_tick_ppu(gba,1,frames_to_render<=0);
         gba_tick_timers(gba);
         gba_tick_sio(gba);
       }
@@ -925,6 +926,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       if(breakpoint){emu->run_mode = SB_MODE_PAUSE; break;}
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
+        frames_to_render--;
         if(emu->step_instructions==0)break;
       }
       prev_vblank = gba->ppu.last_vblank;
