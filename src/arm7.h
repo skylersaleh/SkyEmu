@@ -258,33 +258,34 @@ static arm7_handler_t arm7_lookup_table[4096] = {};
 static arm7_handler_t arm7t_lookup_table[4096] = {};
 
 static inline unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
-  if(reg<8 ||reg == 15 || reg==16)return reg;
-  int mode = ARM7_BFE(cpu->registers[CPSR],0,5);
-  switch(mode){
-      case 0x0:  mode=0;break; // User
-      case 0x10: mode=0;break; // User
-      case 0x11: mode=1;break; // FIQ
-      case 0x12: mode=2;break; // IRQ
-      case 0x13: mode=3;break; // Supervisor
-      case 0x17: mode=4;break; // Abort
-      case 0x1b: mode=5;break; // Undefined
-      case 0x1f: mode=6;break; // System
-      default:
-        cpu->trigger_breakpoint=true;
-        printf("Undefined ARM mode: %d\n",mode);
-        return 0;
+  if(reg<8)return reg;
+  int mode = ARM7_BFE(cpu->registers[CPSR],0,4);
+
+  static int8_t lookup[18*16]={
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
+     0, 1, 2, 3, 4, 5, 6, 7,17,18,19,20,21,22,23,15,16,32, //mode 0x1 (fiq)
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,24,25,15,16,33, //mode 0x2 (irq)
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,26,27,15,16,34, //mode 0x3 (svc)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x4 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x5 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x6 (inv)
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,28,29,15,16,35, //mode 0x7 (abt)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x8 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x9 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xA (inv)
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,30,31,15,16,36, //mode 0xB (undefined)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xC (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xD (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xE (inv)
+     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
+  };
+  int8_t r = lookup[mode*18+reg];
+  if(r==-1){
+    cpu->trigger_breakpoint=true;
+    printf("Undefined ARM mode: %d\n",mode);
+    return 0;
   }
-  
-  // System and User mapping (SPSR returns CPSR)
-  if(mode == 0 ||mode ==6) return reg==17? 16: reg; 
-  // FIQ specific registers
-  if(mode == 1 && reg<15) return reg+17-8; 
-  // SPSR
-  if(reg==SPSR)return 32+mode-1;
-
-  if(reg==13 || reg ==14 )return 22+(mode-1)*2 + (reg-13);
-
-  return reg; 
+  return r;
 }
 static inline void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
   cpu->registers[arm7_reg_index(cpu,reg)] = value;
@@ -497,7 +498,9 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     bool matches = true;
     for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
     if(!matches){
-      cpu->trigger_breakpoint =true;
+      static int last_pc_break =0;
+      if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
+      last_pc_break = cpu->registers[PC];
       printf("Log mismatch detected\n");
       printf("=====================\n");
 
@@ -523,6 +526,9 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
         ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
         ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
       ); 
+      if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
+      // Set CPSR first
+      arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
       for(int i=0;i<18;++i)arm7_reg_write(cpu,i,cmp_regs[i]);
     }
 
@@ -823,7 +829,7 @@ static inline void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   
 }
 static inline void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
-  int v = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
+  int v = arm7_reg_read_r15_adj(cpu,ARM7_BFE(opcode,0,4),4);
   bool thumb = (v&1)==1;
   if(thumb)cpu->registers[PC] = (v&~1);
   else cpu->registers[PC] = (v&~3);
@@ -845,7 +851,7 @@ static inline void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
                ((opcode>>4)&0xf0)|(opcode&0xf);
   
   uint64_t Rd = ARM7_BFE(opcode,12,4);
-  uint32_t addr = arm7_reg_read(cpu, Rn);
+  uint32_t addr = arm7_reg_read_r15_adj(cpu, Rn,4);
 
   int increment = U? offset: -offset;
   if(P) addr += increment;
@@ -907,8 +913,16 @@ static inline void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode){
   }
 }
 static inline void arm7_undefined(arm7_t* cpu, uint32_t opcode){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  cpu->registers[R14_und] = cpu->registers[PC]-(thumb?0:4);
+  cpu->registers[PC] = 0x4; 
+  uint32_t cpsr = cpu->registers[CPSR];
+  cpu->registers[SPSR_und] = cpsr;
+  //Update mode to supervisor and block irqs
+  cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x1b|0x80;
+  arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  //cpu->trigger_breakpoint = true;
 }
 static inline void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   int P = ARM7_BFE(opcode,24,1);
@@ -1150,6 +1164,7 @@ static inline void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   if(alu_op==16){
     uint32_t arm_op = (0xE<<28)|(1<<20)|(Rd<<16)|(Rn<<8)|(9<<4)|(Rs);
     arm7_multiply(cpu, arm_op);
+    cpu->registers[CPSR]&=~(1<<29);
     return; 
   }
 
@@ -1255,7 +1270,7 @@ static inline void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   
   uint32_t Rd = ARM7_BFE(opcode,0,3);
   uint32_t Rb = ARM7_BFE(opcode,3,3);
-  uint32_t addr = arm7_reg_read(cpu, Rb);
+  uint32_t addr = arm7_reg_read_r15_adj(cpu, Rb,4);
   //Offset is in 4B increments for word loads
   if(!B)offset*=4;
   addr += offset;
@@ -1273,7 +1288,7 @@ static inline void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
   int offset = ARM7_BFE(opcode,6,5);
   
   uint32_t Rd = ARM7_BFE(opcode,0,3);
-  uint32_t addr = arm7_reg_read(cpu, ARM7_BFE(opcode,3,3));
+  uint32_t addr = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,3,3),4);
 
   addr += offset*2;
   uint32_t data=0;
@@ -1379,8 +1394,16 @@ static inline void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
   }
 }
 static inline void arm7t_unknown(arm7_t* cpu, uint32_t opcode){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  cpu->registers[R14_und] = cpu->registers[PC]-(thumb?0:4);
+  cpu->registers[PC] = 0x4; 
+  uint32_t cpsr = cpu->registers[CPSR];
+  cpu->registers[SPSR_und] = cpsr;
+  //Update mode to supervisor and block irqs
+  cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x1b|0x80;
+  arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Thumb Instruction Class: (arm7t_unknown) Opcode %x\n",opcode);
-  cpu->trigger_breakpoint=true;
+  //cpu->trigger_breakpoint=true;
 }
 
 #endif

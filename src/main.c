@@ -1053,6 +1053,9 @@ Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
   uint16_t dispcnt = gba_read16(gba, GBA_DISPCNT);
 
   Rectangle r =inside_rect;
+  r=sb_draw_label(r, TextFormat("IE:%08x", gba_read16(gba, GBA_IE)));
+  r=sb_draw_label(r, TextFormat("IF:%08x", gba_read16(gba, GBA_IF)));
+
   r=sb_draw_label(r, "DISPCNT");
   r=sb_draw_label(r, TextFormat("  Mode:%d  Frame:%d HBFree:%d OBJMAP:%d FBLNK:%d",
                                        SB_BFE(dispcnt,0,3),SB_BFE(dispcnt,3,1),SB_BFE(dispcnt,4,1),SB_BFE(dispcnt,5,1),
