@@ -687,8 +687,8 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           int tx = sx%8;
           int ty = sy%8;
                     
-          int y_tile_stride = obj_vram_map_2d? 32 : x_size/8;
-          int tile = (colors_or_palettes? tile_base/2 : tile_base) + ((sx/8))+(sy/8)*(colors_or_palettes? y_tile_stride/2 : y_tile_stride);
+          int y_tile_stride = obj_vram_map_2d? colors_or_palettes? 16:32 : x_size/8;
+          int tile = (colors_or_palettes? tile_base/2 : tile_base) + ((sx/8))+(sy/8)*y_tile_stride;
           
           uint8_t palette_id;
           int obj_tile_base = bg_mode<3? GBA_OBJ_TILES0_2 : GBA_OBJ_TILES3_5;
