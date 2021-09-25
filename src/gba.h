@@ -386,7 +386,8 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
     if(word_mask&0xffff){
       int timer_off = (address_u32-GBA_TM0CNT_L)/4;
-      gba->timers[timer_off+0].reload_value &=~(word_mask&0xffff);
+      gba->timers[timer_off+0].reload_value =word_data&(word_mask&0xffff);
+      printf("Set Timer %d reload_value: %d word_mask %08x\n", timer_off, gba->timers[timer_off+0].reload_value,word_mask);
     }
     if(word_mask&0xffff0000){
       gba_store16(gba,address_u32+2,(word_data>>16)&0xffff);
@@ -797,7 +798,7 @@ int gba_tick_dma(gba_t*gba){
         src&=~1;
       }
        
-      printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
+      //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       if(mode!=3){
         for(int x=0;x<cnt;++x){
           if(type)arm7_write32(gba,dst+x*4*dst_dir,arm7_read32(gba,src+x*4*src_dir));
@@ -825,8 +826,9 @@ int gba_tick_dma(gba_t*gba){
       }
       if(!dma_repeat||mode==0||mode==3){
         cnt_h&=0x7fff;
+        gba_store16(gba, GBA_DMA0CNT_L+12*i,0);
+
       }
-      //gba_store16(gba, GBA_DMA0CNT_L+12*i,0);
       gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
     gba->dma[i].last_enable = enable;
@@ -838,14 +840,16 @@ static void gba_tick_sio(gba_t* gba){
   uint16_t siocnt = gba_io_read16(gba,GBA_SIOCNT);
   bool active = SB_BFE(siocnt,7,1);
   bool irq_enabled = SB_BFE(siocnt,14,1);
-  if(active&&irq_enabled){
+  if(active){
    
-    uint16_t if_val = gba_io_read16(gba,GBA_IF);
-    uint16_t ie_val = gba_io_read16(gba,GBA_IE);
-    uint16_t if_bit = 1<<(GBA_INT_SERIAL);
-    if(ie_val & if_bit){
-      if_val |= if_bit;
-      gba_io_store16(gba,GBA_IF,if_val);
+    if(irq_enabled){
+      uint16_t if_val = gba_io_read16(gba,GBA_IF);
+      uint16_t ie_val = gba_io_read16(gba,GBA_IE);
+      uint16_t if_bit = 1<<(GBA_INT_SERIAL);
+      if(ie_val & if_bit){
+        if_val |= if_bit;
+        gba_io_store16(gba,GBA_IF,if_val);
+      }
     }
     siocnt&= ~(1<<7);
     gba_io_store16(gba,GBA_SIOCNT,siocnt);
@@ -865,6 +869,7 @@ void gba_tick_timers(gba_t* gba){
       if(enable!=gba->timers[t].last_enable){
         value = gba->timers[t].reload_value;
         gba->timers[t].prescaler_timer = prescaler_lookup[prescale]; 
+        gba->timers[t].last_enable = enable;
       }
       
       if(count_up){
@@ -877,10 +882,12 @@ void gba_tick_timers(gba_t* gba){
         
         if(gba->timers[t].prescaler_timer==0){
           gba->timers[t].prescaler_timer = prescaler_lookup[prescale]; 
+          value=(value+1)&0xffff;
           if(value==0){
             last_timer_overflow=true;
             value = gba->timers[t].reload_value;
-          }else --value;
+          };
+           //if(t==3)printf("Timer%d: value:%d prescale:%d\n",t,value,gba->timers[t].prescaler_timer);
         }
         gba->timers[t].prescaler_timer--;
       }
@@ -955,7 +962,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 void gba_reset(gba_t*gba){
   *gba = (gba_t){0};
   gba->cpu = arm7_init(gba);
-  bool skip_bios = false;
+  bool skip_bios = true;
   if(skip_bios){
     gba->cpu.registers[13] = 0x03007f00;
     gba->cpu.registers[R13_irq] = 0x03007FA0;

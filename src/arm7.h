@@ -406,6 +406,7 @@ static inline void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
 static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+  if(cpu->log_cmp_file)return; //Log drives interrupts when enabled
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
   if(I==0 && interrupts){
