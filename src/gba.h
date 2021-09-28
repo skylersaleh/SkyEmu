@@ -177,7 +177,7 @@ typedef struct {
   uint8_t vram[128*1024];
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
-  uint8_t cart_sram[128*1024];
+  uint8_t cart_backup[128*1024];
   uint32_t openbus_word;
   uint32_t eeprom_word; 
   uint32_t eeprom_state; 
@@ -191,6 +191,7 @@ typedef struct {
   char save_file_path[SB_FILE_PATH_SIZE];  
   unsigned rom_size; 
   uint8_t backup_type;
+  bool backup_is_dirty;
 } gba_cartridge_t;
 typedef struct{
   bool up,down,left,right;
@@ -231,7 +232,7 @@ typedef struct {
   uint8_t scanline_priority[GBA_LCD_W]; //Used to handle priority settings
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
-                              
+
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
 static uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
@@ -248,18 +249,28 @@ static inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
+static inline void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t data){
+  if(gba->mem.cart_backup[baddr&0x7fff]!=(data&0xff)){
+    gba->mem.cart_backup[baddr&0x7fff]=data&0xff; 
+    gba->cart.backup_is_dirty=true;
+  }
+  
+}
 static inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
+  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t *val=gba_dword_lookup(gba,baddr,&read_only);
   if(!read_only)*val= data;
 }
 static inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
+  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   if(!read_only)((uint16_t*)val)[offset]=data; 
 }
 static inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
+  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
@@ -308,6 +319,7 @@ static inline uint32_t arm7_read16(void* user_data, uint32_t address){
 }
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
+
 static uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,0);
   return gba_read8((gba_t*)user_data,address);
@@ -334,7 +346,7 @@ static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   gba_store8((gba_t*)user_data,address,data);
 }
 // Try to load a GBA rom, return false on invalid rom
-bool gba_load_rom(gba_t* gba, const char * filename);
+bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
 void gba_reset(gba_t*gba);
  
 uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
@@ -364,9 +376,10 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
         gba->mem.eeprom_word=0xffffffff;
       }
     }
-    
   }
-  else if(baddr>=0xE000000 && baddr<=0xEffffff )ret = (uint32_t*)(gba->mem.cart_sram+(baddr&0x1ffff));
+  else if(baddr>=0xE000000 && baddr<=0xEffffff ){
+    ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
+  }
   gba->mem.openbus_word=*ret;
   return ret;
 }
@@ -422,7 +435,7 @@ bool gba_search_rom_for_string(gba_t* gba, const char* str){
   }
   return false; 
 }
-bool gba_load_rom(gba_t* gba, const char* filename){
+bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
   if(!IsFileExtension(filename, ".gba")){
     return false; 
@@ -438,12 +451,6 @@ bool gba_load_rom(gba_t* gba, const char* filename){
   UnloadFileData(data);
   gba->cart.rom_size = bytes; 
 
-  const char * c = GetFileNameWithoutExt(filename);
-#if defined(PLATFORM_WEB)
-  const char * save_file = TextFormat("/offline/%s.sav",c);
-#else
-  const char * save_file = TextFormat("%s.sav",c);
-#endif
   strncpy(gba->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
   gba->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
 
@@ -457,8 +464,18 @@ bool gba_load_rom(gba_t* gba, const char* filename){
   if(gba_search_rom_for_string(gba,"FLASH512_"))gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
   if(gba_search_rom_for_string(gba,"FLASH1M_")) gba->cart.backup_type = GBA_BACKUP_FLASH_128K;
 
-  // TODO: Saves are a future Sky problem. 
-  for(int i=0;i<sizeof(gba->mem.cart_sram);++i) gba->mem.cart_sram[i]=0;
+  // Load save if available
+  if(FileExists(save_file)){
+    unsigned int bytes=0;
+    unsigned char* data = LoadFileData(save_file,&bytes);
+    printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
+    if(bytes>=128*1024)bytes=128*1024;
+    memcpy(gba->mem.cart_backup, data, bytes);
+    UnloadFileData(data);
+  }else{
+    printf("Could not find save file: %s\n",save_file);
+    for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0;
+  }
   return true; 
 }  
     
@@ -963,8 +980,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           uint32_t ime = gba_io_read32(gba,GBA_IME);
           if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
           //flash stub
-          gba->mem.cart_sram[1]=0x13;
-          gba->mem.cart_sram[0]=0x62;
+          gba->mem.cart_backup[1]=0x13;
+          gba->mem.cart_backup[0]=0x62;
           gba->mem.requests=1;
           arm7_exec_instruction(&gba->cpu);
           ticks = gba->mem.requests; 

@@ -749,6 +749,7 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
   }else if(emu_state.system==SYSTEM_GBA){
     const char * backup_type[]={"None","EEPROM", "EEPROM (512B)", "EEPROM (8kB)", "SRAM","FLASH (64 kB)", "FLASH (128 kB)"};
     inside_rect=sb_draw_label(inside_rect, TextFormat("Backup Type: %s", backup_type[gba.cart.backup_type]));
+    inside_rect=sb_draw_label(inside_rect, TextFormat("Save Path: %s", gba.cart.save_file_path));
   }
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
@@ -2244,7 +2245,7 @@ void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
   }
 }
 
-bool sb_load_rom(const char* file_path){
+bool sb_load_rom(const char* file_path, const char* save_file){
   if(!IsFileExtension(file_path,".gb") && 
      !IsFileExtension(file_path,".gbc")) return false; 
   unsigned int bytes = 0;
@@ -2320,12 +2321,7 @@ bool sb_load_rom(const char* file_path){
   emu_state.run_mode = SB_MODE_RESET;
   emu_state.rom_loaded = true;
   UnloadFileData(data);
-  const char * c = GetFileNameWithoutExt(file_path);
-#if defined(PLATFORM_WEB)
-      const char * save_file = TextFormat("/offline/%s.sav",c);
-#else
-      const char * save_file = TextFormat("%s.sav",c);
-#endif
+
   strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
   gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
 
@@ -2350,13 +2346,20 @@ bool sb_load_rom(const char* file_path){
   return true; 
 }
 void se_load_rom(char *filename){
+  const char * c = GetFileNameWithoutExt(filename);
+  const char * base = GetDirectoryPath(filename);
+#if defined(PLATFORM_WEB)
+      const char * save_file = TextFormat("/offline/%s.sav",c);
+#else
+      const char * save_file = TextFormat("%s/%s.sav",base, c);
+#endif
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
-  if(gba_load_rom(&gba, filename)){
+  if(gba_load_rom(&gba, filename,save_file)){
     emu_state.system = SYSTEM_GBA;
     emu_state.rom_loaded = true;
   }
-  if(sb_load_rom(filename)){
+  if(sb_load_rom(filename,save_file)){
     emu_state.system = SYSTEM_GB;
     emu_state.rom_loaded = true; 
   }
@@ -2572,18 +2575,46 @@ void UpdateDrawFrame() {
   }
   static unsigned frames_since_last_save = 0; 
   frames_since_last_save++;
-  if(gb_state.cart.ram_is_dirty && frames_since_last_save>10){
-    frames_since_last_save = 0; 
-    if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
- #if defined(PLATFORM_WEB)
-      // Don't forget to sync to make sure you store it to IndexedDB
-    EM_ASM(
-        FS.syncfs(function (err) {});
-    );
- #endif
-      printf("Saved %s\n", gb_state.cart.save_file_path);
-    }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
-    gb_state.cart.ram_is_dirty=false;
+  if(emu_state.system== SYSTEM_GB){
+    if(gb_state.cart.ram_is_dirty && frames_since_last_save>10){
+      frames_since_last_save = 0; 
+      if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
+   #if defined(PLATFORM_WEB)
+        // Don't forget to sync to make sure you store it to IndexedDB
+      EM_ASM(
+          FS.syncfs(function (err) {});
+      );
+   #endif
+        printf("Saved %s\n", gb_state.cart.save_file_path);
+      }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
+      gb_state.cart.ram_is_dirty=false;
+    }
+  }else if(emu_state.system ==SYSTEM_GBA){
+    if(gba.cart.backup_is_dirty && frames_since_last_save>10){
+      frames_since_last_save = 0; 
+      int size = 0; 
+      switch(gba.cart.backup_type){
+        case GBA_BACKUP_NONE       : size = 0;       break;
+        case GBA_BACKUP_EEPROM     : size = 8*1024;  break;
+        case GBA_BACKUP_EEPROM_512B: size = 512;     break;
+        case GBA_BACKUP_EEPROM_8KB : size = 8*1024;  break;
+        case GBA_BACKUP_SRAM       : size = 32*1024; break;
+        case GBA_BACKUP_FLASH_64K  : size = 64*1024; break;
+        case GBA_BACKUP_FLASH_128K : size = 128*1024;break;
+      }
+      if(size){
+        if(SaveFileData(gba.cart.save_file_path,gba.mem.cart_backup,size)){
+          #if defined(PLATFORM_WEB)
+              // Don't forget to sync to make sure you store it to IndexedDB
+              EM_ASM(
+                  FS.syncfs(function (err) {});
+              );
+          #endif
+          printf("Saved %s\n", gba.cart.save_file_path);
+        }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
+      }
+      gba.cart.backup_is_dirty=true;
+    }
   }
   emu_state.frame=0;
   if(emu_state.system == SYSTEM_GB)sb_tick();
