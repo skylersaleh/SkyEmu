@@ -178,6 +178,7 @@ typedef struct {
   uint8_t oam[1024];
   uint8_t cart_rom[32*1024*1024];
   uint8_t cart_backup[128*1024];
+  uint8_t flash_chip_id[4];
   uint32_t openbus_word;
   uint32_t eeprom_word; 
   uint32_t eeprom_state; 
@@ -192,6 +193,9 @@ typedef struct {
   unsigned rom_size; 
   uint8_t backup_type;
   bool backup_is_dirty;
+  bool in_chip_id_mode; 
+  int flash_state;
+  int flash_bank; 
 } gba_cartridge_t;
 typedef struct{
   bool up,down,left,right;
@@ -249,12 +253,84 @@ static inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
-static inline void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t data){
-  if(gba->mem.cart_backup[baddr&0x7fff]!=(data&0xff)){
-    gba->mem.cart_backup[baddr&0x7fff]=data&0xff; 
-    gba->cart.backup_is_dirty=true;
+static inline void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, uint8_t data){
+  #define FLASH_DEFAULT 0x0
+  #define FLASH_RECV_AA 0x1
+  #define FLASH_RECV_55 0x2
+  #define FLASH_ERASE_RECV_AA 0x3
+  #define FLASH_ERASE_RECV_55 0x4
+
+  #define FLASH_ENTER_CHIP_ID 0x90 
+  #define FLASH_EXIT_CHIP_ID  0xF0 
+  #define FLASH_PREP_ERASE    0x80
+  #define FLASH_ERASE_CHIP 0x10 
+  #define FLASH_ERASE_4KB 0x30 
+  #define FLASH_WRITE_BYTE 0xA0
+  #define FLASH_SET_BANK 0xB0
+  int state = gba->cart.flash_state;
+  if(state!=FLASH_DEFAULT) printf("Flash state %02x\n",gba->cart.flash_state);
+
+  gba->cart.flash_state=FLASH_DEFAULT;
+  baddr&=0xffff;
+  switch(state){
+    default: 
+      printf("Unknown flash state %02x\n",gba->cart.flash_state);
+    case FLASH_DEFAULT:
+      if(baddr==0x5555 && data == 0xAA) gba->cart.flash_state = FLASH_RECV_AA;
+      break;
+    case FLASH_RECV_AA:
+      if(baddr==0x2AAA && data == 0x55) gba->cart.flash_state = FLASH_RECV_55;
+      break;
+    case FLASH_RECV_55:
+      if(baddr==0x5555){
+        // Process command
+        switch(data){
+          case FLASH_ENTER_CHIP_ID:gba->cart.in_chip_id_mode = true; break;
+          case FLASH_EXIT_CHIP_ID: gba->cart.in_chip_id_mode = false; break;
+          case FLASH_PREP_ERASE:   gba->cart.flash_state = FLASH_PREP_ERASE; break;
+          case FLASH_WRITE_BYTE:   gba->cart.flash_state = FLASH_WRITE_BYTE; break;
+          case FLASH_SET_BANK:     gba->cart.flash_state = FLASH_SET_BANK; break;
+          default: printf("Unknown flash command: %02x\n",data);break;
+        }
+      }
+      break;
+    case FLASH_PREP_ERASE:
+      if(baddr==0x5555 && data == 0xAA) gba->cart.flash_state = FLASH_ERASE_RECV_AA;
+      break;
+    case FLASH_ERASE_RECV_AA:
+      if(baddr==0x2AAA && data == 0x55) gba->cart.flash_state = FLASH_ERASE_RECV_55;
+      break;
+    case FLASH_ERASE_RECV_55:
+      if(baddr==0x5555|| data ==FLASH_ERASE_4KB){
+        int size = gba->cart.backup_type == GBA_BACKUP_FLASH_64K? 64*1024 : 128*1024;
+        int erase_4k_off = gba->cart.flash_bank*64*1024+SB_BFE(baddr,12,4)*4096;
+        // Process command
+        switch(data){
+          case FLASH_ERASE_CHIP:for(int i=0;i<size;++i)gba->mem.cart_backup[i]=0xff; break;
+          case FLASH_ERASE_4KB:for(int i=0;i<4096;++i)gba->mem.cart_backup[erase_4k_off+i]=0xff; break;
+          default: printf("Unknown flash erase command: %02x\n",data);break;
+        }
+        gba->cart.backup_is_dirty=true;
+      }
+      break;
+    case FLASH_WRITE_BYTE:
+      gba->mem.cart_backup[gba->cart.flash_bank*64*1024+baddr] &= data; 
+      gba->cart.backup_is_dirty=true;
+      break;
+    case FLASH_SET_BANK:
+      gba->cart.flash_bank = data&1; 
+      break;
   }
-  
+}
+static inline void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t data){
+  if(gba->cart.backup_type==GBA_BACKUP_FLASH_64K||gba->cart.backup_type==GBA_BACKUP_FLASH_128K){
+    gba_process_flash_state_machine(gba,baddr,data);
+  }else if(gba->cart.backup_type==GBA_BACKUP_SRAM){
+    if(gba->mem.cart_backup[baddr&0x7fff]!=(data&0xff)){
+      gba->mem.cart_backup[baddr&0x7fff]=data&0xff; 
+      gba->cart.backup_is_dirty=true;
+    }
+  }
 }
 static inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
@@ -378,7 +454,14 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
     }
   }
   else if(baddr>=0xE000000 && baddr<=0xEffffff ){
-    ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
+    if(gba->cart.backup_type==GBA_BACKUP_SRAM) ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
+    else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
+    else{
+      //Flash
+      if(gba->cart.in_chip_id_mode&&baddr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
+      else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
+    }
+    
   }
   gba->mem.openbus_word=*ret;
   return ret;
@@ -476,6 +559,10 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
     printf("Could not find save file: %s\n",save_file);
     for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0;
   }
+
+  // Setup flash chip id (this is not used if the cartridge does not have flash backup storage)
+  gba->mem.flash_chip_id[1]=0x13;
+  gba->mem.flash_chip_id[0]=0x62;
   return true; 
 }  
     
@@ -979,9 +1066,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         }else{
           uint32_t ime = gba_io_read32(gba,GBA_IME);
           if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
-          //flash stub
-          gba->mem.cart_backup[1]=0x13;
-          gba->mem.cart_backup[0]=0x62;
           gba->mem.requests=1;
           arm7_exec_instruction(&gba->cpu);
           ticks = gba->mem.requests; 
