@@ -6,6 +6,8 @@
  *
 **/
 
+#define SE_AUDIO_SAMPLE_RATE 44100
+
 #include "raylib.h"
 #include "sb_instr_tables.h"
 #include "sb_types.h"
@@ -21,9 +23,8 @@
 #endif                                             
 
 #define SB_NUM_SAVE_STATES 5
-#define SB_AUDIO_BUFF_SAMPLES 2048
-#define SB_AUDIO_BUFF_CHANNELS 2
-#define SB_AUDIO_SAMPLE_RATE 44100
+#define SE_AUDIO_BUFF_SAMPLES 2048
+#define SE_AUDIO_BUFF_CHANNELS 2
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -745,6 +746,9 @@ Rectangle sb_draw_cartridge_state(Rectangle rect,
     inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped ROM Bank: %d", cart_state->mapped_rom_bank));
     inside_rect=sb_draw_label(inside_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
     inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped RAM Bank: %d", cart_state->mapped_ram_bank));
+  }else if(emu_state.system==SYSTEM_GBA){
+    const char * backup_type[]={"None","EEPROM", "EEPROM (512B)", "EEPROM (8kB)", "SRAM","FLASH (64 kB)", "FLASH (128 kB)"};
+    inside_rect=sb_draw_label(inside_rect, TextFormat("Backup Type: %s", backup_type[gba.cart.backup_type]));
   }
   Rectangle state_rect, adv_rect;
   sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
@@ -1653,8 +1657,8 @@ void sb_tick(){
    if(init_audio==false&&emu_state.rom_loaded){
     printf("Initializing Audio\n");
     InitAudioDevice();
-    SetAudioStreamBufferSizeDefault(SB_AUDIO_BUFF_SAMPLES);
-    audio_stream = LoadAudioStream(SB_AUDIO_SAMPLE_RATE, 16, SB_AUDIO_BUFF_CHANNELS);
+    SetAudioStreamBufferSizeDefault(SE_AUDIO_BUFF_SAMPLES);
+    audio_stream = LoadAudioStream(SE_AUDIO_SAMPLE_RATE, 16, SE_AUDIO_BUFF_CHANNELS);
     PlayAudioStream(audio_stream);
     init_audio=true;
   }
@@ -1739,7 +1743,7 @@ void sb_tick(){
     static float avg_frame_time = 1.0/60.*1.00;
     avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
     int size = sb_ring_buffer_size(&gb_state.audio.ring_buff);
-    int samples_per_buffer = SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS;
+    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     float buffs_available = size/(float)(samples_per_buffer);
     float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
     time_correction_scale = avg_frame_time/(1.0/60.)*0.995;
@@ -1864,7 +1868,7 @@ void sb_tick(){
         sb_process_audio(&gb_state,delta_t);
         int size = sb_ring_buffer_size(&gb_state.audio.ring_buff);
         
-       //if(size> SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS*3)break;
+       //if(size> SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*3)break;
        if(frames_to_draw<=0&& emu_state.step_instructions ==0 )break;
     }
 
@@ -2030,7 +2034,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
 
-  float sample_delta_t = 1.0/SB_AUDIO_SAMPLE_RATE;
+  float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
   uint8_t freq_sweep1 = sb_read8_direct(gb, SB_IO_AUD1_TONE_SWEEP);
   float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
   float freq_sweep_sign1 = SB_BFE(freq_sweep1, 3,1)? -1. : 1;
@@ -2115,7 +2119,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
   while(current_sample_generated_time < current_sim_time){
 
-    current_sample_generated_time+=1.0/SB_AUDIO_SAMPLE_RATE;
+    current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
     
     if((sb_ring_buffer_size(&gb->audio.ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     float f1 = freq1_hz*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t1/freq_sweep_time_mul1);
@@ -2218,17 +2222,17 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   }
 }
 void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
-  static int16_t audio_buff[SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS*2];
+  static int16_t audio_buff[SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*2];
   int size = sb_ring_buffer_size(&gb->audio.ring_buff);
   if(global_mute){
     if(IsAudioStreamProcessed(audio_stream)){
-      for(int i=0;i<SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS;++i)audio_buff[i]=0;
-      UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS);
+      for(int i=0;i<SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;++i)audio_buff[i]=0;
+      UpdateAudioStream(audio_stream, audio_buff, SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS);
     }
   }
   if(IsAudioStreamProcessed(audio_stream)){
     //Fill up Audio buffer from ring_buffer
-    for(int i=0; i< SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS; ++i){
+    for(int i=0; i< SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS; ++i){
     
       unsigned read_entry =0;
       if(sb_ring_buffer_size(&gb->audio.ring_buff)>0)
@@ -2236,7 +2240,7 @@ void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
       audio_buff[i]= gb->audio.ring_buff.data[read_entry];
     }
 
-    UpdateAudioStream(audio_stream, audio_buff, SB_AUDIO_BUFF_SAMPLES*SB_AUDIO_BUFF_CHANNELS);
+    UpdateAudioStream(audio_stream, audio_buff, SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS);
   }
 }
 
