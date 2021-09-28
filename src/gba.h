@@ -181,7 +181,7 @@ typedef struct {
   uint8_t flash_chip_id[4];
   uint32_t openbus_word;
   uint32_t eeprom_word; 
-  uint32_t eeprom_state; 
+  uint32_t eeprom_addr; 
   uint32_t requests;
   uint32_t last_bios_data;
   uint32_t cartopen_bus; 
@@ -888,6 +888,18 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   reg_value|= !(joy->l)     <<9;
   gba_io_store16(gba, GBA_KEYINPUT, reg_value);
 }
+uint64_t gba_read_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset, int size, int elem_size, int dir){
+  uint64_t data = 0; 
+  for(int i=0;i<size;++i){
+    data|= ((uint64_t)(gba_read16(gba,source_address+(i+offset)*elem_size*dir)&1))<<(size-i-1);
+  }
+  return data; 
+}
+void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset, int size, int elem_size, int dir,uint64_t data){
+  for(int i=0;i<size;++i){
+    gba_store16(gba,source_address+(i+offset)*elem_size*dir,data>>(size-i-1)&1);
+  }
+}
 int gba_tick_dma(gba_t*gba){
   int ticks =0;
   for(int i=0;i<4;++i){
@@ -935,14 +947,62 @@ int gba_tick_dma(gba_t*gba){
         dst&=~1;
         src&=~1;
       }
+      bool skip_dma = false;
+      // EEPROM DMA transfers
+      if(i==3 && gba->cart.backup_type==GBA_BACKUP_EEPROM){
+        int src_in_eeprom = (src&0x1ffffff)>=gba->cart.rom_size||(src&0x1ffffff)>=0x01ffff00;
+        int dst_in_eeprom = (dst&0x1ffffff)>=gba->cart.rom_size||(dst&0x1ffffff)>=0x01ffff00;
+        src_in_eeprom &= src>=0x8000000 && src<=0xDFFFFFF;
+        dst_in_eeprom &= dst>=0x8000000 && dst<=0xDFFFFFF;
+        skip_dma = src_in_eeprom || dst_in_eeprom;
+        if(dst_in_eeprom){
+          if(cnt==73){
+            // Write data 6 bit address
+            uint32_t addr = gba_read_eeprom_bitstream(gba, src, 2, 6, type?4:2, src_dir);
+            uint64_t data = gba_read_eeprom_bitstream(gba, src, 2+6, 64, type?4:2, src_dir); 
+            ((uint64_t*)gba->mem.cart_backup)[addr]=data;
+            gba->cart.backup_is_dirty=true;
+          }else if(cnt==81){
+            // Write data 14 bit address
+            uint32_t addr = gba_read_eeprom_bitstream(gba, src, 2, 14, type?4:2, src_dir)&0x3ff;
+            uint64_t data = gba_read_eeprom_bitstream(gba, src, 2+14, 64, type?4:2, src_dir); 
+            ((uint64_t*)gba->mem.cart_backup)[addr]=data;
+            gba->cart.backup_is_dirty=true;
+          }else if(cnt==9){
+            // 2 bits "11" (Read Request)
+            // 6 bits eeprom address (MSB first)
+            // 1 bit "0"
+            // Write data 6 bit address
+            gba->mem.eeprom_addr = gba_read_eeprom_bitstream(gba, src, 2, 6, type?4:2, src_dir);
+          }else if(cnt==17){
+            // 2 bits "11" (Read Request)
+            // 14 bits eeprom address (MSB first)
+            // 1 bit "0"
+            // Write data 6 bit address
+            gba->mem.eeprom_addr = gba_read_eeprom_bitstream(gba, src, 2, 14, type?4:2, src_dir)&0x3ff;
+          }else{
+            printf("Bad cnt: %d for eeprom write\n",cnt);
+          }
+
+        }
+        if(src_in_eeprom){
+          if(cnt==68){
+            uint64_t data = ((uint64_t*)gba->mem.cart_backup)[gba->mem.eeprom_addr];
+            gba_store_eeprom_bitstream(gba, dst, 4, 64, type?4:2, dst_dir,data);
+          }else{
+            printf("Bad cnt: %d for eeprom read\n",cnt);
+          }
+        }
+      }
        
       //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
-      if(mode!=3){
+      if(mode!=3&&!skip_dma){
         for(int x=0;x<cnt;++x){
           if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
           else gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
         }
       }
+      
       ticks+=cnt;
       if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes*dst_dir;
       else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;

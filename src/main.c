@@ -2613,7 +2613,7 @@ void UpdateDrawFrame() {
           printf("Saved %s\n", gba.cart.save_file_path);
         }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
       }
-      gba.cart.backup_is_dirty=true;
+      gba.cart.backup_is_dirty=false;
     }
   }
   emu_state.frame=0;
