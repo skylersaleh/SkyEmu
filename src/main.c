@@ -2108,15 +2108,11 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
   uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
-  int chan1_l = SB_BFE(chan_sel,0,1);
-  int chan2_l = SB_BFE(chan_sel,1,1);
-  int chan3_l = SB_BFE(chan_sel,2,1);
-  int chan4_l = SB_BFE(chan_sel,3,1);
-  int chan1_r = SB_BFE(chan_sel,4,1);
-  int chan2_r = SB_BFE(chan_sel,5,1);
-  int chan3_r = SB_BFE(chan_sel,6,1);
-  int chan4_r = SB_BFE(chan_sel,7,1);
-
+  int chan_l[4];int chan_r[4];
+  for(int i=0;i<4;++i){
+    chan_l[i] = SB_BFE(chan_sel,i,1);
+    chan_r[i] = SB_BFE(chan_sel,i+4,1);
+  }
 
   while(current_sample_generated_time < current_sim_time){
 
@@ -2171,11 +2167,6 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     channels[0]= sb_bandlimited_square(chan1_t,duty1,sample_delta_t*f1)*v1;
     channels[1]= sb_bandlimited_square(chan2_t,duty2,sample_delta_t*freq2_hz)*v2;
 
-    sample_volume_l+=channels[0]*chan1_l;
-    sample_volume_r+=channels[0]*chan1_r;
-    sample_volume_l+=channels[1]*chan2_l;
-    sample_volume_r+=channels[1]*chan2_r;
-     
     unsigned wav_samp = chan3_t*32;
     wav_samp%=32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
@@ -2184,12 +2175,12 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
     int wav_offset = 8>>channel3_shift; 
     channels[2] = (dat-wav_offset)/8.;
-    sample_volume_l+=channels[2]*chan3_l;
-    sample_volume_r+=channels[2]*chan3_r;
-
     channels[3] = last_noise_value*v4;
-    sample_volume_l+=channels[3]*chan4_l;
-    sample_volume_r+=channels[3]*chan4_r;
+
+    for(int i=0;i<4;++i){
+      sample_volume_l+=channels[i]*chan_l[i];
+      sample_volume_r+=channels[i]*chan_r[i];
+    }
     
     sample_volume_l*=0.25;
     sample_volume_r*=0.25;
@@ -2338,7 +2329,6 @@ bool sb_load_rom(const char* file_path, const char* save_file){
     }
     memcpy(gb_state.cart.ram_data, data, bytes);
     UnloadFileData(data);
-
   }else{
     printf("Could not find save file: %s\n",save_file);
     memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
@@ -2364,7 +2354,7 @@ void se_load_rom(char *filename){
     emu_state.rom_loaded = true; 
   }
   if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename);
-  else emu_state.run_mode= SB_MODE_RUN;
+  else emu_state.run_mode= SB_MODE_RESET;
   return; 
 }
 void sb_draw_load_rom_prompt(Rectangle rect, bool visible){

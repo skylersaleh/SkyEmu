@@ -612,6 +612,8 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   int bg_mode = SB_BFE(dispcnt,0,3);
   int frame_sel = SB_BFE(dispcnt,4,1);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
+  int forced_blank = SB_BFE(dispcnt,7,1);
+  if(forced_blank)return;
   int p = lcd_x+lcd_y*240;
   bool visible = lcd_x<240 && lcd_y<160;
   if(visible){
@@ -1105,7 +1107,8 @@ void gba_tick_timers(gba_t* gba, int ticks){
 }
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
-    emu->run_mode = SB_MODE_PAUSE;
+    gba_reset(gba);
+    emu->run_mode = SB_MODE_RUN;
   }
   int frames_to_render= gba->ppu.last_vblank?1:2; 
 
@@ -1154,7 +1157,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 }
 
 void gba_reset(gba_t*gba){
-  *gba = (gba_t){0};
   gba->cpu = arm7_init(gba);
   bool skip_bios = true;
   if(skip_bios){
