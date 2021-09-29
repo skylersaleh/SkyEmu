@@ -378,10 +378,8 @@ Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t
   if(save_state ==0)sb_pop_save_state(gb);
   if(save_state ==1)sb_push_save_state(gb);
 
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_LABEL_PADDING,
-                  &widget_rect, &inside_rect);
+  inside_rect = sb_draw_label(inside_rect, "Instructions to Step");
 
-  GuiLabel(widget_rect, "Instructions to Step");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
 
@@ -390,10 +388,7 @@ Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t
                  edit_step_instructions))
     edit_step_instructions = !edit_step_instructions;
 
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_LABEL_PADDING,
-                  &widget_rect, &inside_rect);
-
-  GuiLabel(widget_rect, "Breakpoint PC");
+  inside_rect = sb_draw_label(inside_rect, "Breakpoint PC");
   
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
                   &inside_rect);
@@ -458,24 +453,7 @@ Rectangle sb_draw_flag_state(Rectangle rect, const char *group_name,
                   &adv_rect);
   return adv_rect;
 }      
-/*
-Rectangle gba_draw_arm_opcode(Rectangle rect, uint32_t opcode){
-  uint32_t cond_code = SB_BFE(opcode,28,4);
-  const char* cond_code_table[16]=
-    {"EQ","NE","CS","CC","MI","PL","VS","VC","HI","LS","GE","LT","GT","LE","","INV"};
-  const char * cond = cond_code_table[cond_code];
-  int internal_opcode = gba_intern_op(opcode);
-  const char * name = gba_disasm_name[internal_opcode];
-  const char * text = TextFormat("%s %s",name,cond);
-  for(int i=0;i<16;++i){
-    arm7tdmi_param_t p = arm7tdmi_params[internal_opcode];
-    if(p.params[i].name==0)break;
-    int v = SB_BFE(opcode,p.params[i].start,p.params[i].size);
-    text = TextFormat("%s %c:%d",text,p.params[i].name,v);
-  }
-  GuiLabel(rect, text);
-}
-*/
+
 Rectangle gba_draw_instructions(Rectangle rect, gba_t *gba) {
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
@@ -653,22 +631,16 @@ Rectangle sb_draw_dma_state(Rectangle rect, sb_gb_t *gb) {
   int len = (SB_BFE(dma_mode_length, 0,7)+1);
   bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
 
-
   int div = sb_read8_direct(gb, SB_IO_DIV);
   int tima = sb_read8_direct(gb, SB_IO_TIMA);
   int tma = sb_read8_direct(gb, SB_IO_TMA);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("DMA SRC: %x", dma_src));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("DMA DST: %x", dma_dst));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Length (16B chunks): %d", len));
-
+  inside_rect = sb_draw_label(inside_rect,TextFormat("DMA SRC: %x", dma_src));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("DMA DST: %x", dma_dst));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("Length (16B chunks): %d", len));
 
   inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   inside_rect.x +=rect.width/2;
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING*0.5, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("Bytes Transferred: %d", gb->dma.bytes_transferred));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("Bytes Transferred: %d", gb->dma.bytes_transferred));
 
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
   wr.x =widget_rect.x;
@@ -699,20 +671,14 @@ Rectangle sb_draw_timer_state(Rectangle rect, sb_gb_t *gb) {
   int div = sb_read8_direct(gb, SB_IO_DIV);
   int tima = sb_read8_direct(gb, SB_IO_TIMA);
   int tma = sb_read8_direct(gb, SB_IO_TMA);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("DIV: %d", div));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("TIMA: %d", tima));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("TMA: %d", tma));
-
+  inside_rect = sb_draw_label(inside_rect, TextFormat("DIV: %d", div));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("TIMA: %d", tima));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("TMA: %d", tma));
 
   inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   inside_rect.x +=rect.width/2;
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("CLKs to DIV: %d", gb->timers.clocks_till_div_inc));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  GuiLabel(widget_rect, TextFormat("CLKs to TIMA: %d", gb->timers.clocks_till_tima_inc));
+  inside_rect = sb_draw_label(inside_rect,TextFormat("CLKs to DIV: %d", gb->timers.clocks_till_div_inc));
+  inside_rect = sb_draw_label(inside_rect, TextFormat("CLKs to TIMA: %d", gb->timers.clocks_till_tima_inc));
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
 
   Rectangle state_rect, adv_rect;
@@ -1798,9 +1764,6 @@ void sb_tick(){
             for(int i=0;i<5;++i){
               if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
             }
-            //if(trigger_interrupt!=-1&&(gb_state.cpu.wait_for_interrupt==false && gb_state.cpu.interrupt_enable))i_flag &= ~(1<<trigger_interrupt);
-            //if(trigger_interrupt!=-1)gb_state.cpu.trigger_breakpoint = true;
-            //sb_store8_direct(&gb_state,SB_IO_INTER_F,i_flag);
           }
      
           gb_state.cpu.prefix_op = false;
@@ -1893,24 +1856,20 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   GuiProgressBar(widget_rect, "", "", fifo_size/SB_AUDIO_RING_BUFFER_SIZE, 0, 1);
   for(int i=0;i<4;++i){
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
-    GuiLabel(widget_rect, TextFormat("Channel %d",i+1));
+    inside_rect = sb_draw_label(inside_rect,TextFormat("Channel %d",i+1));
     sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
     GuiProgressBar(widget_rect, "", "", gb->audio.channel_output[i], 0, 1);
   } 
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
-  GuiLabel(widget_rect, "Mix Volume (R)");
+  inside_rect = sb_draw_label(inside_rect, "Mix Volume (R)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   GuiProgressBar(widget_rect, "", "", gb->audio.mix_r_volume, 0, 1);
    
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
-  GuiLabel(widget_rect, "Mix Volume (L)");
+  inside_rect = sb_draw_label(inside_rect, "Mix Volume (L)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   GuiProgressBar(widget_rect, "", "", gb->audio.mix_l_volume, 0, 1);
   
    
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
-  GuiLabel(widget_rect, "Output Waveform");
+  inside_rect = sb_draw_label(inside_rect, "Output Waveform");
    
   sb_vertical_adv(inside_rect, 128, GUI_PADDING, &widget_rect, &inside_rect);
   
@@ -2015,10 +1974,9 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
 }
 void sb_process_audio(sb_gb_t *gb, double delta_time){
   //TODO: Move these into a struct
-  static float chan1_t = 0, length_t1=0;
-  static float chan2_t = 0, length_t2=0;
-  static float chan3_t = 0, length_t3=0;
-  static float chan4_t = 0, length_t4=0;
+  static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
+  float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
+
   static float last_noise_value = 0;
 
   static double current_sim_time = 0;
@@ -2048,13 +2006,13 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
   uint8_t vol_env1 = sb_read8_direct(gb,SB_IO_AUD1_VOL_ENV);
   uint16_t freq1 = freq1_lo | ((int)(SB_BFE(freq1_hi,0,3))<<8u);
-  float freq1_hz = 131072.0/(2048.-freq1);
+  float freq1_hz_base = 131072.0/(2048.-freq1);
   float volume1 = SB_BFE(vol_env1,4,4)/15.f;
   float volume_env1 = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
-  float length1 = (64.-SB_BFE(length_duty1,0,6))/256.;
-  if(SB_BFE(freq1_hi,7,1)){chan1_t=0.f;length_t1 = 0;}
-  if(SB_BFE(freq1_hi,6,1)==0){length1 = 1.0e9;}
+  length[0] = (64.-SB_BFE(length_duty1,0,6))/256.;
+  if(SB_BFE(freq1_hi,7,1)){chan_t[0]=0.f;length_t[0] = 0;}
+  if(SB_BFE(freq1_hi,6,1)==0){length[0] = 1.0e9;}
   freq1_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI,freq1_hi);
 
@@ -2063,14 +2021,14 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t freq2_hi = sb_read8_direct(gb,SB_IO_AUD2_FREQ_HI);
   uint8_t vol_env2 = sb_read8_direct(gb,SB_IO_AUD2_VOL_ENV);
   uint16_t freq2 = freq2_lo | ((int)(SB_BFE(freq2_hi,0,3))<<8u);
-  float freq2_hz = 131072.0/(2048.-freq2);
+  freq_hz[1] = 131072.0/(2048.-freq2);
   float volume2 = SB_BFE(vol_env2,4,4)/15.f;
   float volume_env2 = compute_vol_env_slope(vol_env2);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
-  float length2 = (64.-SB_BFE(length_duty2,0,6))/256.;
+  length[1] = (64.-SB_BFE(length_duty2,0,6))/256.;
 
-  if(SB_BFE(freq2_hi,7,1)){chan2_t=0.f; length_t2=0;}
-  if(SB_BFE(freq2_hi,6,1)==0){length2 = 1.0e9;}
+  if(SB_BFE(freq2_hi,7,1)){chan_t[1]=0.f; length_t[1]=0;}
+  if(SB_BFE(freq2_hi,6,1)==0){length[1] = 1.0e9;}
   freq2_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD2_FREQ_HI,freq2_hi);
 
@@ -2080,13 +2038,13 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t freq3_hi = sb_read8_direct(gb,SB_IO_AUD3_FREQ_HI);
   uint8_t vol_env3 = sb_read8_direct(gb,SB_IO_AUD3_VOL);
   uint16_t freq3 = freq3_lo | ((int)(SB_BFE(freq3_hi,0,3))<<8u);
-  float freq3_hz = 65536.0/(2048.-freq3);
+  freq_hz[2] = 65536.0/(2048.-freq3);
   float volume3 = 1.0f;
-  float length3 = (256.-length3_dat)/256.;
+  length[2] = (256.-length3_dat)/256.;
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
-  if(SB_BFE(freq3_hi,7,1)){chan3_t=0.f;length_t3=0.f;}
-  if(SB_BFE(freq3_hi,6,1)==0){length3 = 1.0e9;}
+  if(SB_BFE(freq3_hi,7,1)){chan_t[2]=0.f;length_t[2]=0.f;}
+  if(SB_BFE(freq3_hi,6,1)==0){length[2] = 1.0e9;}
   freq3_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD3_FREQ_HI,freq3_hi);
 
@@ -2097,12 +2055,12 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   float r4 = SB_BFE(poly4,0,3);
   uint8_t s4 = SB_BFE(poly4,4,4);
   if(r4==0)r4=0.5;
-  float freq4_hz = 524288.0/r4/pow(2.0,s4+1);
+  freq_hz[3] = 524288.0/r4/pow(2.0,s4+1);
   float volume4 = SB_BFE(vol_env4,4,4)/15.f;
   float volume_env4 = compute_vol_env_slope(vol_env4);
-  float length4 = (64.-SB_BFE(length_duty4,0,6))/256.;
-  if(SB_BFE(counter4,7,1)){chan4_t=0.f;length_t4 = 0;}
-  if(SB_BFE(counter4,6,1)==0){length4 = 1.0e9;}
+  length[3] = (64.-SB_BFE(length_duty4,0,6))/256.;
+  if(SB_BFE(counter4,7,1)){chan_t[3]=0.f;length_t[3] = 0;}
+  if(SB_BFE(counter4,6,1)==0){length[3] = 1.0e9;}
   counter4 &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
 
@@ -2119,63 +2077,49 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
     
     if((sb_ring_buffer_size(&gb->audio.ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
-    float f1 = freq1_hz*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t1/freq_sweep_time_mul1);
+    freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
 
-    //float f1 = freq1_hz+freq_sweep_sign1*freq_sweep_n1*length_t1/freq_sweep_time_mul1;
     // Advance cycle
-    chan1_t+=sample_delta_t*f1;
-    chan2_t+=sample_delta_t*freq2_hz;
-    chan3_t+=sample_delta_t*freq3_hz;
-    chan4_t+=sample_delta_t*freq4_hz;
+    for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
+    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
 
-    length_t1+=sample_delta_t;
-    length_t2+=sample_delta_t;
-    length_t3+=sample_delta_t;
-    length_t4+=sample_delta_t;
-
-    if(length_t1>length1){volume1=0;volume_env1=0;}
-    if(length_t2>length2){volume2=0;volume_env2=0;}
-    if(length_t3>length3)volume3=0;
-    if(length_t4>length4){volume4=0;volume_env4=0;}
+    if(length_t[0]>length[0]){volume1=0;volume_env1=0;}
+    if(length_t[1]>length[1]){volume2=0;volume_env2=0;}
+    if(length_t[2]>length[2])volume3=0;
+    if(length_t[3]>length[3]){volume4=0;volume_env4=0;}
 
     // Loop back
-    while(chan1_t>=1.0)chan1_t-=1.0;
-    while(chan2_t>=1.0)chan2_t-=1.0;
-    while(chan3_t>=1.0)chan3_t-=1.0;
-    while(chan4_t>=1.0){
-      chan4_t-=1.0;
+    for(int i=0;i<3;++i) while(chan_t[i]>=1.0)chan_t[i]-=1.0;
+    while(chan_t[3]>=1.0){
+      chan_t[3]-=1.0;
       last_noise_value = GetRandomValue(0,1)*2.-1.;
     }
     //Volume Envelopes
-    float v1=volume_env1*length_t1+volume1;
-    float v2=volume_env2*length_t2+volume2;
-    float v4=volume_env4*length_t4+volume4;
-
-    if(v1<0)v1=0;
-    if(v2<0)v2=0;
-    if(v4<0)v4=0;
-
-    if(v1>1)v1=1;
-    if(v2>1)v2=1;
-    if(v4>1)v4=1;
+    float v[4]={
+      volume_env1*length_t[0]+volume1,
+      volume_env2*length_t[1]+volume2,
+      1.0,
+      volume_env4*length_t[3]+volume4,
+    };
+    //Clamp volumes
+    for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
 
     float channels[4];
     // Audio Gen
     float sample_volume_l = 0;
     float sample_volume_r = 0;
 
-    channels[0]= sb_bandlimited_square(chan1_t,duty1,sample_delta_t*f1)*v1;
-    channels[1]= sb_bandlimited_square(chan2_t,duty2,sample_delta_t*freq2_hz)*v2;
+    channels[0]= sb_bandlimited_square(chan_t[0],duty1,sample_delta_t*freq_hz[0])*v[0];
+    channels[1]= sb_bandlimited_square(chan_t[1],duty2,sample_delta_t*freq_hz[1])*v[1];
 
-    unsigned wav_samp = chan3_t*32;
-    wav_samp%=32;
+    unsigned wav_samp = ((unsigned)(chan_t[2]*32))%32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     int offset = (wav_samp&1)? 0:4;
     dat = ((dat>>offset)&0xf)>>channel3_shift;
 
     int wav_offset = 8>>channel3_shift; 
     channels[2] = (dat-wav_offset)/8.;
-    channels[3] = last_noise_value*v4;
+    channels[3] = last_noise_value*v[3];
 
     for(int i=0;i<4;++i){
       sample_volume_l+=channels[i]*chan_l[i];
@@ -2203,8 +2147,6 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     float out_r = sample_volume_r-capacitor_r;
     capacitor_l = (sample_volume_l-out_l)*0.996;
     capacitor_r = (sample_volume_r-out_r)*0.996;
-    //out_l = sample_volume_l;
-    //out_r = sample_volume_r;
     // Quantization
     unsigned write_entry0 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
@@ -2453,7 +2395,6 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
   float dpad_sz0 = rect.width*0.055;
   float dpad_sz1 = rect.width*0.20;
 
-
   Vector2 a_pos = {rect.width*0.85,rect.height*0.32};
   Vector2 b_pos = {rect.width*0.65,rect.height*0.48};
   Vector2 dpad_pos = {rect.width*0.25,rect.height*0.4};
@@ -2465,7 +2406,6 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
   a_pos.y+=rect.y;
   b_pos.y+=rect.y;
   dpad_pos.y+=rect.y;
-
 
   enum{max_points = 5};
   Vector2 points[max_points]={0};
@@ -2490,11 +2430,9 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
 
       if(dx>dpad_sz0)right=true;
       if(dx<-dpad_sz0)left=true;
-
     }
 
   }
-    
 
   DrawCircle(a_pos.x, a_pos.y, button_r+1, line_color);
   DrawCircle(a_pos.x, a_pos.y, button_r, a?sel_color:fill_color);
