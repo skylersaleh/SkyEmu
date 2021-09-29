@@ -68,6 +68,7 @@ typedef struct {
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
   int frame;
+  double avg_frame_time; 
 } sb_emu_state_t;
 
 typedef struct {
