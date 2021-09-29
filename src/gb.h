@@ -935,7 +935,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
   float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
-
+  float volume_env[4]={0,0,0,0};
   static float last_noise_value = 0;
 
   static double current_sim_time = 0;
@@ -966,8 +966,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t vol_env1 = sb_read8_direct(gb,SB_IO_AUD1_VOL_ENV);
   uint16_t freq1 = freq1_lo | ((int)(SB_BFE(freq1_hi,0,3))<<8u);
   float freq1_hz_base = 131072.0/(2048.-freq1);
-  float volume1 = SB_BFE(vol_env1,4,4)/15.f;
-  float volume_env1 = compute_vol_env_slope(vol_env1);
+  volume[0] = SB_BFE(vol_env1,4,4)/15.f;
+  volume_env[0] = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   length[0] = (64.-SB_BFE(length_duty1,0,6))/256.;
   if(SB_BFE(freq1_hi,7,1)){chan_t[0]=0.f;length_t[0] = 0;}
@@ -981,8 +981,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t vol_env2 = sb_read8_direct(gb,SB_IO_AUD2_VOL_ENV);
   uint16_t freq2 = freq2_lo | ((int)(SB_BFE(freq2_hi,0,3))<<8u);
   freq_hz[1] = 131072.0/(2048.-freq2);
-  float volume2 = SB_BFE(vol_env2,4,4)/15.f;
-  float volume_env2 = compute_vol_env_slope(vol_env2);
+  volume[1] = SB_BFE(vol_env2,4,4)/15.f;
+  volume_env[1] = compute_vol_env_slope(vol_env2);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
   length[1] = (64.-SB_BFE(length_duty2,0,6))/256.;
 
@@ -998,7 +998,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t vol_env3 = sb_read8_direct(gb,SB_IO_AUD3_VOL);
   uint16_t freq3 = freq3_lo | ((int)(SB_BFE(freq3_hi,0,3))<<8u);
   freq_hz[2] = 65536.0/(2048.-freq3);
-  float volume3 = 1.0f;
+  volume[2] = 1.0f;
   length[2] = (256.-length3_dat)/256.;
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
@@ -1015,8 +1015,8 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   uint8_t s4 = SB_BFE(poly4,4,4);
   if(r4==0)r4=0.5;
   freq_hz[3] = 524288.0/r4/pow(2.0,s4+1);
-  float volume4 = SB_BFE(vol_env4,4,4)/15.f;
-  float volume_env4 = compute_vol_env_slope(vol_env4);
+  volume[3] = SB_BFE(vol_env4,4,4)/15.f;
+  volume_env[3] = compute_vol_env_slope(vol_env4);
   length[3] = (64.-SB_BFE(length_duty4,0,6))/256.;
   if(SB_BFE(counter4,7,1)){chan_t[3]=0.f;length_t[3] = 0;}
   if(SB_BFE(counter4,6,1)==0){length[3] = 1.0e9;}
@@ -1036,49 +1036,41 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
     
     if((sb_ring_buffer_size(&gb->audio.ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
-    freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
 
-    // Advance cycle
+    //Advance each channel    
+    freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
     for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
     for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
+    for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
 
-    if(length_t[0]>length[0]){volume1=0;volume_env1=0;}
-    if(length_t[1]>length[1]){volume2=0;volume_env2=0;}
-    if(length_t[2]>length[2])volume3=0;
-    if(length_t[3]>length[3]){volume4=0;volume_env4=0;}
-
-    // Generate new noise value if needed
+    //Generate new noise value if needed
     if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
-    // Loop back
+    
+    //Loop back
     for(int i=0;i<4;++i) while(chan_t[i]>=1.0)chan_t[i]-=1.0;
     
-    //Volume Envelopes
-    float v[4]={
-      volume_env1*length_t[0]+volume1,
-      volume_env2*length_t[1]+volume2,
-      1.0,
-      volume_env4*length_t[3]+volume4,
-    };
-    //Clamp volumes
+    //Compute and clamp Volume Envelopes
+    float v[4];
+	for(int i=0;i<4;++i)v[i] = volume_env[i]*length_t[i]+volume[i];
     for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
+    v[2]=1.0; //Wave channel doesn't have a volume envelop 
 
-    float channels[4];
-    // Audio Gen
-    float sample_volume_l = 0;
-    float sample_volume_r = 0;
-
-    channels[0]= sb_bandlimited_square(chan_t[0],duty1,sample_delta_t*freq_hz[0])*v[0];
-    channels[1]= sb_bandlimited_square(chan_t[1],duty2,sample_delta_t*freq_hz[1])*v[1];
-
+	//Lookup wave table value
     unsigned wav_samp = ((unsigned)(chan_t[2]*32))%32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     int offset = (wav_samp&1)? 0:4;
     dat = ((dat>>offset)&0xf)>>channel3_shift;
-
     int wav_offset = 8>>channel3_shift; 
+    
+    float channels[4];
+    channels[0] = sb_bandlimited_square(chan_t[0],duty1,sample_delta_t*freq_hz[0])*v[0];
+    channels[1] = sb_bandlimited_square(chan_t[1],duty2,sample_delta_t*freq_hz[1])*v[1];
     channels[2] = (dat-wav_offset)/8.;
     channels[3] = last_noise_value*v[3];
 
+    //Mix channels
+    float sample_volume_l = 0;
+    float sample_volume_r = 0;
     for(int i=0;i<4;++i){
       sample_volume_l+=channels[i]*chan_l[i];
       sample_volume_r+=channels[i]*chan_r[i];
