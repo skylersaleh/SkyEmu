@@ -889,16 +889,20 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     return true;
   }else if(address==GBA_HALTCNT){
     gba->halt = true;
-  }else if(address==GBA_FIFO_A){
+  }else if(address_u32==GBA_FIFO_A){
     gba_audio_fifo_push(gba,0,SB_BFE(word_data,0,8));
     gba_audio_fifo_push(gba,0,SB_BFE(word_data,8,8));
     gba_audio_fifo_push(gba,0,SB_BFE(word_data,16,8));
     gba_audio_fifo_push(gba,0,SB_BFE(word_data,24,8));
-  }else if(address==GBA_FIFO_B){
+  }else if(address_u32==GBA_FIFO_B){
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,0,8));
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,8,8));
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,16,8));
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,24,8));
+  }else if(address_u32==GBA_DMA1SAD){
+    printf("Write DMA1: %08x\n",word_data);
+  }else if(address_u32==GBA_DMA2SAD){
+    printf("Write DMA2: %08x\n",word_data);
   }
   return false;
 }
@@ -975,7 +979,7 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   if(lcd_x==262||lcd_x==0||lcd_x==240){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-    bool vblank = lcd_y>=160&&lcd_y<=227;
+    bool vblank = lcd_y>=160&&lcd_y<227;
     bool hblank = lcd_x>=240&&lcd_y<160;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
@@ -995,7 +999,6 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       gba->ppu.last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
-        printf("Trigger LCD_y: %d=%d\n",lcd_y,vcount_cmp);
         new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
     }
@@ -1307,11 +1310,24 @@ int gba_tick_dma(gba_t*gba){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
     if(enable){
+      bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
+
+      if(!gba->dma[i].last_enable){
+        gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
+        gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
+        //GBA Suite says that these need to be force aligned
+        if(type){
+          gba->dma[i].dest_addr&=~3;
+          gba->dma[i].source_addr&=~3;
+        }else{
+          gba->dma[i].dest_addr&=~1;
+          gba->dma[i].source_addr&=~1;
+        }
+      }
       
       int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
       int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
       bool dma_repeat = SB_BFE(cnt_h,9,1); 
-      bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
       int  mode = SB_BFE(cnt_h,12,2);
       bool irq_enable = SB_BFE(cnt_h,14,1);
         
@@ -1333,21 +1349,14 @@ int gba_tick_dma(gba_t*gba){
       if(dst_addr_ctl==1)dst_dir=-1;
       else if(dst_addr_ctl==2)dst_dir=0;
 
-      uint32_t src = gba_io_read32(gba,GBA_DMA0SAD+12*i);
-      uint32_t dst = gba_io_read32(gba,GBA_DMA0DAD+12*i);
+      uint32_t src = gba->dma[i].source_addr;
+      uint32_t dst = gba->dma[i].dest_addr;
+
       uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
 
       if(i!=3)cnt&=0x3fff;
       if(cnt==0)cnt = i==3? 0x10000: 0x4000;
 
-      //GBA Suite says that these need to be force aligned
-      if(type){
-        dst&=~3;
-        src&=~3;
-      }else{
-        dst&=~1;
-        src&=~1;
-      }
       bool skip_dma = false;
       // EEPROM DMA transfers
       if(i==3 && gba->cart.backup_type==GBA_BACKUP_EEPROM){
@@ -1405,7 +1414,7 @@ int gba_tick_dma(gba_t*gba){
         if(fifo == -1)continue;
         int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
         if(size>=15)continue;
-        printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
+        //printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
         for(int x=0;x<4;++x){
           uint32_t data = gba_read32(gba,src+x*4*src_dir);
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,0,8));
@@ -1432,8 +1441,9 @@ int gba_tick_dma(gba_t*gba){
       if(src_addr_ctl==0)     src+=cnt*transfer_bytes*src_dir;
       else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
       
-      gba_io_store32(gba,GBA_DMA0DAD+12*i,dst);
-      gba_io_store32(gba,GBA_DMA0SAD+12*i,src);
+      src = gba->dma[i].source_addr=src;
+      dst = gba->dma[i].dest_addr=dst;
+
       
       if(irq_enable){
         uint16_t if_val = gba_io_read16(gba,GBA_IF);
@@ -1508,7 +1518,7 @@ void gba_tick_timers(gba_t* gba, int ticks){
         prescale_time = prescale_time&((1<<prescale_duty)-1);
         int v = value+increment;
         while(v>0xffff){
-          v=(v+gba->timers[t].reload_value)-0xffff;
+          v=(v+gba->timers[t].reload_value)-0x10000;
           last_timer_overflow++;
           gba->timers[t].elapsed_audio_samples++;
         }
@@ -1686,7 +1696,7 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
   14    R/W  DMA Sound B Timer Select (0=Timer 0, 1=Timer 1)
   15    W?   DMA Sound B Reset FIFO   (1=Reset)*/ 
   float psg_volume_lookup[4]={0.25,0.5,1.0,0.};
-  float psg_volume = psg_volume_lookup[SB_BFE(soundcnt_h,0,2)];
+  float psg_volume = psg_volume_lookup[SB_BFE(soundcnt_h,0,2)]*0.25;
 
   float r_vol = SB_BFE(chan_sel,0,3)/7.*psg_volume;
   float l_vol = SB_BFE(chan_sel,4,3)/7.*psg_volume;
@@ -1812,7 +1822,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   int frames_to_render= gba->ppu.last_vblank?1:2; 
 
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    printf("New frame\n");
+    //printf("New frame\n");
     gba_tick_keypad(&emu->joy,gba);
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
@@ -1847,7 +1857,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           ticks = gba->mem.requests; 
         }
       }
-      ticks = 1;
       for(int t = 0;t<ticks;++t){
         gba_tick_ppu(gba,1,frames_to_render<=0);
         gba_tick_sio(gba);
