@@ -894,6 +894,16 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
     sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
     GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[i], 0, 1);
   } 
+  if(emu_state.system==SYSTEM_GBA){
+    inside_rect = sb_draw_label(inside_rect,TextFormat("FIFO Channel A"));
+    sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
+    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[4], 0, 1);
+
+    inside_rect = sb_draw_label(inside_rect,TextFormat("FIFO Channel B"));
+    sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
+    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[5], 0, 1);
+  }
+
   inside_rect = sb_draw_label(inside_rect, "Mix Volume (R)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
   GuiProgressBar(widget_rect, "", "", emu_state.mix_r_volume, 0, 1);
@@ -939,17 +949,17 @@ void sb_draw_sidebar(Rectangle rect) {
   if(last_rect.height < rect_inside.height){
     last_rect.width = rect_inside.width-5;
   }else last_rect.width=rect_inside.width- GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH)-5;
-// BeginScissor is broken on non-web platforms... TODO: File bug report            
-#ifdef PLATFORM_WEB
   Rectangle view = GuiScrollPanel(rect_inside, last_rect, &scroll);
   Vector2 view_scale = GetWindowScaleDPI();
+  //Begin scissor is broken on non-web platforms
+#ifdef PLATFORM_WEB
   BeginScissorMode(view.x*view_scale.x, view.y*view_scale.y,view.width*view_scale.x, view.height*view_scale.y);
+#endif
   rect_inside.y+=scroll.y;
   int starty = rect_inside.y;
   rect_inside.y+=GUI_PADDING; 
   rect_inside.x+=GUI_PADDING;
   rect_inside.width = view.width-GUI_PADDING*1.5;
-#endif
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS){
     rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
   }else if(emu_state.panel_mode==SB_PANEL_IO){
@@ -970,9 +980,9 @@ void sb_draw_sidebar(Rectangle rect) {
   }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
     rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
   }
-#ifdef PLATFORM_WEB
   last_rect.width = view.width-GUI_PADDING;
   last_rect.height = rect_inside.y-starty;
+#ifdef PLATFORM_WEB
   EndScissorMode();
 #endif
 }
@@ -1450,7 +1460,7 @@ int main(void) {
   const int screenHeight = 700;
 
   // Set configuration flags for window creation
-  SetConfigFlags(FLAG_VSYNC_HINT  |FLAG_WINDOW_HIGHDPI| FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
+  SetConfigFlags(FLAG_VSYNC_HINT  | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
   InitWindow(screenWidth, screenHeight, "SkyBoy");
   SetTraceLogLevel(LOG_WARNING);
   ShowCursor();

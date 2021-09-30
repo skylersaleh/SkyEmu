@@ -76,7 +76,7 @@ typedef struct {
   int frame;
   double avg_frame_time; 
   sb_ring_buffer_t audio_ring_buff;
-  float audio_channel_output[4];
+  float audio_channel_output[6];
   float mix_l_volume, mix_r_volume;
   float master_volume;
 } sb_emu_state_t;
@@ -147,9 +147,6 @@ inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
   v= v%SB_AUDIO_RING_BUFFER_SIZE;
   return v;
 }
-typedef struct{
-  
-}sb_audio_t;
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
@@ -157,7 +154,6 @@ typedef struct {
   sb_lcd_ppu_t lcd;
   sb_timer_t timers;
   sb_dma_t dma; 
-  sb_audio_t audio;
   int model; 
 } sb_gb_t;  
 
