@@ -46,6 +46,7 @@
 #define SB_PANEL_TILEMAPS 1
 #define SB_PANEL_TILEDATA 2
 #define SB_PANEL_AUDIO    3
+#define SB_PANEL_IO       4
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
@@ -59,6 +60,11 @@ typedef struct{
   bool l, r; 
 } sb_joy_t;
   
+typedef struct{
+  int16_t data[SB_AUDIO_RING_BUFFER_SIZE];
+  uint32_t read_ptr;
+  uint32_t write_ptr;
+}sb_ring_buffer_t;
 typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
@@ -69,6 +75,10 @@ typedef struct {
   sb_joy_t joy;
   int frame;
   double avg_frame_time; 
+  sb_ring_buffer_t audio_ring_buff;
+  float audio_channel_output[4];
+  float mix_l_volume, mix_r_volume;
+  float master_volume;
 } sb_emu_state_t;
 
 typedef struct {
@@ -128,11 +138,6 @@ typedef struct{
   int clocks_till_tima_inc;
 } sb_timer_t;
 
-typedef struct{
-  int16_t data[SB_AUDIO_RING_BUFFER_SIZE];
-  uint32_t read_ptr;
-  uint32_t write_ptr;
-}sb_ring_buffer_t;
 inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
   if(buff->read_ptr>SB_AUDIO_RING_BUFFER_SIZE){
     buff->write_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
@@ -143,10 +148,7 @@ inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
   return v;
 }
 typedef struct{
-  float channel_output[4];
-  float mix_l_volume, mix_r_volume;
-  float master_volume;
-  sb_ring_buffer_t ring_buff;
+  
 }sb_audio_t;
 typedef struct {
   sb_gb_cartridge_t cart;

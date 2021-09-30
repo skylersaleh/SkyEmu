@@ -79,7 +79,7 @@
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
-void sb_process_audio(sb_gb_t *gb, double delta_time);
+void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
 inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x4000&&addr<=0x7fff){
@@ -771,7 +771,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     float frame_time = emu->avg_frame_time;
     static float avg_frame_time = 1.0/60.*1.00;
     avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
-    int size = sb_ring_buffer_size(&gb->audio.ring_buff);
+    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
     int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     float buffs_available = size/(float)(samples_per_buffer);
     float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
@@ -891,8 +891,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         }
         if(vblank){--frames_to_draw;emu->frame++;}
         
-        sb_process_audio(gb,delta_t);
-        int size = sb_ring_buffer_size(&gb->audio.ring_buff);
+        sb_process_audio(gb,emu,delta_t);
+        int size = sb_ring_buffer_size(&emu->audio_ring_buff);
         
        //if(size> SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*3)break;
        if(frames_to_draw<=0&& emu->step_instructions ==0 )break;
@@ -931,7 +931,7 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
   y += sb_polyblep(t2,dt);
   return y;
 }
-void sb_process_audio(sb_gb_t *gb, double delta_time){
+void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
   float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
@@ -970,7 +970,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   volume_env[0] = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   length[0] = (64.-SB_BFE(length_duty1,0,6))/256.;
-  if(SB_BFE(freq1_hi,7,1)){chan_t[0]=0.f;length_t[0] = 0;}
+  if(SB_BFE(freq1_hi,7,1)){length_t[0] = 0;}
   if(SB_BFE(freq1_hi,6,1)==0){length[0] = 1.0e9;}
   freq1_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI,freq1_hi);
@@ -986,7 +986,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
   length[1] = (64.-SB_BFE(length_duty2,0,6))/256.;
 
-  if(SB_BFE(freq2_hi,7,1)){chan_t[1]=0.f; length_t[1]=0;}
+  if(SB_BFE(freq2_hi,7,1)){ length_t[1]=0;}
   if(SB_BFE(freq2_hi,6,1)==0){length[1] = 1.0e9;}
   freq2_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD2_FREQ_HI,freq2_hi);
@@ -1002,7 +1002,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   length[2] = (256.-length3_dat)/256.;
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
-  if(SB_BFE(freq3_hi,7,1)){chan_t[2]=0.f;length_t[2]=0.f;}
+  if(SB_BFE(freq3_hi,7,1)){length_t[2]=0.f;}
   if(SB_BFE(freq3_hi,6,1)==0){length[2] = 1.0e9;}
   freq3_hi &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD3_FREQ_HI,freq3_hi);
@@ -1018,7 +1018,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
   volume[3] = SB_BFE(vol_env4,4,4)/15.f;
   volume_env[3] = compute_vol_env_slope(vol_env4);
   length[3] = (64.-SB_BFE(length_duty4,0,6))/256.;
-  if(SB_BFE(counter4,7,1)){chan_t[3]=0.f;length_t[3] = 0;}
+  if(SB_BFE(counter4,7,1)){length_t[3] = 0;}
   if(SB_BFE(counter4,6,1)==0){length[3] = 1.0e9;}
   counter4 &=0x7f;
   sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
@@ -1035,7 +1035,7 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
 
     current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
     
-    if((sb_ring_buffer_size(&gb->audio.ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     //Advance each channel    
     freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
@@ -1080,11 +1080,11 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     sample_volume_r*=0.25;
      
     const float lowpass_coef = 0.999;
-    gb->audio.mix_l_volume = gb->audio.mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
-    gb->audio.mix_r_volume = gb->audio.mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
+    emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
+    emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
     
     for(int i=0;i<4;++i){
-      gb->audio.channel_output[i] = gb->audio.channel_output[i]*lowpass_coef 
+      emu->audio_channel_output[i] = emu->audio_channel_output[i]*lowpass_coef 
                                   + fabs(channels[i])*(1.0-lowpass_coef); 
     }
     // Clipping
@@ -1097,10 +1097,10 @@ void sb_process_audio(sb_gb_t *gb, double delta_time){
     capacitor_l = (sample_volume_l-out_l)*0.996;
     capacitor_r = (sample_volume_r-out_r)*0.996;
     // Quantization
-    unsigned write_entry0 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
-    unsigned write_entry1 = (gb->audio.ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
 
-    gb->audio.ring_buff.data[write_entry0] = out_l*32760;
-    gb->audio.ring_buff.data[write_entry1] = out_r*32760;
+    emu->audio_ring_buff.data[write_entry0] = out_l*32760;
+    emu->audio_ring_buff.data[write_entry1] = out_r*32760;
   }
 }

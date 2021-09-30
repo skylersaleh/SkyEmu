@@ -97,10 +97,21 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
   Rectangle state_rect, adv_rect;
   if(!top_panel){
     GuiLabel(widget_rect, "Panel Mode");
-    widget_rect.width =
-        widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
-    emu_state->panel_mode =
-        GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
+    if(emu_state->system == SYSTEM_GB){
+      widget_rect.width = widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
+      emu_state->panel_mode =
+          GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
+    }else{
+      widget_rect.width = widget_rect.width / 3 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 2 / 3;
+      const int button_state[]={SB_PANEL_CPU,SB_PANEL_IO,SB_PANEL_AUDIO,-1};
+      int curr_button = 0;
+      for(int i=0;i<sizeof(button_state)/sizeof(button_state[0]);++i)
+        if(button_state[i]==emu_state->panel_mode)curr_button = i;
+
+      curr_button = GuiToggleGroup(widget_rect, "CPU;IO Regs;Audio", curr_button);
+      emu_state->panel_mode=button_state[curr_button];
+
+    }
 
     sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
                     &adv_rect);
@@ -651,96 +662,36 @@ void sb_poll_controller_input(sb_joy_t* joy){
   joy->r = IsKeyDown(KEY_I);
 }
 
-Rectangle gba_draw_tile_map_state(Rectangle rect, gba_t* gba){
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  uint16_t dispcnt = gba_read16(gba, GBA_DISPCNT);
+Rectangle gba_draw_io_state(Rectangle rect, gba_t* gba){
+  for(int i = 0; i<sizeof(gba_io_reg_desc)/sizeof(gba_io_reg_desc[0]);++i){
+    Rectangle r = sb_inside_rect_after_padding(rect, GUI_PADDING);
+    uint32_t addr = gba_io_reg_desc[i].addr;
+    uint16_t data = gba_read16(gba, addr);
+    bool has_fields = false;
+    for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
+      uint32_t start = gba_io_reg_desc[i].bits[f].start; 
+      uint32_t size = gba_io_reg_desc[i].bits[f].size; 
+      if(size){
+        uint32_t field_data = SB_BFE(data,start,size);
+        has_fields=true;
+        Rectangle r2 = r; 
+        if(size>1)r=sb_draw_label(r, TextFormat("[%d:%d]:", start, start+size-1));
+        else r=sb_draw_label(r, TextFormat("%d:", start));
 
-  Rectangle r =inside_rect;
-  r=sb_draw_label(r, TextFormat("IE:%08x", gba_read16(gba, GBA_IE)));
-  r=sb_draw_label(r, TextFormat("IF:%08x", gba_read16(gba, GBA_IF)));
-
-  r=sb_draw_label(r, "DISPCNT");
-  r=sb_draw_label(r, TextFormat("  Mode:%d  Frame:%d HBFree:%d OBJMAP:%d FBLNK:%d",
-                                       SB_BFE(dispcnt,0,3),SB_BFE(dispcnt,3,1),SB_BFE(dispcnt,4,1),SB_BFE(dispcnt,5,1),
-                                       SB_BFE(dispcnt,6,1),SB_BFE(dispcnt,7,1)));
-
-  r=sb_draw_label(r, TextFormat("  Bg0En:%d Bg1En:%d Bg2En:%d  Bg3En:%d  ObjEn:%d W0En:%d W1En:%d ObjWinEn:%d",
-                                       SB_BFE(dispcnt,8,1),SB_BFE(dispcnt,9,1),SB_BFE(dispcnt,10,1),
-                                       SB_BFE(dispcnt,11,1),SB_BFE(dispcnt,12,1),SB_BFE(dispcnt,13,1),SB_BFE(dispcnt,14,1),SB_BFE(dispcnt,15,1))); 
-  
-  for(int w=0;w<2;++w){
-    uint8_t win_y0 = gba_read8(gba,GBA_WIN0H+w*2);
-    uint8_t win_y1 = gba_read8(gba,GBA_WIN0H+1+w*2);
-
-    uint8_t win_x0 = gba_read8(gba,GBA_WIN0V+w*2);
-    uint8_t win_x1 = gba_read8(gba,GBA_WIN0V+1+w*2);
-
-    r=sb_draw_label(r, TextFormat("WIN%d: x0:%d x1:%d y0:%d y1:%d",w,win_x0,win_x1,win_y0,win_y1));
-
-  }
-  for(int bg=0;bg<4;++bg){
-    r=sb_draw_label(r,TextFormat("BG%dCNT",bg));
-    uint16_t bgcnt = gba_read16(gba, GBA_BG0CNT+2*bg);
-  
-    r=sb_draw_label(r, TextFormat("  Priority:%d  CharBase:%d Mosaic:%d Colors:%d ScreenBase:%d",
-                                       SB_BFE(bgcnt,0,2),SB_BFE(bgcnt,2,4),SB_BFE(bgcnt,6,1),SB_BFE(bgcnt,7,1),
-                                       SB_BFE(bgcnt,8,5)));
-   
-    r=sb_draw_label(r, TextFormat("  OverflowMode:%d  ScreenSize:%d",
-                                       SB_BFE(bgcnt,13,1),SB_BFE(bgcnt,14,2)));
-
-    uint16_t x_off = gba_read16(gba,GBA_BG0HOFS+4*bg);
-    uint16_t y_off = gba_read16(gba,GBA_BG0VOFS+4*bg);
-
-    r=sb_draw_label(r, TextFormat("BG%dHOFS:%d  BG%dVOFS:%d",bg,SB_BFE(x_off,0,9),bg,SB_BFE(y_off,0,9)));
-    if(bg>=2){
-      int32_t bgx = gba_read32(gba,GBA_BG2X+(bg-2)*0x10);
-      int32_t bgy = gba_read32(gba,GBA_BG2Y+(bg-2)*0x10);
-      
-      //Convert signed magnitude to 2's complement
-      bgx = SB_BFE(bgx,0,28);
-      bgy = SB_BFE(bgy,0,28);
-
-      bgx = (bgx<<4)>>4;
-      bgy = (bgy<<4)>>4;
-
-      int32_t a = gba_read16(gba,GBA_BG2PA+(bg-2)*0x10);
-      int32_t b = gba_read16(gba,GBA_BG2PB+(bg-2)*0x10);
-      int32_t c = gba_read16(gba,GBA_BG2PC+(bg-2)*0x10);
-      int32_t d = gba_read16(gba,GBA_BG2PD+(bg-2)*0x10);
- 
-      //Convert signed magnitude to 2's complement
-      a = SB_BFE(a,0,15)*(SB_BFE(a,15,1)?-1:1);
-      b = SB_BFE(b,0,15)*(SB_BFE(b,15,1)?-1:1);
-      c = SB_BFE(c,0,15)*(SB_BFE(c,15,1)?-1:1);
-      d = SB_BFE(d,0,15)*(SB_BFE(d,15,1)?-1:1); 
-
-      float bgx_v = bgx/256.;
-      float bgy_v = bgy/256.;
-
- 
-      float a_v = a/256.;
-      float b_v = b/256.;
-      float c_v = c/256.;
-      float d_v = d/256.;
-
-      
-      r=sb_draw_label(r, TextFormat("  BGX:%f  BGY:%f",bgx_v,bgy_v));
-      r=sb_draw_label(r, TextFormat("  A:%f B:%f C:%f D:%f",a_v,b_v,c_v,d_v));
-      
+        r2.x+=30; 
+        sb_draw_label(r2, TextFormat("%2d",field_data));
+        r2.x+=25; 
+        sb_draw_label(r2, TextFormat("%s",gba_io_reg_desc[i].bits[f].name));
+      }
     }
-                                        
+    Rectangle state_rect, adv_rect;
+    sb_vertical_adv(rect, r.y - rect.y, GUI_PADDING, &state_rect, &adv_rect);
+    GuiGroupBox(state_rect, TextFormat("%s(%08x): %04x", gba_io_reg_desc[i].name, addr,data)); 
+    rect=adv_rect;
   }
-
-  inside_rect = r; 
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "LCD State"); 
-  return adv_rect;
+  return rect;
 }
 Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
-  if(emu_state.system == SYSTEM_GBA) return gba_draw_tile_map_state(rect, &gba); 
   static uint8_t tmp_image[512*512*3];
   Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
   Rectangle widget_rect;
@@ -933,7 +884,7 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
 
   sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
 
-  float fifo_size = sb_ring_buffer_size(&gb->audio.ring_buff);
+  float fifo_size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
   GuiLabel(widget_rect, TextFormat("FIFO Size: %4f (%4f)", fifo_size,fifo_size/SB_AUDIO_RING_BUFFER_SIZE));
 
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
@@ -941,15 +892,15 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   for(int i=0;i<4;++i){
     inside_rect = sb_draw_label(inside_rect,TextFormat("Channel %d",i+1));
     sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-    GuiProgressBar(widget_rect, "", "", gb->audio.channel_output[i], 0, 1);
+    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[i], 0, 1);
   } 
   inside_rect = sb_draw_label(inside_rect, "Mix Volume (R)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  GuiProgressBar(widget_rect, "", "", gb->audio.mix_r_volume, 0, 1);
+  GuiProgressBar(widget_rect, "", "", emu_state.mix_r_volume, 0, 1);
    
   inside_rect = sb_draw_label(inside_rect, "Mix Volume (L)");
   sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  GuiProgressBar(widget_rect, "", "", gb->audio.mix_l_volume, 0, 1);
+  GuiProgressBar(widget_rect, "", "", emu_state.mix_l_volume, 0, 1);
    
   inside_rect = sb_draw_label(inside_rect, "Output Waveform");
    
@@ -961,8 +912,8 @@ Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
   int old_v = 0;
   static Vector2 points[512];
   for(int i=0;i<widget_rect.width;++i){
-    int entry = (gb->audio.ring_buff.read_ptr+i)%SB_AUDIO_RING_BUFFER_SIZE;
-    int value = gb->audio.ring_buff.data[entry]/256/2;
+    int entry = (emu_state.audio_ring_buff.read_ptr+i)%SB_AUDIO_RING_BUFFER_SIZE;
+    int value = emu_state.audio_ring_buff.data[entry]/256/2;
     points[i]= (Vector2){widget_rect.x+i,widget_rect.y+64+value};
     old_v=value;
   }
@@ -1001,6 +952,8 @@ void sb_draw_sidebar(Rectangle rect) {
 #endif
   if(emu_state.panel_mode==SB_PANEL_TILEMAPS){
     rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
+  }else if(emu_state.panel_mode==SB_PANEL_IO){
+    rect_inside = gba_draw_io_state(rect_inside, &gba);
   }else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
   else if(emu_state.panel_mode==SB_PANEL_CPU){
     rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
@@ -1030,7 +983,7 @@ void sb_draw_top_panel(Rectangle rect) {
 
 void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
   static int16_t audio_buff[SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*2];
-  int size = sb_ring_buffer_size(&gb->audio.ring_buff);
+  int size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
   if(global_mute){
     if(IsAudioStreamProcessed(audio_stream)){
       for(int i=0;i<SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;++i)audio_buff[i]=0;
@@ -1042,9 +995,9 @@ void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
     for(int i=0; i< SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS; ++i){
     
       unsigned read_entry =0;
-      if(sb_ring_buffer_size(&gb->audio.ring_buff)>0)
-        read_entry=(gb->audio.ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
-      audio_buff[i]= gb->audio.ring_buff.data[read_entry];
+      if(sb_ring_buffer_size(&emu_state.audio_ring_buff)>0)
+        read_entry=(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+      audio_buff[i]= emu_state.audio_ring_buff.data[read_entry];
     }
 
     UpdateAudioStream(audio_stream, audio_buff, SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS);

@@ -3,6 +3,7 @@
 
 #include "sb_types.h"
 #include <string.h>
+#include <math.h>
 
 #include "arm7.h"
 #include "gba_bios.h"
@@ -139,6 +140,374 @@
 // #define GBA_?       0x4xx0800      /* R/W  ?         Mirrors of 4000800h (repeated each 64K) */
 // #define GBA_(3DS)   0x4700000      /* W    (3DS)     Disable ARM7 bootrom overlay (3DS only) */
 
+typedef struct{
+  uint32_t addr;
+  const char * name;
+  struct{
+    uint8_t start;
+    uint8_t size;
+    const char* name; 
+  } bits[16]; 
+}mmio_reg_t; 
+
+mmio_reg_t gba_io_reg_desc[]={
+  // Interrupt, Waitstate, and Power-Down Control
+  { GBA_IE     , "IE", {
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 7 , 1, "Serial Communication" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "Game Pak (ext)" },
+  } },      /* R/W  IE        Interrupt Enable Register */
+  { GBA_IF     , "IF", {
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 7 , 1, "Serial Communication" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "Game Pak (ext)" },
+  } },      /* R/W  IF        Interrupt Request Flags / IRQ Acknowledge */
+  { GBA_WAITCNT, "WAITCNT", {
+    { 0,2,  "SRAM Wait Control (0..3 = 4,3,2,8 cycles)" },
+    { 2,2,  "Wait State 0 First Access (0..3 = 4,3,2,8 cycles)" },
+    { 4,1,  "Wait State 0 Second Access (0..1 = 2,1 cycles)" },
+    { 5,2,  "Wait State 1 First Access (0..3 = 4,3,2,8 cycles)" },
+    { 7,1,  "Wait State 1 Second Access (0..1 = 4,1 cycles)" },
+    { 8,2,  "Wait State 2 First Access (0..3 = 4,3,2,8 cycles)" },
+    { 10,1, "Wait State 2 Second Access (0..1 = 8,1 cycles)" },
+    { 11,2, "PHI Terminal Output (0..3 = Disable, 4.19MHz, 8.38MHz, 16.78MHz)" },
+    { 14,1, "Game Pak Prefetch Buffer (0=Disable, 1=Enable)" },
+    { 15,1, "Game Pak Type Flag (0=GBA, 1=CGB) (IN35 signal)" },
+  } },      /* R/W  WAITCNT   Game Pak Waitstate Control */
+  { GBA_IME    , "IME", {} },      /* R/W  IME       Interrupt Master Enable Register */
+  { GBA_POSTFLG, "POSTFLG", {} },      /* R/W  POSTFLG   Undocumented - Post Boot Flag */
+  { GBA_HALTCNT, "HALTCNT", {} }, 
+
+  { GBA_DISPCNT , "DISPCNT ", { 
+    { 0, 3, "BG Mode (0-5=Video Mode 0-5, 6-7=Prohibited)"},
+    { 3 ,1, "Reserved / CGB Mode (0=GBA, 1=CGB)"},
+    { 4 ,1, "Display Frame Select (0-1=Frame 0-1)"},
+    { 5 ,1, "H-Blank Interval Free (1=Allow access to OAM during H-Blank)"},
+    { 6 ,1, "OBJ Character VRAM Mapping (0=2D, 1=1D"},
+    { 7 ,1, "Forced Blank (1=Allow FAST VRAM,Palette,OAM)"},
+    { 8 ,1, "Screen Display BG0 (0=Off, 1=On)"},
+    { 9 ,1, "Screen Display BG1 (0=Off, 1=On)"},
+    { 10,1, "Screen Display BG2 (0=Off, 1=On)"},
+    { 11,1, "Screen Display BG3 (0=Off, 1=On)"},
+    { 12,1, "Screen Display OBJ (0=Off, 1=On)"},
+    { 13,1, "Window 0 Display Flag (0=Off, 1=On)"},
+    { 14,1, "Window 1 Display Flag (0=Off, 1=On)"},
+    { 15,1, "OBJ Window Display Flag (0=Off, 1=On)"},
+  } },
+  { GBA_GREENSWP, "GREENSWP", { {0, 1, "Green Swap  (0=Normal, 1=Swap)" }} }, /* R/W Undocumented - Green Swap */
+  { GBA_DISPSTAT, "DISPSTAT", { 
+    { 0,1, "V-Blank flag (1=VBlank) (set in line 160..226; not 227",},
+    { 1,1, "H-Blank flag (1=HBlank) (toggled in all lines, 0..227",},
+    { 2,1, "V-Counter flag (1=Match) (set in selected line)",},
+    { 3,1, "V-Blank IRQ Enable (1=Enable)",},
+    { 4,1, "H-Blank IRQ Enable (1=Enable)",},
+    { 5,1, "V-Counter IRQ Enable (1=Enable)",},
+    { 6,1, "DSi: LCD Initialization Ready (0=Busy, 1=Ready",},
+    { 7,1, "NDS: MSB of V-Vcount Setting (LYC.Bit8) (0..262",},
+    { 8,8, "V-Count Setting (LYC) (0..227)",},
+
+  } }, /* R/W General LCD Status (STAT,LYC) */
+  { GBA_VCOUNT  , "VCOUNT  ", { } }, /* R   Vertical Counter (LY) */
+  { GBA_BG0CNT  , "BG0CNT  ", { 
+    { 0,2 , "BG Priority (0-3, 0=Highest)"},
+    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
+    { 4,2 , "NDS: MSBs of char base"},
+    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
+    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
+    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
+    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
+    { 14,1, "Screen Size (0-3)"},
+  } }, /* R/W BG0 Control */
+  { GBA_BG1CNT  , "BG1CNT  ", { 
+    { 0,2 , "BG Priority (0-3, 0=Highest)"},
+    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
+    { 4,2 , "NDS: MSBs of char base"},
+    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
+    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
+    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
+    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
+    { 14,1, "Screen Size (0-3)"},
+  } }, /* R/W BG1 Control */
+  { GBA_BG2CNT  , "BG2CNT  ", { 
+    { 0,2 , "BG Priority (0-3, 0=Highest)"},
+    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
+    { 4,2 , "NDS: MSBs of char base"},
+    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
+    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
+    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
+    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
+    { 14,1, "Screen Size (0-3)"},
+  } }, /* R/W BG2 Control */
+  { GBA_BG3CNT  , "BG3CNT  ", { 
+    { 0,2 , "BG Priority (0-3, 0=Highest)"},
+    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
+    { 4,2 , "NDS: MSBs of char base"},
+    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
+    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
+    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
+    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
+    { 14,1, "Screen Size (0-3)"},
+  } }, /* R/W BG3 Control */
+  { GBA_BG0HOFS , "BG0HOFS", { } }, /* W   BG0 X-Offset */
+  { GBA_BG0VOFS , "BG0VOFS", { } }, /* W   BG0 Y-Offset */
+  { GBA_BG1HOFS , "BG1HOFS", { } }, /* W   BG1 X-Offset */
+  { GBA_BG1VOFS , "BG1VOFS", { } }, /* W   BG1 Y-Offset */
+  { GBA_BG2HOFS , "BG2HOFS", { } }, /* W   BG2 X-Offset */
+  { GBA_BG2VOFS , "BG2VOFS", { } }, /* W   BG2 Y-Offset */
+  { GBA_BG3HOFS , "BG3HOFS", { } }, /* W   BG3 X-Offset */
+  { GBA_BG3VOFS , "BG3VOFS", { } }, /* W   BG3 Y-Offset */
+  { GBA_BG2PA   , "BG2PA", { } }, /* W   BG2 Rotation/Scaling Parameter A (dx) */
+  { GBA_BG2PB   , "BG2PB", { } }, /* W   BG2 Rotation/Scaling Parameter B (dmx) */
+  { GBA_BG2PC   , "BG2PC", { } }, /* W   BG2 Rotation/Scaling Parameter C (dy) */
+  { GBA_BG2PD   , "BG2PD", { } }, /* W   BG2 Rotation/Scaling Parameter D (dmy) */
+  { GBA_BG2X    , "BG2X", { } }, /* W   BG2 Reference Point X-Coordinate */
+  { GBA_BG2Y    , "BG2Y", { } }, /* W   BG2 Reference Point Y-Coordinate */
+  { GBA_BG3PA   , "BG3PA", { } }, /* W   BG3 Rotation/Scaling Parameter A (dx) */
+  { GBA_BG3PB   , "BG3PB", { } }, /* W   BG3 Rotation/Scaling Parameter B (dmx) */
+  { GBA_BG3PC   , "BG3PC", { } }, /* W   BG3 Rotation/Scaling Parameter C (dy) */
+  { GBA_BG3PD   , "BG3PD", { } }, /* W   BG3 Rotation/Scaling Parameter D (dmy) */
+  { GBA_BG3X    , "BG3X", { } }, /* W   BG3 Reference Point X-Coordinate */
+  { GBA_BG3Y    , "BG3Y", { } }, /* W   BG3 Reference Point Y-Coordinate */
+  { GBA_WIN0H   , "WIN0H", {  
+    { 0, 8, "X2, Rightmost coordinate of window, plus 1 " },
+    { 8, 8,  "X1, Leftmost coordinate of window"}, 
+  } }, /* W   Window 0 Horizontal Dimensions */
+  { GBA_WIN1H   , "WIN1H", { 
+    { 0, 8, "X2, Rightmost coordinate of window, plus 1 " },
+    { 8, 8, "X1, Leftmost coordinate of window"}, 
+  } }, /* W   Window 1 Horizontal Dimensions */
+  { GBA_WIN0V   , "WIN0V", { 
+    {0, 8,  "Y2, Bottom-most coordinate of window, plus 1" },
+    {8, 8,  "Y1, Top-most coordinate of window" },
+  } }, /* W   Window 0 Vertical Dimensions */
+  { GBA_WIN1V   , "WIN1V", { 
+    {0, 8,  "Y2, Bottom-most coordinate of window, plus 1" },
+    {8, 8,  "Y1, Top-most coordinate of window" },
+  } }, /* W   Window 1 Vertical Dimensions */
+  { GBA_WININ   , "WININ", {
+    { 0 , 1,  "Window 0 BG0 Enable Bits (0=No Display, 1=Display)"},
+    { 1 , 1,  "Window 0 BG1 Enable Bits (0=No Display, 1=Display)"},
+    { 2 , 1,  "Window 0 BG2 Enable Bits (0=No Display, 1=Display)"},
+    { 3 , 1,  "Window 0 BG3 Enable Bits (0=No Display, 1=Display)"},
+    { 4 , 1,  "Window 0 OBJ Enable Bit (0=No Display, 1=Display)"},
+    { 5 , 1,  "Window 0 Color Special Effect (0=Disable, 1=Enable)"},
+    { 8 , 1,  "Window 1 BG0 Enable Bits (0=No Display, 1=Display)"},
+    { 9 , 1,  "Window 1 BG1 Enable Bits (0=No Display, 1=Display)"},
+    { 10, 1,  "Window 1 BG2 Enable Bits (0=No Display, 1=Display)"},
+    { 11, 1,  "Window 1 BG3 Enable Bits (0=No Display, 1=Display)"},
+    { 12, 1,  "Window 1 OBJ Enable Bit (0=No Display, 1=Display)"},
+    { 13, 1,  "Window 1 Color Special Effect (0=Disable, 1=Enable)"},
+  } }, /* R/W Inside of Window 0 and 1 */
+  { GBA_WINOUT  , "WINOUT", { 
+    { 0 , 1,  "Window 0 BG0 Enable Bits (0=No Display, 1=Display)"},
+    { 1 , 1,  "Window 0 BG1 Enable Bits (0=No Display, 1=Display)"},
+    { 2 , 1,  "Window 0 BG2 Enable Bits (0=No Display, 1=Display)"},
+    { 3 , 1,  "Window 0 BG3 Enable Bits (0=No Display, 1=Display)"},
+    { 4 , 1,  "Window 0 OBJ Enable Bit (0=No Display, 1=Display)"},
+    { 5 , 1,  "Window 0 Color Special Effect (0=Disable, 1=Enable)"},
+    { 8 , 1,  "Window 1 BG0 Enable Bits (0=No Display, 1=Display)"},
+    { 9 , 1,  "Window 1 BG1 Enable Bits (0=No Display, 1=Display)"},
+    { 10, 1,  "Window 1 BG2 Enable Bits (0=No Display, 1=Display)"},
+    { 11, 1,  "Window 1 BG3 Enable Bits (0=No Display, 1=Display)"},
+    { 12, 1,  "Window 1 OBJ Enable Bit (0=No Display, 1=Display)"},
+    { 13, 1,  "Window 1 Color Special Effect (0=Disable, 1=Enable)"},
+  } }, /* R/W Inside of OBJ Window & Outside of Windows */
+  { GBA_MOSAIC  , "MOSAIC", { 
+    { 0, 4, "BG Mosaic H-Size (minus 1)" },
+    { 4, 4, "BG Mosaic V-Size (minus 1)" },
+    { 8, 4, "OBJ Mosaic H-Size (minus 1)" },
+    { 12,4, "OBJ Mosaic V-Size (minus 1)" },
+  } }, /* W   Mosaic Size */
+  { GBA_BLDCNT  , "BLDCNT", { 
+    { 0 , 1, "BG0 1st Target Pixel (Background 0)" },
+    { 1 , 1, "BG1 1st Target Pixel (Background 1)" },
+    { 2 , 1, "BG2 1st Target Pixel (Background 2)" },
+    { 3 , 1, "BG3 1st Target Pixel (Background 3)" },
+    { 4 , 1, "OBJ 1st Target Pixel (Top-most OBJ pixel)" },
+    { 5 , 1, "BD  1st Target Pixel (Backdrop)" },
+    { 6 , 2, "Color Effect (0: None 1: Alpha 2: Lighten 3: Darken)" },
+    { 8 , 1, "BG0 2nd Target Pixel (Background 0)" },
+    { 9 , 1, "BG1 2nd Target Pixel (Background 1)" },
+    { 10, 1, "BG2 2nd Target Pixel (Background 2)" },
+    { 11, 1, "BG3 2nd Target Pixel (Background 3)" },
+    { 12, 1, "OBJ 2nd Target Pixel (Top-most OBJ pixel)" },
+    { 13, 1, "BD  2nd Target Pixel (Backdrop)" },
+  } }, /* R/W Color Special Effects Selection */
+  { GBA_BLDALPHA, "BLDALPHA", { 
+    {0, 4, "EVA Coef. (1st Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
+    {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
+  } }, /* R/W Alpha Blending Coefficients */
+  { GBA_BLDY    , "BLDY", { } }, /* W   Brightness (Fade-In/Out) Coefficient */  
+
+  // Sound Registers
+  { GBA_SOUND1CNT_L, "SOUND1CNT_L", {} }, /* R/W   Channel 1 Sweep register       (NR10) */
+  { GBA_SOUND1CNT_H, "SOUND1CNT_H", {} }, /* R/W   Channel 1 Duty/Length/Envelope (NR11, NR12) */
+  { GBA_SOUND1CNT_X, "SOUND1CNT_X", {} }, /* R/W   Channel 1 Frequency/Control    (NR13, NR14) */
+  { GBA_SOUND2CNT_L, "SOUND2CNT_L", {} }, /* R/W   Channel 2 Duty/Length/Envelope (NR21, NR22) */
+  { GBA_SOUND2CNT_H, "SOUND2CNT_H", {} }, /* R/W   Channel 2 Frequency/Control    (NR23, NR24) */
+  { GBA_SOUND3CNT_L, "SOUND3CNT_L", {} }, /* R/W   Channel 3 Stop/Wave RAM select (NR30) */
+  { GBA_SOUND3CNT_H, "SOUND3CNT_H", {} }, /* R/W   Channel 3 Length/Volume        (NR31, NR32) */
+  { GBA_SOUND3CNT_X, "SOUND3CNT_X", {} }, /* R/W   Channel 3 Frequency/Control    (NR33, NR34) */
+  { GBA_SOUND4CNT_L, "SOUND4CNT_L", {} }, /* R/W   Channel 4 Length/Envelope      (NR41, NR42) */
+  { GBA_SOUND4CNT_H, "SOUND4CNT_H", {} }, /* R/W   Channel 4 Frequency/Control    (NR43, NR44) */
+  { GBA_SOUNDCNT_L , "SOUNDCNT_L", {} }, /* R/W   Control Stereo/Volume/Enable   (NR50, NR51) */
+  { GBA_SOUNDCNT_H , "SOUNDCNT_H", {} }, /* R/W   Control Mixing/DMA Control */
+  { GBA_SOUNDCNT_X , "SOUNDCNT_X", {} }, /* R/W   Control Sound on/off           (NR52) */
+  { GBA_SOUNDBIAS  , "SOUNDBIAS", {} }, /* BIOS  Sound PWM Control */
+  { GBA_WAVE_RAM   , "WAVE_RAM", {} }, /* R/W Channel 3 Wave Pattern RAM (2 banks!!) */
+  { GBA_FIFO_A     , "FIFO_A", {} }, /* W   Channel A FIFO, Data 0-3 */
+  { GBA_FIFO_B     , "FIFO_B", {} }, /* W   Channel B FIFO, Data 0-3 */  
+
+  // DMA Transfer Channels
+  { GBA_DMA0SAD  , "DMA0SAD", {} },   /* W    DMA 0 Source Address */
+  { GBA_DMA0DAD  , "DMA0DAD", {} },   /* W    DMA 0 Destination Address */
+  { GBA_DMA0CNT_L, "DMA0CNT_L", {} },   /* W    DMA 0 Word Count */
+  { GBA_DMA0CNT_H, "DMA0CNT_H", {
+    { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
+    { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
+    { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
+    { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Prohibited)" },
+    { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
+    { 15, 1,  "DMA Enable (0=Off, 1=On)" },
+  } },   /* R/W  DMA 0 Control */
+  { GBA_DMA1SAD  , "DMA1SAD", {} },   /* W    DMA 1 Source Address */
+  { GBA_DMA1DAD  , "DMA1DAD", {} },   /* W    DMA 1 Destination Address */
+  { GBA_DMA1CNT_L, "DMA1CNT_L", {} },   /* W    DMA 1 Word Count */
+  { GBA_DMA1CNT_H, "DMA1CNT_H", {
+    { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
+    { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
+    { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
+    { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
+    { 15, 1,  "DMA Enable (0=Off, 1=On)" },
+  } },   /* R/W  DMA 1 Control */
+  { GBA_DMA2SAD  , "DMA2SAD", {} },   /* W    DMA 2 Source Address */
+  { GBA_DMA2DAD  , "DMA2DAD", {} },   /* W    DMA 2 Destination Address */
+  { GBA_DMA2CNT_L, "DMA2CNT_L", {} },   /* W    DMA 2 Word Count */
+  { GBA_DMA2CNT_H, "DMA2CNT_H", {
+    { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
+    { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
+    { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
+    { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
+    { 15, 1,  "DMA Enable (0=Off, 1=On)" },
+  } },   /* R/W  DMA 2 Control */
+  { GBA_DMA3SAD  , "DMA3SAD", {} },   /* W    DMA 3 Source Address */
+  { GBA_DMA3DAD  , "DMA3DAD", {} },   /* W    DMA 3 Destination Address */
+  { GBA_DMA3CNT_L, "DMA3CNT_L", {} },   /* W    DMA 3 Word Count */
+  { GBA_DMA3CNT_H, "DMA3CNT_H", {
+    { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
+    { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
+    { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
+    { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
+    { 11, 1,  "Game Pak DRQ (0=Normal, 1=DRQ <from> Game Pak, DMA3)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video Capture)" },
+    { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
+    { 15, 1,  "DMA Enable (0=Off, 1=On)" },
+  } },   /* R/W  DMA 3 Control */  
+
+  // Timer Registers
+  { GBA_TM0CNT_L, "TM0CNT_L", {} },   /* R/W   Timer 0 Counter/Reload */
+  { GBA_TM0CNT_H, "TM0CNT_H", {
+    { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
+    { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
+    { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
+    { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
+  } },   /* R/W   Timer 0 Control */
+  { GBA_TM1CNT_L, "TM1CNT_L", {} },   /* R/W   Timer 1 Counter/Reload */
+  { GBA_TM1CNT_H, "TM1CNT_H", {
+    { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
+    { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
+    { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
+    { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
+  } },   /* R/W   Timer 1 Control */
+  { GBA_TM2CNT_L, "TM2CNT_L", {} },   /* R/W   Timer 2 Counter/Reload */
+  { GBA_TM2CNT_H, "TM2CNT_H", {
+    { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
+    { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
+    { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
+    { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
+  } },   /* R/W   Timer 2 Control */
+  { GBA_TM3CNT_L, "TM3CNT_L", {} },   /* R/W   Timer 3 Counter/Reload */
+  { GBA_TM3CNT_H, "TM3CNT_H", {
+    { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
+    { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
+    { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
+    { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
+  } },   /* R/W   Timer 3 Control */  
+
+  // Serial Communication (1)
+  { GBA_SIODATA32  , "SIODATA32", {} }, /*R/W   SIO Data (Normal-32bit Mode; shared with below) */
+  { GBA_SIOMULTI0  , "SIOMULTI0", {} }, /*R/W   SIO Data 0 (Parent)    (Multi-Player Mode) */
+  { GBA_SIOMULTI1  , "SIOMULTI1", {} }, /*R/W   SIO Data 1 (1st Child) (Multi-Player Mode) */
+  { GBA_SIOMULTI2  , "SIOMULTI2", {} }, /*R/W   SIO Data 2 (2nd Child) (Multi-Player Mode) */
+  { GBA_SIOMULTI3  , "SIOMULTI3", {} }, /*R/W   SIO Data 3 (3rd Child) (Multi-Player Mode) */
+  { GBA_SIOCNT     , "SIOCNT", {} }, /*R/W   SIO Control Register */
+  { GBA_SIOMLT_SEND, "SIOMLT_SEND", {} }, /*R/W   SIO Data (Local of MultiPlayer; shared below) */
+  { GBA_SIODATA8   , "SIODATA8", {} }, /*R/W   SIO Data (Normal-8bit and UART Mode) */  
+
+  // Keypad Input
+  { GBA_KEYINPUT, "GBA_KEYINPUT", {
+    { 0, 1, "Button A" },
+    { 1, 1, "Button B" },
+    { 2, 1, "Select" },
+    { 3, 1, "Start" },
+    { 4, 1, "Right" },
+    { 5, 1, "Left" },
+    { 6, 1, "Up" },
+    { 7, 1, "Down" },
+    { 8, 1, "Button R" },
+    { 9, 1, "Button L" },
+  } },    /* R      Key Status */
+  { GBA_KEYCNT  , "GBA_KEYCNT", {
+    { 0, 1, "Button A" },
+    { 1, 1, "Button B" },
+    { 2, 1, "Select" },
+    { 3, 1, "Start" },
+    { 4, 1, "Right" },
+    { 5, 1, "Left" },
+    { 6, 1, "Up" },
+    { 7, 1, "Down" },
+    { 8, 1, "Button R" },
+    { 9, 1, "Button L" },
+    { 14,1, "Button IRQ Enable (0=Disable, 1=Enable)" },
+    { 15,1, "Button IRQ Condition (0=OR, 1=AND)"},
+  } },    /* R/W    Key Interrupt Control */  
+
+  // Serial Communication (2)
+  { GBA_RCNT     , "RCNT", {} },     /* R/W  SIO Mode Select/General Purpose Data */
+  { GBA_IR       , "IR", {} },     /* -    Ancient - Infrared Register (Prototypes only) */
+  { GBA_JOYCNT   , "JOYCNT", {} },     /* R/W  SIO JOY Bus Control */
+  { GBA_JOY_RECV , "JOY_RECV", {} },     /* R/W  SIO JOY Bus Receive Data */
+  { GBA_JOY_TRANS, "JOY_TRANS", {} },     /* R/W  SIO JOY Bus Transmit Data */
+  { GBA_JOYSTAT  , "JOYSTAT", {} },     /* R/?  SIO JOY Bus Receive Status */  
+};
+
 // Interrupt sources
 #define GBA_INT_LCD_VBLANK 0   
 #define GBA_INT_LCD_HBLANK 1     
@@ -268,8 +637,6 @@ static inline void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, u
   #define FLASH_WRITE_BYTE 0xA0
   #define FLASH_SET_BANK 0xB0
   int state = gba->cart.flash_state;
-  if(state!=FLASH_DEFAULT) printf("Flash state %02x\n",gba->cart.flash_state);
-
   gba->cart.flash_state=FLASH_DEFAULT;
   baddr&=0xffff;
   switch(state){
@@ -528,7 +895,8 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   if(bytes>32*1024*1024){
     printf("ROMs with sizes >32MB (%d bytes) are too big for the GBA\n",bytes); 
     return false;
-  }                 
+  }  
+  *gba = (gba_t){0};               
   gba_reset(gba);
   memcpy(gba->mem.cart_rom, data, bytes);
   UnloadFileData(data);
@@ -542,10 +910,10 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
   gba->cart.backup_type = GBA_BACKUP_NONE;
   if(gba_search_rom_for_string(gba,"EEPROM_"))  gba->cart.backup_type = GBA_BACKUP_EEPROM;
-  if(gba_search_rom_for_string(gba,"SRAM_"))    gba->cart.backup_type = GBA_BACKUP_SRAM;
-  if(gba_search_rom_for_string(gba,"FLASH_"))   gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
-  if(gba_search_rom_for_string(gba,"FLASH512_"))gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
-  if(gba_search_rom_for_string(gba,"FLASH1M_")) gba->cart.backup_type = GBA_BACKUP_FLASH_128K;
+  else if(gba_search_rom_for_string(gba,"SRAM_"))    gba->cart.backup_type = GBA_BACKUP_SRAM;
+  else if(gba_search_rom_for_string(gba,"FLASH_"))   gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
+  else if(gba_search_rom_for_string(gba,"FLASH512_"))gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
+  else if(gba_search_rom_for_string(gba,"FLASH1M_")) gba->cart.backup_type = GBA_BACKUP_FLASH_128K;
 
   // Load save if available
   if(FileExists(save_file)){
@@ -1001,7 +1369,7 @@ int gba_tick_dma(gba_t*gba){
       if(mode!=3&&!skip_dma){
         for(int x=0;x<cnt;++x){
           if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
-          else gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
+          else    gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
         }
       }
       
@@ -1105,6 +1473,231 @@ void gba_tick_timers(gba_t* gba, int ticks){
     }else last_timer_overflow=0;
   }
 }
+float gba_compute_vol_env_slope(int length_of_step,int dir){
+  float step_time = length_of_step/64.0;
+  float slope = 1./step_time;
+  if(dir==0)slope*=-1;
+  if(length_of_step==0)slope=0;
+  return slope/16.;
+} 
+float gba_polyblep(float t,float dt){
+  if(t<=dt){    
+    t = t/dt;
+    return t+t-t*t-1.0;;
+  }else if (t >= 1-dt){
+    t=(t-1.0)/dt;
+    return t*t+t+t+1.0;
+  }else return 0; 
+}
+float gba_bandlimited_square(float t, float duty_cycle,float dt){
+  float t2 = t - duty_cycle;
+  if(t2< 0.0)t2 +=1.0;
+  float y = t < duty_cycle ? -1 : 1;
+  y -= gba_polyblep(t,dt);
+  y += gba_polyblep(t2,dt);
+  return y;
+}
+void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
+
+  //TODO: Move these into a struct
+  static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
+  float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
+  float volume_env[4]={0,0,0,0};
+  static float last_noise_value = 0;
+
+  static double current_sim_time = 0;
+  static double current_sample_generated_time = 0;
+
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  current_sim_time +=delta_time;
+  if(current_sample_generated_time >current_sim_time)return; 
+  while(current_sim_time>1.0){
+      current_sample_generated_time-=1.0;
+      current_sim_time-=1.0;
+  } 
+  static float capacitor_r = 0.0;
+  static float capacitor_l = 0.0;
+
+  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+
+  float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
+
+  uint8_t freq_sweep1 = gba_io_read8(gba, GBA_SOUND1CNT_L);
+  float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
+  float freq_sweep_sign1 = SB_BFE(freq_sweep1, 3,1)? -1. : 1;
+  float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
+
+  if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
+
+  float duty[2] = {0,0};
+
+  for(int i=0;i<2;++i){
+    uint16_t soundcnt_h = gba_io_read16(gba, i? GBA_SOUND1CNT_H : GBA_SOUND2CNT_L);
+    length[i] = (64.-SB_BFE(soundcnt_h,0,6))/256.;
+    duty[i] = duty_lookup[SB_BFE(soundcnt_h,6,2)];
+    volume_env[i] = gba_compute_vol_env_slope(SB_BFE(soundcnt_h, 8, 3), SB_BFE(soundcnt_h, 11, 1));
+    volume[i] = SB_BFE(soundcnt_h,12,4)/15.f;
+
+    uint16_t soundcnt_x = gba_io_read16(gba, i? GBA_SOUND1CNT_X : GBA_SOUND2CNT_H);
+    freq_hz[i] = 131072.0/(2048.-SB_BFE(soundcnt_x,0,11));
+    if(SB_BFE(soundcnt_x,14,1)==0){length[i] = 1.0e9;}
+    if(SB_BFE(soundcnt_x,15,1)){length_t[i] = 0;}
+
+    soundcnt_x&=0x7fff;
+    gba_io_store16(gba, i? GBA_SOUND1CNT_X : GBA_SOUND2CNT_H,soundcnt_x);
+
+  }
+
+  /*
+  4000070h - SOUND3CNT_L (NR30) - Channel 3 Stop/Wave RAM select (R/W)
+
+    Bit        Expl.
+    0-4   -    Not used
+    5     R/W  Wave RAM Dimension   (0=One bank/32 digits, 1=Two banks/64 digits)
+    6     R/W  Wave RAM Bank Number (0-1, see below)
+    7     R/W  Sound Channel 3 Off  (0=Stop, 1=Playback)
+    8-15  -    Not used
+
+  The currently selected Bank Number (Bit 6) will be played back, while reading/writing to/from wave RAM will address the other (not selected) bank. When dimension is set to two banks, output will start by replaying the currently selected bank.
+
+  4000072h - SOUND3CNT_H (NR31, NR32) - Channel 3 Length/Volume (R/W)
+
+    Bit        Expl.
+    0-7   W    Sound length; units of (256-n)/256s  (0-255)
+    8-12  -    Not used.
+    13-14 R/W  Sound Volume  (0=Mute/Zero, 1=100%, 2=50%, 3=25%)
+    15    R/W  Force Volume  (0=Use above, 1=Force 75% regardless of above)
+
+  The Length value is used only if Bit 6 in NR34 is set.
+
+  4000074h - SOUND3CNT_X (NR33, NR34) - Channel 3 Frequency/Control (R/W)
+
+    Bit        Expl.
+    0-10  W    Sample Rate; 2097152/(2048-n) Hz   (0-2047)
+    11-13 -    Not used
+    14    R/W  Length Flag  (1=Stop output when length in NR31 expires)
+    15    W    Initial      (1=Restart Sound)
+    16-31 -    Not used
+  */
+  uint16_t sound3cnt_l = gba_io_read8(gba,GBA_SOUND3CNT_L);
+  int wave_sample_entries = SB_BFE(sound3cnt_l,5,1) ? 32: 64;
+  int wave_sample_offset = SB_BFE(sound3cnt_l,6,1)? 0 : 32;
+  volume[2] = SB_BFE(sound3cnt_l,7,1);
+
+  uint16_t sound3cnt_h = gba_io_read16(gba,GBA_SOUND3CNT_H);
+  float volume_lookup[8]={0,1,0.5,0.25,0.75,0.75,0.75,0.75};
+  length[2] = (256.-SB_BFE(sound3cnt_h,0,8))/256.;
+  volume[2]*= volume_lookup[SB_BFE(sound3cnt_h,13,3)];
+
+  uint16_t sound3cnt_x = gba_io_read16(gba,GBA_SOUND3CNT_X);
+  freq_hz[2] = (65536.0)/(2048.-SB_BFE(sound3cnt_x,0,11));
+  if(SB_BFE(sound3cnt_x,14,1)==0){length[2] = 1.0e9;}
+  if(SB_BFE(sound3cnt_x,15,1)){length_t[2] = 0;}
+  sound3cnt_x&=0x7fff;
+  gba_io_store16(gba, GBA_SOUND3CNT_X ,sound3cnt_x);
+
+  uint16_t soundcnt4_l = gba_io_read16(gba, GBA_SOUND4CNT_L);
+  length[3] = (64.-SB_BFE(soundcnt4_l,0,6))/256.;
+  volume_env[3] = gba_compute_vol_env_slope(SB_BFE(soundcnt4_l, 8, 3), SB_BFE(soundcnt4_l, 11, 1));
+  volume[3] = SB_BFE(soundcnt4_l,12,4)/15.f;
+
+  uint16_t soundcnt4_h = gba_io_read16(gba, GBA_SOUND4CNT_H);
+  float r4 = SB_BFE(soundcnt4_h,0,3);
+  uint8_t s4 = SB_BFE(soundcnt4_h,4,4);
+  if(r4==0)r4=0.5;
+  freq_hz[3] =  524288.0/r4/pow(2.0,s4+1);
+  if(SB_BFE(soundcnt4_l,14,1)==0){length[3] = 1.0e9;}
+  if(SB_BFE(soundcnt4_l,15,1)){length_t[3] = 0;}
+  soundcnt4_h&=0x7fff;
+  gba_io_store16(gba, GBA_SOUND4CNT_H,soundcnt4_h);
+
+  //These are type int to allow them to be multiplied to enable/disable
+  float chan_l[4],chan_r[4];
+  uint16_t chan_sel = gba_io_read16(gba,GBA_SOUNDCNT_L);
+  float r_vol = SB_BFE(chan_sel,0,3)/7.;
+  float l_vol = SB_BFE(chan_sel,4,3)/7.;
+  for(int i=0;i<4;++i){
+    chan_r[i] = SB_BFE(chan_sel,8+i,1)*r_vol;
+    chan_l[i] = SB_BFE(chan_sel,12+i,1)*l_vol;
+  }
+  
+  float freq1_hz_base = freq_hz[0];
+
+  while(current_sample_generated_time < current_sim_time){
+
+    current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
+    
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
+
+    //Advance each channel    
+    freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
+    for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
+    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
+    for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
+    
+    //Generate new noise value if needed
+    if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
+    
+    //Loop back
+    for(int i=0;i<4;++i) while(chan_t[i]>=1.0)chan_t[i]-=1.0;
+    
+    //Compute and clamp Volume Envelopes
+    float v[4];
+    for(int i=0;i<4;++i)v[i] = volume_env[i]*length_t[i]+volume[i];
+    for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
+    v[2]=volume[2]; //Wave channel doesn't have a volume envelop 
+    
+    //Lookup wave table value
+    unsigned wav_samp = (((unsigned)(chan_t[2]*32))%32);
+    int dat =gba_io_read8(gba,GBA_WAVE_RAM+wav_samp/2);
+    int offset = (wav_samp&1)? 0:4;
+    dat = (dat>>offset)&0xf;
+    
+
+    float channels[4] = {0,0,0,0};
+    channels[0] = gba_bandlimited_square(chan_t[0],duty[0],sample_delta_t*freq_hz[0])*v[0];
+    channels[1] = gba_bandlimited_square(chan_t[1],duty[1],sample_delta_t*freq_hz[1])*v[1];
+    channels[2] = (dat)*v[2]/16.;
+    channels[3] = last_noise_value*v[3];
+
+    //Mix channels
+    
+    float sample_volume_l = 0;
+    float sample_volume_r = 0;
+    
+    for(int i=0;i<4;++i){
+      sample_volume_l+=channels[i]*chan_l[i];
+      sample_volume_r+=channels[i]*chan_r[i];
+    }
+    
+    sample_volume_l*=0.25;
+    sample_volume_r*=0.25;
+
+    const float lowpass_coef = 0.999;
+    emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
+    emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
+    
+    for(int i=0;i<4;++i){
+      emu->audio_channel_output[i] = emu->audio_channel_output[i]*lowpass_coef 
+                                  + fabs(channels[i]*(chan_l[i]+chan_r[i])*0.5)*(1.0-lowpass_coef); 
+    }
+    // Clipping
+    if(sample_volume_l>1.0)sample_volume_l=1;
+    if(sample_volume_r>1.0)sample_volume_r=1;
+    if(sample_volume_l<-1.0)sample_volume_l=-1;
+    if(sample_volume_r<-1.0)sample_volume_r=-1;
+    float out_l = sample_volume_l-capacitor_l;
+    float out_r = sample_volume_r-capacitor_r;
+    capacitor_l = (sample_volume_l-out_l)*0.996;
+    capacitor_r = (sample_volume_r-out_r)*0.996;
+    // Quantization
+    unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+
+    emu->audio_ring_buff.data[write_entry0] = out_l*32760;
+    emu->audio_ring_buff.data[write_entry1] = out_r*32760;
+  }
+}
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_RESET){
     gba_reset(gba);
@@ -1117,6 +1710,19 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int max_instructions = 280896;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     bool prev_vblank = gba->ppu.last_vblank; 
+
+    float frame_time = emu->avg_frame_time;
+    static float avg_frame_time = 1.0/60.*1.00;
+    avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
+    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
+    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
+    float buffs_available = size/(float)(samples_per_buffer);
+    float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
+    time_correction_scale = avg_frame_time/(1.0/60.)*0.995;
+    if(buffs_available<0.5)time_correction_scale*=1.005;
+    if(buffs_available>3)time_correction_scale*=0.98;
+
+
     for(int i = 0;i<max_instructions;++i){
       int ticks = gba_tick_dma(gba);
       if(!ticks){
@@ -1139,6 +1745,10 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         gba_tick_sio(gba);
       }
       gba_tick_timers(gba,ticks);
+
+      double delta_t = ((double)ticks)/(16*1024*1024);
+      delta_t*=time_correction_scale;
+      gba_process_audio(gba, emu,delta_t);
 
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
