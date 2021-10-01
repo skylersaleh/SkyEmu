@@ -1881,7 +1881,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       int size = sb_ring_buffer_size(&emu->audio_ring_buff);
       int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
       float buffs_available = size/(float)(samples_per_buffer);
-      if(buffs_available>1.0&&emu->frame>=1)break;
+      if(((buffs_available>1.0&&emu->frame>=1)||
+          (buffs_available>2.5&&gba->ppu.last_vblank))&&emu->step_instructions==0)break;
 
       prev_vblank = gba->ppu.last_vblank;
     }
