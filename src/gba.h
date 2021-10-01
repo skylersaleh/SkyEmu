@@ -759,7 +759,7 @@ static inline void gba_compute_access_cycles(void*user_data, uint32_t address,in
     5,5,5, //0x0E (GAMEPAK SRAM)
     1,1,1, //0x0F (unused)
   };
-  ((gba_t*)user_data)->mem.requests+=wait_state_table[SB_BFE(address,24,4)*3+request_size];
+  ((gba_t*)user_data)->mem.requests+=1;//wait_state_table[SB_BFE(address,24,4)*3+request_size];
 }
 // Memory IO functions for the emulated CPU                  
 static inline uint32_t arm7_read32(void* user_data, uint32_t address){
@@ -1564,19 +1564,18 @@ float gba_bandlimited_square(float t, float duty_cycle,float dt){
   return y;
 }
 void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
+  
+  static double current_sim_time = 0;
+  static double current_sample_generated_time = 0;
 
+  current_sim_time +=delta_time;
+  if(current_sample_generated_time >current_sim_time)return; 
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
   float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
   float volume_env[4]={0,0,0,0};
   static float last_noise_value = 0;
 
-  static double current_sim_time = 0;
-  static double current_sample_generated_time = 0;
-
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  current_sim_time +=delta_time;
-  if(current_sample_generated_time >current_sim_time)return; 
   while(current_sim_time>1.0){
       current_sample_generated_time-=1.0;
       current_sim_time-=1.0;

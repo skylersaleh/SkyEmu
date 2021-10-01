@@ -1405,9 +1405,12 @@ void UpdateDrawFrame() {
   lcd_rect.height = GetScreenHeight();
   // Controller polling must happen before handling the onscreen keyboard
   sb_poll_controller_input(&emu_state.joy);
-  float lcd_aspect = 144/160.;
+  float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
+  if(emu_state.system==SYSTEM_GBA){
+    lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
+  }
   int panel_height = 30+GUI_PADDING;
-  if((screen_width-400)/(float)screen_height>160/144.*0.7){
+  if((screen_width-400)/(float)screen_height>0.7/lcd_aspect){
     // Widescreen
     sb_draw_sidebar((Rectangle){0, 0, panel_width, GetScreenHeight()});
   }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
