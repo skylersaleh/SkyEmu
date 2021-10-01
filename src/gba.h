@@ -1835,11 +1835,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     int size = sb_ring_buffer_size(&emu->audio_ring_buff);
     int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     float buffs_available = size/(float)(samples_per_buffer);
-    /*float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
-    time_correction_scale = avg_frame_time/(1.0/60.)*0.995;
-    if(buffs_available<0.5)time_correction_scale*=1.005;
-    if(buffs_available>3)time_correction_scale*=0.98;
-    */
+
+    //Skip emulation of a frame if we get too far ahead the audio playback
+    if(buffs_available>3&&emu->step_instructions==0) return; 
     float time_correction_scale=1;
 
     for(int i = 0;i<max_instructions;++i){
