@@ -80,6 +80,7 @@ Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*g
   if(top_panel){
     widget_rect = inside_rect;
     widget_rect.width = 100;
+    widget_rect.x+=(inside_rect.width-widget_rect.width*4- GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4)*0.5;
     emu_state->run_mode =
       GuiToggleGroup(widget_rect, "#74#Reset;#132#Pause;#131#Run;#134#Step", emu_state->run_mode);
       return (Rectangle){0};// Not used for vertical alignment
@@ -1410,8 +1411,11 @@ void UpdateDrawFrame() {
     lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
   }
   int panel_height = 30+GUI_PADDING;
-  if((screen_width-400)/(float)screen_height>0.7/lcd_aspect){
+  if(screen_width-GetScreenHeight()/lcd_aspect>350){
     // Widescreen
+    panel_width = screen_width-GetScreenHeight()/lcd_aspect;
+    lcd_rect = (Rectangle){panel_width, 0, GetScreenHeight()/lcd_aspect,GetScreenHeight()};
+
     sb_draw_sidebar((Rectangle){0, 0, panel_width, GetScreenHeight()});
   }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
     // Tall Screen
@@ -1426,7 +1430,16 @@ void UpdateDrawFrame() {
     sb_draw_onscreen_controller(&emu_state,cont_rect);
   }else{
     // Square Screen
-    lcd_rect = (Rectangle){0, panel_height, GetScreenWidth(),GetScreenHeight()-panel_height};
+    float height = GetScreenHeight()-panel_height;
+    if(GetScreenWidth()*lcd_aspect>height){
+      //Too wide
+      float extra_space = GetScreenWidth()-GetScreenHeight()/lcd_aspect;
+      lcd_rect = (Rectangle){extra_space*0.5, panel_height, GetScreenHeight()/lcd_aspect,height};
+    }else{
+      //Too tall
+      float extra_space = GetScreenHeight()-GetScreenWidth()*lcd_aspect;
+      lcd_rect = (Rectangle){0, panel_height+extra_space*0.5, GetScreenWidth(),GetScreenWidth()*lcd_aspect};
+    }
     sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
   }
  
