@@ -611,13 +611,15 @@ typedef struct {
   gba_dma_t dma[4]; 
   bool activate_dmas; 
   gba_timer_t timers[4];
+  uint32_t timer_ticks_before_event;
+  uint32_t deferred_timer_ticks;
   gba_audio_t audio;
-  uint32_t mmio_deferred_ticks; 
-  uint32_t master_timer; 
   bool halt; 
   uint8_t scanline_priority[GBA_LCD_W]; //Used to handle priority settings
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
+
+void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
 
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
@@ -762,14 +764,21 @@ static inline void gba_compute_access_cycles(void*user_data, uint32_t address,in
   };
   ((gba_t*)user_data)->mem.requests+=wait_state_table[SB_BFE(address,24,4)*3+request_size];
 }
+static inline void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 // Memory IO functions for the emulated CPU                  
 static inline uint32_t arm7_read32(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,2);
+  if(address>=0x4000000 && address<=0x40003FE){
+    gba_process_mmio_read((gba_t*)user_data,address,4);
+  }
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
 static inline uint32_t arm7_read16(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
+  if(address>=0x4000000 && address<=0x40003FE){
+    gba_process_mmio_read((gba_t*)user_data,address,4);
+  }
   uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
@@ -778,6 +787,9 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
 
 static uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,0);
+  if(address>=0x4000000 && address<=0x40003FE){
+    gba_process_mmio_read((gba_t*)user_data,address,4);
+  }
   return gba_read8((gba_t*)user_data,address);
 }
 static void arm7_write32(void* user_data, uint32_t address, uint32_t data){
@@ -854,6 +866,10 @@ static void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
   }else{
     printf("Tried to push audio samples to full fifo\n");
   }
+}
+static inline void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
+  // Force recomputing timers on timer read
+  if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_tick_timers(gba,0,true);
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
@@ -1488,8 +1504,13 @@ static void gba_tick_sio(gba_t* gba){
     gba_io_store16(gba,GBA_SIOCNT,siocnt);
   }
 }
-void gba_tick_timers(gba_t* gba, int ticks){
+void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
+  gba->deferred_timer_ticks+=ticks;
+  if(gba->deferred_timer_ticks<gba->timer_ticks_before_event&&force_recalculate==false)return; 
+  ticks = gba->deferred_timer_ticks; 
+  gba->deferred_timer_ticks=0;
   int last_timer_overflow = 0; 
+  int timer_ticks_before_event = 32768; 
   for(int t=0;t<4;++t){ 
     uint16_t tm_cnt_h = gba_io_read16(gba,GBA_TM0CNT_H+t*4);
     bool enable = SB_BFE(tm_cnt_h,7,1);
@@ -1528,6 +1549,8 @@ void gba_tick_timers(gba_t* gba, int ticks){
         }
         value = v; 
         gba->timers[t].prescaler_timer=prescale_time*2;
+        int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
+        if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
       if(last_timer_overflow && irq_en){
         uint16_t if_val = gba_io_read16(gba,GBA_IF);
@@ -1541,6 +1564,7 @@ void gba_tick_timers(gba_t* gba, int ticks){
       gba_io_store16(gba,GBA_TM0CNT_L+t*4,value);
     }else last_timer_overflow=0;
   }
+  gba->timer_ticks_before_event=timer_ticks_before_event;
 }
 float gba_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;
@@ -1865,7 +1889,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         gba_tick_ppu(gba,1,frames_to_render<=0);
         gba_tick_sio(gba);
       }
-      gba_tick_timers(gba,ticks);
+      gba_tick_timers(gba,ticks,false);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
       delta_t*=time_correction_scale;
