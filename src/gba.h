@@ -609,6 +609,7 @@ typedef struct {
   gba_joy_t joy;       
   gba_ppu_t ppu;
   gba_dma_t dma[4]; 
+  bool activate_dmas; 
   gba_timer_t timers[4];
   gba_audio_t audio;
   uint32_t mmio_deferred_ticks; 
@@ -759,7 +760,7 @@ static inline void gba_compute_access_cycles(void*user_data, uint32_t address,in
     5,5,5, //0x0E (GAMEPAK SRAM)
     1,1,1, //0x0F (unused)
   };
-  ((gba_t*)user_data)->mem.requests+=1;//wait_state_table[SB_BFE(address,24,4)*3+request_size];
+  ((gba_t*)user_data)->mem.requests+=wait_state_table[SB_BFE(address,24,4)*3+request_size];
 }
 // Memory IO functions for the emulated CPU                  
 static inline uint32_t arm7_read32(void* user_data, uint32_t address){
@@ -900,10 +901,9 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,8,8));
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,16,8));
     gba_audio_fifo_push(gba,1,SB_BFE(word_data,24,8));
-  }else if(address_u32==GBA_DMA1SAD){
-    printf("Write DMA1: %08x\n",word_data);
-  }else if(address_u32==GBA_DMA2SAD){
-    printf("Write DMA2: %08x\n",word_data);
+  }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
+           address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
+    gba->activate_dmas=true;
   }
   return false;
 }
@@ -991,11 +991,13 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
     if(hblank!=gba->ppu.last_hblank){
       gba->ppu.last_hblank = hblank;
       if(hblank) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+      gba->activate_dmas=true;
     }
     if(lcd_y != gba->ppu.last_lcd_y){
       if(vblank!=gba->ppu.last_vblank){
         gba->ppu.last_vblank = vblank;
         if(vblank) new_if|= (1<< GBA_INT_LCD_VBLANK); 
+        gba->activate_dmas=true;
       }
       gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       gba->ppu.last_lcd_y  = lcd_y;
@@ -1306,6 +1308,7 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
   }
 }
 int gba_tick_dma(gba_t*gba){
+  if(!gba->activate_dmas)return 0;
   int ticks =0;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
@@ -1442,10 +1445,9 @@ int gba_tick_dma(gba_t*gba){
       if(src_addr_ctl==0)     src+=cnt*transfer_bytes*src_dir;
       else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
       
-      src = gba->dma[i].source_addr=src;
-      dst = gba->dma[i].dest_addr=dst;
-
-      
+      gba->dma[i].source_addr=src;
+      gba->dma[i].dest_addr=dst;
+    
       if(irq_enable){
         uint16_t if_val = gba_io_read16(gba,GBA_IF);
         uint16_t ie_val = gba_io_read16(gba,GBA_IE);
@@ -1463,6 +1465,7 @@ int gba_tick_dma(gba_t*gba){
     }
     gba->dma[i].last_enable = enable;
   }
+  gba->activate_dmas=ticks!=0;
   return ticks; 
 }                                              
 static void gba_tick_sio(gba_t* gba){
@@ -1715,12 +1718,14 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
     if(reset){
       gba->audio.fifo[i].read_ptr=gba->audio.fifo[i].write_ptr=0;  
       for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
+      gba->activate_dmas=true;
     }
     int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
     //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
     if(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr-gba->audio.fifo[i].read_ptr)&0x1f)){
       gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
       samples_to_pop--;
+      gba->activate_dmas=true;
     }
   }
   gba_io_store16(gba,GBA_SOUNDCNT_H,soundcnt_h&~((1<<11)|(1<<15)));
