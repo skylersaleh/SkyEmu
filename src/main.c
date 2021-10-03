@@ -1460,7 +1460,7 @@ void UpdateDrawFrame() {
     }; 
   }
   Texture2D screenTex = LoadTextureFromImage(screenIm); 
-  SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
+  SetTextureFilter(screenTex, lcd_rect.width<screenIm.width*2?TEXTURE_FILTER_BILINEAR:TEXTURE_FILTER_POINT);
   DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255});
   sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
   EndDrawing();
