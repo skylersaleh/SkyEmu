@@ -1249,16 +1249,16 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(bg-2)*0x10);
 
           // Shift lcd_coords into fixed point
-          int64_t x1 = lcd_x<<8;
-          int64_t y1 = lcd_y<<8;
-          int64_t x2 = a*(x1-bgx) + b*(y1-bgy) + (bgx<<8)*2;
-          int64_t y2 = c*(x1-bgx) + d*(y1-bgy) + (bgy<<8)*2;
+          int64_t x1 = (lcd_x<<8)+(1<<7);
+          int64_t y1 = (lcd_y<<8)+(1<<7);
+          int64_t x2 = a*(x1) + b*(y1) + (bgx<<8)+(1<<15);
+          int64_t y2 = c*(x1) + d*(y1) + (bgy<<8)+(1<<15);
 
           bg_x = (x2>>16);
           bg_y = (y2>>16);
 
           if(display_overflow==0){
-            if(bg_x<0||bg_x>screen_size_x||bg_y<0||bg_y>screen_size_y)continue; 
+            if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
           }else{
             bg_x%=screen_size_x;
             bg_y%=screen_size_y;
@@ -1871,8 +1871,8 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
       sample_volume_r+=channels[i]*chan_r[i];
     }
     
-    sample_volume_l*=0.25;
-    sample_volume_r*=0.25;
+    sample_volume_l*=0.25*0.25;
+    sample_volume_r*=0.25*0.25;
 
     const float lowpass_coef = 0.999;
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
@@ -1978,7 +1978,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
 void gba_reset(gba_t*gba){
   gba->cpu = arm7_init(gba);
-  bool skip_bios = true;
+  bool skip_bios = false;
   if(skip_bios){
     gba->cpu.registers[13] = 0x03007f00;
     gba->cpu.registers[R13_irq] = 0x03007FA0;
@@ -1986,7 +1986,6 @@ void gba_reset(gba_t*gba){
     gba->cpu.registers[R13_und] = 0x00000000;
     gba->cpu.registers[CPSR]= 0x000000df; 
     gba->cpu.registers[PC]  = 0x08000000; 
-
   }else{
     gba->cpu.registers[PC]  = 0x0000000; 
     gba->cpu.registers[CPSR]= 0x000000d3; 
