@@ -924,18 +924,23 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   }
   return false;
 }
-bool gba_search_rom_for_string(gba_t* gba, const char* str){
+int gba_search_rom_for_backup_string(gba_t* gba){
   for(int b = 0; b< gba->cart.rom_size;++b){
-    int str_off = 0; 
-    bool matches = true; 
-    while(str[str_off] && matches){
-      if(str[str_off]!=gba->mem.cart_rom[b+str_off])matches = false;
-      if(b+str_off>=gba->cart.rom_size)matches=false; 
-      ++str_off;
+    const char* strings[]={"EEPROM_", "SRAM_", "FLASH_","FLASH512_","FLASH1M_"};
+    int backup_type[]= {GBA_BACKUP_EEPROM,GBA_BACKUP_SRAM,GBA_BACKUP_FLASH_64K, GBA_BACKUP_FLASH_64K, GBA_BACKUP_FLASH_128K};
+    for(int type = 0; type<sizeof(strings)/sizeof(strings[0]);++type){
+      int str_off = 0; 
+      bool matches = true; 
+      const char* str = strings[type];
+      while(str[str_off] && matches){
+        if(str[str_off]!=gba->mem.cart_rom[b+str_off])matches = false;
+        if(b+str_off>=gba->cart.rom_size)matches=false; 
+        ++str_off;
+      }
+      if(matches)return backup_type[type];
     }
-    if(matches)return true;
   }
-  return false; 
+  return GBA_BACKUP_NONE; 
 }
 bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
@@ -960,12 +965,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   memcpy(gba->cart.title,gba->mem.cart_rom+0x0A0,12);
   gba->cart.title[12]=0;
 
-  gba->cart.backup_type = GBA_BACKUP_NONE;
-  if(gba_search_rom_for_string(gba,"EEPROM_"))  gba->cart.backup_type = GBA_BACKUP_EEPROM;
-  else if(gba_search_rom_for_string(gba,"SRAM_"))    gba->cart.backup_type = GBA_BACKUP_SRAM;
-  else if(gba_search_rom_for_string(gba,"FLASH_"))   gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
-  else if(gba_search_rom_for_string(gba,"FLASH512_"))gba->cart.backup_type = GBA_BACKUP_FLASH_64K;
-  else if(gba_search_rom_for_string(gba,"FLASH1M_")) gba->cart.backup_type = GBA_BACKUP_FLASH_128K;
+  gba->cart.backup_type = gba_search_rom_for_backup_string(gba);
 
   // Load save if available
   if(FileExists(save_file)){
@@ -991,7 +991,7 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
-  int lcd_y = (gba->ppu.scan_clock)/1232;
+  int lcd_y = (gba->ppu.scan_clock+46)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
   if(lcd_x==262||lcd_x==0||lcd_x==240){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
@@ -1001,7 +1001,7 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
-
+    gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
     gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
     uint32_t new_if = 0;
     if(hblank!=gba->ppu.last_hblank){
@@ -1015,7 +1015,6 @@ void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         if(vblank) new_if|= (1<< GBA_INT_LCD_VBLANK); 
         gba->activate_dmas=true;
       }
-      gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       gba->ppu.last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
         new_if |= (1<<GBA_INT_LCD_VCOUNT);
@@ -1518,7 +1517,20 @@ int gba_tick_dma(gba_t*gba){
       }
       if(!dma_repeat||mode==0||(mode==3&&!audio_dma)){
         cnt_h&=0x7fff;
-        gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
+        //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
+        //Reload on incr reload
+        if(dst_addr_ctl==3){
+          gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
+          gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
+          //GBA Suite says that these need to be force aligned
+          if(type){
+            gba->dma[i].dest_addr&=~3;
+            gba->dma[i].source_addr&=~3;
+          }else{
+            gba->dma[i].dest_addr&=~1;
+            gba->dma[i].source_addr&=~1;
+          }
+        }
       }
       gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
@@ -1823,7 +1835,9 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
     if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
     
     //Loop back
-    for(int i=0;i<4;++i) while(chan_t[i]>=1.0)chan_t[i]-=1.0;
+    for(int i=0;i<4;++i){
+      chan_t[i]-=(int)chan_t[i];
+    }
     
     //Compute and clamp Volume Envelopes
     float v[4];
