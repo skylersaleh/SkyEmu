@@ -51,6 +51,7 @@ typedef struct {
   uint32_t registers[37];
   uint64_t executed_instructions;
   bool trigger_breakpoint;
+  bool print_instructions;
   void* user_data;
   FILE* log_cmp_file;
 } arm7_t;     
@@ -395,7 +396,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/emerald-boot-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/tony-hawk-log.bin","rb");
 
   return arm;
 
@@ -541,21 +542,24 @@ static inline void arm7_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 4;
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,old_pc);
+    if(cpu->print_instructions)printf("%08x\n",opcode);
+
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t old_pc = cpu->registers[PC];
     	arm7_lookup_table[key](cpu,opcode);
       uint32_t new_pc = cpu->registers[PC];
-      //if(old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
+      if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
     }
   }else{
     uint32_t opcode = arm7_read16(cpu->user_data,cpu->registers[PC]);
+    if(cpu->print_instructions)printf("%04x\n",opcode);
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,old_pc);
     cpu->registers[PC] += 2;
     uint32_t key = ((opcode>>8)&0xff);
     uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
     uint32_t new_pc = cpu->registers[PC];
-    //if(old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
+    if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
   }
   //Bit 0 of PC is always 0
   cpu->registers[PC]&= ~1; 
@@ -1034,7 +1038,7 @@ static inline void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode){
 }
 static inline void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
   bool thumb = arm7_get_thumb_bit(cpu);
-  cpu->registers[R14_svc] = cpu->registers[PC]-(thumb?0:4);
+  cpu->registers[R14_svc] = cpu->registers[PC];
   cpu->registers[PC] = 0x8; 
   uint32_t cpsr = cpu->registers[CPSR];
   cpu->registers[SPSR_svc] = cpsr;

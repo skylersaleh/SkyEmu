@@ -1925,6 +1925,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     if(buffs_available>3&&emu->step_instructions==0) return; 
     float time_correction_scale=1;
 
+    gba->cpu.print_instructions = emu->run_mode ==SB_MODE_STEP;
+
     for(int i = 0;i<max_instructions;++i){
       int ticks = gba_tick_dma(gba);
       if(!ticks){
@@ -1976,7 +1978,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
 void gba_reset(gba_t*gba){
   gba->cpu = arm7_init(gba);
-  bool skip_bios = false;
+  bool skip_bios = true;
   if(skip_bios){
     gba->cpu.registers[13] = 0x03007f00;
     gba->cpu.registers[R13_irq] = 0x03007FA0;
