@@ -555,6 +555,7 @@ typedef struct {
   uint32_t requests;
   uint32_t last_bios_data;
   uint32_t cartopen_bus; 
+  uint8_t wait_state_table[16*3];
 } gba_mem_t;
 
 typedef struct {
@@ -628,13 +629,13 @@ static uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
 static inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
 static inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
   bool read_only;
-  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
+  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
 static inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
   bool read_only;
-  uint32_t* val = gba_dword_lookup(gba,baddr&0xfffffffC,&read_only);
+  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
@@ -743,7 +744,7 @@ static inline uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.
 static inline uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xffff));}
 static inline uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xffff));}
 
-static inline void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+static inline void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*3]={
     1,1,1, //0x00 (bios)
@@ -754,16 +755,70 @@ static inline void gba_compute_access_cycles(void*user_data, uint32_t address,in
     1,1,2, //0x05 (BG/OBJ Palette)
     1,1,2, //0x06 (VRAM)
     1,1,1, //0x07 (OAM)
-    5,5,8, //0x08 (GAMEPAK ROM)
-    5,5,8, //0x09 (GAMEPAK ROM)
-    5,5,8, //0x0A (GAMEPAK ROM)
-    5,5,8, //0x0B (GAMEPAK ROM)
-    5,5,8, //0x0C (GAMEPAK ROM)
-    5,5,8, //0x0D (GAMEPAK ROM)
-    5,5,5, //0x0E (GAMEPAK SRAM)
+    4,4,8, //0x08 (GAMEPAK ROM 0)
+    4,4,8, //0x09 (GAMEPAK ROM 0)
+    4,4,8, //0x0A (GAMEPAK ROM 1)
+    4,4,8, //0x0B (GAMEPAK ROM 1)
+    4,4,8, //0x0C (GAMEPAK ROM 2)
+    4,4,8, //0x0D (GAMEPAK ROM 2)
+    4,4,4, //0x0E (GAMEPAK SRAM)
     1,1,1, //0x0F (unused)
   };
-  ((gba_t*)user_data)->mem.requests+=wait_state_table[SB_BFE(address,24,4)*3+request_size];
+  for(int i=0;i<16*3;++i){
+    gba->mem.wait_state_table[i]=wait_state_table[i];
+  }
+  uint8_t sram_wait = SB_BFE(waitcnt,0,2);
+  uint8_t wait0_first  = SB_BFE(waitcnt,2,2);
+  uint8_t wait0_second = SB_BFE(waitcnt,4,1);
+  uint8_t wait1_first  = SB_BFE(waitcnt,5,2);
+  uint8_t wait1_second = SB_BFE(waitcnt,7,1);
+  uint8_t wait2_first  = SB_BFE(waitcnt,8,2);
+  uint8_t wait2_second = SB_BFE(waitcnt,10,1);
+  uint8_t prefetch_en = SB_BFE(waitcnt,14,1);
+
+  int primary_table[4]={4,3,2,8};
+
+  //Each waitstate is two entries in table
+  for(int i=0;i<2;++i){
+    //Wait 0
+    int wait16b = primary_table[wait0_first]; 
+    int wait32b = primary_table[wait0_first]+(wait0_second?2:1); 
+    //Assume prefetch captures all rom reads (fixes pokemon emerald)
+    if(prefetch_en){wait16b=1;wait32b=2;}
+
+    gba->mem.wait_state_table[(0x08+i)*3+0] = wait16b;
+    gba->mem.wait_state_table[(0x08+i)*3+1] = wait16b;
+    gba->mem.wait_state_table[(0x08+i)*3+2] = wait32b;
+
+    //Wait 1
+    wait16b = primary_table[wait1_first]; 
+    wait32b = primary_table[wait1_first]+(wait1_second?2:1); 
+    if(prefetch_en){wait16b=1;wait32b=2;}
+
+    gba->mem.wait_state_table[(0x0A+i)*3+0] = wait16b;
+    gba->mem.wait_state_table[(0x0A+i)*3+1] = wait16b;
+    gba->mem.wait_state_table[(0x0A+i)*3+2] = wait32b;
+
+    //Wait 2
+    wait16b = primary_table[wait2_first]; 
+    wait32b = primary_table[wait2_first]+(wait2_second?8:1); 
+    if(prefetch_en){wait16b=1;wait32b=2;}
+
+    gba->mem.wait_state_table[(0x0C+i)*3+0] = wait16b;
+    gba->mem.wait_state_table[(0x0C+i)*3+1] = wait16b;
+    gba->mem.wait_state_table[(0x0C+i)*3+2] = wait32b;
+  }
+  //SRAM
+  gba->mem.wait_state_table[(0x0E*3)+0]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*3)+1]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*3)+2]= 1+primary_table[sram_wait];
+  waitcnt&=(1<<15); // Force cartridge to report as GBA cart
+  gba_io_store16(gba,GBA_WAITCNT,waitcnt);
+}
+static inline void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+  int bank = SB_BFE(address,24,4);
+  gba_t * gba = ((gba_t*)user_data); 
+  gba->mem.requests+=gba->mem.wait_state_table[bank*3+request_size];
 }
 static inline void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 // Memory IO functions for the emulated CPU                  
@@ -822,7 +877,14 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
   baddr&=0xfffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
   *read_only= false; 
-  if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr-0x0);}
+  if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
+    int addr = baddr&0x1ffffff;
+    *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
+    if(addr>gba->cart.rom_size){
+      ret = (uint32_t*)(&gba->mem.cartopen_bus);
+      *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
+    }
+  }
   else if(baddr>=0x2000000 && baddr<=0x2FFFFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
   else if(baddr>=0x3000000 && baddr<=0x3ffffff )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
   else if(baddr>=0x4000000 && baddr<=0x40003FE ){
@@ -832,20 +894,6 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
     if(baddr&0x10000)ret = (uint32_t*)(gba->mem.vram+(baddr&0x07fff)+0x10000);
     else ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
   }else if(baddr>=0x7000000 && baddr<=0x7ffffff )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
-  else if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
-    int addr = baddr&0x1ffffff;
-    *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
-    if(addr>gba->cart.rom_size){
-      ret = (uint32_t*)(&gba->mem.cartopen_bus);
-      *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
-    }
-    if(addr>=gba->cart.rom_size||addr>=0x01ffff00){
-      if(addr>=0x01000000&&gba->cart.backup_type>=GBA_BACKUP_EEPROM&&gba->cart.backup_type<=GBA_BACKUP_EEPROM_8KB){
-        ret = (uint32_t*)&gba->mem.eeprom_word;
-        gba->mem.eeprom_word=0xffffffff;
-      }
-    }
-  }
   else if(baddr>=0xE000000 && baddr<=0xEffffff ){
     if(gba->cart.backup_type==GBA_BACKUP_SRAM) ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
     else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
@@ -855,7 +903,8 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
       else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
     }
     
-  }
+  }else if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr-0x0);}
+
   gba->mem.openbus_word=*ret;
   return ret;
 }
@@ -921,6 +970,10 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
+  }else if (address_u32==GBA_WAITCNT){
+     uint16_t waitcnt = gba_io_read16(gba,GBA_WAITCNT);
+     waitcnt = ((waitcnt&~word_mask)|(word_data&word_mask));
+     gba_recompute_waitstate_table(gba,waitcnt);
   }
   return false;
 }
@@ -1498,9 +1551,9 @@ int gba_tick_dma(gba_t*gba){
       }
       
       ticks+=cnt;
-      if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes*dst_dir;
+      if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
       else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
-      if(src_addr_ctl==0)     src+=cnt*transfer_bytes*src_dir;
+      if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
       else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
       
       gba->dma[i].source_addr=src;
@@ -1518,18 +1571,13 @@ int gba_tick_dma(gba_t*gba){
       if(!dma_repeat||mode==0||(mode==3&&!audio_dma)){
         cnt_h&=0x7fff;
         //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
-        //Reload on incr reload
+        //Reload on incr reload     
+      }else{
         if(dst_addr_ctl==3){
-          gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
           gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
           //GBA Suite says that these need to be force aligned
-          if(type){
-            gba->dma[i].dest_addr&=~3;
-            gba->dma[i].source_addr&=~3;
-          }else{
-            gba->dma[i].dest_addr&=~1;
-            gba->dma[i].source_addr&=~1;
-          }
+          if(type) gba->dma[i].dest_addr&=~3;
+          else gba->dma[i].dest_addr&=~1;
         }
       }
       gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
@@ -1871,8 +1919,8 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
       sample_volume_r+=channels[i]*chan_r[i];
     }
     
-    sample_volume_l*=0.25*0.25;
-    sample_volume_r*=0.25*0.25;
+    sample_volume_l*=0.25;
+    sample_volume_r*=0.25;
 
     const float lowpass_coef = 0.999;
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
@@ -1978,7 +2026,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
 void gba_reset(gba_t*gba){
   gba->cpu = arm7_init(gba);
-  bool skip_bios = false;
+  bool skip_bios = true;
   if(skip_bios){
     gba->cpu.registers[13] = 0x03007f00;
     gba->cpu.registers[R13_irq] = 0x03007FA0;
@@ -1992,7 +2040,9 @@ void gba_reset(gba_t*gba){
   }
   memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
   gba->mem.openbus_word = gba->mem.cart_rom[0];
-  
+  memset(gba->mem.io,0,sizeof(gba->mem.io));
+  memset(gba->mem.wram0,0,sizeof(gba->mem.wram0));
+  memset(gba->mem.wram1,0,sizeof(gba->mem.wram1));
   for(int bg = 2;bg<4;++bg){
     gba_io_store16(gba,GBA_BG2PA+(bg-2)*0x10,1<<8);
     gba_io_store16(gba,GBA_BG2PB+(bg-2)*0x10,0<<8);
@@ -2002,6 +2052,13 @@ void gba_reset(gba_t*gba){
   gba_store32(gba,GBA_DISPCNT,0xe92d0000);
   gba_store16(gba,0x04000088,512);
   gba_store32(gba,0x040000DC,0x84000000);
+  gba_recompute_waitstate_table(gba,0);
+  gba->halt =false;
+  gba->activate_dmas=false;
+  gba->deferred_timer_ticks=0;
+  gba->cart.in_chip_id_mode=false; 
+  gba->cart.flash_state=0;
+  gba->cart.flash_bank=0; 
 }
 
 #endif
