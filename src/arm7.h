@@ -262,7 +262,7 @@ static inline unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
   int mode = ARM7_BFE(cpu->registers[CPSR],0,4);
 
-  static int8_t lookup[18*16]={
+  const static int8_t lookup[18*16]={
      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
      0, 1, 2, 3, 4, 5, 6, 7,17,18,19,20,21,22,23,15,16,32, //mode 0x1 (fiq)
      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,24,25,15,16,33, //mode 0x2 (irq)

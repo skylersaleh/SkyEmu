@@ -621,11 +621,11 @@ typedef struct {
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
 
-void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
+static inline void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
 
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
-static uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
+static inline uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
 static inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
 static inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
   bool read_only;
@@ -841,28 +841,28 @@ static inline uint32_t arm7_read16(void* user_data, uint32_t address){
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 
-static uint8_t arm7_read8(void* user_data, uint32_t address){
+static inline uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,0);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
   }
   return gba_read8((gba_t*)user_data,address);
 }
-static void arm7_write32(void* user_data, uint32_t address, uint32_t data){
+static inline void arm7_write32(void* user_data, uint32_t address, uint32_t data){
   gba_compute_access_cycles(user_data,address,2);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
   }
   gba_store32((gba_t*)user_data,address,data);
 }
-static void arm7_write16(void* user_data, uint32_t address, uint16_t data){
+static inline void arm7_write16(void* user_data, uint32_t address, uint16_t data){
   gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
   }
   gba_store16((gba_t*)user_data,address,data);
 }
-static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
+static inline void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   gba_compute_access_cycles(user_data,address,0);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
@@ -873,11 +873,49 @@ static void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
 bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
 void gba_reset(gba_t*gba);
  
-uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
-  baddr&=0xfffffffc;
+static inline uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
+  baddr&=0x0fffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
   *read_only= false; 
-  if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
+  switch(baddr>>24){
+    case 0x0: if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr);} break;
+    case 0x1: break;
+    case 0x2: ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff)); break;
+    case 0x3: ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff)); break;
+    case 0x4: if(baddr<=0x40003FE ){ret = (uint32_t*)(gba->mem.io+(baddr&0x3ff));} break;
+    case 0x5: ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff)); break;
+    case 0x6: 
+      if(baddr&0x10000)ret = (uint32_t*)(gba->mem.vram+(baddr&0x07fff)+0x10000);
+      else ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
+      break;
+    case 0x7: ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff)); break;
+    case 0x8:
+    case 0x9:
+    case 0xA:
+    case 0xB:
+    case 0xC:
+    case 0xD:{
+        int addr = baddr&0x1ffffff;
+        *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
+        if(addr>gba->cart.rom_size){
+          ret = (uint32_t*)(&gba->mem.cartopen_bus);
+          *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
+        }
+      }
+      break;
+    case 0xE:
+      if(gba->cart.backup_type==GBA_BACKUP_SRAM) ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
+      else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
+      else{
+        //Flash
+        if(gba->cart.in_chip_id_mode&&baddr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
+        else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
+      }
+      break;
+    case 0xF: break;
+
+  }
+  /*if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
     int addr = baddr&0x1ffffff;
     *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
     if(addr>gba->cart.rom_size){
@@ -904,7 +942,7 @@ uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
     }
     
   }else if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr-0x0);}
-
+  */
   gba->mem.openbus_word=*ret;
   return ret;
 }
@@ -1039,7 +1077,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
+static inline void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   gba->ppu.scan_clock+=cycles;
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
@@ -1419,7 +1457,6 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
   }
 }
 int gba_tick_dma(gba_t*gba){
-  if(!gba->activate_dmas)return 0;
   int ticks =0;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
@@ -1550,7 +1587,7 @@ int gba_tick_dma(gba_t*gba){
         }
       }
       
-      ticks+=cnt;
+      ticks+=cnt*2;
       if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
       else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
       if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
@@ -1607,7 +1644,7 @@ static void gba_tick_sio(gba_t* gba){
     gba_io_store16(gba,GBA_SIOCNT,siocnt);
   }
 }
-void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
+static inline void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
   gba->deferred_timer_ticks+=ticks;
   if(gba->deferred_timer_ticks<gba->timer_ticks_before_event&&force_recalculate==false)return; 
   ticks = gba->deferred_timer_ticks; 
@@ -1669,14 +1706,14 @@ void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
   }
   gba->timer_ticks_before_event=timer_ticks_before_event;
 }
-float gba_compute_vol_env_slope(int length_of_step,int dir){
+static inline float gba_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;
   float slope = 1./step_time;
   if(dir==0)slope*=-1;
   if(length_of_step==0)slope=0;
   return slope/16.;
 } 
-float gba_polyblep(float t,float dt){
+static inline float gba_polyblep(float t,float dt){
   if(t<=dt){    
     t = t/dt;
     return t+t-t*t-1.0;;
@@ -1685,7 +1722,7 @@ float gba_polyblep(float t,float dt){
     return t*t+t+t+1.0;
   }else return 0; 
 }
-float gba_bandlimited_square(float t, float duty_cycle,float dt){
+static inline float gba_bandlimited_square(float t, float duty_cycle,float dt){
   float t2 = t - duty_cycle;
   if(t2< 0.0)t2 +=1.0;
   float y = t < duty_cycle ? -1 : 1;
@@ -1693,7 +1730,7 @@ float gba_bandlimited_square(float t, float duty_cycle,float dt){
   y += gba_polyblep(t2,dt);
   return y;
 }
-void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
+static inline void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
   
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;
@@ -1706,10 +1743,9 @@ void gba_process_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
   float volume_env[4]={0,0,0,0};
   static float last_noise_value = 0;
 
-  while(current_sim_time>1.0){
-      current_sample_generated_time-=1.0;
-      current_sim_time-=1.0;
-  } 
+  current_sample_generated_time -= (int)(current_sim_time);
+  current_sim_time -= (int)(current_sim_time);
+
   static float capacitor_r = 0.0;
   static float capacitor_l = 0.0;
 
@@ -1976,7 +2012,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     gba->cpu.print_instructions = emu->run_mode ==SB_MODE_STEP;
 
     for(int i = 0;i<max_instructions;++i){
-      int ticks = gba_tick_dma(gba);
+      int ticks = gba->activate_dmas? gba_tick_dma(gba) :0;
       if(!ticks){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
         uint16_t int_ie = gba_io_read16(gba,GBA_IE);
@@ -1985,8 +2021,10 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           if(int_if&int_ie)gba->halt = false;
           ticks=4;
         }else{
-          uint32_t ime = gba_io_read32(gba,GBA_IME);
-          if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
+          if(int_if&int_ie){
+            uint32_t ime = gba_io_read32(gba,GBA_IME);
+            if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
+          }
           gba->mem.requests=1;
           arm7_exec_instruction(&gba->cpu);
           ticks = gba->mem.requests; 
@@ -2000,7 +2038,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
       double delta_t = ((double)ticks)/(16*1024*1024);
       delta_t*=time_correction_scale;
-      gba_process_audio(gba, emu,delta_t);
+      gba_tick_audio(gba, emu,delta_t);
 
       bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
       breakpoint |= gba->cpu.trigger_breakpoint;
