@@ -621,25 +621,25 @@ typedef struct {
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
 
-static inline void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
+static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
 
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
-static inline uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
-static inline uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
-static inline uint16_t gba_read16(gba_t*gba, unsigned baddr){
+static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
+static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only);}
+static FORCE_INLINE uint16_t gba_read16(gba_t*gba, unsigned baddr){
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
-static inline uint8_t gba_read8(gba_t*gba, unsigned baddr){
+static FORCE_INLINE uint8_t gba_read8(gba_t*gba, unsigned baddr){
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
-static inline void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, uint8_t data){
+static FORCE_INLINE void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, uint8_t data){
   #define FLASH_DEFAULT 0x0
   #define FLASH_RECV_AA 0x1
   #define FLASH_RECV_55 0x2
@@ -706,7 +706,7 @@ static inline void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, u
       break;
   }
 }
-static inline void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t data){
+static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t data){
   if(gba->cart.backup_type==GBA_BACKUP_FLASH_64K||gba->cart.backup_type==GBA_BACKUP_FLASH_128K){
     gba_process_flash_state_machine(gba,baddr,data);
   }else if(gba->cart.backup_type==GBA_BACKUP_SRAM){
@@ -716,35 +716,35 @@ static inline void gba_process_backup_write(gba_t*gba, unsigned baddr, uint32_t 
     }
   }
 }
-static inline void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
+static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t *val=gba_dword_lookup(gba,baddr,&read_only);
   if(!read_only)*val= data;
 }
-static inline void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
+static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
   if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   if(!read_only)((uint16_t*)val)[offset]=data; 
 }
-static inline void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
+static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
   if(!read_only)((uint8_t*)val)[offset]=data; 
 } 
-static inline void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xffff]=data;}
-static inline void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xffff))=data;}
-static inline void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data){*(uint32_t*)(gba->mem.io+(baddr&0xffff))=data;}
+static FORCE_INLINE void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xffff]=data;}
+static FORCE_INLINE void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xffff))=data;}
+static FORCE_INLINE void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data){*(uint32_t*)(gba->mem.io+(baddr&0xffff))=data;}
 
-static inline uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.io[baddr&0xffff];}
-static inline uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xffff));}
-static inline uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.io[baddr&0xffff];}
+static FORCE_INLINE uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xffff));}
 
-static inline void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
+static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*3]={
     1,1,1, //0x00 (bios)
@@ -815,14 +815,14 @@ static inline void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   waitcnt&=(1<<15); // Force cartridge to report as GBA cart
   gba_io_store16(gba,GBA_WAITCNT,waitcnt);
 }
-static inline void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
   gba_t * gba = ((gba_t*)user_data); 
   gba->mem.requests+=gba->mem.wait_state_table[bank*3+request_size];
 }
-static inline void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
+static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 // Memory IO functions for the emulated CPU                  
-static inline uint32_t arm7_read32(void* user_data, uint32_t address){
+static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,2);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
@@ -830,7 +830,7 @@ static inline uint32_t arm7_read32(void* user_data, uint32_t address){
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
-static inline uint32_t arm7_read16(void* user_data, uint32_t address){
+static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
@@ -841,28 +841,28 @@ static inline uint32_t arm7_read16(void* user_data, uint32_t address){
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 
-static inline uint8_t arm7_read8(void* user_data, uint32_t address){
+static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,0);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
   }
   return gba_read8((gba_t*)user_data,address);
 }
-static inline void arm7_write32(void* user_data, uint32_t address, uint32_t data){
+static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data){
   gba_compute_access_cycles(user_data,address,2);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
   }
   gba_store32((gba_t*)user_data,address,data);
 }
-static inline void arm7_write16(void* user_data, uint32_t address, uint16_t data){
+static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data){
   gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
   }
   gba_store16((gba_t*)user_data,address,data);
 }
-static inline void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
+static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   gba_compute_access_cycles(user_data,address,0);
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
@@ -873,7 +873,7 @@ static inline void arm7_write8(void* user_data, uint32_t address, uint8_t data) 
 bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
 void gba_reset(gba_t*gba);
  
-static inline uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
+static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
   baddr&=0x0fffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
   *read_only= false; 
@@ -955,7 +955,7 @@ static void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     printf("Tried to push audio samples to full fifo\n");
   }
 }
-static inline void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
+static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
   // Force recomputing timers on timer read
   if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_tick_timers(gba,0,true);
 }
@@ -1077,7 +1077,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-static inline void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
+static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   gba->ppu.scan_clock+=cycles;
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
@@ -1644,7 +1644,7 @@ static void gba_tick_sio(gba_t* gba){
     gba_io_store16(gba,GBA_SIOCNT,siocnt);
   }
 }
-static inline void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
+static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
   gba->deferred_timer_ticks+=ticks;
   if(gba->deferred_timer_ticks<gba->timer_ticks_before_event&&force_recalculate==false)return; 
   ticks = gba->deferred_timer_ticks; 
@@ -1706,14 +1706,14 @@ static inline void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate
   }
   gba->timer_ticks_before_event=timer_ticks_before_event;
 }
-static inline float gba_compute_vol_env_slope(int length_of_step,int dir){
+static FORCE_INLINE float gba_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;
   float slope = 1./step_time;
   if(dir==0)slope*=-1;
   if(length_of_step==0)slope=0;
   return slope/16.;
 } 
-static inline float gba_polyblep(float t,float dt){
+static FORCE_INLINE float gba_polyblep(float t,float dt){
   if(t<=dt){    
     t = t/dt;
     return t+t-t*t-1.0;;
@@ -1722,7 +1722,7 @@ static inline float gba_polyblep(float t,float dt){
     return t*t+t+t+1.0;
   }else return 0; 
 }
-static inline float gba_bandlimited_square(float t, float duty_cycle,float dt){
+static FORCE_INLINE float gba_bandlimited_square(float t, float duty_cycle,float dt){
   float t2 = t - duty_cycle;
   if(t2< 0.0)t2 +=1.0;
   float y = t < duty_cycle ? -1 : 1;
@@ -1730,7 +1730,7 @@ static inline float gba_bandlimited_square(float t, float duty_cycle,float dt){
   y += gba_polyblep(t2,dt);
   return y;
 }
-static inline void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
+static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
   
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;

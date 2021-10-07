@@ -10,6 +10,11 @@
 #define SB_TYPES_H 1
 
 #include <stdint.h>
+#ifdef __GNUC__
+  #define FORCE_INLINE inline __attribute__((always_inline))
+#else
+  #define FORCE_INLINE inline
+#endif
 
 #define SB_FILE_PATH_SIZE 1024
 #define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024
