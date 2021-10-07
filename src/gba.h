@@ -946,7 +946,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*r
   gba->mem.openbus_word=*ret;
   return ret;
 }
-static void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
+static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
   int free_entries = (gba->audio.fifo[fifo].write_ptr+1-gba->audio.fifo[fifo].read_ptr)&0x1f; 
   if(free_entries){
     gba->audio.fifo[fifo].write_ptr = (gba->audio.fifo[fifo].write_ptr+1)&0x1f;
@@ -1456,7 +1456,7 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
     gba_store16(gba,source_address+(i+offset)*elem_size*dir,data>>(size-i-1)&1);
   }
 }
-int gba_tick_dma(gba_t*gba){
+static FORCE_INLINE int gba_tick_dma(gba_t*gba){
   int ticks =0;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
@@ -1624,7 +1624,7 @@ int gba_tick_dma(gba_t*gba){
   gba->activate_dmas=ticks!=0;
   return ticks; 
 }                                              
-static void gba_tick_sio(gba_t* gba){
+static FORCE_INLINE void gba_tick_sio(gba_t* gba){
   //Just a stub for now;
   uint16_t siocnt = gba_io_read16(gba,GBA_SIOCNT);
   bool active = SB_BFE(siocnt,7,1);

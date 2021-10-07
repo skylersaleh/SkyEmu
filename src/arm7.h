@@ -258,7 +258,7 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
 static arm7_handler_t arm7_lookup_table[4096] = {};
 static arm7_handler_t arm7t_lookup_table[4096] = {};
 
-static __attribute__((always_inline)) unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
+static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
   int mode = ARM7_BFE(cpu->registers[CPSR],0,4);
 
@@ -406,7 +406,7 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   cpu->registers[CPSR] &= ~(1<<5);
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
-static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
   if(cpu->log_cmp_file)return; //Log drives interrupts when enabled
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
