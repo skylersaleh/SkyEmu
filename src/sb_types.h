@@ -143,7 +143,7 @@ typedef struct{
   int clocks_till_tima_inc;
 } sb_timer_t;
 
-inline uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
+static FORCE_INLINE uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
   if(buff->read_ptr>SB_AUDIO_RING_BUFFER_SIZE){
     buff->write_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
     buff->read_ptr-=SB_AUDIO_RING_BUFFER_SIZE;

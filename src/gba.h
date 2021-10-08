@@ -555,7 +555,7 @@ typedef struct {
   uint32_t requests;
   uint32_t last_bios_data;
   uint32_t cartopen_bus; 
-  uint8_t wait_state_table[16*3];
+  uint8_t wait_state_table[16*4];
 } gba_mem_t;
 
 typedef struct {
@@ -593,7 +593,6 @@ typedef struct{
   uint16_t reload_value; 
   uint16_t prescaler_timer;
   uint16_t elapsed_audio_samples;
-  bool overflowed; 
 }gba_timer_t;
 typedef struct{
   struct{
@@ -746,25 +745,25 @@ static FORCE_INLINE uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(u
 
 static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
-  const int wait_state_table[16*3]={
-    1,1,1, //0x00 (bios)
-    1,1,1, //0x01 (bios)
-    3,3,6, //0x02 (256k WRAM)
-    1,1,1, //0x03 (32k WRAM)
-    1,1,1, //0x04 (IO)
-    1,1,2, //0x05 (BG/OBJ Palette)
-    1,1,2, //0x06 (VRAM)
-    1,1,1, //0x07 (OAM)
-    4,4,8, //0x08 (GAMEPAK ROM 0)
-    4,4,8, //0x09 (GAMEPAK ROM 0)
-    4,4,8, //0x0A (GAMEPAK ROM 1)
-    4,4,8, //0x0B (GAMEPAK ROM 1)
-    4,4,8, //0x0C (GAMEPAK ROM 2)
-    4,4,8, //0x0D (GAMEPAK ROM 2)
-    4,4,4, //0x0E (GAMEPAK SRAM)
-    1,1,1, //0x0F (unused)
+  const int wait_state_table[16*4]={
+    1,1,1,1, //0x00 (bios)
+    1,1,1,1, //0x01 (bios)
+    3,3,6,6, //0x02 (256k WRAM)
+    1,1,1,1, //0x03 (32k WRAM)
+    1,1,1,1, //0x04 (IO)
+    1,1,2,2, //0x05 (BG/OBJ Palette)
+    1,1,2,2, //0x06 (VRAM)
+    1,1,1,1, //0x07 (OAM)
+    4,4,8,8, //0x08 (GAMEPAK ROM 0)
+    4,4,8,8, //0x09 (GAMEPAK ROM 0)
+    4,4,8,8, //0x0A (GAMEPAK ROM 1)
+    4,4,8,8, //0x0B (GAMEPAK ROM 1)
+    4,4,8,8, //0x0C (GAMEPAK ROM 2)
+    4,4,8,8, //0x0D (GAMEPAK ROM 2)
+    4,4,4,4, //0x0E (GAMEPAK SRAM)
+    1,1,1,1, //0x0F (unused)
   };
-  for(int i=0;i<16*3;++i){
+  for(int i=0;i<16*4;++i){
     gba->mem.wait_state_table[i]=wait_state_table[i];
   }
   uint8_t sram_wait = SB_BFE(waitcnt,0,2);
@@ -781,49 +780,66 @@ static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitc
   //Each waitstate is two entries in table
   for(int i=0;i<2;++i){
     //Wait 0
-    int wait16b = primary_table[wait0_first]; 
-    int wait32b = primary_table[wait0_first]+(wait0_second?2:1); 
-    //Assume prefetch captures all rom reads (fixes pokemon emerald)
-    if(prefetch_en){wait16b=1;wait32b=2;}
+    int wait16b = 1*(wait0_second?2:3); 
+    int wait32b = 2*(wait0_second?2:3); 
 
-    gba->mem.wait_state_table[(0x08+i)*3+0] = wait16b;
-    gba->mem.wait_state_table[(0x08+i)*3+1] = wait16b;
-    gba->mem.wait_state_table[(0x08+i)*3+2] = wait32b;
+    int wait16b_nonseq = 1+primary_table[wait0_first]; 
+    int wait32b_nonseq = (1+primary_table[wait0_first])+(wait0_second?2:3);
+    //Assume prefetch captures all rom reads (fixes pokemon emerald)
+    if(prefetch_en){
+      wait16b_nonseq=wait16b_nonseq;
+      wait16b= 1*(wait1_second?1:2); 
+      wait32b_nonseq=wait32b_nonseq;
+      wait32b=2+2*(2);
+    }
+
+    gba->mem.wait_state_table[(0x08+i)*4+0] = wait16b;
+    gba->mem.wait_state_table[(0x08+i)*4+1] = wait16b_nonseq;
+    gba->mem.wait_state_table[(0x08+i)*4+2] = wait32b;
+    gba->mem.wait_state_table[(0x08+i)*4+3] = wait32b_nonseq;
 
     //Wait 1
-    wait16b = primary_table[wait1_first]; 
-    wait32b = primary_table[wait1_first]+(wait1_second?2:1); 
-    if(prefetch_en){wait16b=1;wait32b=2;}
+    wait16b = 1*(wait1_second?2:3); 
+    wait32b = 2*(wait1_second?2:3);
+    wait16b_nonseq = 1+primary_table[wait1_first]; 
+    wait32b_nonseq = (1+primary_table[wait1_first])+(wait1_second?2:3); 
+    if(prefetch_en){wait16b_nonseq=wait16b=1*(wait1_second?1:2);wait32b_nonseq=wait32b=(wait1_second?1:2);}
 
-    gba->mem.wait_state_table[(0x0A+i)*3+0] = wait16b;
-    gba->mem.wait_state_table[(0x0A+i)*3+1] = wait16b;
-    gba->mem.wait_state_table[(0x0A+i)*3+2] = wait32b;
+    gba->mem.wait_state_table[(0x0A+i)*4+0] = wait16b;
+    gba->mem.wait_state_table[(0x0A+i)*4+1] = wait16b_nonseq;
+    gba->mem.wait_state_table[(0x0A+i)*4+2] = wait32b;
+    gba->mem.wait_state_table[(0x0A+i)*4+3] = wait32b_nonseq;
 
     //Wait 2
-    wait16b = primary_table[wait2_first]; 
-    wait32b = primary_table[wait2_first]+(wait2_second?8:1); 
-    if(prefetch_en){wait16b=1;wait32b=2;}
+    wait16b = 1*(wait2_second?2:9); 
+    wait32b = 2*(wait2_second?2:9); 
+    wait16b_nonseq = 1+primary_table[wait2_first]; 
+    wait32b_nonseq = (1+primary_table[wait2_first])+(wait2_second?2:9);
 
-    gba->mem.wait_state_table[(0x0C+i)*3+0] = wait16b;
-    gba->mem.wait_state_table[(0x0C+i)*3+1] = wait16b;
-    gba->mem.wait_state_table[(0x0C+i)*3+2] = wait32b;
+    if(prefetch_en){wait16b_nonseq=wait16b=1*(wait2_second?1:2);wait32b_nonseq=wait32b=(wait2_second?1:2);}
+
+    gba->mem.wait_state_table[(0x0C+i)*4+0] = wait16b;
+    gba->mem.wait_state_table[(0x0C+i)*4+1] = wait16b_nonseq;
+    gba->mem.wait_state_table[(0x0C+i)*4+2] = wait32b;
+    gba->mem.wait_state_table[(0x0C+i)*4+3] = wait32b_nonseq;
   }
   //SRAM
-  gba->mem.wait_state_table[(0x0E*3)+0]= 1+primary_table[sram_wait];
-  gba->mem.wait_state_table[(0x0E*3)+1]= 1+primary_table[sram_wait];
-  gba->mem.wait_state_table[(0x0E*3)+2]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*4)+0]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*4)+1]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*4)+2]= 1+primary_table[sram_wait];
+  gba->mem.wait_state_table[(0x0E*4)+3]= 1+primary_table[sram_wait];
   waitcnt&=(1<<15); // Force cartridge to report as GBA cart
   gba_io_store16(gba,GBA_WAITCNT,waitcnt);
 }
 static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
   gba_t * gba = ((gba_t*)user_data); 
-  gba->mem.requests+=gba->mem.wait_state_table[bank*3+request_size];
+  gba->mem.requests+=gba->mem.wait_state_table[bank*4+request_size];
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 // Memory IO functions for the emulated CPU                  
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address,2);
+  gba_compute_access_cycles(user_data,address,3);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
   }
@@ -838,18 +854,35 @@ static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
   uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
+static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, bool seq){
+  gba_compute_access_cycles(user_data,address,seq?2:3);
+  if(address>=0x4000000 && address<=0x40003FE){
+    gba_process_mmio_read((gba_t*)user_data,address,4);
+  }
+  uint32_t value = gba_read32((gba_t*)user_data,address);
+  return arm7_rotr(value,(address&0x3)*8);
+}
+static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address, bool seq){
+  gba_compute_access_cycles(user_data,address,seq?0:1);
+  if(address>=0x4000000 && address<=0x40003FE){
+    gba_process_mmio_read((gba_t*)user_data,address,4);
+  }
+  uint16_t value = gba_read16((gba_t*)user_data,address);
+  return arm7_rotr(value,(address&0x1)*8);
+}
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address,0);
+  gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
   }
   return gba_read8((gba_t*)user_data,address);
 }
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data){
-  gba_compute_access_cycles(user_data,address,2);
+  gba_compute_access_cycles(user_data,address,3);
+  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
   }
@@ -857,13 +890,15 @@ static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_
 }
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data){
   gba_compute_access_cycles(user_data,address,1);
+  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
   }
   gba_store16((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
-  gba_compute_access_cycles(user_data,address,0);
+  gba_compute_access_cycles(user_data,address,1);
+  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
@@ -985,6 +1020,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
 
     return true; 
   }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
+    gba_tick_timers(gba,0,true);
     if(word_mask&0xffff){
       int timer_off = (address_u32-GBA_TM0CNT_L)/4;
       gba->timers[timer_off+0].reload_value =word_data&(word_mask&0xffff);
@@ -1082,7 +1118,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
-  int lcd_y = (gba->ppu.scan_clock+46)/1232;
+  int lcd_y = (gba->ppu.scan_clock+47)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
   if(lcd_x==262||lcd_x==0||lcd_x==240){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
@@ -1342,8 +1378,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           // Shift lcd_coords into fixed point
           int64_t x1 = (lcd_x<<8)+(1<<7);
           int64_t y1 = (lcd_y<<8)+(1<<7);
-          int64_t x2 = a*(x1) + b*(y1) + (bgx<<8)+(1<<15);
-          int64_t y2 = c*(x1) + d*(y1) + (bgy<<8)+(1<<15);
+          int64_t x2 = a*(x1) + b*(y1) + (bgx<<8);
+          int64_t y2 = c*(x1) + d*(y1) + (bgy<<8);
 
           bg_x = (x2>>16);
           bg_y = (y2>>16);
@@ -1654,16 +1690,15 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
   for(int t=0;t<4;++t){ 
     uint16_t tm_cnt_h = gba_io_read16(gba,GBA_TM0CNT_H+t*4);
     bool enable = SB_BFE(tm_cnt_h,7,1);
-    gba->timers[t].overflowed = false; 
     if(enable){
       uint16_t prescale = SB_BFE(tm_cnt_h,0,2);
       bool count_up     = SB_BFE(tm_cnt_h,2,1);
       bool irq_en       = SB_BFE(tm_cnt_h,6,1);
       uint16_t value = gba_io_read16(gba,GBA_TM0CNT_L+t*4);
-      if(enable!=gba->timers[t].last_enable){
+      if(enable!=gba->timers[t].last_enable&&enable){
         value = gba->timers[t].reload_value;
-        gba->timers[t].prescaler_timer = 0; 
         gba->timers[t].last_enable = enable;
+        gba->timers[t].prescaler_timer=0;
       }
       
       if(count_up){
@@ -1693,16 +1728,18 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
         if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
       if(last_timer_overflow && irq_en){
-        uint16_t if_val = gba_io_read16(gba,GBA_IF);
         uint16_t ie_val = gba_io_read16(gba,GBA_IE);
         uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
-        if(if_val){
+        if(if_bit&&ie_val){
+          uint16_t if_val = gba_io_read16(gba,GBA_IF);
           if_val |= if_bit&ie_val;
           gba_io_store16(gba,GBA_IF,if_val);
         }
       }
+      
       gba_io_store16(gba,GBA_TM0CNT_L+t*4,value);
     }else last_timer_overflow=0;
+    gba->timers[t].last_enable = enable;
   }
   gba->timer_ticks_before_event=timer_ticks_before_event;
 }
@@ -2025,9 +2062,17 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
             uint32_t ime = gba_io_read32(gba,GBA_IME);
             if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
           }
-          gba->mem.requests=1;
+          gba->mem.requests=0;
+          uint32_t pc = gba->cpu.registers[15];
           arm7_exec_instruction(&gba->cpu);
-          ticks = gba->mem.requests; 
+          ticks = gba->mem.requests+gba->cpu.i_cycles; 
+          if(gba->cpu.i_cycles&&!gba->cpu.next_fetch_sequential){
+            // The GBA CPU has a bug that causes all fetches after i_cycles to be non-sequential
+            //gba->cpu.next_fetch_sequential = false;
+            uint32_t bank = SB_BFE(pc,24,4);
+            //ticks+=gba->mem.wait_state_table[bank*4+3]-gba->mem.wait_state_table[bank*4+2];
+          }
+          gba->cpu.i_cycles=0;
         }
       }
       for(int t = 0;t<ticks;++t){
