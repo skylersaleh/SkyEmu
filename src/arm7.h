@@ -48,6 +48,8 @@ typedef struct {
   35: SPSR_abt
   36: SPSR_und
   */
+  uint32_t prefetch_pc;
+  uint32_t prefetch_opcode; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
   uint32_t registers[37];
@@ -400,6 +402,7 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
+  arm.prefetch_pc= -1; 
   //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/tony-hawk-log.bin","rb");
 
   return arm;
@@ -540,37 +543,46 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
 
   }
   bool thumb = arm7_get_thumb_bit(cpu);
-  int old_pc = cpu->registers[PC];
-  if(thumb==false){
-    uint32_t opcode = arm7_read32_seq(cpu->user_data,old_pc,cpu->next_fetch_sequential);
-    cpu->next_fetch_sequential=true;
-    cpu->registers[PC] += 4;
-    uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,old_pc);
-    if(cpu->print_instructions)printf("%08x\n",opcode);
 
+  if(cpu->prefetch_pc!=cpu->registers[PC]){
+    cpu->registers[PC]&= thumb? ~1 : ~3; 
+
+    cpu->prefetch_opcode = thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
+    thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC],true):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC],true);
+  }
+  cpu->i_cycles=0;
+  cpu->next_fetch_sequential=true;
+  if(thumb==false){
+    uint32_t opcode = cpu->prefetch_opcode;
+    if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
+    //if(cpu->print_instructions)printf("%08x\n",opcode);
+    cpu->registers[PC] += 4;
+    cpu->prefetch_pc = cpu->registers[PC];
+    cpu->prefetch_opcode = arm7_read32_seq(cpu->user_data,cpu->prefetch_pc,cpu->next_fetch_sequential);
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t old_pc = cpu->registers[PC];
+
+      uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     	arm7_lookup_table[key](cpu,opcode);
       uint32_t new_pc = cpu->registers[PC];
-      cpu->next_fetch_sequential &= old_pc==new_pc;
-      if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
+      //if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
     }
   }else{
-    uint32_t opcode = arm7_read16_seq(cpu->user_data,cpu->registers[PC],cpu->next_fetch_sequential);
-    cpu->next_fetch_sequential=true;
-    if(cpu->print_instructions)printf("%04x\n",opcode);
-    if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,old_pc);
+    uint32_t opcode = cpu->prefetch_opcode;
+    if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 2;
+    cpu->prefetch_opcode = arm7_read16_seq(cpu->user_data,cpu->registers[PC],cpu->next_fetch_sequential);
+    cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
     uint32_t new_pc = cpu->registers[PC];
-    cpu->next_fetch_sequential &= old_pc==new_pc;
-    if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
+    //if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
   }
-  //Bit 0 of PC is always 0
-  cpu->registers[PC]&= ~1; 
   cpu->executed_instructions++;
 
 }
@@ -667,7 +679,7 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
       // Only the first byte is used
       shift_value = arm7_reg_read_r15_adj(cpu, rs,r15_off)&0xff;
       r15_off+=4; //Using r15 for a shift adds 4 cycles
-      cpu->i_cycles+=1;
+      cpu->i_cycles=1;
     }else shift_value = ARM7_BFE(opcode,7,5);  
     uint32_t value = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off); 
     Rm = arm7_shift(cpu, opcode, value, shift_value, &barrel_shifter_carry); 
@@ -848,14 +860,14 @@ static FORCE_INLINE void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   else arm7_write32(cpu->user_data,addr,store_data);
 
   arm7_reg_write(cpu,Rd,read_data);
-  cpu->i_cycles++;  
-  
+  cpu->i_cycles=1;    
 }
 static FORCE_INLINE void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read_r15_adj(cpu,ARM7_BFE(opcode,0,4),4);
   bool thumb = (v&1)==1;
   if(thumb)cpu->registers[PC] = (v&~1);
   else cpu->registers[PC] = (v&~3);
+  cpu->prefetch_pc=-1;
   arm7_set_thumb_bit(cpu,thumb);
 }
 static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
@@ -887,7 +899,7 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   if(!P) {write_back_addr+=increment;W=true;}
   if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
   if(L==1){ // Load
-    cpu->i_cycles+=1;
+    cpu->i_cycles=1;
     uint32_t data = H ? arm7_read16(cpu->user_data,addr): arm7_read8(cpu->user_data,addr);
     if(S){
       // Unaligned signed half words and signed byte loads sign extend the byte 
@@ -931,7 +943,7 @@ static FORCE_INLINE void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
 
   if(L==1){ // Load
-    cpu->i_cycles+=1;
+    cpu->i_cycles=1;
     uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
   }
@@ -946,7 +958,7 @@ static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x1b|0x80;
   arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x\n",opcode);
-  cpu->i_cycles++;
+  cpu->i_cycles=1;
   //cpu->trigger_breakpoint = true;
 }
 static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
@@ -1044,6 +1056,7 @@ static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode){
   //Shift left and take into account prefetch
   int32_t pc_off = (v<<2)+4; 
   cpu->registers[PC]+=pc_off;
+  cpu->prefetch_pc=-1;
 }
 static FORCE_INLINE void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_coproc_data_transfer) Opcode: %x\n",opcode);
@@ -1399,6 +1412,7 @@ static FORCE_INLINE void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode){
   uint32_t arm_op = (cond<<28)|(0xA<<24); 
   if(arm7_check_cond_code(cpu,arm_op)){
     cpu->registers[PC]+=s_off*2+2;
+    cpu->prefetch_pc=-1;
   }
 }
 static FORCE_INLINE void arm7t_soft_interrupt(arm7_t* cpu, uint32_t opcode){
@@ -1408,6 +1422,7 @@ static FORCE_INLINE void arm7t_branch(arm7_t* cpu, uint32_t opcode){
   int offset = ARM7_BFE(opcode,0,11)<<1;
   if(ARM7_BFE(offset,11,1))offset|=0xfffff000;
   cpu->registers[PC]+=offset+2;
+  cpu->prefetch_pc=-1;
 }
 static FORCE_INLINE void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
   bool H = ARM7_BFE(opcode,11,1);
@@ -1424,6 +1439,7 @@ static FORCE_INLINE void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
     uint32_t pc = cpu->registers[PC];
     cpu->registers[PC]= link_reg;
     arm7_reg_write(cpu,LR,(pc|thumb_branch));
+    cpu->prefetch_pc=-1;
     if(!thumb_branch)arm7_set_thumb_bit(cpu,false);
   }
 }

@@ -552,6 +552,8 @@ typedef struct {
   uint32_t openbus_word;
   uint32_t eeprom_word; 
   uint32_t eeprom_addr; 
+  uint32_t prefetch_en; 
+  uint32_t prefetch_size; 
   uint32_t requests;
   uint32_t last_bios_data;
   uint32_t cartopen_bus; 
@@ -767,62 +769,43 @@ static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitc
     gba->mem.wait_state_table[i]=wait_state_table[i];
   }
   uint8_t sram_wait = SB_BFE(waitcnt,0,2);
-  uint8_t wait0_first  = SB_BFE(waitcnt,2,2);
-  uint8_t wait0_second = SB_BFE(waitcnt,4,1);
-  uint8_t wait1_first  = SB_BFE(waitcnt,5,2);
-  uint8_t wait1_second = SB_BFE(waitcnt,7,1);
-  uint8_t wait2_first  = SB_BFE(waitcnt,8,2);
-  uint8_t wait2_second = SB_BFE(waitcnt,10,1);
+  uint8_t wait_first[3];
+  uint8_t wait_second[3];
+
+  wait_first[0]  = SB_BFE(waitcnt,2,2);
+  wait_second[0] = SB_BFE(waitcnt,4,1);
+  wait_first[1]  = SB_BFE(waitcnt,5,2);
+  wait_second[1] = SB_BFE(waitcnt,7,1);
+  wait_first[2]  = SB_BFE(waitcnt,8,2);
+  wait_second[2] = SB_BFE(waitcnt,10,1);
   uint8_t prefetch_en = SB_BFE(waitcnt,14,1);
 
   int primary_table[4]={4,3,2,8};
 
   //Each waitstate is two entries in table
-  for(int i=0;i<2;++i){
-    //Wait 0
-    int wait16b = 1*(wait0_second?2:3); 
-    int wait32b = 2*(wait0_second?2:3); 
+  for(int ws=0;ws<3;++ws){
+    for(int i=0;i<2;++i){
+      uint8_t w_first = primary_table[wait_first[ws]];
+      uint8_t w_second = wait_second[ws]?1:2;
+      if(ws==1)w_second = wait_second[ws]?1:4;
+      if(ws==2)w_second = wait_second[ws]?1:8;
+      w_first+=1;w_second+=1;
+      //Wait 0
+      int wait16b = w_second; 
+      int wait32b = w_second*2; 
 
-    int wait16b_nonseq = 1+primary_table[wait0_first]; 
-    int wait32b_nonseq = (1+primary_table[wait0_first])+(wait0_second?2:3);
-    //Assume prefetch captures all rom reads (fixes pokemon emerald)
-    if(prefetch_en){
-      wait16b_nonseq=wait16b_nonseq;
-      wait16b= 1*(wait1_second?1:2); 
-      wait32b_nonseq=wait32b_nonseq;
-      wait32b=2+2*(2);
+      int wait16b_nonseq = w_first; 
+      int wait32b_nonseq = w_first+w_second;
+
+      gba->mem.wait_state_table[(0x08+i+ws*2)*4+0] = wait16b;
+      gba->mem.wait_state_table[(0x08+i+ws*2)*4+1] = wait16b_nonseq;
+      gba->mem.wait_state_table[(0x08+i+ws*2)*4+2] = wait32b;
+      gba->mem.wait_state_table[(0x08+i+ws*2)*4+3] = wait32b_nonseq;
     }
-
-    gba->mem.wait_state_table[(0x08+i)*4+0] = wait16b;
-    gba->mem.wait_state_table[(0x08+i)*4+1] = wait16b_nonseq;
-    gba->mem.wait_state_table[(0x08+i)*4+2] = wait32b;
-    gba->mem.wait_state_table[(0x08+i)*4+3] = wait32b_nonseq;
-
-    //Wait 1
-    wait16b = 1*(wait1_second?2:3); 
-    wait32b = 2*(wait1_second?2:3);
-    wait16b_nonseq = 1+primary_table[wait1_first]; 
-    wait32b_nonseq = (1+primary_table[wait1_first])+(wait1_second?2:3); 
-    if(prefetch_en){wait16b_nonseq=wait16b=1*(wait1_second?1:2);wait32b_nonseq=wait32b=(wait1_second?1:2);}
-
-    gba->mem.wait_state_table[(0x0A+i)*4+0] = wait16b;
-    gba->mem.wait_state_table[(0x0A+i)*4+1] = wait16b_nonseq;
-    gba->mem.wait_state_table[(0x0A+i)*4+2] = wait32b;
-    gba->mem.wait_state_table[(0x0A+i)*4+3] = wait32b_nonseq;
-
-    //Wait 2
-    wait16b = 1*(wait2_second?2:9); 
-    wait32b = 2*(wait2_second?2:9); 
-    wait16b_nonseq = 1+primary_table[wait2_first]; 
-    wait32b_nonseq = (1+primary_table[wait2_first])+(wait2_second?2:9);
-
-    if(prefetch_en){wait16b_nonseq=wait16b=1*(wait2_second?1:2);wait32b_nonseq=wait32b=(wait2_second?1:2);}
-
-    gba->mem.wait_state_table[(0x0C+i)*4+0] = wait16b;
-    gba->mem.wait_state_table[(0x0C+i)*4+1] = wait16b_nonseq;
-    gba->mem.wait_state_table[(0x0C+i)*4+2] = wait32b;
-    gba->mem.wait_state_table[(0x0C+i)*4+3] = wait32b_nonseq;
   }
+  gba->mem.prefetch_en = prefetch_en;
+  gba->mem.prefetch_size = 0;
+
   //SRAM
   gba->mem.wait_state_table[(0x0E*4)+0]= 1+primary_table[sram_wait];
   gba->mem.wait_state_table[(0x0E*4)+1]= 1+primary_table[sram_wait];
@@ -834,7 +817,25 @@ static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitc
 static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
   gba_t * gba = ((gba_t*)user_data); 
-  gba->mem.requests+=gba->mem.wait_state_table[bank*4+request_size];
+  uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
+  if(bank>=0x08&&bank<=0x0D){
+    if((request_size&1)||!gba->mem.prefetch_en){
+      //Non sequential->reset prefetch buffer
+      gba->mem.prefetch_size = 0;
+    }else{
+      //Sequential fetch from prefetch buffer based on available wait states
+      if(gba->mem.prefetch_size>=wait){
+        gba->mem.prefetch_size-=wait; 
+        wait = 1; 
+        //gba->mem.prefetch_size+=1;
+      }else{
+        wait -= gba->mem.prefetch_size;
+        gba->mem.prefetch_size =0;
+      }
+    }
+  }else gba->mem.prefetch_size+=wait; 
+  
+  gba->mem.requests+=wait;
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 // Memory IO functions for the emulated CPU                  
@@ -881,24 +882,21 @@ static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
   return gba_read8((gba_t*)user_data,address);
 }
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data){
-  gba_compute_access_cycles(user_data,address,3);
-  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
+  gba_compute_access_cycles(user_data,address,3); 
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,4))return;
   }
   gba_store32((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data){
-  gba_compute_access_cycles(user_data,address,1);
-  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
+  gba_compute_access_cycles(user_data,address,1); 
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,2))return; 
   }
   gba_store16((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
-  gba_compute_access_cycles(user_data,address,1);
-  ((gba_t*)user_data)->cpu.next_fetch_sequential=false;
+  gba_compute_access_cycles(user_data,address,1); 
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
@@ -935,6 +933,10 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*r
         if(addr>gba->cart.rom_size){
           ret = (uint32_t*)(&gba->mem.cartopen_bus);
           *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
+          if(addr>0x1FFFF00&&gba->cart.backup_type==GBA_BACKUP_EEPROM){
+            ret = (uint32_t*)&gba->mem.eeprom_word;
+            *ret = -1;
+          }
         }
       }
       break;
@@ -1545,6 +1547,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       if(i!=3)cnt&=0x3fff;
       if(cnt==0)cnt = i==3? 0x10000: 0x4000;
 
+      gba->mem.requests=0; 
       bool skip_dma = false;
       // EEPROM DMA transfers
       if(i==3 && gba->cart.backup_type==GBA_BACKUP_EEPROM){
@@ -1604,7 +1607,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
         if(size>=15)continue;
         //printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
         for(int x=0;x<4;++x){
-          uint32_t data = gba_read32(gba,src+x*4*src_dir);
+          uint32_t data = arm7_read32_seq(gba,src+x*4*src_dir,x!=0);
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,0,8));
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,8,8));
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,16,8));
@@ -1618,12 +1621,12 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       if(mode!=3&&!skip_dma){
         for(int x=0;x<cnt;++x){
-          if(type)gba_store32(gba,dst+x*4*dst_dir,gba_read32(gba,src+x*4*src_dir));
-          else    gba_store16(gba,dst+x*2*dst_dir,gba_read16(gba,src+x*2*src_dir));
+          if(type)arm7_write32(gba,dst+x*4*dst_dir,arm7_read32_seq(gba,src+x*4*src_dir,x!=0));
+          else    arm7_write16(gba,dst+x*2*dst_dir,arm7_read16_seq(gba,src+x*2*src_dir,x!=0));
         }
       }
       
-      ticks+=cnt*2;
+      ticks+=gba->mem.requests+2;
       if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
       else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
       if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
@@ -1703,9 +1706,15 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
       
       if(count_up){
         if(last_timer_overflow){
-          uint32_t old_value = value;
-          value+=last_timer_overflow;
-          last_timer_overflow =(old_value+last_timer_overflow)>>16;
+          uint32_t v= value;
+          v+=last_timer_overflow;
+          last_timer_overflow=0;
+          while(v>0xffff){
+            v=(v+gba->timers[t].reload_value)-0x10000;
+            last_timer_overflow++;
+            gba->timers[t].elapsed_audio_samples++;
+          }
+          value=v;
         }
       }else{
         last_timer_overflow=0;
@@ -2062,16 +2071,21 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
             uint32_t ime = gba_io_read32(gba,GBA_IME);
             if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if&int_ie);
           }
-          gba->mem.requests=0;
+
           uint32_t pc = gba->cpu.registers[15];
+          gba->mem.requests=0;
+
           arm7_exec_instruction(&gba->cpu);
+          if(gba->mem.prefetch_en)gba->mem.prefetch_size += gba->cpu.i_cycles;
+          if(gba->mem.prefetch_size>8)gba->mem.prefetch_size = 8; 
           ticks = gba->mem.requests+gba->cpu.i_cycles; 
-          if(gba->cpu.i_cycles&&!gba->cpu.next_fetch_sequential){
+          if(gba->cpu.i_cycles&&gba->mem.prefetch_en==false){
             // The GBA CPU has a bug that causes all fetches after i_cycles to be non-sequential
-            //gba->cpu.next_fetch_sequential = false;
             uint32_t bank = SB_BFE(pc,24,4);
-            //ticks+=gba->mem.wait_state_table[bank*4+3]-gba->mem.wait_state_table[bank*4+2];
+            gba->mem.prefetch_size = 0;
+            ticks+=gba->mem.wait_state_table[bank*4+3]-gba->mem.wait_state_table[bank*4+2];
           }
+          if(gba->cpu.next_fetch_sequential==false)gba->mem.prefetch_size=0;
           gba->cpu.i_cycles=0;
         }
       }
