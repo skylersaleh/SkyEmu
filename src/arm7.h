@@ -1018,7 +1018,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   // Address are word aligned
   addr&=~3;
   int cycle = 0; 
-  if(L)cpu->i_cycles=num_regs;
+  if(L)cpu->i_cycles=1;
   for(int i=0;i<16;++i){
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
@@ -1036,7 +1036,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     }
 
     // R15 is stored at PC+12
-    if(L) cpu->registers[reg_index]=arm7_read32(cpu->user_data, addr);
+    if(L) cpu->registers[reg_index]=arm7_read32_seq(cpu->user_data, addr,cycle!=1);
 
     addr+=4;
     
