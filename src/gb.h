@@ -79,9 +79,9 @@
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
-void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
+static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
-inline static uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
+static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x4000&&addr<=0x7fff){
     int bank = gb->cart.mapped_rom_bank;
     bank %= (gb->cart.rom_size)/0x4000;
@@ -132,7 +132,7 @@ void sb_unmap_ram(sb_gb_t*gb){
     }
   }
 }
-void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
+static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   if(addr>=0x8000&&addr<=0x9fff){
     uint8_t vbank =sb_read8_direct(gb, SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;;
     gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value;
@@ -271,7 +271,7 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
 }
 
 
-bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
+static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
   uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT);
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   uint8_t ly  = gb->lcd.curr_scanline;
@@ -584,10 +584,10 @@ void sb_draw_scanline(sb_gb_t*gb){
   }
   if(rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
 }
-bool sb_update_lcd(sb_gb_t* gb, int delta_cycles){
+static FORCE_INLINE bool sb_update_lcd(sb_gb_t* gb, int delta_cycles, bool draw){
   bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
   if(new_scanline){
-    sb_draw_scanline(gb);
+    if(draw)sb_draw_scanline(gb);
     uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
     if(y+1==SB_LCD_H)return true;
   }
@@ -877,7 +877,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         sb_update_oam_dma(gb,cpu_delta_cycles);
         int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
         delta_cycles_after_speed+= dma_delta_cycles;
-        bool vblank = sb_update_lcd(gb,delta_cycles_after_speed);
+        bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,frames_to_draw==1);
         sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
 
         double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
@@ -931,22 +931,22 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
   y += sb_polyblep(t2,dt);
   return y;
 }
-void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
+static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
+  static double current_sim_time = 0;
+  static double current_sample_generated_time = 0;
+
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  current_sim_time +=delta_time;
+  if(current_sample_generated_time >current_sim_time)return; 
+  current_sample_generated_time -= (int)(current_sim_time);
+  current_sim_time -= (int)(current_sim_time);
+
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0}, length_t[4]={0,0,0,0};
   float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
   float volume_env[4]={0,0,0,0};
   static float last_noise_value = 0;
 
-  static double current_sim_time = 0;
-  static double current_sample_generated_time = 0;
-
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  current_sim_time +=delta_time;
-  while(current_sim_time>1.0){
-      current_sample_generated_time-=1.0;
-      current_sim_time-=1.0;
-  } 
   static float capacitor_r = 0.0;
   static float capacitor_l = 0.0;
 
@@ -1047,7 +1047,7 @@ void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
     if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
     
     //Loop back
-    for(int i=0;i<4;++i) while(chan_t[i]>=1.0)chan_t[i]-=1.0;
+    for(int i=0;i<4;++i) chan_t[i]-=(int)chan_t[i];
     
     //Compute and clamp Volume Envelopes
     float v[4];

@@ -605,7 +605,7 @@ static FORCE_INLINE uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t v
   // Shift value of 0 has special behavior from a register: 
   // If this byte is zero, the unchanged contents of Rm will be used as the second operand,
   // and the old value of the CPSR C flag will be passed on as the shifter carry output.
-  if(shift_value==0&&ARM7_BFE(opcode,4,1)){*carry=-1;return value;}
+  if(shift_value==0&&(ARM7_BFE(opcode,4,1)||shift_type==0)){*carry=-1;return value;}
   switch(shift_type){
     case 0:
       if(shift_value>32){
@@ -658,66 +658,63 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   // I.e. add r0, r15, r15, lsl r15 would set r0 to PC + 12 + ((PC + 12) << (PC + 8))
   uint64_t Rd = ARM7_BFE(opcode,12,4);
   int S = ARM7_BFE(opcode,20,1);
-  int I = ARM7_BFE(opcode,25,1);
   int op = ARM7_BFE(opcode,21,4);
-
   int r15_off = 4; 
 
   // Load Second Operand
   uint64_t Rm = 0;
-  int barrel_shifter_carry = 0; 
-  if(I){
-    uint32_t imm = ARM7_BFE(opcode,0,8);
-    uint32_t rot = ARM7_BFE(opcode,8,4)*2;
-    Rm = arm7_rotr(imm, ARM7_BFE(opcode,8,4)*2);
-    //C is preserved when rot ==0 
-    barrel_shifter_carry =  rot==0?-1: ARM7_BFE(Rm,31,1);
-  }else{
-    uint32_t shift_value = 0; 
-    if(ARM7_BFE(opcode,4,1)){
-      int rs = ARM7_BFE(opcode,8,4);
-      // Only the first byte is used
-      shift_value = arm7_reg_read_r15_adj(cpu, rs,r15_off)&0xff;
-      r15_off+=4; //Using r15 for a shift adds 4 cycles
-      cpu->i_cycles=1;
-    }else shift_value = ARM7_BFE(opcode,7,5);  
-    uint32_t value = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off); 
-    Rm = arm7_shift(cpu, opcode, value, shift_value, &barrel_shifter_carry); 
-  }
+  int barrel_shifter_carry = -1; 
+  if(opcode&((1<<25)|(1<<4)|(0x7f<<5))){
+    int I = ARM7_BFE(opcode,25,1);
+    if(I){
+      uint32_t imm = ARM7_BFE(opcode,0,8);
+      uint32_t rot = ARM7_BFE(opcode,8,4)*2;
+      Rm = arm7_rotr(imm, ARM7_BFE(opcode,8,4)*2);
+      //C is preserved when rot ==0 
+      barrel_shifter_carry =  rot==0?-1: ARM7_BFE(Rm,31,1);
+    }else{
+      uint32_t shift_value = 0; 
+      if(ARM7_BFE(opcode,4,1)){
+        int rs = ARM7_BFE(opcode,8,4);
+        // Only the first byte is used
+        shift_value = arm7_reg_read_r15_adj(cpu, rs,r15_off)&0xff;
+        r15_off+=4; //Using r15 for a shift adds 4 cycles
+        cpu->i_cycles=1;
+      }else shift_value = ARM7_BFE(opcode,7,5);  
+      uint32_t value = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off); 
+      Rm = arm7_shift(cpu, opcode, value, shift_value, &barrel_shifter_carry); 
+    }
+  }else Rm= arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off);;
 
   uint64_t Rn = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,16,4), r15_off);
 
   uint64_t result = 0; 
-  // Perform main operation
-  uint32_t cpsr=cpu->registers[CPSR];
-  int C = ARM7_BFE(cpsr,29,1); 
+  // Perform main operation 
   switch(op){ 
-    /*AND*/ case 0:  result = Rn&Rm;     break;
-    /*EOR*/ case 1:  result = Rn^Rm;     break;
-    /*SUB*/ case 2:  result = Rn-Rm;     break;
-    /*RSB*/ case 3:  result = Rm-Rn;     break;
-    /*ADD*/ case 4:  result = Rn+Rm;     break;
-    /*ADC*/ case 5:  result = Rn+Rm+C;   break;
-    /*SBC*/ case 6:  result = Rn-Rm+C-1; break;
-    /*RSC*/ case 7:  result = Rm-Rn+C-1; break;
+    /*AND*/ case 0:  arm7_reg_write(cpu,Rd, result = Rn&Rm);     break;
+    /*EOR*/ case 1:  arm7_reg_write(cpu,Rd, result = Rn^Rm);     break;
+    /*SUB*/ case 2:  arm7_reg_write(cpu,Rd, result = Rn-Rm);     break;
+    /*RSB*/ case 3:  arm7_reg_write(cpu,Rd, result = Rm-Rn);     break;
+    /*ADD*/ case 4:  arm7_reg_write(cpu,Rd, result = Rn+Rm);     break;
+    /*ADC*/ case 5:  arm7_reg_write(cpu,Rd, result = Rn+Rm+ARM7_BFE(cpu->registers[CPSR],29,1));   break;
+    /*SBC*/ case 6:  arm7_reg_write(cpu,Rd, result = Rn-Rm+ARM7_BFE(cpu->registers[CPSR],29,1)-1); break;
+    /*RSC*/ case 7:  arm7_reg_write(cpu,Rd, result = Rm-Rn+ARM7_BFE(cpu->registers[CPSR],29,1)-1); break;
     /*TST*/ case 8:  result = Rn&Rm;     break;
     /*TEQ*/ case 9:  result = Rn^Rm;     break;
     /*CMP*/ case 10: result = Rn-Rm;     break;
     /*CMN*/ case 11: result = Rn+Rm;     break;
-    /*ORR*/ case 12: result = Rn|Rm;     break;
-    /*MOV*/ case 13: result = Rm;        break;
-    /*BIC*/ case 14: result = Rn&~Rm;    break;
-    /*MVN*/ case 15: result = ~Rm;       break;
+    /*ORR*/ case 12: arm7_reg_write(cpu,Rd, result = Rn|Rm);     break;
+    /*MOV*/ case 13: arm7_reg_write(cpu,Rd, result = Rm);        break;
+    /*BIC*/ case 14: arm7_reg_write(cpu,Rd, result = Rn&~Rm);    break;
+    /*MVN*/ case 15: arm7_reg_write(cpu,Rd, result = ~Rm);       break;
   }
-
-  // Writeback result
-  // TST, TEQ, CMP, CMN don't write result
-  if(op<8||op>11) arm7_reg_write(cpu,Rd,result);
 
   //Update flags
   if(S){
     //Rd is not valid for TST, TEQ, CMP, or CMN
-    {
+    if(Rd!=15){
+      uint32_t cpsr=cpu->registers[CPSR];
+      bool C = ARM7_BFE(cpsr,29,1);
       bool N = ARM7_BFE(result,31,1);
       bool Z = (result&0xffffffff)==0;
       bool V = ARM7_BFE(cpsr,28,1);
@@ -762,17 +759,13 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
       cpsr|= (C?1:0)<<29; 
       cpsr|= (V?1:0)<<28;
       cpu->registers[CPSR] = cpsr;
-    }
-    if(Rd==15){
+    }else{
       // When Rd is R15 and the S flag is set the result of the operation is placed in R15 
       // and the SPSR corresponding to the current mode is moved to the CPSR. This allows
       // state changes which atomically restore both PC and CPSR. This form of instruction
       // should not be used in User mode.
-      cpsr = arm7_reg_read(cpu,SPSR);
-      cpu->registers[CPSR] = cpsr;
+      cpu->registers[CPSR] = arm7_reg_read(cpu,SPSR);
     }
-
-
   }
 }
 static FORCE_INLINE void arm7_multiply(arm7_t* cpu, uint32_t opcode){

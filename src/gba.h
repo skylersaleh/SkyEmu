@@ -1075,7 +1075,7 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     gba->audio.fifo[fifo].write_ptr = (gba->audio.fifo[fifo].write_ptr+1)&0x1f;
     gba->audio.fifo[fifo].data[gba->audio.fifo[fifo].write_ptr]= data; 
   }else{
-    printf("Tried to push audio samples to full fifo\n");
+    //printf("Tried to push audio samples to full fifo\n");
   }
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
@@ -2154,9 +2154,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       int ticks = gba->activate_dmas? gba_tick_dma(gba) :0;
       if(!ticks){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
-        if(int_if){
-          int_if &= gba_io_read16(gba,GBA_IE);
-        }
+        if(int_if)int_if &= gba_io_read16(gba,GBA_IE);
         if(gba->halt){
           if(int_if)gba->halt = false;
           ticks=4;
@@ -2165,9 +2163,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
             uint32_t ime = gba_io_read32(gba,GBA_IME);
             if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if);
           }
-
           gba->mem.requests=0;
-
           arm7_exec_instruction(&gba->cpu);
           if(gba->mem.prefetch_en){
             gba->mem.prefetch_size += gba->cpu.i_cycles;
@@ -2182,20 +2178,19 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
             ticks+=gba->mem.wait_state_table[bank*4+3]-gba->mem.wait_state_table[bank*4+2];
           }
         }
+        bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
+        breakpoint |= gba->cpu.trigger_breakpoint;
+        if(breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       for(int t = 0;t<ticks;++t){
         gba_tick_ppu(gba,1,frames_to_render<=0);
-        gba_tick_sio(gba);
       }
+      gba_tick_sio(gba);
       gba_tick_timers(gba,ticks,false);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
       delta_t*=time_correction_scale;
       gba_tick_audio(gba, emu,delta_t);
-
-      bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
-      breakpoint |= gba->cpu.trigger_breakpoint;
-      if(breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
@@ -2204,9 +2199,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       int size = sb_ring_buffer_size(&emu->audio_ring_buff);
       int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-      float buffs_available = size/(float)(samples_per_buffer);
-      if(((buffs_available>1.0&&emu->frame>=1)||
-          (buffs_available>2.5&&gba->ppu.last_vblank))&&emu->step_instructions==0)break;
+      if(((size>1*samples_per_buffer&&emu->frame>=1)||
+          (size>3*samples_per_buffer&&gba->ppu.last_vblank))&&emu->step_instructions==0)break;
 
       prev_vblank = gba->ppu.last_vblank;
     }
@@ -2239,7 +2233,7 @@ void gba_reset(gba_t*gba){
   gba->cart.flash_state=0;
   gba->cart.flash_bank=0; 
 
-  bool skip_bios = false;
+  bool skip_bios = true;
   if(skip_bios){
     gba->cpu.registers[13] = 0x03007f00;
     gba->cpu.registers[R13_irq] = 0x03007FA0;
