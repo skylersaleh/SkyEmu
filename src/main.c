@@ -1280,6 +1280,12 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
     }
 
   }
+  Color color = {0,0,0,127};
+  int scale = 1;
+  const char* label = TextFormat("FPS:%.2f",1./emu_state.avg_frame_time);
+  Vector2 label_sz= MeasureTextEx(GetFontDefault(), label, scale*10/2,scale/2);
+  DrawText(label,rect.x+rect.width/2-label_sz.x/2,rect.y+5,scale*10/2,color);
+
 
   DrawCircle(a_pos.x, a_pos.y, button_r+1, line_color);
   DrawCircle(a_pos.x, a_pos.y, button_r, a?sel_color:fill_color);
