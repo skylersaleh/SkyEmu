@@ -49,7 +49,7 @@ typedef struct {
   36: SPSR_und
   */
   uint32_t prefetch_pc;
-  uint32_t prefetch_opcode; 
+  uint32_t prefetch_opcode[2]; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
   uint32_t registers[37];
@@ -76,9 +76,9 @@ static arm7_t arm7_init(void* user_data);
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu);
 // Memory IO functions for the emulated CPU (these must be defined by the user)
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address);
-static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address);
+static FORCE_INLINE uint16_t arm7_read16(void* user_data, uint32_t address);
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address,bool is_sequential);
-static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address,bool is_sequential);
+static FORCE_INLINE uint16_t arm7_read16_seq(void* user_data, uint32_t address,bool is_sequential);
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address);
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data);
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data);
@@ -547,22 +547,23 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
   if(cpu->prefetch_pc!=cpu->registers[PC]){
     cpu->registers[PC]&= thumb? ~1 : ~3; 
 
-    cpu->prefetch_opcode = thumb? 
+    cpu->prefetch_opcode[0] = thumb? 
         arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
         arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
-    thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC],true):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC],true);
+    cpu->prefetch_opcode[1]=thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
   }
   cpu->i_cycles=0;
   cpu->next_fetch_sequential=true;
   if(thumb==false){
-    uint32_t opcode = cpu->prefetch_opcode;
+    uint32_t opcode = cpu->prefetch_opcode[0];
+    cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
     if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
     //if(cpu->print_instructions)printf("%08x\n",opcode);
     cpu->registers[PC] += 4;
     cpu->prefetch_pc = cpu->registers[PC];
-    cpu->prefetch_opcode = arm7_read32_seq(cpu->user_data,cpu->prefetch_pc,cpu->next_fetch_sequential);
+    cpu->prefetch_opcode[1] = arm7_read32_seq(cpu->user_data,cpu->prefetch_pc+4,cpu->next_fetch_sequential);
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t old_pc = cpu->registers[PC];
 
@@ -572,10 +573,11 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
       //if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
     }
   }else{
-    uint32_t opcode = cpu->prefetch_opcode;
+    uint32_t opcode = cpu->prefetch_opcode[0];
+    cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 2;
-    cpu->prefetch_opcode = arm7_read16_seq(cpu->user_data,cpu->registers[PC],cpu->next_fetch_sequential);
+    cpu->prefetch_opcode[1] = arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,cpu->next_fetch_sequential);
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     uint32_t old_pc = cpu->registers[PC];

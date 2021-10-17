@@ -641,7 +641,7 @@ typedef struct {
   uint32_t prefetch_en; 
   uint32_t prefetch_size; 
   uint32_t requests;
-  uint32_t last_bios_data;
+  uint32_t bios_word;
   uint32_t cartopen_bus; 
   uint8_t wait_state_table[16*4];
 } gba_mem_t;
@@ -703,8 +703,9 @@ typedef struct {
   uint32_t deferred_timer_ticks;
   gba_audio_t audio;
   bool halt; 
-  uint8_t obj_window[GBA_LCD_W]; //Used to handle priority settings
-  uint8_t scanline_priority[GBA_LCD_W]; //Used to handle priority settings
+  uint32_t first_target_buffer[GBA_LCD_W];
+  uint32_t second_target_buffer[GBA_LCD_W];
+  uint8_t window[GBA_LCD_W];
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
 } gba_t; 
 
@@ -933,7 +934,7 @@ static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
-static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
+static FORCE_INLINE uint16_t arm7_read16(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
@@ -949,7 +950,7 @@ static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, 
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
-static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address, bool seq){
+static FORCE_INLINE uint16_t arm7_read16_seq(void* user_data, uint32_t address, bool seq){
   gba_compute_access_cycles(user_data,address,seq?0:1);
   if(address>=0x4000000 && address<=0x40003FE){
     gba_process_mmio_read((gba_t*)user_data,address,4);
@@ -995,9 +996,19 @@ void gba_reset(gba_t*gba);
 static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
   baddr&=0x0fffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
+
   *read_only= false; 
   switch(baddr>>24){
-    case 0x0: if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr);} break;
+    case 0x0: if(baddr<0x4000){
+      *read_only=true;
+
+      if(gba->cpu.registers[15]<0x4000)gba->mem.bios_word = *(uint32_t*)(gba->mem.bios+baddr);
+      else{
+        //TODO: This is not accurate, but it fixes the pokemon pinball intro screen
+        gba->mem.bios_word= 0;
+      }
+      ret=&gba->mem.bios_word;
+     } break;
     case 0x1: break;
     case 0x2: ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff)); break;
     case 0x3: ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff)); break;
@@ -1019,10 +1030,11 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*r
         if(addr>gba->cart.rom_size){
           ret = (uint32_t*)(&gba->mem.cartopen_bus);
           *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
-          if(addr>0x1FFFF00&&gba->cart.backup_type==GBA_BACKUP_EEPROM){
+          
+        }
+        if((addr>=0x1FFFF00||addr>gba->cart.rom_size)&&gba->cart.backup_type==GBA_BACKUP_EEPROM){
             ret = (uint32_t*)&gba->mem.eeprom_word;
-            *ret = -1;
-          }
+            *ret = 1;
         }
       }
       break;
@@ -1252,9 +1264,18 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   int p = lcd_x+lcd_y*240;
   bool visible = lcd_x<240 && lcd_y<160;
   //Render sprites over scanline when it completes
-  if(lcd_y<160 && lcd_x == 240){
-    // Slowest OBJ code in the west
-    for(int o=127;o>=0;--o){
+  if(lcd_y<160 && lcd_x == 0){
+    uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
+    bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
+    uint16_t WINOUT = gba_io_read16(gba, GBA_WINOUT);
+    if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
+  
+    for(int x=0;x<240;++x){gba->window[x] = default_window_control;}
+    uint8_t obj_window_control = default_window_control;
+    bool obj_window_enable = SB_BFE(dispcnt,15,1);
+    if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
+    
+    for(int o=0;o<128;++o){
       uint16_t attr0 = *(uint16_t*)(gba->mem.oam+o*8+0);
       //Attr0
       uint8_t y_coord = SB_BFE(attr0,0,8);
@@ -1297,19 +1318,18 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       int x_size = xsize_lookup[obj_size*4+obj_shape];
       int y_size = ysize_lookup[obj_size*4+obj_shape];
 
-
       if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
         int x_start = x_coord>=0?x_coord:0;
         int x_end   = x_coord+x_size*(double_size?2:1);
         if(x_end>=240)x_end=240;
         //Attr2
+        //Skip objects disabled by window
         uint16_t attr2 = *(uint16_t*)(gba->mem.oam+o*8+4);
         int tile_base = SB_BFE(attr2,0,10);
         // Always place sprites as the highest priority
         int priority = SB_BFE(attr2,10,2);
         int palette = SB_BFE(attr2,12,4);
         for(int x = x_start; x< x_end;++x){
-          if(gba->scanline_priority[x]<priority)continue; 
           int sx = (x-x_coord);
           int sy = (lcd_y-y_coord)&0xff;
           if(rot_scale){
@@ -1353,66 +1373,55 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           }
 
           if(palette_id==0)continue;
-          uint16_t col = *(uint16_t*)(gba->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
-
-          int r = SB_BFE(col,0,5)*7;
-          int g = SB_BFE(col,5,5)*7;
-          int b = SB_BFE(col,10,5)*7;  
-
+          uint32_t col = *(uint16_t*)(gba->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
           //Handle window objects(not displayed but control the windowing of other things)
-          if(obj_mode==2){
-            gba->obj_window[x]=1; 
-          }else{
-            int p = x+lcd_y*240; 
-            gba->framebuffer[p*3+0] = r;
-            gba->framebuffer[p*3+1] = g;
-            gba->framebuffer[p*3+2] = b;
+          if(obj_mode==2){gba->window[x]=obj_window_control; 
+          }else if(obj_mode!=3){
+            int type =4;
+            col=col|(type<<17)|((5-priority)<<28)|((1)<<27);
+            if(obj_mode==1)col|=1<<16;
+            if((col>>17)>(gba->first_target_buffer[x]>>17))gba->first_target_buffer[x]=col;
           }  
         }
+      }
+    }
+    int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
+    if(enabled_windows){
+      for(int win=1;win>=0;--win){
+        bool win_enable = SB_BFE(dispcnt,13+win,1);
+        if(!win_enable)continue;
+        uint16_t WINH = gba_io_read16(gba, GBA_WIN0H+2*win);
+        uint16_t WINV = gba_io_read16(gba, GBA_WIN0V+2*win);
+        int win_xmin = SB_BFE(WINH,8,8);
+        int win_xmax = SB_BFE(WINH,0,8);
+        int win_ymin = SB_BFE(WINV,8,8);
+        int win_ymax = SB_BFE(WINV,0,8);
+        // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
+        // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
+        if(win_xmin>win_xmax)win_xmax=239;
+        if(win_ymin>win_ymax)win_ymax=159;
+        if(lcd_y<win_ymin||lcd_y>win_ymax)continue;
+        uint16_t winin = gba_io_read16(gba,GBA_WININ);
+        uint8_t win_value = SB_BFE(winin,win*8,6);
+        for(int x=win_xmin;x<=win_xmax;++x)gba->window[x] = win_value;
+      }
+      int backdrop_type = 5;
+      uint32_t backdrop_col = (*(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+      for(int x=0;x<240;++x){
+        uint8_t window_control = gba->window[x];
+        if(SB_BFE(window_control,4,1)==0)gba->first_target_buffer[x]=backdrop_col;
       }
     }
   }
 
   if(visible){
-    uint16_t col = *(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2);
     int bg_priority=4;
+    uint8_t window_control =gba->window[lcd_x];
     if(bg_mode==6 ||bg_mode==7){
       //Palette 0 is taken as the background
-    }else if (bg_mode<5){              
-      uint8_t window_control =0;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
-      int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
-      if(enabled_windows){
-        uint16_t WININ = gba_io_read16(gba, GBA_WININ);
-        uint16_t WINOUT = gba_io_read16(gba, GBA_WINOUT);
-        window_control = SB_BFE(WINOUT,0,8);
-        bool obj_window_enable = SB_BFE(dispcnt,15,1);
-        if(gba->obj_window[lcd_x]&& obj_window_enable){
-          window_control = SB_BFE(WINOUT,8,6);
-        }
-        for(int win=1;win>=0;--win){
-          bool win_enable = SB_BFE(dispcnt,13+win,1);
-          if(!win_enable)continue;
-          uint16_t WINH = gba_io_read16(gba, GBA_WIN0H+2*win);
-          uint16_t WINV = gba_io_read16(gba, GBA_WIN0V+2*win);
-          int win_xmin = SB_BFE(WINH,8,8);
-          int win_xmax = SB_BFE(WINH,0,8);
-          int win_ymin = SB_BFE(WINV,8,8);
-          int win_ymax = SB_BFE(WINV,0,8);
-          // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
-          // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
-          if(win_xmin>win_xmax)win_xmax=240;
-          if(win_ymin>win_ymax)win_ymax=160;
-          bool in_window = lcd_x>=win_xmin&&lcd_x<=win_xmax&&lcd_y>=win_ymin&&lcd_y<=win_ymax;
-          if(in_window){
-            window_control = SB_BFE(WININ,win*8,6);
-          }
-        }
-      }else{
-        window_control=0x1f; //Enable everything except special effect
-      }
-
-
+    }else if (bg_mode<5){     
       for(int bg = 3; bg>=0;--bg){
+        uint32_t col =0;         
         if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1);
         if(!bg_en)continue;
@@ -1421,7 +1430,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         bool rot_scale = bg_mode>=1&&bg>=2;
         uint16_t bgcnt = gba_io_read16(gba, GBA_BG0CNT+bg*2);
         int priority = SB_BFE(bgcnt,0,2);
-        if(priority>bg_priority)continue;
+        //if(priority>bg_priority)continue;
         int character_base = SB_BFE(bgcnt,2,2);
         bool mosaic = SB_BFE(bgcnt,6,1);
         bool colors = SB_BFE(bgcnt,7,1);
@@ -1540,18 +1549,83 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           uint8_t pallete_id = tile_d;
           if(pallete_id==0)continue;
           col = *(uint16_t*)(gba->mem.palette+GBA_BG_PALETTE+pallete_id*2);
-        }          
+        }
+        col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
+        if(col>gba->first_target_buffer[lcd_x]){
+          uint32_t t = gba->first_target_buffer[lcd_x];
+          gba->first_target_buffer[lcd_x]=col;
+          col = t;
+        }
+        if(col>gba->second_target_buffer[lcd_x])gba->second_target_buffer[lcd_x]=col;          
         bg_priority = priority;
       }
     }else if(bg_mode!=0){
       printf("Unsupported background mode: %d\n",bg_mode);
     }
-    gba->scanline_priority[lcd_x] = bg_priority;
-    gba->obj_window[lcd_x] =0;      
-      
-    gba->framebuffer[p*3+0] = SB_BFE(col,0,5)*7;
-    gba->framebuffer[p*3+1] = SB_BFE(col,5,5)*7;
-    gba->framebuffer[p*3+2] = SB_BFE(col,10,5)*7;  
+    uint32_t col = gba->first_target_buffer[lcd_x];
+    int r = SB_BFE(col,0,5);
+    int g = SB_BFE(col,5,5);
+    int b = SB_BFE(col,10,5);
+    uint32_t type = SB_BFE(col,17,3);
+
+    bool effect_enable = SB_BFE(window_control,5,1);
+    uint16_t bldcnt = gba_io_read16(gba,GBA_BLDCNT);
+    int mode = SB_BFE(bldcnt,6,2);
+
+    //Semitransparent objects are always selected for blending
+    if(SB_BFE(col,16,1)){
+      uint32_t col2 = gba->second_target_buffer[lcd_x];
+      uint32_t type2 = SB_BFE(col2,17,3);
+      bool blend = SB_BFE(bldcnt,8+type2,1);
+      if(blend){mode=1;effect_enable=true;}
+      else effect_enable &= SB_BFE(bldcnt,type,1);
+    }else effect_enable &= SB_BFE(bldcnt,type,1);
+    if(effect_enable){
+      uint16_t bldy = gba_io_read16(gba,GBA_BLDY);
+      float evy = SB_BFE(bldy,0,5)/16.;
+      if(evy>1.0)evy=1;
+      switch(mode){
+        case 0: break; //None
+        case 1: {
+          uint32_t col2 = gba->second_target_buffer[lcd_x];
+          uint32_t type2 = SB_BFE(col2,17,3);
+          bool blend = SB_BFE(bldcnt,8+type2,1);
+          if(blend){
+            uint16_t bldalpha= gba_io_read16(gba,GBA_BLDALPHA);
+            int r2 = SB_BFE(col2,0,5);
+            int g2 = SB_BFE(col2,5,5);
+            int b2 = SB_BFE(col2,10,5);
+            float eva = SB_BFE(bldalpha,0,5)/16.;
+            float evb = SB_BFE(bldalpha,8,5)/16.;
+            if(eva>1.0)eva=1;
+            if(evb>1.0)evb=1;
+            r = r*eva+r2*evb;
+            g = g*eva+g2*evb;
+            b = b*eva+b2*evb;
+            if(r>31)r = 31;
+            if(g>31)g = 31;
+            if(b>31)b = 31;
+          }
+        }break; //Alpha Blend
+        case 2: //Lighten
+          r = r+(31-r)*evy;
+          g = g+(31-g)*evy;
+          b = b+(31-b)*evy;  
+          break; 
+        case 3: //Darken
+          r = r-(r)*evy;
+          g = g-(g)*evy;
+          b = b-(b)*evy;         
+          break; 
+      }
+    }
+    gba->framebuffer[p*3+0] = r*7;
+    gba->framebuffer[p*3+1] = g*7;
+    gba->framebuffer[p*3+2] = b*7;  
+    int backdrop_type = 5;
+    uint32_t backdrop_col = (*(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+    gba->first_target_buffer[lcd_x] = backdrop_col;
+    gba->second_target_buffer[lcd_x] = backdrop_col;
   }
 }
 void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
@@ -1670,7 +1744,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
           }else{
             printf("Bad cnt: %d for eeprom write\n",cnt);
           }
-
         }
         if(src_in_eeprom){
           if(cnt==68){
@@ -2199,8 +2272,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       int size = sb_ring_buffer_size(&emu->audio_ring_buff);
       int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-      if(((size>1*samples_per_buffer&&emu->frame>=1)||
-          (size>3*samples_per_buffer&&gba->ppu.last_vblank))&&emu->step_instructions==0)break;
+      if(((size>1*samples_per_buffer&&emu->frame>=1&&gba->ppu.last_vblank)||
+          (size>3*samples_per_buffer&&gba->ppu.last_hblank))&&emu->step_instructions==0)break;
 
       prev_vblank = gba->ppu.last_vblank;
     }
