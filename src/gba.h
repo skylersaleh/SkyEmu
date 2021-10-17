@@ -1640,7 +1640,25 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   reg_value|= !(joy->down)  <<7;
   reg_value|= !(joy->r)     <<8;
   reg_value|= !(joy->l)     <<9;
+  uint16_t last_value = gba_io_read16(gba, GBA_KEYINPUT);
   gba_io_store16(gba, GBA_KEYINPUT, reg_value);
+  uint16_t keycnt = gba_io_read16(gba,GBA_KEYCNT);
+  bool irq_enable = SB_BFE(keycnt,14,1);
+  bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
+  if(irq_enable){
+    int if_bit = 0;
+    uint16_t pressed = SB_BFE(reg_value,0,10);
+    uint16_t mask = SB_BFE(keycnt,0,10);
+
+    if(irq_condition&&((pressed&mask)==mask))if_bit|= GBA_INT_KEYPAD;
+    if(!irq_condition&&((pressed&mask)!=0))if_bit|= GBA_INT_KEYPAD;
+
+    if(if_bit){
+      if_bit &= gba_io_read16(gba,GBA_IE);
+      if_bit |= gba_io_read16(gba,GBA_IF); 
+      gba_io_store16(gba,GBA_IF,if_bit);
+    }
+  }
 }
 uint64_t gba_read_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset, int size, int elem_size, int dir){
   uint64_t data = 0; 
