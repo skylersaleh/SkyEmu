@@ -1362,7 +1362,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           int tile = (colors_or_palettes? tile_base/2 : tile_base) + ((sx/8))+(sy/8)*y_tile_stride;
           
           uint8_t palette_id;
-          int obj_tile_base = bg_mode<3? GBA_OBJ_TILES0_2 : GBA_OBJ_TILES3_5;
+          int obj_tile_base = GBA_OBJ_TILES0_2;
           if(colors_or_palettes==false){
             palette_id= gba->mem.vram[obj_tile_base+tile*8*4+tx/2+ty*4];
             palette_id= (palette_id>>((tx&1)?4:0))&0xf;
@@ -1378,7 +1378,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           if(obj_mode==2){gba->window[x]=obj_window_control; 
           }else if(obj_mode!=3){
             int type =4;
-            col=col|(type<<17)|((5-priority)<<28)|((1)<<27);
+            col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
             if(obj_mode==1)col|=1<<16;
             if((col>>17)>(gba->first_target_buffer[x]>>17))gba->first_target_buffer[x]=col;
           }  
