@@ -1398,12 +1398,12 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         int win_ymax = SB_BFE(WINV,0,8);
         // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
         // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
-        if(win_xmin>win_xmax)win_xmax=239;
-        if(win_ymin>win_ymax)win_ymax=159;
-        if(lcd_y<win_ymin||lcd_y>win_ymax)continue;
+        if(win_xmin>win_xmax)win_xmax=240;
+        if(win_ymin>win_ymax)win_ymax=160;
+        if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
         uint16_t winin = gba_io_read16(gba,GBA_WININ);
         uint8_t win_value = SB_BFE(winin,win*8,6);
-        for(int x=win_xmin;x<=win_xmax;++x)gba->window[x] = win_value;
+        for(int x=win_xmin;x<win_xmax;++x)gba->window[x] = win_value;
       }
       int backdrop_type = 5;
       uint32_t backdrop_col = (*(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
