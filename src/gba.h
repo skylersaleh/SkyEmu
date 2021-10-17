@@ -1224,7 +1224,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=240&&lcd_y<160;
+    bool hblank = lcd_x>=240;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
@@ -1248,7 +1248,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       }
     }
     if(new_if){
-      new_if &= gba_io_read16(gba,GBA_IE);
       new_if |= gba_io_read16(gba,GBA_IF); 
       gba_io_store16(gba,GBA_IF,new_if);
     }
@@ -1640,7 +1639,9 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   reg_value|= !(joy->down)  <<7;
   reg_value|= !(joy->r)     <<8;
   reg_value|= !(joy->l)     <<9;
-  uint16_t last_value = gba_io_read16(gba, GBA_KEYINPUT);
+  uint16_t last_keyinput = gba_io_read16(gba, GBA_KEYINPUT);
+  uint16_t last_keycnt = gba_io_read16(gba, GBA_KEYINPUT);
+
   gba_io_store16(gba, GBA_KEYINPUT, reg_value);
   uint16_t keycnt = gba_io_read16(gba,GBA_KEYCNT);
   bool irq_enable = SB_BFE(keycnt,14,1);
@@ -1654,7 +1655,6 @@ void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
     if(!irq_condition&&((pressed&mask)!=0))if_bit|= GBA_INT_KEYPAD;
 
     if(if_bit){
-      if_bit &= gba_io_read16(gba,GBA_IE);
       if_bit |= gba_io_read16(gba,GBA_IF); 
       gba_io_store16(gba,GBA_IF,if_bit);
     }
@@ -1706,8 +1706,17 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       gba->dma[i].last_vblank = gba->ppu.last_vblank;
       gba->dma[i].last_hblank = gba->ppu.last_hblank;
       if(mode ==1 && !(gba->ppu.last_vblank&&!last_vblank)) continue; 
-      if(mode ==2 && !(gba->ppu.last_hblank&&!last_hblank)) continue; 
-    
+      uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
+      if(mode==2){
+        if(vcount>=160||!(gba->ppu.last_hblank&&!last_hblank))continue;
+      }
+      //Video dma
+      if(mode==3 && i ==3){
+        if(!(gba->ppu.last_hblank&&!last_hblank))continue;
+        //Video dma starts at scanline 2
+        if(vcount<2)continue;
+        if(vcount==161)dma_repeat=false;
+      }
       //if(mode==2){printf("Trigger Hblank DMA: %d->%d\n",last_hblank,gba->ppu.last_hblank);}
       int src_dir = 1;
       if(src_addr_ctl==1)src_dir=-1;
@@ -1794,9 +1803,10 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
         dst_addr_ctl= 2; 
         transfer_bytes=4;
         cnt=4;
+        skip_dma=true;
       }
       //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
-      if(mode!=3&&!skip_dma){
+      if(!skip_dma){
         for(int x=0;x<cnt;++x){
           if(type)arm7_write32(gba,dst+x*4*dst_dir,arm7_read32_seq(gba,src+x*4*src_dir,x!=0));
           else    arm7_write16(gba,dst+x*2*dst_dir,arm7_read16_seq(gba,src+x*2*src_dir,x!=0));
@@ -1814,14 +1824,13 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
     
       if(irq_enable){
         uint16_t if_val = gba_io_read16(gba,GBA_IF);
-        uint16_t ie_val = gba_io_read16(gba,GBA_IE);
         uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
-        if(ie_val & if_bit){
+        if(if_bit){
           if_val |= if_bit;
           gba_io_store16(gba,GBA_IF,if_val);
         }
       }
-      if(!dma_repeat||mode==0||(mode==3&&!audio_dma)){
+      if(!dma_repeat||mode==0){
         cnt_h&=0x7fff;
         //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
         //Reload on incr reload     
@@ -1836,6 +1845,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
     gba->dma[i].last_enable = enable;
+    if(ticks)break;
   }
   gba->activate_dmas=ticks!=0;
   return ticks; 
@@ -1849,9 +1859,8 @@ static FORCE_INLINE void gba_tick_sio(gba_t* gba){
    
     if(irq_enabled){
       uint16_t if_val = gba_io_read16(gba,GBA_IF);
-      uint16_t ie_val = gba_io_read16(gba,GBA_IE);
       uint16_t if_bit = 1<<(GBA_INT_SERIAL);
-      if(ie_val & if_bit){
+      if(if_bit){
         if_val |= if_bit;
         gba_io_store16(gba,GBA_IF,if_val);
       }
@@ -1914,11 +1923,10 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
         if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
       if(last_timer_overflow && irq_en){
-        uint16_t ie_val = gba_io_read16(gba,GBA_IE);
         uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
-        if(if_bit&&ie_val){
+        if(if_bit){
           uint16_t if_val = gba_io_read16(gba,GBA_IF);
-          if_val |= if_bit&ie_val;
+          if_val |= if_bit;
           gba_io_store16(gba,GBA_IF,if_val);
         }
       }
