@@ -1682,6 +1682,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
 
       if(!gba->dma[i].last_enable){
+        gba->dma[i].last_enable = enable;
         gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
         gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
         //GBA Suite says that these need to be force aligned
