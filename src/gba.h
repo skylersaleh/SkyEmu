@@ -665,10 +665,11 @@ typedef struct{
   int source_addr;
   int dest_addr;
   int length;
-  int current_word;
+  int current_transaction;
   bool last_enable;
   bool last_vblank;
   bool last_hblank;
+  uint32_t latched_transfer;
 } gba_dma_t; 
 typedef struct{
   int scan_clock; 
@@ -1003,10 +1004,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*r
       *read_only=true;
 
       if(gba->cpu.registers[15]<0x4000)gba->mem.bios_word = *(uint32_t*)(gba->mem.bios+baddr);
-      else{
-        //TODO: This is not accurate, but it fixes the pokemon pinball intro screen
-        gba->mem.bios_word= 0;
-      }
+    
       ret=&gba->mem.bios_word;
      } break;
     case 0x1: break;
@@ -1220,11 +1218,11 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
 
   int lcd_y = (gba->ppu.scan_clock+47)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
-  if(lcd_x==262||lcd_x==0||lcd_x==240){
+  if(lcd_x==262||lcd_x==0||lcd_x==240||lcd_x==296){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=240;
+    bool hblank = lcd_x>=240&&lcd_x< 296;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
@@ -1233,18 +1231,21 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
     uint32_t new_if = 0;
     if(hblank!=gba->ppu.last_hblank){
       gba->ppu.last_hblank = hblank;
-      if(hblank) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+      bool hblank_irq_en = SB_BFE(disp_stat,4,1);
+      if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
       gba->activate_dmas=true;
     }
     if(lcd_y != gba->ppu.last_lcd_y){
       if(vblank!=gba->ppu.last_vblank){
         gba->ppu.last_vblank = vblank;
-        if(vblank) new_if|= (1<< GBA_INT_LCD_VBLANK); 
+        bool vblank_irq_en = SB_BFE(disp_stat,3,1);
+        if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
         gba->activate_dmas=true;
       }
       gba->ppu.last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
-        new_if |= (1<<GBA_INT_LCD_VCOUNT);
+        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
+        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
     }
     if(new_if){
@@ -1807,9 +1808,26 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
       }
       //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
       if(!skip_dma){
+        // This code is complicated to handle the per channel DMA latches that are present
+        // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
+        // and the text in Lufia
         for(int x=0;x<cnt;++x){
-          if(type)arm7_write32(gba,dst+x*4*dst_dir,arm7_read32_seq(gba,src+x*4*src_dir,x!=0));
-          else    arm7_write16(gba,dst+x*2*dst_dir,arm7_read16_seq(gba,src+x*2*src_dir,x!=0));
+          if(type){
+            int src_addr = (src+x*4*src_dir)&0x0fffffff;
+            if((i==3||src_addr<0x08000000)&&(src_addr>0x02000000)){
+              gba->dma[i].latched_transfer = arm7_read32_seq(gba,src+x*4*src_dir,x!=0);
+            }
+            arm7_write32(gba,dst+x*4*dst_dir,gba->dma[i].latched_transfer);
+          }else{
+            int src_addr = (src+x*2*src_dir)&0x0fffffff;
+            if((i==3||src_addr<0x08000000)&&(src_addr>0x02000000)){
+              gba->dma[i].latched_transfer = (arm7_read16_seq(gba,src_addr,x!=0))&0xffff;
+              gba->dma[i].latched_transfer |= gba->dma[i].latched_transfer<<16;
+            }
+            int dst_addr = dst+x*2*dst_dir;
+            int v = gba->dma[i].latched_transfer>>((~dst_addr)&0x2)*8;
+            arm7_write16(gba,dst_addr,v);
+          }
         }
       }
       
