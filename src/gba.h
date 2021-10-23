@@ -1087,7 +1087,8 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     gba->audio.fifo[fifo].write_ptr = (gba->audio.fifo[fifo].write_ptr+1)&0x1f;
     gba->audio.fifo[fifo].data[gba->audio.fifo[fifo].write_ptr]= data; 
   }else{
-    //printf("Tried to push audio samples to full fifo\n");
+    gba->audio.fifo[fifo].write_ptr=gba->audio.fifo[fifo].read_ptr = 0; 
+    printf("Tried to push audio samples to full fifo\n");
   }
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
@@ -1131,16 +1132,20 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     return true;
   }else if(address==GBA_HALTCNT){
     gba->halt = true;
+  /*
+  Ignore these for now since it is causing audio pops in Metroid Zero
   }else if(address_u32==GBA_FIFO_A){
-    gba_audio_fifo_push(gba,0,SB_BFE(word_data,0,8));
-    gba_audio_fifo_push(gba,0,SB_BFE(word_data,8,8));
-    gba_audio_fifo_push(gba,0,SB_BFE(word_data,16,8));
-    gba_audio_fifo_push(gba,0,SB_BFE(word_data,24,8));
+    // See: https://github.com/mgba-emu/mgba/issues/1847
+    for(int i=0;i<4;++i){
+      if(word_mask&(0xff<<(8*i)))gba_audio_fifo_push(gba,0,SB_BFE(word_data,8*i,8));
+      else gba_audio_fifo_push(gba,0,gba->audio.fifo[0].data[(gba->audio.fifo[0].write_ptr)&0x1f]);
+    }
   }else if(address_u32==GBA_FIFO_B){
-    gba_audio_fifo_push(gba,1,SB_BFE(word_data,0,8));
-    gba_audio_fifo_push(gba,1,SB_BFE(word_data,8,8));
-    gba_audio_fifo_push(gba,1,SB_BFE(word_data,16,8));
-    gba_audio_fifo_push(gba,1,SB_BFE(word_data,24,8));
+    for(int i=0;i<4;++i){
+      if(word_mask&(0xff<<(8*i)))gba_audio_fifo_push(gba,1,SB_BFE(word_data,8*i,8));
+      else gba_audio_fifo_push(gba,1,gba->audio.fifo[1].data[(gba->audio.fifo[1].write_ptr)&0x1f]);
+    }
+  */
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -1810,7 +1815,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
         if(dst == GBA_FIFO_B)fifo =1; 
         if(fifo == -1)continue;
         int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
-        if(size>=15)continue;
+        if(size>=16)continue;
         //printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
         for(int x=0;x<4;++x){
           uint32_t data = arm7_read32_seq(gba,src+x*4*src_dir,x!=0);
@@ -2162,7 +2167,7 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     }
     int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
     //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
-    if(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr-gba->audio.fifo[i].read_ptr)&0x1f)){
+    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr-gba->audio.fifo[i].read_ptr)&0x1f)){
       gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
       samples_to_pop--;
       gba->activate_dmas=true;
@@ -2343,7 +2348,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       int size = sb_ring_buffer_size(&emu->audio_ring_buff);
       int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-      if(((size>1*samples_per_buffer&&emu->frame>=1&&gba->ppu.last_vblank)||
+      if(((size>1.5*samples_per_buffer&&emu->frame>=1&&gba->ppu.last_vblank)||
           (size>3*samples_per_buffer&&gba->ppu.last_hblank))&&emu->step_instructions==0)break;
 
       prev_vblank = gba->ppu.last_vblank;
