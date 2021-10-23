@@ -553,11 +553,8 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     cpu->prefetch_opcode[1]=thumb? 
         arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
         arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-    cpu->next_fetch_sequential=true;
-
   }
   cpu->i_cycles=0;
-  bool seq = cpu->next_fetch_sequential;
   cpu->next_fetch_sequential=true;
   if(thumb==false){
     uint32_t opcode = cpu->prefetch_opcode[0];
@@ -566,30 +563,26 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     //if(cpu->print_instructions)printf("%08x\n",opcode);
     cpu->registers[PC] += 4;
     cpu->prefetch_pc = cpu->registers[PC];
-    uint32_t old_pc = cpu->registers[PC];
+    cpu->prefetch_opcode[1] = arm7_read32_seq(cpu->user_data,cpu->prefetch_pc+4,cpu->next_fetch_sequential);
     if(arm7_check_cond_code(cpu,opcode)){
+      uint32_t old_pc = cpu->registers[PC];
 
       uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     	arm7_lookup_table[key](cpu,opcode);
+      uint32_t new_pc = cpu->registers[PC];
       //if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
     }
-    uint32_t new_pc = cpu->registers[PC];
-    seq&=cpu->next_fetch_sequential;
-    cpu->prefetch_opcode[1] = arm7_read32_seq(cpu->user_data,cpu->prefetch_pc+4,seq);
   }else{
     uint32_t opcode = cpu->prefetch_opcode[0];
     cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 2;
+    cpu->prefetch_opcode[1] = arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,cpu->next_fetch_sequential);
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
     uint32_t new_pc = cpu->registers[PC];
-    seq&=cpu->next_fetch_sequential;
-    //Note: Moving the opcode fetch after instruction execution fixes Hello Kitty
-    //but breaks Classic NES: SMB
-    cpu->prefetch_opcode[1] = arm7_read16_seq(cpu->user_data,cpu->prefetch_pc+2,seq);
     //if(cpu->print_instructions&&old_pc!=new_pc)printf("Branch: %08x->%08x\n",old_pc,new_pc);
   }
   cpu->executed_instructions++;
