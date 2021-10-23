@@ -76,9 +76,9 @@ static arm7_t arm7_init(void* user_data);
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu);
 // Memory IO functions for the emulated CPU (these must be defined by the user)
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address);
-static FORCE_INLINE uint16_t arm7_read16(void* user_data, uint32_t address);
+static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address);
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address,bool is_sequential);
-static FORCE_INLINE uint16_t arm7_read16_seq(void* user_data, uint32_t address,bool is_sequential);
+static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address,bool is_sequential);
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address);
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data);
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data);
@@ -403,7 +403,7 @@ static arm7_t arm7_init(void* user_data){
   }
   arm7_t arm = {.user_data = user_data};
   arm.prefetch_pc= -1; 
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/tony-hawk-log.bin","rb");
+  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/arm-log.bin","rb");
 
   return arm;
 
@@ -721,7 +721,7 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   //Update flags
   if(S){
     //Rd is not valid for TST, TEQ, CMP, or CMN
-    if(Rd!=15){
+    {
       uint32_t cpsr=cpu->registers[CPSR];
       bool C = ARM7_BFE(cpsr,29,1);
       bool N = ARM7_BFE(result,31,1);
@@ -768,7 +768,8 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
       cpsr|= (C?1:0)<<29; 
       cpsr|= (V?1:0)<<28;
       cpu->registers[CPSR] = cpsr;
-    }else{
+    }
+    if(Rd==15){
       // When Rd is R15 and the S flag is set the result of the operation is placed in R15 
       // and the SPSR corresponding to the current mode is moved to the CPSR. This allows
       // state changes which atomically restore both PC and CPSR. This form of instruction
@@ -959,7 +960,7 @@ static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   //Update mode to supervisor and block irqs
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x1b|0x80;
   arm7_set_thumb_bit(cpu,false);
-  printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x\n",opcode);
+  printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x PC:%08x\n",opcode, cpu->registers[R14_und]);
   cpu->i_cycles=1;
   //cpu->trigger_breakpoint = true;
 }
