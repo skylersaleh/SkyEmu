@@ -676,6 +676,10 @@ typedef struct{
   bool last_vblank;
   bool last_hblank;
   int last_lcd_y; 
+  struct {
+    int32_t internal_bgx;
+    int32_t internal_bgy;
+  }aff[2];
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1146,6 +1150,16 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
       else gba_audio_fifo_push(gba,1,gba->audio.fifo[1].data[(gba->audio.fifo[1].write_ptr)&0x1f]);
     }
   */
+  }else if(address_u32>=GBA_BG2X &&address_u32<=GBA_BG3Y){
+    int aff_bg = (address_u32-GBA_BG2X)/32;
+    if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
+      gba->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
+      gba->ppu.aff[aff_bg].internal_bgx|= word_data;
+    }
+    if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
+      gba->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
+      gba->ppu.aff[aff_bg].internal_bgy|= word_data;
+    }
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -1230,11 +1244,11 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
 
   int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = (gba->ppu.scan_clock%1232)/4;
-  if(lcd_x==262||lcd_x==0||lcd_x==239||lcd_x==296){
+  if(lcd_x==262||lcd_x==0||lcd_x==240||lcd_x==296){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=239&&lcd_x< 296;
+    bool hblank = lcd_x>=240&&lcd_x< 296;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
@@ -1246,6 +1260,14 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       bool hblank_irq_en = SB_BFE(disp_stat,4,1);
       if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
       gba->activate_dmas=true;
+      if(hblank){
+        for(int aff=0;aff<2;++aff){
+          int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
+          int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
+          gba->ppu.aff[aff].internal_bgx+=b;
+          gba->ppu.aff[aff].internal_bgy+=d;
+        }
+      }
     }
     if(lcd_y != gba->ppu.last_lcd_y){
       if(vblank!=gba->ppu.last_vblank){
@@ -1259,12 +1281,26 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
         if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
+      //Latch BGX and BGY registers
+      if(lcd_y==0){
+        for(int aff=0;aff<2;++aff){
+          gba->ppu.aff[aff].internal_bgx=gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
+          gba->ppu.aff[aff].internal_bgy=gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
+
+          gba->ppu.aff[aff].internal_bgx = SB_BFE(gba->ppu.aff[aff].internal_bgx,0,28);
+          gba->ppu.aff[aff].internal_bgy = SB_BFE(gba->ppu.aff[aff].internal_bgy,0,28);
+
+          gba->ppu.aff[aff].internal_bgx = (gba->ppu.aff[aff].internal_bgx<<4)>>4;
+          gba->ppu.aff[aff].internal_bgy = (gba->ppu.aff[aff].internal_bgy<<4)>>4;
+        }
+      }
     }
     if(new_if){
       new_if |= gba_io_read16(gba,GBA_IF); 
       gba_io_store16(gba,GBA_IF,new_if);
     }
   }
+
   if(skip_render)return; 
 
   uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
@@ -1277,6 +1313,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
   bool visible = lcd_x<240 && lcd_y<160;
   //Render sprites over scanline when it completes
   if(lcd_y<160 && lcd_x == 0){
+    
+    //Render sprites over scanline when it completes
     uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
     bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
     uint16_t WINOUT = gba_io_read16(gba, GBA_WINOUT);
@@ -1470,25 +1508,16 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         int bg_y = 0;
         
         if(rot_scale){
-          int32_t bgx = gba_io_read32(gba,GBA_BG2X+(bg-2)*0x10);
-          int32_t bgy = gba_io_read32(gba,GBA_BG2Y+(bg-2)*0x10);
-          
-          bgx = SB_BFE(bgx,0,28);
-          bgy = SB_BFE(bgy,0,28);
-
-          bgx = (bgx<<4)>>4;
-          bgy = (bgy<<4)>>4;
+          int32_t bgx = gba->ppu.aff[bg-2].internal_bgx;
+          int32_t bgy = gba->ppu.aff[bg-2].internal_bgy;
 
           int32_t a = (int16_t)gba_io_read16(gba,GBA_BG2PA+(bg-2)*0x10);
-          int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(bg-2)*0x10);
           int32_t c = (int16_t)gba_io_read16(gba,GBA_BG2PC+(bg-2)*0x10);
-          int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(bg-2)*0x10);
 
           // Shift lcd_coords into fixed point
-          int64_t x1 = (lcd_x<<8)+(1<<7);
-          int64_t y1 = (lcd_y<<8)+(1<<7);
-          int64_t x2 = a*(x1) + b*(y1) + (((int64_t)bgx)<<8);
-          int64_t y2 = c*(x1) + d*(y1) + (((int64_t)bgy)<<8);
+          int64_t x1 = (lcd_x<<8);
+          int64_t x2 = a*(x1) + (((int64_t)bgx)<<8);
+          int64_t y2 = c*(x1) + (((int64_t)bgy)<<8);
 
           bg_x = (x2>>16);
           bg_y = (y2>>16);
