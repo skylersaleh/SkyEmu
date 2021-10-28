@@ -680,6 +680,7 @@ typedef struct{
     int32_t internal_bgx;
     int32_t internal_bgy;
   }aff[2];
+  uint16_t dispcnt_pipeline[3];
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1260,12 +1261,26 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       bool hblank_irq_en = SB_BFE(disp_stat,4,1);
       if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
       gba->activate_dmas=true;
-      if(hblank){
-        for(int aff=0;aff<2;++aff){
-          int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
-          int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
-          gba->ppu.aff[aff].internal_bgx+=b;
-          gba->ppu.aff[aff].internal_bgy+=d;
+      if(!hblank){
+        gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
+        gba->ppu.dispcnt_pipeline[1]=gba->ppu.dispcnt_pipeline[2];
+        gba->ppu.dispcnt_pipeline[2]= gba_io_read16(gba, GBA_DISPCNT);
+      }else{
+        uint16_t dispcnt = gba->ppu.dispcnt_pipeline[0];
+
+        int bg_mode = SB_BFE(dispcnt,0,3);
+
+        // From Mirei: Affine registers are only incremented when bg_mode is not 0
+        // and the bg is enabled.
+        if(bg_mode!=0){
+          for(int aff=0;aff<2;++aff){
+            bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
+            if(!bg_en)continue;
+            int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
+            int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
+            gba->ppu.aff[aff].internal_bgx+=b;
+            gba->ppu.aff[aff].internal_bgy+=d;
+          }
         }
       }
     }
@@ -1473,7 +1488,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       for(int bg = 3; bg>=0;--bg){
         uint32_t col =0;         
         if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
-        bool bg_en = SB_BFE(dispcnt,8+bg,1);
+        bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(gba->ppu.dispcnt_pipeline[0],8+bg,1);
         if(!bg_en)continue;
         if(SB_BFE(window_control,bg,1)==0)continue;
 
