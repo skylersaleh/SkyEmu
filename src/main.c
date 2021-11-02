@@ -9,27 +9,155 @@
 #define SE_AUDIO_SAMPLE_RATE 44100
 #define SE_AUDIO_BUFF_SAMPLES 2048
 #define SE_AUDIO_BUFF_CHANNELS 2
-
-#include "raylib.h"
-#include "sb_types.h"
 #include "gba.h"
-#include <stdint.h>
-#include <math.h>
-#define RAYGUI_IMPLEMENTATION
-#define RAYGUI_SUPPORT_ICONS
-#include "raygui.h"
-#include "rlgl.h"
-#if defined(PLATFORM_WEB)
-#include <emscripten/emscripten.h>
-#endif                                             
 
 #include "gb.h"
 #define SB_NUM_SAVE_STATES 5
 
-const int GUI_PADDING = 10;
-const int GUI_ROW_HEIGHT = 30;
-const int GUI_LABEL_HEIGHT = 0;
-const int GUI_LABEL_PADDING = 5;
+#if defined(EMSCRIPTEN)
+#include <emscripten.h>
+#endif
+
+#include "sokol_app.h"
+#include "sokol_audio.h"
+#include "sokol_gfx.h"
+#include "sokol_time.h"
+#include "sokol_glue.h"
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui.h"
+#include "sokol_imgui.h"
+#include "karla.h"
+#define STBI_ONLY_PNG
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include "load_rom_png.h"
+
+const char* se_keycode_to_string(int keycode){
+  switch(keycode){
+    default:           return "Unknown";
+    case SAPP_KEYCODE_SPACE:         return "SPACE";
+    case SAPP_KEYCODE_APOSTROPHE:    return "APOSTROPHE";
+    case SAPP_KEYCODE_COMMA:         return "COMMA";
+    case SAPP_KEYCODE_MINUS:         return "MINUS";
+    case SAPP_KEYCODE_PERIOD:        return "PERIOD";
+    case SAPP_KEYCODE_SLASH:         return "SLASH";
+    case SAPP_KEYCODE_0:             return "0";
+    case SAPP_KEYCODE_1:             return "1";
+    case SAPP_KEYCODE_2:             return "2";
+    case SAPP_KEYCODE_3:             return "3";
+    case SAPP_KEYCODE_4:             return "4";
+    case SAPP_KEYCODE_5:             return "5";
+    case SAPP_KEYCODE_6:             return "6";
+    case SAPP_KEYCODE_7:             return "7";
+    case SAPP_KEYCODE_8:             return "8";
+    case SAPP_KEYCODE_9:             return "9";
+    case SAPP_KEYCODE_SEMICOLON:     return "SEMICOLON";
+    case SAPP_KEYCODE_EQUAL:         return "EQUAL";
+    case SAPP_KEYCODE_A:             return "A";
+    case SAPP_KEYCODE_B:             return "B";
+    case SAPP_KEYCODE_C:             return "C";
+    case SAPP_KEYCODE_D:             return "D";
+    case SAPP_KEYCODE_E:             return "E";
+    case SAPP_KEYCODE_F:             return "F";
+    case SAPP_KEYCODE_G:             return "G";
+    case SAPP_KEYCODE_H:             return "H";
+    case SAPP_KEYCODE_I:             return "I";
+    case SAPP_KEYCODE_J:             return "J";
+    case SAPP_KEYCODE_K:             return "K";
+    case SAPP_KEYCODE_L:             return "L";
+    case SAPP_KEYCODE_M:             return "M";
+    case SAPP_KEYCODE_N:             return "N";
+    case SAPP_KEYCODE_O:             return "O";
+    case SAPP_KEYCODE_P:             return "P";
+    case SAPP_KEYCODE_Q:             return "Q";
+    case SAPP_KEYCODE_R:             return "R";
+    case SAPP_KEYCODE_S:             return "S";
+    case SAPP_KEYCODE_T:             return "T";
+    case SAPP_KEYCODE_U:             return "U";
+    case SAPP_KEYCODE_V:             return "V";
+    case SAPP_KEYCODE_W:             return "W";
+    case SAPP_KEYCODE_X:             return "X";
+    case SAPP_KEYCODE_Y:             return "Y";
+    case SAPP_KEYCODE_Z:             return "Z";
+    case SAPP_KEYCODE_LEFT_BRACKET:  return "LEFT_BRACKET";
+    case SAPP_KEYCODE_BACKSLASH:     return "BACKSLASH";
+    case SAPP_KEYCODE_RIGHT_BRACKET: return "RIGHT_BRACKET";
+    case SAPP_KEYCODE_GRAVE_ACCENT:  return "GRAVE_ACCENT";
+    case SAPP_KEYCODE_WORLD_1:       return "WORLD_1";
+    case SAPP_KEYCODE_WORLD_2:       return "WORLD_2";
+    case SAPP_KEYCODE_ESCAPE:        return "ESCAPE";
+    case SAPP_KEYCODE_ENTER:         return "ENTER";
+    case SAPP_KEYCODE_TAB:           return "TAB";
+    case SAPP_KEYCODE_BACKSPACE:     return "BACKSPACE";
+    case SAPP_KEYCODE_INSERT:        return "INSERT";
+    case SAPP_KEYCODE_DELETE:        return "DELETE";
+    case SAPP_KEYCODE_RIGHT:         return "RIGHT";
+    case SAPP_KEYCODE_LEFT:          return "LEFT";
+    case SAPP_KEYCODE_DOWN:          return "DOWN";
+    case SAPP_KEYCODE_UP:            return "UP";
+    case SAPP_KEYCODE_PAGE_UP:       return "PAGE_UP";
+    case SAPP_KEYCODE_PAGE_DOWN:     return "PAGE_DOWN";
+    case SAPP_KEYCODE_HOME:          return "HOME";
+    case SAPP_KEYCODE_END:           return "END";
+    case SAPP_KEYCODE_CAPS_LOCK:     return "CAPS_LOCK";
+    case SAPP_KEYCODE_SCROLL_LOCK:   return "SCROLL_LOCK";
+    case SAPP_KEYCODE_NUM_LOCK:      return "NUM_LOCK";
+    case SAPP_KEYCODE_PRINT_SCREEN:  return "PRINT_SCREEN";
+    case SAPP_KEYCODE_PAUSE:         return "PAUSE";
+    case SAPP_KEYCODE_F1:            return "F1";
+    case SAPP_KEYCODE_F2:            return "F2";
+    case SAPP_KEYCODE_F3:            return "F3";
+    case SAPP_KEYCODE_F4:            return "F4";
+    case SAPP_KEYCODE_F5:            return "F5";
+    case SAPP_KEYCODE_F6:            return "F6";
+    case SAPP_KEYCODE_F7:            return "F7";
+    case SAPP_KEYCODE_F8:            return "F8";
+    case SAPP_KEYCODE_F9:            return "F9";
+    case SAPP_KEYCODE_F10:           return "F10";
+    case SAPP_KEYCODE_F11:           return "F11";
+    case SAPP_KEYCODE_F12:           return "F12";
+    case SAPP_KEYCODE_F13:           return "F13";
+    case SAPP_KEYCODE_F14:           return "F14";
+    case SAPP_KEYCODE_F15:           return "F15";
+    case SAPP_KEYCODE_F16:           return "F16";
+    case SAPP_KEYCODE_F17:           return "F17";
+    case SAPP_KEYCODE_F18:           return "F18";
+    case SAPP_KEYCODE_F19:           return "F19";
+    case SAPP_KEYCODE_F20:           return "F20";
+    case SAPP_KEYCODE_F21:           return "F21";
+    case SAPP_KEYCODE_F22:           return "F22";
+    case SAPP_KEYCODE_F23:           return "F23";
+    case SAPP_KEYCODE_F24:           return "F24";
+    case SAPP_KEYCODE_F25:           return "F25";
+    case SAPP_KEYCODE_KP_0:          return "KP_0";
+    case SAPP_KEYCODE_KP_1:          return "KP_1";
+    case SAPP_KEYCODE_KP_2:          return "KP_2";
+    case SAPP_KEYCODE_KP_3:          return "KP_3";
+    case SAPP_KEYCODE_KP_4:          return "KP_4";
+    case SAPP_KEYCODE_KP_5:          return "KP_5";
+    case SAPP_KEYCODE_KP_6:          return "KP_6";
+    case SAPP_KEYCODE_KP_7:          return "KP_7";
+    case SAPP_KEYCODE_KP_8:          return "KP_8";
+    case SAPP_KEYCODE_KP_9:          return "KP_9";
+    case SAPP_KEYCODE_KP_DECIMAL:    return "KP_DECIMAL";
+    case SAPP_KEYCODE_KP_DIVIDE:     return "KP_DIVIDE";
+    case SAPP_KEYCODE_KP_MULTIPLY:   return "KP_MULTIPLY";
+    case SAPP_KEYCODE_KP_SUBTRACT:   return "KP_SUBTRACT";
+    case SAPP_KEYCODE_KP_ADD:        return "KP_ADD";
+    case SAPP_KEYCODE_KP_ENTER:      return "KP_ENTER";
+    case SAPP_KEYCODE_KP_EQUAL:      return "KP_EQUAL";
+    case SAPP_KEYCODE_LEFT_SHIFT:    return "LEFT_SHIFT";
+    case SAPP_KEYCODE_LEFT_CONTROL:  return "LEFT_CONTROL";
+    case SAPP_KEYCODE_LEFT_ALT:      return "LEFT_ALT";
+    case SAPP_KEYCODE_LEFT_SUPER:    return "LEFT_SUPER";
+    case SAPP_KEYCODE_RIGHT_SHIFT:   return "RIGHT_SHIFT";
+    case SAPP_KEYCODE_RIGHT_CONTROL: return "RIGHT_CONTROL";
+    case SAPP_KEYCODE_RIGHT_ALT:     return "RIGHT_ALT";
+    case SAPP_KEYCODE_RIGHT_SUPER:   return "RIGHT_SUPER";
+    case SAPP_KEYCODE_MENU:          return "MENU";
+  }
+}
+
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
@@ -40,7 +168,25 @@ sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0;
 unsigned sb_save_state_index=0;
 
-AudioStream audio_stream;
+double se_fps_counter(int tick){
+  static int call = -1;
+  static uint64_t last_t = 0;
+  static double fps = 60; 
+  if(call==-1){
+    call = 0;
+    last_t = stm_now();
+  }
+  call+=tick;
+  
+  if(call>=5){
+    uint64_t t = stm_now();
+    fps = ((double)call)/stm_sec(stm_diff(t,last_t));
+    call=0;
+    last_t = t;
+  }
+  return fps; 
+}
+
 
 void sb_pop_save_state(sb_gb_t* gb){
   if(sb_valid_save_states>0){
@@ -56,972 +202,47 @@ void sb_push_save_state(sb_gb_t* gb){
   sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
 }
 
-Rectangle sb_inside_rect_after_padding(Rectangle outside_rect, int padding) {
-  Rectangle rect_inside = outside_rect;
-  rect_inside.x += padding;
-  rect_inside.y += padding;
-  rect_inside.width -= padding * 2;
-  rect_inside.height -= padding * 2;
-  return rect_inside;
-}
-void sb_vertical_adv(Rectangle outside_rect, int advance, int y_padd,
-                     Rectangle *rect_top, Rectangle *rect_bottom) {
-  *rect_top = outside_rect;
-  rect_top->height = advance;
-  *rect_bottom = outside_rect;
-  rect_bottom->y += advance + y_padd;
-  rect_bottom->height -= advance + y_padd;
-}
-
-Rectangle sb_draw_emu_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb, bool top_panel) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING/(top_panel?2:1));
-  Rectangle widget_rect;
-  if(top_panel){
-    widget_rect = inside_rect;
-    widget_rect.width = 100;
-    widget_rect.x+=(inside_rect.width-widget_rect.width*4- GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4)*0.5;
-    emu_state->run_mode =
-      GuiToggleGroup(widget_rect, "#74#Reset;#132#Pause;#131#Run;#134#Step", emu_state->run_mode);
-      return (Rectangle){0};// Not used for vertical alignment
+#define GUI_MAX_IMAGES_PER_FRAME 16
+typedef struct {
+    uint64_t laptime;
+    sg_pass_action pass_action;
+    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
+    int current_image; 
+    int screen_width;
+    int screen_height;
+    int button_state[SAPP_MAX_KEYCODES];
+    float volume; 
+    bool show_settings; 
+    bool show_developer;
+    struct{
+      bool active;
+      float pos[2];
+    }touch_points[SAPP_MAX_TOUCHPOINTS];
+    float last_touch_time;
+} gui_state_t;
+gui_state_t gui_state={.volume=1.0}; 
+static sg_image* se_get_image(){
+  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
+    gui_state.current_image++;
+    return gui_state.image_stack + gui_state.current_image-1; 
   }
-
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  widget_rect.width =
-      widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
-  emu_state->run_mode =
-      GuiToggleGroup(widget_rect, "#74#Reset;#132#Pause;#131#Run;#134#Step", emu_state->run_mode);
-
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
-
-  Rectangle state_rect, adv_rect;
-  if(!top_panel){
-    GuiLabel(widget_rect, "Panel Mode");
-    if(emu_state->system == SYSTEM_GB){
-      widget_rect.width = widget_rect.width / 4 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 3 / 4;
-      emu_state->panel_mode =
-          GuiToggleGroup(widget_rect, "CPU;Tile Maps;Tile Data;Audio", emu_state->panel_mode);
-    }else{
-      widget_rect.width = widget_rect.width / 3 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 2 / 3;
-      const int button_state[]={SB_PANEL_CPU,SB_PANEL_IO,SB_PANEL_AUDIO,-1};
-      int curr_button = 0;
-      for(int i=0;i<sizeof(button_state)/sizeof(button_state[0]);++i)
-        if(button_state[i]==emu_state->panel_mode)curr_button = i;
-
-      curr_button = GuiToggleGroup(widget_rect, "CPU;IO Regs;Audio", curr_button);
-      emu_state->panel_mode=button_state[curr_button];
-
-    }
-
-    sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                    &adv_rect);
-    GuiGroupBox(state_rect, TextFormat("Emulator State [FPS: %f]", 1.0/emu_state->avg_frame_time));
+  return NULL;
+}
+static void se_free_all_images(){
+  for(int i=0;i<gui_state.current_image;++i){
+    sg_destroy_image(gui_state.image_stack[i]);
   }
-  return adv_rect;
+  gui_state.current_image=0;
 }
 
-Rectangle sb_draw_label(Rectangle layout_rect, const char* label){ 
-  Rectangle widget_rect;
-  sb_vertical_adv(layout_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &layout_rect);
-  GuiLabel(widget_rect, label);  
-  return layout_rect;
-}
-
-Rectangle sb_draw_debug_state(Rectangle rect, sb_emu_state_t *emu_state, sb_gb_t*gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
-  widget_rect.width =
-      widget_rect.width / 2 - GuiGetStyle(TOGGLE, GROUP_PADDING) * 1 / 2;
-
-  int save_state=GuiToggleGroup(widget_rect, "Pop Save State;Push Save State", 3);
-
-  if(save_state ==0)sb_pop_save_state(gb);
-  if(save_state ==1)sb_push_save_state(gb);
-
-  inside_rect = sb_draw_label(inside_rect, "Instructions to Step");
-
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
-
-  static bool edit_step_instructions = false;
-  if (GuiSpinner(widget_rect, "", &emu_state->step_instructions, 0, 0x7fffffff,
-                 edit_step_instructions))
-    edit_step_instructions = !edit_step_instructions;
-
-  inside_rect = sb_draw_label(inside_rect, "Breakpoint PC");
-  
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect,
-                  &inside_rect);
-
-  static bool edit_bp_pc = false;
-  if (GuiSpinner(widget_rect, "", &emu_state->pc_breakpoint, -1, 0x7fffffff,
-                 edit_bp_pc))
-    edit_bp_pc = !edit_bp_pc;
-
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Debug State");
-  return adv_rect;
-}
-Rectangle sb_draw_reg_state(Rectangle rect, const char *group_name,
-                            const char **register_names, int *values) {
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  while (*register_names) {
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
-                    &widget_rect, &inside_rect);
-    GuiLabel(widget_rect, *register_names);
-    int w = (inside_rect.width - GUI_PADDING * 2) / 3;
-    widget_rect.x += w;
-    GuiLabel(widget_rect, TextFormat("0x%X", *values));
-
-    widget_rect.x += w + GUI_PADDING * 2;
-    GuiLabel(widget_rect, TextFormat("%i", *values));
-
-    ++register_names;
-    ++values;
-  }
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  return adv_rect;
-}
-
-Rectangle sb_draw_flag_state(Rectangle rect, const char *group_name,
-                             const char **register_names, bool *values) {
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  while (*register_names) {
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
-                    &widget_rect, &inside_rect);
-    widget_rect.width = GUI_PADDING;
-    widget_rect.height = GUI_PADDING;
-
-    GuiCheckBox(
-        widget_rect,
-        TextFormat("%s (%s)", *register_names, (*values) ? "true" : "false"),
-        *values);
-    ++register_names;
-    ++values;
-  }
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  return adv_rect;
-}      
-
-Rectangle gba_draw_instructions(Rectangle rect, gba_t *gba) {
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  int pc = gba->cpu.registers[15];
-  //TODO: Disasm Thumb
-  bool thumb = arm7_get_thumb_bit(&gba->cpu);
-  for (int i = -6; i < 5; ++i) {
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
-                    &widget_rect, &inside_rect);
-
-    int pc_render = i*(thumb?2:4) + pc;
-
-    if (pc_render < 0) {
-      widget_rect.x += 80;
-      GuiLabel(widget_rect, "INVALID");
-    } else {
-      if (i == 0)
-        GuiLabel(widget_rect, "PC->");
-      widget_rect.x += 30;
-      GuiLabel(widget_rect, TextFormat("%09d", pc_render));
-      widget_rect.x += 80;
-      uint32_t opcode = thumb? gba_read16(gba, pc_render): gba_read32(gba, pc_render);
-      char disasm[64];
-      arm7_get_disasm(&gba->cpu,pc_render,disasm,64);
-      GuiLabel(widget_rect, disasm);
-      widget_rect.x += 200;
-      GuiLabel(widget_rect, TextFormat(thumb? "(%04x)":"(%08x)", opcode));
-      widget_rect.x += 50;
-    }
-  }
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Instructions");
-  return adv_rect;
-}
- 
-Rectangle sb_draw_instructions(Rectangle rect, sb_gb_cpu_t *cpu_state,
-                               sb_gb_t *gb) {
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  for (int i = -6; i < 5; ++i) {
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING + 5,
-                    &widget_rect, &inside_rect);
-    int pc_render = i + cpu_state->pc;
-
-    if (pc_render < 0) {
-      widget_rect.x += 80;
-
-      GuiLabel(widget_rect, "INVALID");
-    } else {
-      if (i == 0)
-        GuiLabel(widget_rect, "PC->");
-      widget_rect.x += 30;
-      GuiLabel(widget_rect, TextFormat("%06d", pc_render));
-      widget_rect.x += 50;
-      int opcode = sb_read8(gb, pc_render);
-      GuiLabel(widget_rect, sb_decode_table[opcode].opcode_name);
-      ;
-      widget_rect.x += 100;
-      GuiLabel(widget_rect, TextFormat("(%02x)", sb_read8(gb, pc_render)));
-      widget_rect.x += 50;
-    }
-  }
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Instructions");
-  return adv_rect;
-}
-
-Rectangle sb_draw_joypad_state(Rectangle rect, sb_joy_t *joy) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  Rectangle wr = inside_rect;
-  wr.width = GUI_PADDING;
-  wr.height = GUI_PADDING;
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Up",joy->up);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Down",joy->down);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Left",joy->left);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Right",joy->right);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Shoulder-L",joy->l);
-   
-  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  inside_rect.x +=rect.width/2;
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.x +=rect.width/2;
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"A",joy->a);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"B",joy->b);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Start",joy->start);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Select",joy->select);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"Shoulder-R",joy->r);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-   
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Joypad State");
-  return adv_rect;
-}
-
-Rectangle sb_draw_interrupt_state(Rectangle rect, sb_gb_t *gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  Rectangle wr = inside_rect;
-  wr.width = GUI_PADDING;
-  wr.height = GUI_PADDING;
-  uint8_t e = sb_read8(gb,SB_IO_INTER_EN);
-  uint8_t f = sb_read8(gb,SB_IO_INTER_F);
-  bool values[]={
-    SB_BFE(e,0,1), SB_BFE(e,1,1), SB_BFE(e,2,1), SB_BFE(e,3,1), SB_BFE(e,4,1),
-    SB_BFE(f,0,1), SB_BFE(f,1,1), SB_BFE(f,2,1), SB_BFE(f,3,1), SB_BFE(f,4,1),
-  };
-  const char * names[] ={
-    "VBlank En", "Stat En", "Timer En", "Serial En", "Joypad En",
-    "VBlank F", "Stat F", "Timer F", "Serial F", "Joypad F",
-  };
-
-  int num_values = sizeof(values)/sizeof(bool);
-  for(int i=0;i<num_values;++i){
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-    wr.y=widget_rect.y;
-    GuiCheckBox(wr,names[i],values[i]);
-    if(i+1==num_values/2){
-      inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-      inside_rect.x +=rect.width/2;
-      wr.x +=rect.width/2;
-    }
-  }
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Interrupt State");
-  return adv_rect;
-}
-
-Rectangle sb_draw_dma_state(Rectangle rect, sb_gb_t *gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  Rectangle wr = widget_rect;
-  wr.width = GUI_PADDING;
-  wr.height = GUI_PADDING;
-
-  int dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
-                  ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
-  int dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
-                  ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
-  uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
-
-  int len = (SB_BFE(dma_mode_length, 0,7)+1);
-  bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
-
-  int div = sb_read8_direct(gb, SB_IO_DIV);
-  int tima = sb_read8_direct(gb, SB_IO_TIMA);
-  int tma = sb_read8_direct(gb, SB_IO_TMA);
-  inside_rect = sb_draw_label(inside_rect,TextFormat("DMA SRC: %x", dma_src));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("DMA DST: %x", dma_dst));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("Length (16B chunks): %d", len));
-
-  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  inside_rect.x +=rect.width/2;
-  inside_rect = sb_draw_label(inside_rect, TextFormat("Bytes Transferred: %d", gb->dma.bytes_transferred));
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.x =widget_rect.x;
-  wr.y = widget_rect.y;
-
-  GuiCheckBox(wr,"Active",gb->dma.active);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-  GuiCheckBox(wr,"HDMA Mode",hdma_mode);
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-  wr.y=widget_rect.y;
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "DMA State");
-  return adv_rect;
-}
-Rectangle sb_draw_timer_state(Rectangle rect, sb_gb_t *gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-  Rectangle wr = widget_rect;
-  wr.width = GUI_PADDING;
-  wr.height = GUI_PADDING;
-
-
-  int div = sb_read8_direct(gb, SB_IO_DIV);
-  int tima = sb_read8_direct(gb, SB_IO_TIMA);
-  int tma = sb_read8_direct(gb, SB_IO_TMA);
-  inside_rect = sb_draw_label(inside_rect, TextFormat("DIV: %d", div));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("TIMA: %d", tima));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("TMA: %d", tma));
-
-  inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  inside_rect.x +=rect.width/2;
-  inside_rect = sb_draw_label(inside_rect,TextFormat("CLKs to DIV: %d", gb->timers.clocks_till_div_inc));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("CLKs to TIMA: %d", gb->timers.clocks_till_tima_inc));
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,  &inside_rect);
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Timer State");
-  return adv_rect;
-}
-Rectangle sb_draw_cartridge_state(Rectangle rect,
-                                  sb_gb_cartridge_t *cart_state) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  const char * title = "Unknown";
-  int rom_size = 0; 
-  const char *system = "Unknown";
-  if(emu_state.system==SYSTEM_GB){
-    title = cart_state->title;
-    rom_size = cart_state->rom_size;
-    system = "Game Boy";
-    if(cart_state->game_boy_color)system = "Game Boy Color";
-  }else if (emu_state.system==SYSTEM_GBA){
-    title = gba.cart.title;
-    rom_size = gba.cart.rom_size;
-    system = "Game Boy Advanced";
-  }
-  inside_rect = sb_draw_label(inside_rect, TextFormat("Title: %s", title));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("System: %s", system));
-  inside_rect = sb_draw_label(inside_rect, TextFormat("ROM Size: %d", rom_size));
-  if(emu_state.system== SYSTEM_GB){
-    inside_rect=sb_draw_label(inside_rect, TextFormat("Cart Type: %x", cart_state->type));
-    inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped ROM Bank: %d", cart_state->mapped_rom_bank));
-    inside_rect=sb_draw_label(inside_rect, TextFormat("RAM Size: %d", cart_state->ram_size));
-    inside_rect=sb_draw_label(inside_rect, TextFormat("Mapped RAM Bank: %d", cart_state->mapped_ram_bank));
-  }else if(emu_state.system==SYSTEM_GBA){
-    const char * backup_type[]={"None","EEPROM", "EEPROM (512B)", "EEPROM (8kB)", "SRAM","FLASH (64 kB)", "FLASH (128 kB)"};
-    inside_rect=sb_draw_label(inside_rect, TextFormat("Backup Type: %s", backup_type[gba.cart.backup_type]));
-    inside_rect=sb_draw_label(inside_rect, TextFormat("Save Path: %s", gba.cart.save_file_path));
-  }
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "Cartridge State (Drag and Drop .GBC to Load ROM)");
-  return adv_rect;
-}
-Rectangle sb_draw_cpu_state(Rectangle rect, sb_gb_cpu_t *cpu_state,
-                            sb_gb_t *gb) {
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  const char *register_names_16b[] = {"AF", "BC", "DE", "HL", "SP", "PC", NULL};
-
-  int register_values_16b[] = {cpu_state->af, cpu_state->bc, cpu_state->de,
-                               cpu_state->hl, cpu_state->sp, cpu_state->pc};
-
-  const char *register_names_8b[] = {"A", "F", "B", "C", "D",
-                                     "E", "H", "L", NULL};
-
-  int register_values_8b[] = {
-      SB_U16_HI(cpu_state->af), SB_U16_LO(cpu_state->af),
-      SB_U16_HI(cpu_state->bc), SB_U16_LO(cpu_state->bc),
-      SB_U16_HI(cpu_state->de), SB_U16_LO(cpu_state->de),
-      SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
-  };
-
-  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", "Prefix", "Wait Inter",  NULL};
-
-  bool flag_values[] = {
-      SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
-      SB_BFE(cpu_state->af, SB_N_BIT, 1), // N
-      SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
-      SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
-      cpu_state->interrupt_enable,
-      cpu_state->prefix_op,
-      cpu_state->wait_for_interrupt
-  };
-  // Split registers into three rects horizontally
-  {
-    Rectangle in_rect[3];
-    const char *sections[] = {"16-bit Registers", "8-bit Registers", "Flags"};
-    int orig_y = inside_rect.y;
-    int x_off = 0;
-    for (int i = 0; i < 3; ++i) {
-      in_rect[i] = inside_rect;
-      in_rect[i].width = inside_rect.width / 3 - GUI_PADDING * 2 / 3;
-      in_rect[i].x += x_off;
-      x_off += in_rect[i].width + GUI_PADDING;
-    }
-    in_rect[0] = sb_draw_reg_state(in_rect[0], "16-bit Registers",
-                                   register_names_16b, register_values_16b);
-
-    in_rect[1] = sb_draw_reg_state(in_rect[1], "8-bit Registers",
-                                   register_names_8b, register_values_8b);
-
-    in_rect[2] =
-        sb_draw_flag_state(in_rect[2], "Flags", flag_names, flag_values);
-    for (int i = 0; i < 3; ++i) {
-      if (inside_rect.y < in_rect[i].y)
-        inside_rect.y = in_rect[i].y;
-    }
-    for (int i = 0; i < 3; ++i) {
-      in_rect[i].height = inside_rect.y - orig_y - GUI_PADDING;
-      in_rect[i].y = orig_y;
-      GuiGroupBox(in_rect[i], sections[i]);
-    }
-
-    inside_rect.height -= inside_rect.y - orig_y;
-  }
-
-  inside_rect = sb_draw_instructions(inside_rect, cpu_state, gb);
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "CPU State");
-  return adv_rect;
-}
-Rectangle gba_draw_arm7_state(Rectangle rect, gba_t* gba) {
-  arm7_t * arm = &gba->cpu;
-
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-
-  // Split registers into two rects horizontally
-  {
-    Rectangle in_rect[2];
-    const char *sections[] = {"Registers", "Banked Registers"};
-    int orig_y = inside_rect.y;
-    int x_off = 0;
-    for (int i = 0; i < 2; ++i) {
-      in_rect[i] = inside_rect;
-      in_rect[i].width = inside_rect.width / 2 - GUI_PADDING * 1 / 2;
-      in_rect[i].x += x_off;
-      x_off += in_rect[i].width + GUI_PADDING;
-    }
-    const char * reg_names[] = {
-      "R0","R1","R2","R3",
-      "R4","R5","R6","R7",
-      "R8","R9","R10","R11",
-      "R12","R13","R14","R15(PC)",
-      "CPSR","N","Z","C","V",
-      NULL
-    };
-    int reg_vals[21];
-    for(int i=0;i<16;++i)reg_vals[i] = arm->registers[i];
-
-    reg_vals[16]=arm->registers[16]; 
-    reg_vals[17] = SB_BFE(arm->registers[16],31,1);
-    reg_vals[18] = SB_BFE(arm->registers[16],30,1);
-    reg_vals[19] = SB_BFE(arm->registers[16],29,1);
-    reg_vals[20] = SB_BFE(arm->registers[16],28,1);
-    
-    const char * banked_regs[] = {
-      "SPSRfiq","SPSRirq","SPSRsvc","SPSRabt","SPSRund",
-      "R8fiq","R9fiq","R10fiq","R11fiq",
-      "R12fiq","R13fiq","R14fiq",
-      "R13irq","R14irq","R13svc","R14svc",
-      "R13abt","R14abt","R13und","R14und",
-      NULL
-    };  
-    /*
-    Banked Reg Table
-    17-23: R8_fiq-R14_fiq
-    24-25: R13_irq-R14_irq
-    26-27: R13_svc-R14_svc
-    28-29: R13_abt-R14_abt
-    30-31: R13_und-R14_und
-    32: SPSR_fiq
-    33: SPSR_irq
-    34: SPSR_svc
-    35: SPSR_abt
-    36: SPSR_und
-    */
-    int banked_vals[20]; 
-    for(int i=0;i<5;++i) banked_vals[i]   = arm->registers[32+i];
-    for(int i=0;i<7;++i) banked_vals[5+i] = arm->registers[17+i];
-    for(int i=0;i<2;++i) banked_vals[12+i]= arm->registers[24+i];
-    for(int i=0;i<2;++i) banked_vals[14+i]= arm->registers[26+i];
-    for(int i=0;i<2;++i) banked_vals[16+i]= arm->registers[28+i];
-    for(int i=0;i<2;++i) banked_vals[18+i]= arm->registers[30+i];
-
-    in_rect[0] = sb_draw_reg_state(in_rect[0], "Registers",
-                                   reg_names, reg_vals);
-    in_rect[1] = sb_draw_reg_state(in_rect[1], "Banked Registers",
-                                   banked_regs, banked_vals);
-     
-    for (int i = 0; i < 2; ++i) {
-      if (inside_rect.y < in_rect[i].y)
-        inside_rect.y = in_rect[i].y;
-    }
-    for (int i = 0; i < 2; ++i) {
-      in_rect[i].height = inside_rect.y - orig_y - GUI_PADDING;
-      in_rect[i].y = orig_y;
-      GuiGroupBox(in_rect[i], sections[i]);
-    }
-    inside_rect.height -= inside_rect.y - orig_y;
-  }
-
-  inside_rect = gba_draw_instructions(inside_rect, gba);
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "ARM7 State");
-  return adv_rect;
-}          
-void sb_poll_controller_input(sb_joy_t* joy){
-  joy->left  = IsKeyDown(KEY_A);
-  joy->right = IsKeyDown(KEY_D);
-  joy->up    = IsKeyDown(KEY_W);
-  joy->down  = IsKeyDown(KEY_S);
-  joy->a = IsKeyDown(KEY_J);
-  joy->b = IsKeyDown(KEY_K);
-  joy->start = IsKeyDown(KEY_ENTER);
-  joy->select = IsKeyDown(KEY_APOSTROPHE);
-  joy->l = IsKeyDown(KEY_U);
-  joy->r = IsKeyDown(KEY_I);
-}
-
-Rectangle gba_draw_io_state(Rectangle rect, gba_t* gba){
-  for(int i = 0; i<sizeof(gba_io_reg_desc)/sizeof(gba_io_reg_desc[0]);++i){
-    Rectangle r = sb_inside_rect_after_padding(rect, GUI_PADDING);
-    uint32_t addr = gba_io_reg_desc[i].addr;
-    uint16_t data = gba_read16(gba, addr);
-    bool has_fields = false;
-    for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
-      uint32_t start = gba_io_reg_desc[i].bits[f].start; 
-      uint32_t size = gba_io_reg_desc[i].bits[f].size; 
-      if(size){
-        uint32_t field_data = SB_BFE(data,start,size);
-        has_fields=true;
-        Rectangle r2 = r; 
-        if(size>1)r=sb_draw_label(r, TextFormat("[%d:%d]:", start, start+size-1));
-        else r=sb_draw_label(r, TextFormat("%d:", start));
-
-        r2.x+=30; 
-        sb_draw_label(r2, TextFormat("%2d",field_data));
-        r2.x+=25; 
-        sb_draw_label(r2, TextFormat("%s",gba_io_reg_desc[i].bits[f].name));
-      }
-    }
-    Rectangle state_rect, adv_rect;
-    sb_vertical_adv(rect, r.y - rect.y, GUI_PADDING, &state_rect, &adv_rect);
-    GuiGroupBox(state_rect, TextFormat("%s(%08x): %04x", gba_io_reg_desc[i].name, addr,data)); 
-    rect=adv_rect;
-  }
-  return rect;
-}
-Rectangle sb_draw_tile_map_state(Rectangle rect, sb_gb_t *gb) {
-  static uint8_t tmp_image[512*512*3];
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
-  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;
-  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;
-  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
-
-  // Draw Tilemaps
-  for(int tile_map = 0;tile_map<2;++tile_map){
-    Vector2 mouse_pos = GetMousePosition();
-    sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, 0, &widget_rect,  &inside_rect);
-
-    int image_height = 32*(8+2);
-    int image_width =  32*(8+2);
-    sb_vertical_adv(inside_rect, image_height+GUI_PADDING*2, GUI_PADDING, &widget_rect,  &inside_rect);
-    Rectangle wr = widget_rect;
-    int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
-    int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
-    int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
-    int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
-
-    int box_x1 = tile_map ==0 ? sx : wx;
-    int box_x2 = box_x1+(SB_LCD_W-1);
-    int box_y1 = tile_map ==0 ? sy : wy;
-    int box_y2 = box_y1+(SB_LCD_H-1);
-    int tile_map_base = tile_map==0? bg_tile_map_base:win_tile_map_base;
-    int scanline = tile_map==0 ? gb->lcd.curr_scanline +sy : gb->lcd.curr_window_scanline;
-    for(int yt = 0; yt<32;++yt)
-      for(int xt = 0; xt<32;++xt)
-        for(int py = 0;py<8;++py)
-          for(int px = 0;px<8;++px){
-            int x = xt*8+px;
-            int y = yt*8+py;
-            int color_id = sb_lookup_tile(gb,x,y,tile_map_base,bg_win_tile_data_mode);
-            int p = (xt*10+(px)+1)+(yt*10+py+1)*image_width;
-            int r=0,g=0,b=0;
-            sb_lookup_palette_color(gb,color_id,&r,&g,&b);
-            if(((x==(box_x1%256)||x==(box_x2%256)) && (((y-box_y1)&0xff)>=0 && ((box_y2-y)&0xff) <=box_y2-box_y1))||
-               ((y==(box_y1%256)||y==(box_y2%256)) && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
-               r=255; g=b=0;
-            }
-            if(y == (scanline&0xff) &&(((x-box_x1)&0xff)>=0 && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
-              b = 255;  r=g=0;
-            }
-            tmp_image[p*3+0]=r;
-            tmp_image[p*3+1]=g;
-            tmp_image[p*3+2]=b;
-          }
-    Image screenIm = {
-          .data = tmp_image,
-          .width = image_width,
-          .height = image_height,
-          .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-          .mipmaps = 1
-    };
-
-    Texture2D screenTex = LoadTextureFromImage(screenIm);
-    SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
-    Rectangle im_rect;
-    im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
-    im_rect.y = widget_rect.y+GUI_PADDING;
-    im_rect.width = image_width;
-    im_rect.height = image_height;
-
-    DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255});
-
-    const char * name = tile_map == 0  ? "Background" : "Window";
-    mouse_pos.x-=im_rect.x;
-    mouse_pos.y-=im_rect.y;
-    if(mouse_pos.x<im_rect.width && mouse_pos.y <im_rect.height &&
-      mouse_pos.x>=0 && mouse_pos.y>=0){
-      int tx = (mouse_pos.x -1)/10;
-      int ty = (mouse_pos.y -1)/10;
-      int t = tx+ty*32;
-      int tile_data0 = sb_read_vram(gb, tile_map_base+t,0);
-      int tile_data1 = sb_read_vram(gb, tile_map_base+t,1);
-      GuiGroupBox(widget_rect, TextFormat("%s Tile Map (Tile (%d, %d) Index=0x%02x Attr=0x%02x)",name,tx,ty,tile_data0,tile_data1));
-    }else GuiGroupBox(widget_rect, TextFormat("%s Tile Map",name));
-    // Flush Raylib batch so that texture can be deleted. 
-    rlDrawRenderBatchActive();
-    UnloadTexture(screenTex);
-  }
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "PPU State");
-  return adv_rect;
-}
-Rectangle sb_draw_tile_data_state(Rectangle rect, sb_gb_t *gb) {
-  static uint8_t tmp_image[512*512*3];
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
-  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;
-  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;
-  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
-
-  // Draw tile data arrays
-  for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
-    Vector2 mouse_pos = GetMousePosition();
-    sb_vertical_adv(inside_rect, 0, GUI_PADDING, &widget_rect,  &inside_rect);
-
-    int scale = 1;
-    int image_height = 384/32*(8+2)*scale;
-    int image_width =  32*(8+2)*scale;
-    sb_vertical_adv(inside_rect, image_height+GUI_PADDING*2, GUI_PADDING, &widget_rect,  &inside_rect);
-    Rectangle wr = widget_rect;
-
-    int tile_data_base = 0x8000;
-    for(int t=0;t<384;++t){
-      int xt = (t%32)*10;
-      int yt = (t/32)*10;
-
-      for(int py = 0;py<8;++py)
-        for(int px = 0;px<8;++px){
-          int d = tile_data_base+py*2+ t*16;
-          uint8_t data1 = sb_read_vram(gb,d,tile_data_bank);
-          uint8_t data2 = sb_read_vram(gb,d+1,tile_data_bank);
-          uint8_t value = SB_BFE(data1,px,1)+SB_BFE(data2,px,1)*2;
-          uint8_t color = value*80;
-          int p = (xt+(7-px)+1)+(yt+py+1)*image_width;
-          tmp_image[p*3+0]=color;
-          tmp_image[p*3+1]=color;
-          tmp_image[p*3+2]=color;
-        }
-    }
-    Image screenIm = {
-          .data = tmp_image,
-          .width = image_width,
-          .height = image_height,
-          .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-          .mipmaps = 1
-    };
-
-    Texture2D screenTex = LoadTextureFromImage(screenIm);
-    SetTextureFilter(screenTex, TEXTURE_FILTER_POINT);
-    Rectangle im_rect;
-    im_rect.x = widget_rect.x+(widget_rect.width-image_width)/2;
-    im_rect.y = widget_rect.y+GUI_PADDING;
-    im_rect.width = image_width;
-    im_rect.height = image_height;
-
-    DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},im_rect, (Color){255,255,255,255});
-    // Flush Raylib batch so that texture can be deleted. 
-    rlDrawRenderBatchActive();
-    UnloadTexture(screenTex); 
-    
-    mouse_pos.x-=im_rect.x;
-    mouse_pos.y-=im_rect.y;
-    if(mouse_pos.x<im_rect.width && mouse_pos.y <im_rect.height &&
-      mouse_pos.x>=0 && mouse_pos.y>=0){
-      int tx = (mouse_pos.x -1)/10;
-      int ty = (mouse_pos.y -1)/10;
-      int t = tx+ty*32;
-      GuiGroupBox(widget_rect, TextFormat("Tile Data[%d] (TileID = 0x%02x)",tile_data_bank,t&0xff));
-    }else GuiGroupBox(widget_rect, TextFormat("Tile Data[%d]",tile_data_bank));
-  }
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-  GuiGroupBox(state_rect, "PPU State");
-  return adv_rect;
-}
-
-double se_fps_counter(int tick){
-  static int call = -1;
-  static double last_t = 0;
-  static double fps = 60; 
-  if(call==-1){
-    call = 0;
-    last_t = GetTime();
-  }
-  call+=tick;
-  
-  if(call>=5){
-    double t = GetTime();
-    fps = ((double)call)/(t-last_t);
-    call=0;
-    last_t = t;
-  }
-  return fps; 
-}
-Rectangle sb_draw_audio_state(Rectangle rect, sb_gb_t*gb){
-  Rectangle inside_rect = sb_inside_rect_after_padding(rect, GUI_PADDING);
-  Rectangle widget_rect;
-
-  sb_vertical_adv(inside_rect, GUI_LABEL_HEIGHT, GUI_PADDING, &widget_rect,&inside_rect);
-
-  float fifo_size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
-  GuiLabel(widget_rect, TextFormat("FIFO Size: %4f (%4f)", fifo_size,fifo_size/SB_AUDIO_RING_BUFFER_SIZE));
-
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  GuiProgressBar(widget_rect, "", "", fifo_size/SB_AUDIO_RING_BUFFER_SIZE, 0, 1);
-  for(int i=0;i<4;++i){
-    inside_rect = sb_draw_label(inside_rect,TextFormat("Channel %d",i+1));
-    sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[i], 0, 1);
-  } 
-  if(emu_state.system==SYSTEM_GBA){
-    inside_rect = sb_draw_label(inside_rect,TextFormat("FIFO Channel A"));
-    sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[4], 0, 1);
-
-    inside_rect = sb_draw_label(inside_rect,TextFormat("FIFO Channel B"));
-    sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-    GuiProgressBar(widget_rect, "", "", emu_state.audio_channel_output[5], 0, 1);
-  }
-
-  inside_rect = sb_draw_label(inside_rect, "Mix Volume (R)");
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  GuiProgressBar(widget_rect, "", "", emu_state.mix_r_volume, 0, 1);
-   
-  inside_rect = sb_draw_label(inside_rect, "Mix Volume (L)");
-  sb_vertical_adv(inside_rect, GUI_ROW_HEIGHT, GUI_PADDING, &widget_rect, &inside_rect);
-  GuiProgressBar(widget_rect, "", "", emu_state.mix_l_volume, 0, 1);
-   
-  inside_rect = sb_draw_label(inside_rect, "Output Waveform");
-   
-  sb_vertical_adv(inside_rect, 128, GUI_PADDING, &widget_rect, &inside_rect);
-  
-  Color outline_color = GetColor(GuiGetStyle(DEFAULT,BORDER_COLOR_NORMAL));
-  Color line_color = GetColor(GuiGetStyle(DEFAULT,BORDER_COLOR_FOCUSED));
-  DrawRectangleLines(widget_rect.x,widget_rect.y,widget_rect.width,widget_rect.height,outline_color);
-  int old_v = 0;
-  static Vector2 points[512];
-  for(int i=0;i<widget_rect.width;++i){
-    int entry = (emu_state.audio_ring_buff.read_ptr+i)%SB_AUDIO_RING_BUFFER_SIZE;
-    int value = emu_state.audio_ring_buff.data[entry]/256/2;
-    points[i]= (Vector2){widget_rect.x+i,widget_rect.y+64+value};
-    old_v=value;
-  }
-  DrawLineStrip(points,widget_rect.width,line_color);
-     
-
-  Rectangle state_rect, adv_rect;
-  sb_vertical_adv(rect, inside_rect.y - rect.y, GUI_PADDING, &state_rect,
-                  &adv_rect);
-
-
-  GuiGroupBox(state_rect, "Audio State");
-  return adv_rect;
-}
-void sb_draw_sidebar(Rectangle rect) {
-  Rectangle rect_inside = sb_inside_rect_after_padding(rect, GUI_PADDING);
-
-  rect_inside = sb_draw_emu_state(rect_inside, &emu_state,&gb_state,false);
-  
-  static Vector2 scroll = {0}; 
-  static Rectangle last_rect={0};
-  last_rect.x=last_rect.y=0;
-  if(last_rect.height < rect_inside.height){
-    last_rect.width = rect_inside.width-5;
-  }else last_rect.width=rect_inside.width- GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH)-5;
-  Rectangle view = GuiScrollPanel(rect_inside, last_rect, &scroll);
-  Vector2 view_scale = GetWindowScaleDPI();
-  //Begin scissor is broken on non-web platforms
-#ifdef PLATFORM_WEB
-  BeginScissorMode(view.x*view_scale.x, view.y*view_scale.y,view.width*view_scale.x, view.height*view_scale.y);
-#endif
-  rect_inside.y+=scroll.y;
-  int starty = rect_inside.y;
-  rect_inside.y+=GUI_PADDING; 
-  rect_inside.x+=GUI_PADDING;
-  rect_inside.width = view.width-GUI_PADDING*1.5;
-  if(emu_state.panel_mode==SB_PANEL_TILEMAPS){
-    rect_inside = sb_draw_tile_map_state(rect_inside, &gb_state);
-  }else if(emu_state.panel_mode==SB_PANEL_IO){
-    rect_inside = gba_draw_io_state(rect_inside, &gba);
-  }else if(emu_state.panel_mode==SB_PANEL_TILEDATA) rect_inside = sb_draw_tile_data_state(rect_inside, &gb_state);
-  else if(emu_state.panel_mode==SB_PANEL_CPU){
-    rect_inside = sb_draw_debug_state(rect_inside, &emu_state,&gb_state);
-    rect_inside = sb_draw_cartridge_state(rect_inside, &gb_state.cart);
-    if(emu_state.system==SYSTEM_GB){
-      rect_inside = sb_draw_interrupt_state(rect_inside, &gb_state);
-      rect_inside = sb_draw_timer_state(rect_inside, &gb_state);
-      rect_inside = sb_draw_dma_state(rect_inside, &gb_state);
-      rect_inside = sb_draw_cpu_state(rect_inside, &gb_state.cpu, &gb_state);
-    }else if (emu_state.system == SYSTEM_GBA){
-      rect_inside = gba_draw_arm7_state(rect_inside, &gba);
-    }
-    rect_inside = sb_draw_joypad_state(rect_inside, &emu_state.joy);
-  }else if(emu_state.panel_mode==SB_PANEL_AUDIO){
-    rect_inside = sb_draw_audio_state(rect_inside, &gb_state);
-  }
-  last_rect.width = view.width-GUI_PADDING;
-  last_rect.height = rect_inside.y-starty;
-#ifdef PLATFORM_WEB
-  EndScissorMode();
-#endif
-}
-void sb_draw_top_panel(Rectangle rect) {
-  GuiPanel(rect);
-  sb_draw_emu_state(rect, &emu_state,&gb_state, true);
-}
-
-void sb_update_audio_stream_from_fifo(sb_gb_t*gb, bool global_mute){
-  static int16_t audio_buff[SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*2];
-  int size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
-  if(global_mute){
-    if(IsAudioStreamProcessed(audio_stream)){
-      for(int i=0;i<SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;++i)audio_buff[i]=0;
-      UpdateAudioStream(audio_stream, audio_buff, SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS);
-    }
-  }
-  if(IsAudioStreamProcessed(audio_stream)){
-    //Fill up Audio buffer from ring_buffer
-    for(int i=0; i< SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS; ++i){
-    
-      unsigned read_entry =0;
-      if(sb_ring_buffer_size(&emu_state.audio_ring_buff)>0)
-        read_entry=(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
-      audio_buff[i]= emu_state.audio_ring_buff.data[read_entry];
-    }
-
-    UpdateAudioStream(audio_stream, audio_buff, SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS);
-  }
-}
 
 bool sb_load_rom(const char* file_path, const char* save_file){
-  if(!IsFileExtension(file_path,".gb") && 
-     !IsFileExtension(file_path,".gbc")) return false; 
-  unsigned int bytes = 0;
-  unsigned char *data = LoadFileData(file_path, &bytes);
+  if(!sb_path_has_file_ext(file_path,".gb") && 
+     !sb_path_has_file_ext(file_path,".gbc")) return false; 
+  size_t bytes = 0;
+  uint8_t *data = sb_load_file_data(file_path, &bytes);
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
-  printf("Loaded File: %s, %d bytes\n", file_path, bytes);
+  printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
   for (size_t i = 0; i < bytes; ++i) {
     gb_state.cart.data[i] = data[i];
   }
@@ -1090,37 +311,38 @@ bool sb_load_rom(const char* file_path, const char* save_file){
   }
   emu_state.run_mode = SB_MODE_RESET;
   emu_state.rom_loaded = true;
-  UnloadFileData(data);
+  sb_free_file_data(data);
 
   strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
   gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
-
-  if(FileExists(save_file)){
-    unsigned int bytes=0;
-    unsigned char* data = LoadFileData(save_file,&bytes);
-    printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
+  data = sb_load_file_data(save_file, &bytes);
+  if(data){
+    printf("Loaded save file: %s, bytes: %zu\n",save_file,bytes);
 
     if(bytes!=gb_state.cart.ram_size){
-      printf("Warning save file size(%d) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
+      printf("Warning save file size(%zu) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
     }
     if(bytes>gb_state.cart.ram_size){
       bytes = gb_state.cart.ram_size;
     }
     memcpy(gb_state.cart.ram_data, data, bytes);
-    UnloadFileData(data);
+    sb_free_file_data(data);
   }else{
     printf("Could not find save file: %s\n",save_file);
     memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
   }
   return true; 
 }
-void se_load_rom(char *filename){
-  const char * c = GetFileNameWithoutExt(filename);
-  const char * base = GetDirectoryPath(filename);
-#if defined(PLATFORM_WEB)
-      const char * save_file = TextFormat("/offline/%s.sav",c);
+
+void se_load_rom(const char *filename){
+  char save_file[4096]; 
+  save_file[0] = '\0';
+  const char* base, *c, *ext; 
+  sb_breakup_path(filename,&base, &c, &ext);
+#if defined(EMSCRIPTEN)
+    snprintf(save_file,4096,"/offline/%s.sav",c);
 #else
-      const char * save_file = TextFormat("%s/%s.sav",base, c);
+    snprintf(save_file,4096,"%s/%s.sav",base, c);
 #endif
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
@@ -1133,24 +355,282 @@ void se_load_rom(char *filename){
     emu_state.rom_loaded = true; 
   }
   if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename);
-  else{
-    emu_state.run_mode= SB_MODE_RESET;
-    static bool init_audio= false;
-    if(init_audio==false&&emu_state.rom_loaded){
-      printf("Initializing Audio\n");
-      InitAudioDevice();
-      SetAudioStreamBufferSizeDefault(SE_AUDIO_BUFF_SAMPLES);
-      audio_stream = LoadAudioStream(SE_AUDIO_SAMPLE_RATE, 16, SE_AUDIO_BUFF_CHANNELS);
-      PlayAudioStream(audio_stream);
-      init_audio=true;
-    }
-  }
+  else emu_state.run_mode= SB_MODE_RESET;
   return; 
 }
-void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
+void sb_poll_controller_input(sb_joy_t* joy){
+  
+  joy->left  = gui_state.button_state[SAPP_KEYCODE_A];
+  joy->right = gui_state.button_state[SAPP_KEYCODE_D];
+  joy->up    = gui_state.button_state[SAPP_KEYCODE_W];
+  joy->down  = gui_state.button_state[SAPP_KEYCODE_S];
+  joy->a = gui_state.button_state[SAPP_KEYCODE_J];
+  joy->b = gui_state.button_state[SAPP_KEYCODE_K];
+  joy->start = gui_state.button_state[SAPP_KEYCODE_ENTER];
+  joy->select = gui_state.button_state[SAPP_KEYCODE_APOSTROPHE];
+  joy->l = gui_state.button_state[SAPP_KEYCODE_U];
+  joy->r = gui_state.button_state[SAPP_KEYCODE_I];
+}
+void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
+  sg_image_data im_data={0};
+  uint8_t * rgba8_data = data;
+  if(has_alpha==false){
+    rgba8_data= malloc(im_width*im_height*4);
+    for(int i=0;i<im_width*im_height;++i){
+      rgba8_data[i*4+0]= data[i*3+0];
+      rgba8_data[i*4+1]= data[i*3+1];
+      rgba8_data[i*4+2]= data[i*3+2];
+      rgba8_data[i*4+3]= 255; 
+    }
+  }
+  im_data.subimage[0][0].ptr = rgba8_data;
+  im_data.subimage[0][0].size = im_width*im_height*4; 
+  sg_image_desc desc={
+    .type=              SG_IMAGETYPE_2D,
+    .render_target=     false,
+    .width=             im_width,
+    .height=            im_height,
+    .num_slices=        1,
+    .num_mipmaps=       1,
+    .usage=             SG_USAGE_IMMUTABLE,
+    .pixel_format=      SG_PIXELFORMAT_RGBA8,
+    .sample_count=      1,
+    .min_filter=        SG_FILTER_NEAREST,
+    .mag_filter=        SG_FILTER_NEAREST,
+    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+    .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+    .max_anisotropy=    1,
+    .min_lod=           0.0f,
+    .max_lod=           1e9f,
+    .data=              im_data,
+  };
+
+  sg_image *image = se_get_image();
+  if(!image)return; 
+  *image =  sg_make_image(&desc);
+  float dpi_scale = sapp_dpi_scale();
+  ImDrawList_AddImage(igGetWindowDrawList(),
+    (ImTextureID)(uintptr_t)image->id,
+    (ImVec2){x/dpi_scale,y/dpi_scale},
+    (ImVec2){(x+render_width)/dpi_scale,(y+render_height)/dpi_scale},
+    (ImVec2){0,0},(ImVec2){1,1},
+    0xffffffff);
+  if(has_alpha==false)free(rgba8_data);
+}
+
+float sb_distance(float * a, float* b, int dims){
+  float v = 0;
+  for(int i=0;i<dims;++i)v+=(a[i]-b[i])*(a[i]-b[i]);
+  return sqrtf(v);
+}
+void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
+  if(state->run_mode!=SB_MODE_RUN)return;
+  controller_h/=sapp_dpi_scale();
+  float win_w = igGetWindowWidth()/sapp_dpi_scale();
+  float win_h = igGetWindowHeight()/sapp_dpi_scale();
+  ImVec2 pos; 
+  igGetWindowPos(&pos);
+  float win_x = pos.x;
+  float win_y = pos.y+win_h-controller_h;
+  win_h=controller_h;
+  float size_scalar = win_w;
+  if(controller_h*1.4<win_w)size_scalar=controller_h*1.4;
+  size_scalar*=1.2;
+
+  int button_padding =0.02*size_scalar; 
+  int button_h = win_h*0.1;
+
+  int face_button_h = win_h;
+  int face_button_y = 0;
+
+  ImU32 line_color = 0xffffff;
+  ImU32 line_color2 =0x000000;
+  ImU32 sel_color =0x000000;
+
+  float opacity = 5.-gui_state.last_touch_time;
+  if(opacity<0){opacity=0;return;}
+  if(opacity>1)opacity=1;
+
+  line_color|=(int)(opacity*0x48)<<24;
+  line_color2|=(int)(opacity*0x48)<<24;
+  sel_color|=(int)(opacity*0x48)<<24;
+
+  int line_w0 = 1;
+  int line_w1 = 3; 
+  float button_r = size_scalar*0.0815;
+
+  float dpad_sz0 = size_scalar*0.051;
+  float dpad_sz1 = size_scalar*0.180;
+
+  float a_pos[2] = {win_w-button_r*1.5,face_button_h*0.48+face_button_y};
+  float b_pos[2] = {win_w-button_r*3.8,face_button_h*0.54+face_button_y};
+  float dpad_pos[2] = {dpad_sz1+button_padding*2,face_button_h*0.5+face_button_y};
+
+  a_pos[0]+=win_x;
+  b_pos[0]+=win_x;
+  dpad_pos[0]+=win_x;
+
+  a_pos[1]+=win_y;
+  b_pos[1]+=win_y;
+  dpad_pos[1]+=win_y;
+
+  bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
+
+  
+  enum{max_points = 5};
+  float points[max_points][2]={0};
+
+  int p = 0;
+  //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
+  for(int i=0; i<SAPP_MAX_TOUCHPOINTS;++i){
+    if(p<max_points&&gui_state.touch_points[i].active){
+      points[p][0]=gui_state.touch_points[i].pos[0]/sapp_dpi_scale();
+      points[p][1]=gui_state.touch_points[i].pos[1]/sapp_dpi_scale();
+      ++p;
+    }
+  }
+
+  for(int i = 0;i<p;++i){
+    if(sb_distance(points[i],a_pos,2)<button_r*1.6)a=true;
+    if(sb_distance(points[i],b_pos,2)<button_r*1.6)b=true;
+
+    int dx = points[i][0]-dpad_pos[0];
+    int dy = points[i][1]-dpad_pos[1];
+    if(dx>=-dpad_sz1*1.15 && dx<=dpad_sz1*1.15 && dy>=-dpad_sz1*1.15 && dy<=dpad_sz1*1.15 ){
+      if(dy>dpad_sz0)down=true;
+      if(dy<-dpad_sz0)up=true;
+
+      if(dx>dpad_sz0)right=true;
+      if(dx<-dpad_sz0)left=true;
+    }
+  }
+  int scale = 1;
+
+  ImDrawList*dl= igGetWindowDrawList();
+  if(a)  ImDrawList_AddCircleFilled(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,sel_color,128);
+  ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,line_color2,128,line_w1);
+  ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,line_color,128,line_w0);
+
+  if(b)ImDrawList_AddCircleFilled(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color2,128);
+  ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color2,128,line_w1);
+  ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color,128,line_w0);
+
+  ImVec2 dpad_points[12]={
+    //Up
+    {dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},
+    {dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz1}, 
+    {dpad_pos[0]+dpad_sz0,dpad_pos[1]+dpad_sz1}, 
+    //right
+    {dpad_pos[0]+dpad_sz0,dpad_pos[1]+dpad_sz0}, 
+    {dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0}, 
+    {dpad_pos[0]+dpad_sz1,dpad_pos[1]-dpad_sz0}, 
+    //Down
+    {dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},
+    {dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz1}, 
+    {dpad_pos[0]-dpad_sz0,dpad_pos[1]-dpad_sz1}, 
+    //left
+    {dpad_pos[0]-dpad_sz0,dpad_pos[1]-dpad_sz0}, 
+    {dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0}, 
+    {dpad_pos[0]-dpad_sz1,dpad_pos[1]+dpad_sz0}, 
+  };
+  ImDrawList_AddPolyline(dl,dpad_points,12,line_color2,true,line_w1);
+  ImDrawList_AddPolyline(dl,dpad_points,12,line_color,true,line_w0);
+  
+  if(down) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]+dpad_sz1},sel_color,0,ImDrawCornerFlags_None);
+  if(up)   ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]-dpad_sz1},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
+
+  if(left) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
+  if(right)ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
+
+  char * button_name[] ={"Start", "Select"};
+  int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
+  int button_press=0;           
+  int button_x_off = button_padding;
+  int button_w = (win_w-(num_buttons+1)*button_padding)/num_buttons;
+  int button_y = win_y+win_h-button_h-button_padding;
+  for(int b=0;b<num_buttons;++b){                                           
+    int state = 0;
+    int button_x =button_x_off+(button_w+button_padding)*b;
+   
+    /*for(int i = 0;i<p;++i){
+      int dx = points[i].x-bounds.x;
+      int dy = points[i].y-bounds.y;
+      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
+        button_press|=1<<b; 
+        state =1;
+      }
+    }
+    */
+    int x_min = button_x; 
+    int x_max = dpad_pos[0]+dpad_sz1;
+    if(b){
+      x_min = b_pos[0]-button_r;
+      x_max =win_w-button_padding;
+    }
+    for(int i = 0;i<p;++i){
+      int dx = points[i][0]-x_min;
+      int dy = points[i][1]-button_y;
+      if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
+        button_press|=1<<b; 
+        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
+      }
+    }
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0);  
+  }
+  button_y=win_y+button_padding;
+  for(int b=0;b<num_buttons;++b){                                           
+    int state = 0;
+    int button_x =button_x_off+(button_w+button_padding)*b;
+   
+    /*for(int i = 0;i<p;++i){
+      int dx = points[i].x-bounds.x;
+      int dy = points[i].y-bounds.y;
+      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
+        button_press|=1<<b; 
+        state =1;
+      }
+    }
+    */
+    int x_min = button_x; 
+    int x_max = dpad_pos[0]+dpad_sz1;
+    if(b){
+      x_min = b_pos[0]-button_r;
+      x_max =win_w-button_padding;
+    }
+    for(int i = 0;i<p;++i){
+      int dx = points[i][0]-x_min;
+      int dy = points[i][1]-button_y;
+      if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
+        button_press|=1<<(b+2); 
+        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
+      }
+    }
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0); 
+  }
+  state->joy.left  |= left;
+  state->joy.right |= right;
+  state->joy.up    |= up;
+  state->joy.down  |= down;
+  state->joy.a |= a;
+  state->joy.b |= b;
+  state->joy.start |= SB_BFE(button_press,0,1);
+  state->joy.select |= SB_BFE(button_press,1,1);
+  state->joy.l |= SB_BFE(button_press,2,1);
+  state->joy.r |= SB_BFE(button_press,3,1);
+}
+
+void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
+  x/=sapp_dpi_scale();
+  y/=sapp_dpi_scale();
+  w/=sapp_dpi_scale();
+  h/=sapp_dpi_scale();
   static bool last_visible = false;
   if(visible==false){
-#if defined(PLATFORM_WEB)
+#if defined(EMSCRIPTEN)
     if(last_visible==true){
       EM_ASM({
         var input = document.getElementById('fileInput');
@@ -1161,26 +641,19 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
     last_visible=false;
     return;
   }
-
-  DrawRectangleRec(rect, (Color){100,100,100,255});
   last_visible=true;
-  Color color = {0,0,0,127};
-  const char * label = "Drop ROM";
-  int icon_scale = (rect.width<rect.height?rect.width:rect.height)/16*0.33;
-  icon_scale = 6;
-  int icon_off = RICON_SIZE*icon_scale/2;
 
-  GuiDrawIcon(3,(Vector2){rect.x+rect.width/2-icon_off,rect.y+rect.height/2-icon_off},icon_scale, color);
-  Vector2 label_sz= MeasureTextEx(GetFontDefault(), label, icon_scale*10/2,icon_scale/2);
-  DrawText(label,rect.x+rect.width/2-label_sz.x/2,rect.y+rect.height/2+icon_off,icon_scale*10/2,color);
-
-  Rectangle button_rect;
-  button_rect.width = label_sz.x;
-  button_rect.height = 30;
- #if defined(PLATFORM_WEB)
-  button_rect.x= rect.width/2+rect.x-button_rect.width/2;
-  button_rect.y= rect.y+rect.height/2+icon_off*2;
-  bool open_dialog = GuiButton(button_rect,"Open Rom");
+  static bool loaded = false;
+  static uint8_t * load_rom_image;
+  static int load_rom_im_w, load_rom_im_h;
+  if(!loaded){
+    loaded=true;
+    int c;
+    load_rom_image = stbi_load_from_memory(load_rom_png,load_rom_png_len,&load_rom_im_w,&load_rom_im_h,&c, 4);
+  }
+ 
+ #if defined(EMSCRIPTEN)
+ 
   char * new_path = (char*)EM_ASM_INT({
     var input = document.getElementById('fileInput');
     input.style.left = $0 +'px';
@@ -1217,147 +690,33 @@ void sb_draw_load_rom_prompt(Rectangle rect, bool visible){
     var string_on_heap = _malloc(sz);
     stringToUTF8(ret_path, string_on_heap, sz);
     return string_on_heap;
-  },button_rect.x,button_rect.y,button_rect.width,button_rect.height);
+  },x,y,w,h);
 
-  printf("%s\n",new_path);
-  if(!TextIsEqual("",new_path))se_load_rom(new_path);
+  if(new_path[0])se_load_rom(new_path);
   free(new_path);
   //printf("Open: %s\n",file_name);
   //free(file_name);
 #endif
+  w*=sapp_dpi_scale();
+  h*=sapp_dpi_scale();
+  x*=sapp_dpi_scale();
+  y*=sapp_dpi_scale();
+  int x_off = (w-load_rom_im_w)*0.5;
+  int y_off = (h-load_rom_im_h)*0.5;
+  se_draw_image(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true);
+
 
 }
-float sb_distance(Vector2 a, Vector2 b){
-  a.x-=b.x;
-  a.y-=b.y;
-  return sqrt(a.x*a.x+a.y*a.y);
-}
-
-void sb_draw_onscreen_controller(sb_emu_state_t*state, Rectangle rect){
-  Color fill_color = {200,200,200,255};
-  Color sel_color = {150,150,150,255};
-  Color line_color = {127,127,127,255};
-  float button_r = rect.width*0.09;
-
-  float dpad_sz0 = rect.width*0.055;
-  float dpad_sz1 = rect.width*0.20;
-
-  Vector2 a_pos = {rect.width*0.85,rect.height*0.32};
-  Vector2 b_pos = {rect.width*0.65,rect.height*0.48};
-  Vector2 dpad_pos = {rect.width*0.25,rect.height*0.4};
-
-  a_pos.x+=rect.x;
-  b_pos.x+=rect.x;
-  dpad_pos.x+=rect.x;
-
-  a_pos.y+=rect.y;
-  b_pos.y+=rect.y;
-  dpad_pos.y+=rect.y;
-
-  enum{max_points = 5};
-  Vector2 points[max_points]={0};
-
-  int p = 0;
-  //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
-  for(int i=0; i<GetTouchPointsCount();++i){
-    if(p<max_points)points[p++]=GetTouchPosition(i);
-  }
-
-  bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
-
-  for(int i = 0;i<p;++i){
-    if(sb_distance(points[i],a_pos)<button_r*1.6)a=true;
-    if(sb_distance(points[i],b_pos)<button_r*1.6)b=true;
-
-    int dx = points[i].x-dpad_pos.x;
-    int dy = points[i].y-dpad_pos.y;
-    if(dx>=-dpad_sz1*1.15 && dx<=dpad_sz1*1.15 && dy>=-dpad_sz1*1.15 && dy<=dpad_sz1*1.15 ){
-      if(dy>dpad_sz0)down=true;
-      if(dy<-dpad_sz0)up=true;
-
-      if(dx>dpad_sz0)right=true;
-      if(dx<-dpad_sz0)left=true;
-    }
-
-  }
-  Color color = {0,0,0,127};
-  int scale = 1;
-  const char* label = TextFormat("FPS:%.2f",1./emu_state.avg_frame_time);
-  Vector2 label_sz= MeasureTextEx(GetFontDefault(), label, scale*10/2,scale/2);
-  DrawText(label,rect.x+rect.width/2-label_sz.x/2,rect.y+5,scale*10/2,color);
 
 
-  DrawCircle(a_pos.x, a_pos.y, button_r+1, line_color);
-  DrawCircle(a_pos.x, a_pos.y, button_r, a?sel_color:fill_color);
-
-  DrawCircle(b_pos.x, b_pos.y, button_r+1, line_color);
-  DrawCircle(b_pos.x, b_pos.y, button_r, b?sel_color:fill_color);
-
-  DrawRectangle(dpad_pos.x-dpad_sz1-1,dpad_pos.y-dpad_sz0-1,dpad_sz1*2+2,dpad_sz0*2+2,line_color);
-  DrawRectangle(dpad_pos.x-dpad_sz0-1,dpad_pos.y-dpad_sz1-1,dpad_sz0*2+2,dpad_sz1*2+2,line_color);
-
-  DrawRectangle(dpad_pos.x-dpad_sz1,dpad_pos.y-dpad_sz0,dpad_sz1*2,dpad_sz0*2,fill_color);
-  DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y-dpad_sz1,dpad_sz0*2,dpad_sz1*2,fill_color);
-
-  if(down) DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y+dpad_sz0,dpad_sz0*2,dpad_sz1-dpad_sz0,sel_color);
-  if(up) DrawRectangle(dpad_pos.x-dpad_sz0,dpad_pos.y-dpad_sz1,dpad_sz0*2,dpad_sz1-dpad_sz0,sel_color);
-
-  if(left) DrawRectangle(dpad_pos.x-dpad_sz1,dpad_pos.y-dpad_sz0,dpad_sz1-dpad_sz0,dpad_sz0*2,sel_color);
-  if(right) DrawRectangle(dpad_pos.x+dpad_sz0,dpad_pos.y-dpad_sz0,dpad_sz1-dpad_sz0,dpad_sz0*2,sel_color);
-
-  Rectangle widget_rect = rect;
-  widget_rect.x += GUI_PADDING;
-  widget_rect.y += rect.height-GUI_ROW_HEIGHT-GUI_PADDING;
-  widget_rect.width -=GUI_PADDING*2;
-  widget_rect.height = GUI_ROW_HEIGHT;
-
-  char * button_name[] ={"Start", "Select"};
-  int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
-  int button_press=0;           
-  int button_width = (widget_rect.width-(num_buttons-1)*GuiGetStyle(TOGGLE, GROUP_PADDING))/num_buttons;
-  for(int b=0;b<num_buttons;++b){                                           
-    int state = 0;
-    Rectangle bounds = widget_rect;
-    bounds.width = button_width;
-    bounds.x+=(button_width+GuiGetStyle(TOGGLE, GROUP_PADDING))*(b);
-   
-    for(int i = 0;i<p;++i){
-      int dx = points[i].x-bounds.x;
-      int dy = points[i].y-bounds.y;
-      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
-        button_press|=1<<b; 
-        state =1;
-      }
-    }
-    GuiDrawRectangle(bounds, GuiGetStyle(BASE, BORDER_WIDTH), Fade(GetColor(GuiGetStyle(BUTTON, BORDER + state)), guiAlpha), Fade(GetColor(GuiGetStyle(BUTTON, BASE + state*3)), guiAlpha));
-    GuiDrawText(button_name[b], GetTextBounds(BUTTON, bounds), GuiGetStyle(BUTTON, TEXT_ALIGNMENT), Fade(GetColor(GuiGetStyle(BUTTON, TEXT + state)), guiAlpha));
-  }
-  state->joy.left  |= left;
-  state->joy.right |= right;
-  state->joy.up    |= up;
-  state->joy.down  |= down;
-  state->joy.a |= a;
-  state->joy.b |= b;
-  state->joy.start |= SB_BFE(button_press,0,1);
-  state->joy.select |= SB_BFE(button_press,1,1);
-}
-
-void UpdateDrawFrame() {
-  if (IsFileDropped()) {
-    int count = 0;
-    char **files = GetDroppedFiles(&count);
-    if (count > 0) {
-      se_load_rom(files[0]);
-    }
-    ClearDroppedFiles();
-  }
+void se_update_frame() {
   static unsigned frames_since_last_save = 0; 
   frames_since_last_save++;
   if(emu_state.system== SYSTEM_GB){
     if(gb_state.cart.ram_is_dirty && frames_since_last_save>10){
       frames_since_last_save = 0; 
-      if(SaveFileData(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
-   #if defined(PLATFORM_WEB)
+      if(sb_save_file_data(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
+   #if defined(EMSCRIPTEN)
         // Don't forget to sync to make sure you store it to IndexedDB
       EM_ASM( FS.syncfs(function (err) {}); );
    #endif
@@ -1379,8 +738,8 @@ void UpdateDrawFrame() {
         case GBA_BACKUP_FLASH_128K : size = 128*1024;break;
       }
       if(size){
-        if(SaveFileData(gba.cart.save_file_path,gba.mem.cart_backup,size)){
-          #if defined(PLATFORM_WEB)
+        if(sb_save_file_data(gba.cart.save_file_path,gba.mem.cart_backup,size)){
+          #if defined(EMSCRIPTEN)
               EM_ASM( FS.syncfs(function (err) {}););
           #endif
           printf("Saved %s\n", gba.cart.save_file_path);
@@ -1395,100 +754,60 @@ void UpdateDrawFrame() {
  
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
-  // Draw
-  //-----------------------------------------------------
-  BeginDrawing();
 
-  ClearBackground(RAYWHITE);
-  int screen_width = GetScreenWidth();
-  int screen_height = GetScreenHeight();     
-
-
-  int panel_width = 430;
-  Rectangle lcd_rect;
-  lcd_rect.x = panel_width;
-  lcd_rect.y = 0;
-  lcd_rect.width = GetScreenWidth()-panel_width;
-  lcd_rect.height = GetScreenHeight();
-  // Controller polling must happen before handling the onscreen keyboard
   sb_poll_controller_input(&emu_state.joy);
+  int lcd_render_x = 0, lcd_render_y = 0; 
+  int lcd_render_w = 0, lcd_render_h = 0; 
+
+
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
   if(emu_state.system==SYSTEM_GBA){
     lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
   }
-  int panel_height = 30+GUI_PADDING;
-  if(screen_width-GetScreenHeight()/lcd_aspect>350){
-    // Widescreen
-    panel_width = screen_width-GetScreenHeight()/lcd_aspect;
-    lcd_rect = (Rectangle){panel_width, 0, GetScreenHeight()/lcd_aspect,GetScreenHeight()};
-
-    sb_draw_sidebar((Rectangle){0, 0, panel_width, GetScreenHeight()});
-  }else if (screen_width*lcd_aspect/(float)(screen_height)<0.66){
-    // Tall Screen
-    //sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
-    lcd_rect = (Rectangle){0, 0, GetScreenWidth(),GetScreenWidth()*lcd_aspect};
-
-    Rectangle cont_rect;
-    cont_rect.x=0;
-    cont_rect.y = lcd_rect.y+lcd_rect.height;
-    cont_rect.width = GetScreenWidth();
-    cont_rect.height= GetScreenHeight()-cont_rect.y;
-    sb_draw_onscreen_controller(&emu_state,cont_rect);
+  
+  // Square Screen
+  float scr_w = igGetWindowWidth();
+  float scr_h = igGetWindowHeight();
+  float height = scr_h;
+  float extra_space=0;
+  if(scr_w*lcd_aspect>height){
+    //Too wide
+    extra_space = scr_w-height/lcd_aspect;
+    //lcd_rect = (Rectangle){extra_space*0.5, panel_height, height/lcd_aspect,height};
+    lcd_render_x = extra_space*0.5;
+    lcd_render_w = scr_h/lcd_aspect;
+    lcd_render_h = height;
   }else{
-    // Square Screen
-    float height = GetScreenHeight()-panel_height;
-    if(GetScreenWidth()*lcd_aspect>height){
-      //Too wide
-      float extra_space = GetScreenWidth()-GetScreenHeight()/lcd_aspect;
-      lcd_rect = (Rectangle){extra_space*0.5, panel_height, GetScreenHeight()/lcd_aspect,height};
-    }else{
-      //Too tall
-      float extra_space = GetScreenHeight()-GetScreenWidth()*lcd_aspect;
-      lcd_rect = (Rectangle){0, panel_height+extra_space*0.5, GetScreenWidth(),GetScreenWidth()*lcd_aspect};
-    }
-    sb_draw_top_panel((Rectangle){0, 0, GetScreenWidth(), panel_height});
+    //Too tall
+    extra_space = height-scr_w*lcd_aspect;
+    lcd_render_y = extra_space*0.5;
+    lcd_render_w = scr_w;
+    lcd_render_h = scr_w*lcd_aspect;
   }
- 
-  Image screenIm = {
-        .data = gb_state.lcd.framebuffer,
-        .width = SB_LCD_W,
-        .height = SB_LCD_H,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-        .mipmaps = 1
-  };
+
+  int controller_h = scr_h; 
+  if(lcd_render_h*1.8<scr_h){
+    lcd_render_y = extra_space*0.05;
+    controller_h = scr_h-lcd_render_h-lcd_render_y;
+  }
+  ImVec2 v;
+  igGetWindowPos(&v);
+  lcd_render_x+=v.x*sapp_dpi_scale();
+  lcd_render_y+=v.y*sapp_dpi_scale();
   if(emu_state.system==SYSTEM_GBA){
-    screenIm = (Image){
-        .data = gba.framebuffer,
-        .width = GBA_LCD_W,
-        .height = GBA_LCD_H,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-        .mipmaps = 1
-    }; 
+    se_draw_image(gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+  }else{
+    se_draw_image(gb_state.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
   }
-  Texture2D screenTex = LoadTextureFromImage(screenIm); 
-  SetTextureFilter(screenTex, lcd_rect.width<screenIm.width*2?TEXTURE_FILTER_BILINEAR:TEXTURE_FILTER_POINT);
-  DrawTextureQuad(screenTex, (Vector2){1.f,1.f}, (Vector2){0.0f,0.0},lcd_rect, (Color){255,255,255,255});
-  sb_draw_load_rom_prompt(lcd_rect,emu_state.rom_loaded==false);
-  EndDrawing();
-  UnloadTexture(screenTex);
-  sb_update_audio_stream_from_fifo(&gb_state,mute); 
+  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,emu_state.run_mode!=SB_MODE_RUN);
+  sb_draw_onscreen_controller(&emu_state, controller_h);
 
 }
 
-int main(void) {
-  // Initialization
-  //---------------------------------------------------------
-  const int screenWidth = 1200;
-  const int screenHeight = 700;
+static void init(void) {
 
-  // Set configuration flags for window creation
-  SetConfigFlags(FLAG_VSYNC_HINT  | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
-  InitWindow(screenWidth, screenHeight, "SkyBoy");
-  SetTraceLogLevel(LOG_WARNING);
-  ShowCursor();
-  SetExitKey(0);
-#if defined(PLATFORM_WEB)
-// EM_ASM is a macro to call in-line JavaScript code.
+  #if defined(EMSCRIPTEN)
+   //Setup the offline file system
     EM_ASM(
         // Make a directory other than '/'
         FS.mkdir('/offline');
@@ -1497,14 +816,208 @@ int main(void) {
         // Then sync
         FS.syncfs(true, function (err) {});
     );
-  emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
+  #endif
+  sg_setup(&(sg_desc){
+      .context = sapp_sgcontext()
+  });
+  stm_setup();
+  simgui_setup(&(simgui_desc_t){ .dpi_scale= sapp_dpi_scale()});
+
+  // initial clear color
+  gui_state.pass_action = (sg_pass_action) {
+      .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.5f, 1.0f, 1.0 } }
+  };
+  gui_state.last_touch_time=1e5;
+  saudio_setup(&(saudio_desc){
+    .sample_rate=SE_AUDIO_SAMPLE_RATE,
+    .num_channels=2,
+    .num_packets=4,
+    .packet_frames=1024
+  });
+}
+
+static void frame(void) {
+  
+  const int width = sapp_width();
+  const int height = sapp_height();
+  const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
+  gui_state.last_touch_time+=delta_time;
+  gui_state.screen_width=width;
+  gui_state.screen_height=height;
+  int num_samples_to_push = saudio_expect()*2;
+  enum{samples_to_push=64};
+  float volume_sq = gui_state.volume*gui_state.volume;
+  for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
+    float audio_buff[samples_to_push];
+    int pushed = 0; 
+    for(int i=0;i<samples_to_push;++i){
+      if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=0)break;
+      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
+      audio_buff[pushed++]=data/32768.*volume_sq;
+    }
+    if(!pushed)break;
+    saudio_push(audio_buff, pushed/2);
+  }
+  simgui_new_frame(width, height, delta_time);
+
+  float menu_height = 0; 
+  /*=== UI CODE STARTS HERE ===*/
+  igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
+  if (igBeginMainMenuBar())
+  {
+    igText("SkyEmu", (ImVec2){0, 0});
+    
+    if(igButton("Reset",(ImVec2){0, 0})){emu_state.run_mode = SB_MODE_RESET;}
+    if(emu_state.run_mode!=SB_MODE_RUN){
+      if(igButton("Play",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames = 1;}
+      if(igButton("Step Frame",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_STEP;
+    }else{
+      igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
+      if(igButton("Pause",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_PAUSE;
+      if(igButton("1x",(ImVec2){0, 0}))emu_state.step_frames=1; 
+      if(igButton("2x",(ImVec2){0, 0}))emu_state.step_frames=2;
+      igPopStyleVar(1);
+      if(igButton("10x",(ImVec2){0, 0}))emu_state.step_frames=10;
+    }
+    //igCheckbox("Show Settings",&gui_state.show_settings);
+    //igCheckbox("Show Developer",&gui_state.show_developer);
+    igPushItemWidth(100);
+    igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
+    igPopItemWidth();
+    if(emu_state.run_mode==SB_MODE_RUN) igText("%.01fFPS",se_fps_counter(0));
+    menu_height= igGetWindowHeight();
+    igEndMainMenuBar();
+  }
+  igPopStyleVar(1);
+
+  igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+  igSetNextWindowSize((ImVec2){width, height-menu_height*sapp_dpi_scale()}, ImGuiCond_Always);
+  igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
+  igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
+  igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration
+    |ImGuiWindowFlags_NoBringToFrontOnFocus);
+ 
+  se_update_frame();
+  igPopStyleVar(2);
+  igEnd();
+  /*=== UI CODE ENDS HERE ===*/
+
+  sg_begin_default_pass(&gui_state.pass_action, width, height);
+  simgui_render();
+  sg_end_pass();
+  sg_commit();
+  static bool init=false;
+  if(!init){
+    init=true;
+    ImFontAtlas* atlas = igGetIO()->Fonts;    
+    ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
+      atlas,karla_compressed_data,karla_compressed_size,13*sapp_dpi_scale(),NULL,NULL);
+    int built = 0;
+ 
+
+    unsigned char* font_pixels;
+    int font_width, font_height;
+    int bytes_per_pixel;
+    ImFontAtlas_GetTexDataAsRGBA32(atlas, &font_pixels, &font_width, &font_height, &bytes_per_pixel);
+    sg_image_desc img_desc;
+    memset(&img_desc, 0, sizeof(img_desc));
+    img_desc.width = font_width;
+    img_desc.height = font_height;
+    img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+    img_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
+    img_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
+    img_desc.min_filter = SG_FILTER_LINEAR;
+    img_desc.mag_filter = SG_FILTER_LINEAR;
+    img_desc.data.subimage[0][0].ptr = font_pixels;
+    img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
+    img_desc.label = "sokol-imgui-font";
+    atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
+    printf("Font: %p %d\n",igGetIO()->FontDefault,built);
+    igGetIO()->FontDefault=font;
+    igGetIO()->Fonts=atlas;
+    igGetIO()->FontGlobalScale/=sapp_dpi_scale();
+  }
+  se_free_all_images();
+}
+
+static void cleanup(void) {
+  simgui_shutdown();
+  se_free_all_images();
+  sg_shutdown();
+  saudio_shutdown();
+}
+#ifdef EMSCRIPTEN
+static void emsc_load_callback(const sapp_html5_fetch_response* response) {
+  if (response->succeeded) {
+    sb_save_file_data((char*)response->user_data, (uint8_t*)response->buffer_ptr, response->fetched_size);
+    se_load_rom((char*)response->user_data);
+  }else{
+    printf("Failed to load dropped file:%d\n",response->error_code);
+  }
+  free(response->buffer_ptr);
+  free(response->user_data);
+  
+}
+#endif 
+static void event(const sapp_event* ev) {
+  simgui_handle_event(ev);
+  if (ev->type == SAPP_EVENTTYPE_FILES_DROPPED) {
+    // get the number of files and their paths like this:
+    const int num_dropped_files = sapp_get_num_dropped_files();
+    if(num_dropped_files){
+#ifdef EMSCRIPTEN
+    uint32_t size = sapp_html5_get_dropped_file_size(0);
+    uint8_t * buffer = (uint8_t*)malloc(size);
+    char *rom_file=(char*)malloc(4096); 
+    snprintf(rom_file,4096,"/%s",sapp_get_dropped_file_path(0));
+
+    sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
+      .dropped_file_index = 0,
+                .callback = emsc_load_callback,
+                .buffer_ptr = buffer,
+                .buffer_size = size,
+                .user_data=rom_file});
 #else
-  SetTargetFPS(60);
-  // Main game loop
-  while (!WindowShouldClose()) UpdateDrawFrame();
+        se_load_rom(sapp_get_dropped_file_path(0));
 #endif
+    }
+  }else if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
+    gui_state.button_state[ev->key_code] = true;
+  }
+  else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
+    gui_state.button_state[ev->key_code] = false;
+  }else if(ev->type==SAPP_EVENTTYPE_TOUCHES_BEGAN||
+    ev->type==SAPP_EVENTTYPE_TOUCHES_MOVED||
+    ev->type==SAPP_EVENTTYPE_TOUCHES_ENDED||
+    ev->type==SAPP_EVENTTYPE_TOUCHES_CANCELLED){
 
-  CloseWindow(); // Close window and OpenGL context
+    for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
+      gui_state.touch_points[i].active = ev->num_touches>i;
+      if(ev->type==SAPP_EVENTTYPE_TOUCHES_ENDED||ev->type==SAPP_EVENTTYPE_TOUCHES_CANCELLED)
+        gui_state.touch_points[i].active &= !ev->touches[i].changed;
+      gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
+      gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
+    }
+    gui_state.last_touch_time=0;
 
-  return 0;
+  }
+}
+
+
+sapp_desc sokol_main(int argc, char* argv[]) {
+  (void)argc;
+  (void)argv;
+  return (sapp_desc){
+      .init_cb = init,
+      .frame_cb = frame,
+      .cleanup_cb = cleanup,
+      .event_cb = event,
+      .window_title = "SkyEmu",
+      .width = 800,
+      .height = 600,
+      .enable_dragndrop = true,
+      .enable_clipboard =true,
+      .high_dpi = true,
+      .max_dropped_file_path_length = 8192,
+  };
 }

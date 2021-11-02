@@ -895,7 +895,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         int size = sb_ring_buffer_size(&emu->audio_ring_buff);
         
        //if(size> SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*3)break;
-       if(frames_to_draw<=0&& emu->step_instructions ==0 )break;
+       if(frames_to_draw<=0&& emu->step_instructions ==0 && emu->step_frames<=1 )break;
+       if(emu->step_frames>1 && emu->frame>=emu->step_frames)break;
     }
 
   }
@@ -1044,7 +1045,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
 
     //Generate new noise value if needed
-    if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
+    if(chan_t[3]>=1.0)last_noise_value = sb_random_float(0,1)*2.-1.;
     
     //Loop back
     for(int i=0;i<4;++i) chan_t[i]-=(int)chan_t[i];

@@ -1196,19 +1196,19 @@ int gba_search_rom_for_backup_string(gba_t* gba){
 }
 bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
-  if(!IsFileExtension(filename, ".gba")){
+  if(!sb_path_has_file_ext(filename, ".gba")){
     return false; 
   }
-  unsigned int bytes = 0;                                                       
-  unsigned char *data = LoadFileData(filename, &bytes);
+  size_t bytes = 0;                                                       
+  uint8_t *data = sb_load_file_data(filename, &bytes);
   if(bytes>32*1024*1024){
-    printf("ROMs with sizes >32MB (%d bytes) are too big for the GBA\n",bytes); 
+    printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
     return false;
   }  
   *gba = (gba_t){0};               
   gba_reset(gba);
   memcpy(gba->mem.cart_rom, data, bytes);
-  UnloadFileData(data);
+  sb_free_file_data(data);
   gba->cart.rom_size = bytes; 
 
   strncpy(gba->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
@@ -1219,14 +1219,12 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
   gba->cart.backup_type = gba_search_rom_for_backup_string(gba);
 
-  // Load save if available
-  if(FileExists(save_file)){
-    unsigned int bytes=0;
-    unsigned char* data = LoadFileData(save_file,&bytes);
-    printf("Loaded save file: %s, bytes: %d\n",save_file,bytes);
+  data = sb_load_file_data(save_file,&bytes);
+  if(data){
+    printf("Loaded save file: %s, bytes: %zu\n",save_file,bytes);
     if(bytes>=128*1024)bytes=128*1024;
     memcpy(gba->mem.cart_backup, data, bytes);
-    UnloadFileData(data);
+    sb_free_file_data(data);
   }else{
     printf("Could not find save file: %s\n",save_file);
     for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0;
@@ -2229,7 +2227,7 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
 
     //Generate new noise value if needed
-    if(chan_t[3]>=1.0)last_noise_value = GetRandomValue(0,1)*2.-1.;
+    if(chan_t[3]>=1.0)last_noise_value = sb_random_float(0,1)*2.-1.;
     
     //Loop back
     for(int i=0;i<4;++i){
@@ -2308,25 +2306,16 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     gba_reset(gba);
     emu->run_mode = SB_MODE_RUN;
   }
-  int frames_to_render= gba->ppu.last_vblank?1:2; 
+  int frames_to_render= gba->ppu.last_vblank?1:2;
 
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     //printf("New frame\n");
     gba_tick_keypad(&emu->joy,gba);
-    int max_instructions = 280896;
+    int max_instructions = 2808960;
+    if(emu->step_frames)max_instructions*=emu->step_frames;
     if(emu->step_instructions) max_instructions = emu->step_instructions;
     bool prev_vblank = gba->ppu.last_vblank; 
-
-    float frame_time = emu->avg_frame_time;
-    static float avg_frame_time = 1.0/60.*1.00;
-    avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
-    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-    float buffs_available = size/(float)(samples_per_buffer);
-
     //Skip emulation of a frame if we get too far ahead the audio playback
-    if(buffs_available>3&&emu->step_instructions==0) return; 
-    float time_correction_scale=1;
 
     gba->cpu.print_instructions = emu->run_mode ==SB_MODE_STEP;
 
@@ -2369,18 +2358,18 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       gba_tick_timers(gba,ticks,false);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
-      delta_t*=time_correction_scale;
       gba_tick_audio(gba, emu,delta_t);
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
+        if(emu->frame>=emu->step_frames&&emu->step_frames>1)break;
         frames_to_render--;
         //if(emu->step_instructions==0)break;
       }
       int size = sb_ring_buffer_size(&emu->audio_ring_buff);
       int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
       if(((size>1.5*samples_per_buffer&&emu->frame>=1&&gba->ppu.last_vblank)||
-          (size>3*samples_per_buffer&&gba->ppu.last_hblank))&&emu->step_instructions==0)break;
+          (size>3*samples_per_buffer&&gba->ppu.last_hblank))&&emu->step_instructions==0&&emu->step_frames<=1)break;
 
       prev_vblank = gba->ppu.last_vblank;
     }
