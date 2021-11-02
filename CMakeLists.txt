@@ -28,6 +28,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 if (CMAKE_SYSTEM_NAME STREQUAL Linux)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
+    find_package(ALSA REQUIRED)
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
@@ -75,6 +76,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js")
 endif ()
 
-target_link_libraries(${PROJECT_NAME} sokol)
+target_link_libraries(${PROJECT_NAME} sokol ${ALSA_LIBRARIES})
 
 # That's it! You should have an example executable that you can run. Have fun!
