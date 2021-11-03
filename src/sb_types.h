@@ -10,6 +10,11 @@
 #define SB_TYPES_H 1
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <ctype.h>
 #ifdef __GNUC__
   #define FORCE_INLINE inline __attribute__((always_inline))
 #else
@@ -73,6 +78,7 @@ typedef struct{
 typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
+  int step_frames; 
   int pc_breakpoint;     // PC to run until
   int panel_mode;
   bool rom_loaded;
@@ -163,4 +169,81 @@ typedef struct {
 } sb_gb_t;  
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
+
+static inline float sb_random_float(float min, float max){
+  float v = rand()/(float)RAND_MAX;
+  return min + v*(max-min);
+}
+static inline bool sb_path_has_file_ext(const char * path, const char * ext){
+  int ext_len = strlen(ext);
+  int path_len = strlen(path);
+  if(path_len<ext_len)return false;
+  for(int i=0;i<ext_len;++i){
+    if(tolower(path[path_len-ext_len+i])!=tolower(ext[i]))return false;
+  }
+  return true;
+}
+static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
+  FILE *f = fopen(path, "rb");
+  if(file_size)*file_size = 0; 
+  if(f){
+    size_t size = 0; 
+    fseek(f, 0,SEEK_END);
+    size = ftell(f);
+    fseek(f, 0,SEEK_SET);
+    uint8_t *data = (uint8_t*)malloc(size);
+    if(!data)return NULL;
+    size =fread(data, 1, size, f);
+    if(size==EOF){size = 0; free(data);} 
+    if(file_size)*file_size = size;
+    printf("Loaded file %s file_size %zu\n",path,*file_size);
+    return data;
+  }else{
+    printf("Failed to open file %s\n",path);
+  }
+  return NULL;
+
+}
+static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size){
+  FILE *f = fopen(path, "wb");
+  size_t written = -1; 
+  if(f){
+    written = fwrite(data,file_size, 1, f);
+  }
+  if(written!=file_size){
+    printf("Error failed to save: %s (wrote: %zu out of %zu)\n",path,written,file_size);
+  }else{
+    printf("Saved: %s (size: %zu)\n",path,written);
+
+  }
+  return written ==file_size;
+}
+static void sb_free_file_data(uint8_t* data){
+  if(data)free(data);
+}
+static void sb_breakup_path(const char* path, const char** base_path, const char** file_name, const char** ext){
+  static char tmp_path[4096];
+  strncpy(tmp_path,path,4096-1);
+  tmp_path[4095]='\0';
+  size_t sz = strlen(tmp_path);
+  *base_path = "";
+  *file_name = tmp_path;
+  *ext = ""; 
+  // Search for end of extension or start of base path
+  bool found_ext = false;
+  while(sz--){
+    if(tmp_path[sz]=='.'&&!found_ext){
+      tmp_path[sz] = '\0';
+      found_ext = true;
+      *ext = tmp_path + sz+1;
+      *file_name = tmp_path;
+    }
+    if(tmp_path[sz]=='\\'||tmp_path[sz]=='/'){
+      tmp_path[sz]='\0';
+      *file_name = tmp_path+sz+1; 
+      *base_path = tmp_path;
+      break; 
+    }
+  }
+}
 #endif
