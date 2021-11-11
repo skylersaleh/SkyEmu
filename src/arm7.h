@@ -32,6 +32,8 @@
 #define SPSR_abt 35 
 #define SPSR_und 36 
 
+#define UNINTIALIZED_PREFETCH_PC -3
+
 typedef struct {
   // Registers
   /*
@@ -49,7 +51,7 @@ typedef struct {
   36: SPSR_und
   */
   uint32_t prefetch_pc;
-  uint32_t prefetch_opcode[2]; 
+  uint32_t prefetch_opcode[3]; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
   uint32_t registers[37];
@@ -402,9 +404,8 @@ static arm7_t arm7_init(void* user_data){
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  arm.prefetch_pc= -1; 
   //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/arm-log.bin","rb");
-
+  arm.prefetch_pc=-1;
   return arm;
 
 }
@@ -547,12 +548,15 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
   if(cpu->prefetch_pc!=cpu->registers[PC]){
     cpu->registers[PC]&= thumb? ~1 : ~3; 
 
-    cpu->prefetch_opcode[0] = thumb? 
+   cpu->prefetch_opcode[0]=thumb? 
         arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
         arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
-    cpu->prefetch_opcode[1]=thumb? 
+   cpu->prefetch_opcode[1]=thumb? 
         arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
         arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+   cpu->prefetch_opcode[2]=thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
   }
   cpu->i_cycles=0;
   cpu->next_fetch_sequential=true;
@@ -562,6 +566,7 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 4;
     int pref=cpu->prefetch_pc = cpu->registers[PC];
+    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t old_pc = cpu->registers[PC];
 
@@ -569,18 +574,21 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     	arm7_lookup_table[key](cpu,opcode);
       uint32_t new_pc = cpu->registers[PC];
     }
-    cpu->prefetch_opcode[1] = arm7_read32_seq(cpu->user_data,pref+4,cpu->next_fetch_sequential);
+    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }else{
     uint32_t opcode = cpu->prefetch_opcode[0];
     cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
     if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 2;
     int pref =cpu->prefetch_pc = cpu->registers[PC];
+    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
     uint32_t key = ((opcode>>8)&0xff);
     uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
     uint32_t new_pc = cpu->registers[PC];
-    cpu->prefetch_opcode[1] = arm7_read16_seq(cpu->user_data,pref+2,cpu->next_fetch_sequential);
+    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
   cpu->executed_instructions++;
 

@@ -4,7 +4,10 @@
 #include "sb_types.h"
 #include <string.h>
 #include <math.h>
-
+struct gba_t; 
+typedef struct gba_t gba_t;
+static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr);
+static FORCE_INLINE uint16_t gba_read16(gba_t*gba, unsigned baddr);
 #include "arm7.h"
 #include "gba_bios.h"
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
@@ -696,7 +699,7 @@ typedef struct{
     bool request_dma_fill;
   }fifo[2];
 }gba_audio_t; 
-typedef struct {
+typedef struct gba_t{
   gba_mem_t mem;
   arm7_t cpu;
   gba_cartridge_t cart;
@@ -1157,6 +1160,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     if(word_mask&0xffff0000){
       gba_store16(gba,address_u32+2,(word_data>>16)&0xffff);
     }
+    gba_tick_timers(gba,0,true);
     return true;
   }else if(address==GBA_HALTCNT){
     gba->halt = true;
@@ -1791,10 +1795,10 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba){
         bool last_hblank = gba->dma[i].last_hblank;
         gba->dma[i].last_vblank = gba->ppu.last_vblank;
         gba->dma[i].last_hblank = gba->ppu.last_hblank;
-        if(mode ==1 && !(gba->ppu.last_vblank&&!last_vblank)) continue; 
+        if(mode ==1 && (!gba->ppu.last_vblank||last_vblank)) continue; 
         uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
         if(mode==2){
-          if(vcount>=160||!(gba->ppu.last_hblank&&!last_hblank))continue;
+          if(vcount>=160||!gba->ppu.last_hblank||last_hblank)continue;
         }
         //Video dma
         if(mode==3 && i ==3){
