@@ -823,8 +823,18 @@ static FORCE_INLINE void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
   if(U){
     Rm = (int32_t)Rm;
     Rs = (int32_t)Rs;
-  }
-  cpu->i_cycles =2;
+    if(SB_BFE(Rs,8,24)== 0 || SB_BFE(Rs,8,24)==0x00ffffff)cpu->i_cycles = 2; 
+    else if(SB_BFE(Rs,16,16)== 0 || SB_BFE(Rs,16,16)==0x0000ffff)cpu->i_cycles = 3; 
+    else if(SB_BFE(Rs,24,8) == 0 || SB_BFE(Rs,24,8)== 0x000000ff)cpu->i_cycles = 4; 
+    else cpu->i_cycles = 5; 
+  }else{
+     if(SB_BFE(Rs,8,24)== 0 )cpu->i_cycles = 2; 
+     else if(SB_BFE(Rs,16,16)== 0 )cpu->i_cycles = 3; 
+     else if(SB_BFE(Rs,24,8) == 0 )cpu->i_cycles = 4; 
+     else cpu->i_cycles = 5; 
+   }
+   
+
   int64_t result =  Rm*Rs;
   if(A){result+=RdHiLo;cpu->i_cycles+=1;}
 
