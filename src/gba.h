@@ -1009,17 +1009,14 @@ static FORCE_INLINE void gba_dma_write16(gba_t* gba, uint32_t address, uint16_t 
   gba_store16(gba,address,data);
 }
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data){
-  if(address==0x4)printf("Debug Write(0x4)= %x\n",data);
   gba_compute_access_cycles(user_data,address,3); 
   gba_dma_write32((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data){
-  if(address==0x4)printf("Debug Write(0x4)= %x\n",data);
   gba_compute_access_cycles(user_data,address,1); 
   gba_dma_write16((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
-  if(address==0x4)printf("Debug Write(0x4)= %x\n",data);
   gba_compute_access_cycles(user_data,address,1); 
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
@@ -1509,7 +1506,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
     uint8_t window_control =gba->window[lcd_x];
     if(bg_mode==6 ||bg_mode==7){
       //Palette 0 is taken as the background
-    }else if (bg_mode<5){     
+    }else if (bg_mode<=5){     
       for(int bg = 3; bg>=0;--bg){
         uint32_t col =0;         
         if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
@@ -1537,6 +1534,9 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           if(bg_mode==3||bg_mode==4){
             screen_size_x=240;
             screen_size_y=160;
+          }else if(bg_mode==5){
+            screen_size_x=160;
+            screen_size_y=128;
           }
           colors = true;
 
@@ -1578,6 +1578,11 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
           int addr = p*1+0xA000*frame_sel; 
           uint8_t pallete_id = gba->mem.vram[addr];
           col = *(uint16_t*)(gba->mem.palette+GBA_BG_PALETTE+pallete_id*2);
+        }else if(bg_mode==5){
+          int p = bg_x+bg_y*160;
+          int frame_sel = SB_BFE(dispcnt,4,1);
+          int addr = p*2+0xA000*frame_sel; 
+          col  = *(uint16_t*)(gba->mem.vram+addr);
         }else{
           bg_x = bg_x&(screen_size_x-1);
           bg_y = bg_y&(screen_size_y-1);
@@ -1630,8 +1635,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         }
         if(col>gba->second_target_buffer[lcd_x])gba->second_target_buffer[lcd_x]=col;          
       }
-    }else if(bg_mode!=0){
-      printf("Unsupported background mode: %d\n",bg_mode);
     }
     uint32_t col = gba->first_target_buffer[lcd_x];
     int r = SB_BFE(col,0,5);
