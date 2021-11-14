@@ -2284,6 +2284,18 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   gba->timers[1].elapsed_audio_samples= 0;
   
   float freq1_hz_base = freq_hz[0];
+  uint16_t soundcnt_x = gba_io_read16(gba,GBA_SOUNDCNT_X);
+  bool master_enable = SB_BFE(soundcnt_x,7,1);
+  if(!master_enable){
+    // Reset PSG registers 4000060h..4000081h 
+    for(int i=0x60;i<0x81;++i){
+      gba->mem.io[i]=0;
+    }
+    // Shut off all PSG channels
+    for(int i=0;i<4;++i){length_t[i]=2e9;length[i]=0;}
+    // Volume is 0 while everything is shut off. 
+    for(int i=0;i<6;++i)chan_l[i]=chan_r[i]=0;
+  }
 
   while(current_sample_generated_time < current_sim_time){
 
