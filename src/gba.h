@@ -1445,9 +1445,10 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
             int tx = sx%8;
             int ty = sy%8;
                       
-            int y_tile_stride = obj_vram_map_2d? colors_or_palettes? 16:32 : x_size/8;
-            int tile = (colors_or_palettes? tile_base/2 : tile_base) + ((sx/8))+(sy/8)*y_tile_stride;
-            
+            int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
+            int tile = tile_base + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
+            //Tiles >511 are not rendered in bg_mode3-5 since that memory is used to store the bitmap graphics. 
+            if(tile<512&&bg_mode>=3&&bg_mode<=5)continue;
             uint8_t palette_id;
             int obj_tile_base = GBA_OBJ_TILES0_2;
             if(colors_or_palettes==false){
@@ -1456,7 +1457,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
               if(palette_id==0)continue;
               palette_id+=palette*16;
             }else{
-              palette_id=gba->mem.vram[obj_tile_base+tile*8*8+tx+ty*8];
+              palette_id=gba->mem.vram[obj_tile_base+tile*8*4+tx+ty*8];
               if(palette_id==0)continue;
             }
 
