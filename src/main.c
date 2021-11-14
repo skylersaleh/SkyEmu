@@ -219,6 +219,7 @@ typedef struct {
       float pos[2];
     }touch_points[SAPP_MAX_TOUCHPOINTS];
     float last_touch_time;
+    bool draw_debug_menu;
 } gui_state_t;
 gui_state_t gui_state={.volume=1.0}; 
 static sg_image* se_get_image(){
@@ -804,6 +805,84 @@ void se_update_frame() {
 
 }
 
+void gba_draw_io_state(gba_t* gba){
+  igBegin("MMIO", 0,0);
+  for(int i = 0; i<sizeof(gba_io_reg_desc)/sizeof(gba_io_reg_desc[0]);++i){
+    uint32_t addr = gba_io_reg_desc[i].addr;
+    uint16_t data = gba_read16(gba, addr);
+    bool has_fields = false;
+    igPushIDInt(i);
+    if (igTreeNodeStrStr("%s(%08x): %04x",gba_io_reg_desc[i].name,addr,data)){
+      for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
+        igPushIDInt(f);
+        uint32_t start = gba_io_reg_desc[i].bits[f].start; 
+        uint32_t size = gba_io_reg_desc[i].bits[f].size; 
+        if(size){
+          uint32_t field_data = SB_BFE(data,start,size);
+          has_fields=true;
+          uint32_t mask = (((1<<size)-1)<<start);
+          bool edit = false;
+          if(size==1){
+            bool v = field_data!=0;
+            edit=igCheckbox("",&v);
+            data &= ~mask;
+            data |= (v<<start)&mask; 
+          }else{
+            int v = field_data;
+            igPushItemWidth(100);
+            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
+            data &= ~mask;
+            data |= (v<<start)&mask;
+            igPopItemWidth();
+          }
+          if(edit){
+            gba_store16(gba,addr,data);
+          }
+          igSameLine(0,2);
+          if(size>1)igText("%s (Bits [%d:%d])",gba_io_reg_desc[i].bits[f].name,start, start+size-1);
+          else igText("%s (Bit %d)",gba_io_reg_desc[i].bits[f].name,start);
+        }
+        igPopID();
+      }
+      if(!has_fields){
+        int v = data; 
+        igPushIDInt(0);
+        igPushItemWidth(150);
+        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+          gba_store16(gba,addr,v);
+        }
+        igSameLine(0,2);
+        igText("Data");
+        igPopID();
+      }
+      igTreePop();
+    }
+    igPopID();
+
+    /*
+    for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
+      uint32_t start = gba_io_reg_desc[i].bits[f].start; 
+      uint32_t size = gba_io_reg_desc[i].bits[f].size; 
+      if(size){
+        uint32_t field_data = SB_BFE(data,start,size);
+        has_fields=true;
+        Rectangle r2 = r; 
+        if(size>1)r=sb_draw_label(r, TextFormat("[%d:%d]:", start, start+size-1));
+        else r=sb_draw_label(r, TextFormat("%d:", start));
+
+        r2.x+=30; 
+        sb_draw_label(r2, TextFormat("%2d",field_data));
+        r2.x+=25; 
+        sb_draw_label(r2, TextFormat("%s",gba_io_reg_desc[i].bits[f].name));
+      }
+    }
+    Rectangle state_rect, adv_rect;
+    GuiGroupBox(state_rect, TextFormat("%s(%08x): %04x", gba_io_reg_desc[i].name, addr,data)); 
+    rect=adv_rect;*/
+  }
+  igEnd();
+}
+
 static void init(void) {
 
   #if defined(EMSCRIPTEN)
@@ -900,6 +979,8 @@ static void frame(void) {
   se_update_frame();
   igPopStyleVar(2);
   igEnd();
+  if(gui_state.draw_debug_menu)gba_draw_io_state(&gba); 
+
   /*=== UI CODE ENDS HERE ===*/
 
   sg_begin_default_pass(&gui_state.pass_action, width, height);
@@ -983,6 +1064,7 @@ static void event(const sapp_event* ev) {
     }
   }else if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
     gui_state.button_state[ev->key_code] = true;
+    if(ev->key_code ==SAPP_KEYCODE_F1)gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
   }
   else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
     gui_state.button_state[ev->key_code] = false;
