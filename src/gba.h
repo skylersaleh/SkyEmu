@@ -1488,7 +1488,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
         // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
         if(win_xmin>win_xmax)win_xmax=240;
-        if(win_ymin>win_ymax)win_ymax=160;
+        if(win_ymin>win_ymax)win_ymax=161;
+        if(win_xmax>240)win_xmax=240;
         if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
         uint16_t winin = gba_io_read16(gba,GBA_WININ);
         uint8_t win_value = SB_BFE(winin,win*8,6);
