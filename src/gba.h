@@ -1780,47 +1780,32 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         gba->dma[i].current_transaction=0;
         gba->dma[i].startup_delay=2;
       }
-      if(gba->dma[i].startup_delay>=0){
-        gba->activate_dmas=true;
-        gba->dma[i].startup_delay-=last_tick; 
-        if(gba->dma[i].startup_delay>=0)continue;
-        gba->dma[i].startup_delay=-1;
-
-      }
+  
       int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
       int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
       bool dma_repeat = SB_BFE(cnt_h,9,1); 
       int  mode = SB_BFE(cnt_h,12,2);
       bool irq_enable = SB_BFE(cnt_h,14,1);
-      uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
-        
-      int src_dir = 1;
-      if(src_addr_ctl==1)src_dir=-1;
-      else if(src_addr_ctl==2)src_dir=0;
-      
-      int dst_dir = 1;
-      if(dst_addr_ctl==1)dst_dir=-1;
-      else if(dst_addr_ctl==2)dst_dir=0;
-
-      int transfer_bytes = type? 4:2; 
-      uint32_t src = gba->dma[i].source_addr;
-      uint32_t dst = gba->dma[i].dest_addr;
-
+    
       if(gba->dma[i].current_transaction==0){
-        uint32_t src_end=src+cnt*transfer_bytes*src_dir;
-        uint32_t dst_end=dst+cnt*transfer_bytes*dst_dir;
-
+        if(gba->dma[i].startup_delay>=0){
+          gba->activate_dmas=true;
+          gba->dma[i].startup_delay-=last_tick; 
+          if(gba->dma[i].startup_delay>=0)continue;
+          gba->dma[i].startup_delay=-1;
+        }
         bool last_vblank = gba->dma[i].last_vblank;
         bool last_hblank = gba->dma[i].last_hblank;
         gba->dma[i].last_vblank = gba->ppu.last_vblank;
         gba->dma[i].last_hblank = gba->ppu.last_hblank;
         if(mode ==1 && (!gba->ppu.last_vblank||last_vblank)) continue; 
-        uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
         if(mode==2){
+          uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(vcount>=160||!gba->ppu.last_hblank||last_hblank)continue;
         }
         //Video dma
         if(mode==3 && i ==3){
+          uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(!gba->ppu.last_hblank||last_hblank)continue;
           //Video dma starts at scanline 2
           if(vcount<2)continue;
@@ -1830,15 +1815,24 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           ticks-=2;
         }
         gba->last_transaction_dma=true;
+        uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
 
+        if(i!=3)cnt&=0x3fff;
+        if(cnt==0)cnt = i==3? 0x10000: 0x4000;
+        gba_io_store16(gba,GBA_DMA0CNT_L+12*i,cnt);
       }
+      const static int dir_lookup[4]={1,-1,0,1};
+      int src_dir = dir_lookup[src_addr_ctl];
+      int dst_dir = dir_lookup[dst_addr_ctl];
+
+      int transfer_bytes = type? 4:2; 
+
       //if(mode==2){printf("Trigger Hblank DMA: %d->%d\n",last_hblank,gba->ppu.last_hblank);}
 
+      uint32_t src = gba->dma[i].source_addr;
+      uint32_t dst = gba->dma[i].dest_addr;
+      uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
 
-      if(i!=3)cnt&=0x3fff;
-      if(cnt==0)cnt = i==3? 0x10000: 0x4000;
-
-      gba->mem.requests=0; 
       bool skip_dma = false;
       // EEPROM DMA transfers
       if(i==3 && gba->cart.backup_type==GBA_BACKUP_EEPROM){
@@ -1955,7 +1949,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         
         gba->dma[i].source_addr=src;
         gba->dma[i].dest_addr=dst;
-      
+
         if(irq_enable){
           uint16_t if_val = gba_io_read16(gba,GBA_IF);
           uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
@@ -1969,6 +1963,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
           //Reload on incr reload     
           enable =false;
+          gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
         }else{
           gba->dma[i].current_transaction=0;
           if(dst_addr_ctl==3){
@@ -1979,16 +1974,15 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           }
         }
       }
-      gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
     }
     gba->dma[i].last_enable = enable;
     if(ticks)break;
   }
   gba->activate_dmas|=ticks!=0;
+ 
   if(gba->last_transaction_dma&&ticks==0){
-    ticks+=2;
+    ticks+=2; 
     gba->last_transaction_dma=false;
-    gba->mem.prefetch_size = 0;
   }
 
   return ticks; 
