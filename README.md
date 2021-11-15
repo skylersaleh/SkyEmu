@@ -60,7 +60,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - 100% Passes all ArmWrestler Tests
 - 100% Passes all FuzzARM tests
 - 100% Passes arm.gba and thumb.gba
-- Passes 1860/1920 GBA Suite timing tests (for reference mGBA 0.9.2 passes 1696/1920 and VBA-M 2.1.4 passes 994/1920)
+- Passes 1860/1920 GBA Suite timing tests when utilizing the original Nintendo GBA BIOS (the bundled BIOS is less accurate)
 - Full instruction pipeline and prefetch emulation
 
 **GB**: 
