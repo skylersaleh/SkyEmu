@@ -7,7 +7,7 @@
 **/
 
 #define SE_AUDIO_SAMPLE_RATE 44100
-#define SE_AUDIO_BUFF_SAMPLES 2048
+#define SE_AUDIO_BUFF_SAMPLES 4096
 #define SE_AUDIO_BUFF_CHANNELS 2
 #include "gba.h"
 
@@ -910,8 +910,8 @@ static void init(void) {
   saudio_setup(&(saudio_desc){
     .sample_rate=SE_AUDIO_SAMPLE_RATE,
     .num_channels=2,
-    .num_packets=4,
-    .packet_frames=1024
+    .num_packets=16,
+    .packet_frames=512
   });
 }
 
@@ -1099,6 +1099,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .height = 600,
       .enable_dragndrop = true,
       .enable_clipboard =true,
+      .swap_interval=1,
       .high_dpi = true,
       .max_dropped_file_path_length = 8192,
   };

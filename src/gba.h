@@ -1696,9 +1696,10 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
       }
     }
     int p = (lcd_x+lcd_y*240)*3;
-    gba->framebuffer[p+0] = r*7;
-    gba->framebuffer[p+1] = g*7;
-    gba->framebuffer[p+2] = b*7;  
+    float screen_blend_factor = 0.7;
+    gba->framebuffer[p+0] = r*7*screen_blend_factor+gba->framebuffer[p+0]*(1.0-screen_blend_factor);
+    gba->framebuffer[p+1] = g*7*screen_blend_factor+gba->framebuffer[p+1]*(1.0-screen_blend_factor);
+    gba->framebuffer[p+2] = b*7*screen_blend_factor+gba->framebuffer[p+2]*(1.0-screen_blend_factor);  
     int backdrop_type = 5;
     uint32_t backdrop_col = (*(uint16_t*)(gba->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
     gba->first_target_buffer[lcd_x] = backdrop_col;
@@ -2385,12 +2386,12 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     gba_reset(gba);
     emu->run_mode = SB_MODE_RUN;
   }
-  int frames_to_render= gba->ppu.last_vblank?1:2;
   if(emu->step_frames<=1){
     int size = sb_ring_buffer_size(&emu->audio_ring_buff);
     int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-    if(size>2.0*samples_per_buffer)return; 
+    if(size>1.0*samples_per_buffer)return; 
   }
+  int frames_to_render= emu->step_frames;
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     //printf("New frame\n");
     gba_tick_keypad(&emu->joy,gba);
@@ -2425,7 +2426,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       last_tick=ticks-gba->cpu.i_cycles;
       for(int t = 0;t<ticks;++t){
-        gba_tick_ppu(gba,1,frames_to_render<=0);
+        gba_tick_ppu(gba,1,frames_to_render>1);
       }
       gba_tick_sio(gba);
       gba_tick_timers(gba,ticks,false);
@@ -2435,12 +2436,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
-        if(emu->frame>=emu->step_frames&&emu->step_frames>1)break;
+        if(emu->frame>=emu->step_frames)break;
         frames_to_render--;
-        //if(emu->step_instructions==0)break;
-        int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-        int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-        if(size>1.0*samples_per_buffer&&frames_to_render<=0&&emu->step_frames<=1)break;
       }
       prev_vblank = gba->ppu.last_vblank;
     }
