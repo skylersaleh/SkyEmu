@@ -923,22 +923,7 @@ static void frame(void) {
   gui_state.last_touch_time+=delta_time;
   gui_state.screen_width=width;
   gui_state.screen_height=height;
-  int num_samples_to_push = saudio_expect()*2;
-  enum{samples_to_push=64};
-  float volume_sq = gui_state.volume*gui_state.volume;
-  for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
-    float audio_buff[samples_to_push];
-    int pushed = 0; 
-    for(int i=0;i<samples_to_push;++i){
-      if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=0)break;
-      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
-      audio_buff[pushed++]=data/32768.*volume_sq;
-    }
-    if(!pushed)break;
-    saudio_push(audio_buff, pushed/2);
-  }
   simgui_new_frame(width, height, delta_time);
-
   float menu_height = 0; 
   /*=== UI CODE STARTS HERE ===*/
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
@@ -986,7 +971,6 @@ static void frame(void) {
   sg_begin_default_pass(&gui_state.pass_action, width, height);
   simgui_render();
   sg_end_pass();
-  sg_commit();
   static bool init=false;
   if(!init){
     init=true;
@@ -1017,6 +1001,20 @@ static void frame(void) {
     igGetIO()->FontDefault=font;
     igGetIO()->Fonts=atlas;
     igGetIO()->FontGlobalScale/=sapp_dpi_scale();
+  }
+  sg_commit();
+  int num_samples_to_push = saudio_expect()*2;
+  enum{samples_to_push=128};
+  float volume_sq = gui_state.volume*gui_state.volume;
+  for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
+    float audio_buff[samples_to_push];
+    int pushed = 0; 
+    if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push)break;
+    for(int i=0;i<samples_to_push;++i){
+      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
+      audio_buff[i]=data/32768.*volume_sq;
+    }
+    saudio_push(audio_buff, samples_to_push/2);
   }
   se_free_all_images();
 }
@@ -1099,7 +1097,6 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .height = 600,
       .enable_dragndrop = true,
       .enable_clipboard =true,
-      .swap_interval=1,
       .high_dpi = true,
       .max_dropped_file_path_length = 8192,
   };
