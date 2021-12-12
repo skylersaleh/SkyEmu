@@ -1,0 +1,38 @@
+name: Build Windows
+on: [push,pull_request]
+jobs:
+  build-and-deploy:
+    runs-on: windows-2019
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v2.3.1 
+      - name: Get latest CMake and ninja
+        # Using 'latest' branch, the most recent CMake and ninja are installed.
+        uses: lukka/get-cmake@latest
+     
+      - name: Build 🔧 
+        run: |
+          mkdir build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_SYSTEM_VERSION=10.0.19041.0 ..
+          cmake --build . --config RelWithDebInfo
+          
+      - name: GH Release 🚀
+        # You may pin to the exact commit or the version.
+        uses: actions/upload-artifact@v2
+        with:
+           name: WindowsRelease
+           path: build/bin/
+        #uses: softprops/action-gh-release@v0.1.5
+        #with:
+        #  # Note-worthy description of changes in release
+        #  # body: # optional
+        #  # Path to load note-worthy description of changes in release from
+        #  # body_path: # optional
+        #  # Gives the release a custom name. Defaults to tag name
+        #  name: LinuxRelease
+        #  # Identify the release as a prerelease. Defaults to false
+        #  prerelease: True
+        #  # Newline-delimited list of path globs for asset files to upload
+        #  files: build/bin/*
+ 
