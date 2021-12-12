@@ -451,7 +451,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   ImU32 sel_color =0x000000;
 
   float opacity = 5.-gui_state.last_touch_time;
-  if(opacity<0){opacity=0;return;}
+  if(opacity<=0){opacity=0;return;}
   if(opacity>1)opacity=1;
 
   line_color|=(int)(opacity*0x48)<<24;
@@ -665,12 +665,7 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
     if(input.value!= ''){
       console.log(input.value);
       var reader= new FileReader();
-      file = input.files[0];
-      reader.addEventListener('loadend', print_file);
-      reader.readAsArrayBuffer(file);
-      var filename = file.name;
-      input.value = '';
-
+      var file = input.files[0];
       function print_file(e){
           var result=reader.result;
           const uint8_view = new Uint8Array(result);
@@ -680,9 +675,13 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
           var input_stage = document.getElementById('fileStaging');
           input_stage.value = out_file;
       }
+      reader.addEventListener('loadend', print_file);
+      reader.readAsArrayBuffer(file);
+      var filename = file.name;
+      input.value = '';
     }
     var input_stage = document.getElementById('fileStaging');
-    ret_path = '';
+    var ret_path = '';
     if(input_stage.value !=''){
       ret_path = input_stage.value;
       input_stage.value = '';
@@ -1003,16 +1002,17 @@ static void frame(void) {
     igGetIO()->FontGlobalScale/=sapp_dpi_scale();
   }
   sg_commit();
+
   int num_samples_to_push = saudio_expect()*2;
   enum{samples_to_push=128};
-  float volume_sq = gui_state.volume*gui_state.volume;
+  float volume_sq = gui_state.volume*gui_state.volume/32768.;
   for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
     float audio_buff[samples_to_push];
     int pushed = 0; 
     if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push)break;
     for(int i=0;i<samples_to_push;++i){
       int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
-      audio_buff[i]=data/32768.*volume_sq;
+      audio_buff[i]=data*volume_sq;
     }
     saudio_push(audio_buff, samples_to_push/2);
   }

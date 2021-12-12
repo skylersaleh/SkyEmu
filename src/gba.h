@@ -643,6 +643,14 @@ typedef struct {
   uint32_t bios_word;
   uint32_t cartopen_bus; 
   uint8_t wait_state_table[16*4];
+  // Tracks the place of the squashable pipeline bubble that enters the pipeline after a single cycle data read
+  // Each bit represents one clock cycle in time with bit 0 meaning the current cycle of the last stage of the 
+  // CPU pipeline and larger bits indicating future cycles. 
+
+  // This is shifted to the right every clock cycle to mimic the bubble traveling through the pipeline. 
+  // Some complexity is introduced because this bubble may be squashed by upstream push back. This is modelled by 
+  // extra shift rights for the multicycling of the various stages. 
+  uint32_t pipeline_bubble_shift_register;
 } gba_mem_t;
 
 typedef struct {
@@ -922,14 +930,22 @@ static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t addr
     gba->mem.prefetch_size = 0;
   }
   uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
-  if(prefetch_en){
+  if(prefetch_en){        
     gba->mem.prefetch_size+=gba->cpu.i_cycles;
     if(bank>=0x08&&bank<=0x0D){
       if((request_size&1)){
         //Non sequential->reset prefetch buffer
         gba->mem.prefetch_size = 0;
+        // Check if the bubble made it to the execute stage before being squashed, 
+        // and apply the bubble cycle if it was not squashed. 
+        // Note, only a single pipeline bubble is tracked using this infrastructure. 
+        if(gba->mem.pipeline_bubble_shift_register){
+          wait+=1;
+          gba->mem.pipeline_bubble_shift_register=0;
+        }
         gba->cpu.next_fetch_sequential =false;
       }else{
+        gba->mem.pipeline_bubble_shift_register>>=wait;
         //Sequential fetch from prefetch buffer based on available wait states
         if(gba->mem.prefetch_size>=wait){
           gba->mem.prefetch_size-=wait-1; 
@@ -939,14 +955,18 @@ static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t addr
           gba->mem.prefetch_size=0;
         }
       }
-    }else gba->mem.prefetch_size+=wait; 
+    }else {
+      gba->mem.pipeline_bubble_shift_register=((bank==0x03||bank<=0x01)&& (request_size&1))*4; 
+      gba->mem.prefetch_size+=wait; 
+    }
   }
+  wait+=gba->cpu.i_cycles;
+  gba->cpu.i_cycles=0;
   gba->mem.requests+=wait;
 }
 static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
   gba_t * gba = ((gba_t*)user_data);
-  gba->cpu.next_fetch_sequential=false;
   uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
   return wait;
 }
@@ -1787,12 +1807,15 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       bool dma_repeat = SB_BFE(cnt_h,9,1); 
       int  mode = SB_BFE(cnt_h,12,2);
       bool irq_enable = SB_BFE(cnt_h,14,1);
+      bool force_first_write_sequential = false;
     
       if(gba->dma[i].current_transaction==0){
         if(gba->dma[i].startup_delay>=0){
-          gba->activate_dmas=true;
           gba->dma[i].startup_delay-=last_tick; 
-          if(gba->dma[i].startup_delay>=0)continue;
+          if(gba->dma[i].startup_delay>=0){
+            gba->activate_dmas=true;
+            continue;
+          }
           gba->dma[i].startup_delay=-1;
         }
         bool last_vblank = gba->dma[i].last_vblank;
@@ -1812,8 +1835,16 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           if(vcount<2)continue;
           if(vcount==161)dma_repeat=false;
         }
-        if(gba->dma[i].source_addr>0x08000000&&gba->dma[i].dest_addr>0x08000000){
-          ticks-=2;
+        if(gba->dma[i].source_addr>=0x08000000&&gba->dma[i].dest_addr>=0x08000000){
+          force_first_write_sequential=true;
+        }else{
+          if(gba->dma[i].dest_addr>=0x08000000){
+            // Allow the in process prefetech to finish before starting DMA
+            if(!gba->mem.prefetch_size&&gba->mem.prefetch_en)ticks+=gba_compute_access_cycles_dma(gba,gba->dma[i].dest_addr,2)>4;
+          }
+        }
+        if(gba->dma[i].source_addr>=0x08000000){
+            if(gba->mem.prefetch_en)ticks+=gba_compute_access_cycles_dma(gba,gba->dma[i].source_addr,2)<=4;
         }
         gba->last_transaction_dma=true;
         uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
@@ -1908,9 +1939,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         cnt=4;
         skip_dma=true;
         gba->dma[i].current_transaction=cnt;
-      }
-      //printf("DMA%d: src:%08x dst:%08x len:%04x type:%d mode:%d repeat:%d irq:%d dstct:%d srcctl:%d\n",i,src,dst,cnt, type,mode,dma_repeat,irq_enable,dst_addr_ctl,src_addr_ctl);
-      if(!skip_dma){
+      }else if(!skip_dma){
         // This code is complicated to handle the per channel DMA latches that are present
         // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
         // and the text in Lufia
@@ -1925,7 +1954,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
             }
             gba_dma_write32(gba,dst+x*4*dst_dir,gba->dma[i].latched_transfer);
-            ticks+=gba_compute_access_cycles_dma(gba, dst+x*4*dst_dir, x!=0? 2:3);
+            ticks+=gba_compute_access_cycles_dma(gba, dst+x*4*dst_dir, x!=0||force_first_write_sequential? 2:3);
           }else{
             int src_addr = (src+x*2*src_dir)&0x0fffffff;
             int dst_addr = dst+x*2*dst_dir;
@@ -1937,7 +1966,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
             }else v = gba->dma[i].latched_transfer>>(((dst_addr)&0x3)*8);
             v&=0xffff;
             gba_dma_write16(gba,dst_addr,v&0xffff);
-            ticks+=gba_compute_access_cycles_dma(gba, dst_addr, x!=0? 0:1);
+            ticks+=gba_compute_access_cycles_dma(gba, dst_addr, x!=0||force_first_write_sequential? 0:1);
           }
         }
       }
@@ -2029,10 +2058,12 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
         gba_io_store16(gba,GBA_TM0CNT_L+t*4,value);
       }
       if(gba->timers[t].startup_delay>=0){
-        timer_ticks_before_event=0;
         gba->timers[t].startup_delay-=ticks; 
         gba->timers[t].last_enable = enable;
-        if(gba->timers[t].startup_delay>=0)continue;
+        if(gba->timers[t].startup_delay>=0){
+          if(gba->timers[t].startup_delay<timer_ticks_before_event)timer_ticks_before_event=gba->timers[t].startup_delay;
+          continue;
+        }
         compensated_ticks=-gba->timers[t].startup_delay;
         gba->timers[t].startup_delay=-1;
         gba->timers[t].prescaler_timer=0;
@@ -2386,11 +2417,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     gba_reset(gba);
     emu->run_mode = SB_MODE_RUN;
   }
-  if(emu->step_frames<=1){
-    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-    if(size>1.0*samples_per_buffer)return; 
-  }
   int frames_to_render= emu->step_frames;
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     //printf("New frame\n");
@@ -2418,13 +2444,13 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           }
           gba->mem.requests=0;
           arm7_exec_instruction(&gba->cpu);
-          ticks = gba->mem.requests+gba->cpu.i_cycles; 
+          ticks = gba->mem.requests; 
         }
         bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
         breakpoint |= gba->cpu.trigger_breakpoint;
         if(breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
-      last_tick=ticks-gba->cpu.i_cycles;
+      last_tick=ticks;
       for(int t = 0;t<ticks;++t){
         gba_tick_ppu(gba,1,frames_to_render>1);
       }
@@ -2436,7 +2462,11 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
-        if(emu->frame>=emu->step_frames)break;
+        if(emu->frame>=emu->step_frames){
+          int size = sb_ring_buffer_size(&emu->audio_ring_buff);
+          int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
+          if(size>1.0*samples_per_buffer)break;
+        }
         frames_to_render--;
       }
       prev_vblank = gba->ppu.last_vblank;
