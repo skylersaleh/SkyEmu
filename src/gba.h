@@ -196,9 +196,9 @@ mmio_reg_t gba_io_reg_desc[]={
     { 14,1, "Game Pak Prefetch Buffer (0=Disable, 1=Enable)" },
     { 15,1, "Game Pak Type Flag (0=GBA, 1=CGB) (IN35 signal)" },
   } },      /* R/W  WAITCNT   Game Pak Waitstate Control */
-  { GBA_IME    , "IME", {} },      /* R/W  IME       Interrupt Master Enable Register */
-  { GBA_POSTFLG, "POSTFLG", {} },      /* R/W  POSTFLG   Undocumented - Post Boot Flag */
-  { GBA_HALTCNT, "HALTCNT", {} }, 
+  { GBA_IME    , "IME", {0} },      /* R/W  IME       Interrupt Master Enable Register */
+  { GBA_POSTFLG, "POSTFLG", {0} },      /* R/W  POSTFLG   Undocumented - Post Boot Flag */
+  { GBA_HALTCNT, "HALTCNT", {0} }, 
 
   { GBA_DISPCNT , "DISPCNT ", { 
     { 0, 3, "BG Mode (0-5=Video Mode 0-5, 6-7=Prohibited)"},
@@ -229,7 +229,7 @@ mmio_reg_t gba_io_reg_desc[]={
     { 8,8, "V-Count Setting (LYC) (0..227)",},
 
   } }, /* R/W General LCD Status (STAT,LYC) */
-  { GBA_VCOUNT  , "VCOUNT  ", { } }, /* R   Vertical Counter (LY) */
+  { GBA_VCOUNT  , "VCOUNT  ", { 0 } }, /* R   Vertical Counter (LY) */
   { GBA_BG0CNT  , "BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
     { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
@@ -270,26 +270,26 @@ mmio_reg_t gba_io_reg_desc[]={
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
     { 14,1, "Screen Size (0-3)"},
   } }, /* R/W BG3 Control */
-  { GBA_BG0HOFS , "BG0HOFS", { } }, /* W   BG0 X-Offset */
-  { GBA_BG0VOFS , "BG0VOFS", { } }, /* W   BG0 Y-Offset */
-  { GBA_BG1HOFS , "BG1HOFS", { } }, /* W   BG1 X-Offset */
-  { GBA_BG1VOFS , "BG1VOFS", { } }, /* W   BG1 Y-Offset */
-  { GBA_BG2HOFS , "BG2HOFS", { } }, /* W   BG2 X-Offset */
-  { GBA_BG2VOFS , "BG2VOFS", { } }, /* W   BG2 Y-Offset */
-  { GBA_BG3HOFS , "BG3HOFS", { } }, /* W   BG3 X-Offset */
-  { GBA_BG3VOFS , "BG3VOFS", { } }, /* W   BG3 Y-Offset */
-  { GBA_BG2PA   , "BG2PA", { } }, /* W   BG2 Rotation/Scaling Parameter A (dx) */
-  { GBA_BG2PB   , "BG2PB", { } }, /* W   BG2 Rotation/Scaling Parameter B (dmx) */
-  { GBA_BG2PC   , "BG2PC", { } }, /* W   BG2 Rotation/Scaling Parameter C (dy) */
-  { GBA_BG2PD   , "BG2PD", { } }, /* W   BG2 Rotation/Scaling Parameter D (dmy) */
-  { GBA_BG2X    , "BG2X", { } }, /* W   BG2 Reference Point X-Coordinate */
-  { GBA_BG2Y    , "BG2Y", { } }, /* W   BG2 Reference Point Y-Coordinate */
-  { GBA_BG3PA   , "BG3PA", { } }, /* W   BG3 Rotation/Scaling Parameter A (dx) */
-  { GBA_BG3PB   , "BG3PB", { } }, /* W   BG3 Rotation/Scaling Parameter B (dmx) */
-  { GBA_BG3PC   , "BG3PC", { } }, /* W   BG3 Rotation/Scaling Parameter C (dy) */
-  { GBA_BG3PD   , "BG3PD", { } }, /* W   BG3 Rotation/Scaling Parameter D (dmy) */
-  { GBA_BG3X    , "BG3X", { } }, /* W   BG3 Reference Point X-Coordinate */
-  { GBA_BG3Y    , "BG3Y", { } }, /* W   BG3 Reference Point Y-Coordinate */
+  { GBA_BG0HOFS , "BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
+  { GBA_BG0VOFS , "BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
+  { GBA_BG1HOFS , "BG1HOFS", { 0 } }, /* W   BG1 X-Offset */
+  { GBA_BG1VOFS , "BG1VOFS", { 0 } }, /* W   BG1 Y-Offset */
+  { GBA_BG2HOFS , "BG2HOFS", { 0 } }, /* W   BG2 X-Offset */
+  { GBA_BG2VOFS , "BG2VOFS", { 0 } }, /* W   BG2 Y-Offset */
+  { GBA_BG3HOFS , "BG3HOFS", { 0 } }, /* W   BG3 X-Offset */
+  { GBA_BG3VOFS , "BG3VOFS", { 0 } }, /* W   BG3 Y-Offset */
+  { GBA_BG2PA   , "BG2PA", { 0 } }, /* W   BG2 Rotation/Scaling Parameter A (dx) */
+  { GBA_BG2PB   , "BG2PB", { 0 } }, /* W   BG2 Rotation/Scaling Parameter B (dmx) */
+  { GBA_BG2PC   , "BG2PC", { 0 } }, /* W   BG2 Rotation/Scaling Parameter C (dy) */
+  { GBA_BG2PD   , "BG2PD", { 0 } }, /* W   BG2 Rotation/Scaling Parameter D (dmy) */
+  { GBA_BG2X    , "BG2X", { 0 } }, /* W   BG2 Reference Point X-Coordinate */
+  { GBA_BG2Y    , "BG2Y", { 0 } }, /* W   BG2 Reference Point Y-Coordinate */
+  { GBA_BG3PA   , "BG3PA", { 0 } }, /* W   BG3 Rotation/Scaling Parameter A (dx) */
+  { GBA_BG3PB   , "BG3PB", { 0 } }, /* W   BG3 Rotation/Scaling Parameter B (dmx) */
+  { GBA_BG3PC   , "BG3PC", { 0 } }, /* W   BG3 Rotation/Scaling Parameter C (dy) */
+  { GBA_BG3PD   , "BG3PD", { 0 } }, /* W   BG3 Rotation/Scaling Parameter D (dmy) */
+  { GBA_BG3X    , "BG3X", { 0 } }, /* W   BG3 Reference Point X-Coordinate */
+  { GBA_BG3Y    , "BG3Y", { 0 } }, /* W   BG3 Reference Point Y-Coordinate */
   { GBA_WIN0H   , "WIN0H", {  
     { 0, 8, "X2, Rightmost coordinate of window, plus 1 " },
     { 8, 8,  "X1, Leftmost coordinate of window"}, 
@@ -359,7 +359,7 @@ mmio_reg_t gba_io_reg_desc[]={
     {0, 4, "EVA Coef. (1st Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
     {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
   } }, /* R/W Alpha Blending Coefficients */
-  { GBA_BLDY    , "BLDY", { } }, /* W   Brightness (Fade-In/Out) Coefficient */  
+  { GBA_BLDY    , "BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
 
   // Sound Registers
   { GBA_SOUND1CNT_L, "SOUND1CNT_L", {
@@ -462,14 +462,14 @@ mmio_reg_t gba_io_reg_desc[]={
    { 1,9,"Bias Level (Default=100h, converting signed samples into unsigned)"},
    { 14,2,"Amplitude Resolution/Sampling Cycle (Default=0, see below)"},
   } }, /* BIOS  Sound PWM Control */
-  { GBA_WAVE_RAM   , "WAVE_RAM", {} }, /* R/W Channel 3 Wave Pattern RAM (2 banks!!) */
-  { GBA_FIFO_A     , "FIFO_A", {} }, /* W   Channel A FIFO, Data 0-3 */
-  { GBA_FIFO_B     , "FIFO_B", {} }, /* W   Channel B FIFO, Data 0-3 */  
+  { GBA_WAVE_RAM   , "WAVE_RAM", { 0 } }, /* R/W Channel 3 Wave Pattern RAM (2 banks!!) */
+  { GBA_FIFO_A     , "FIFO_A", { 0 } }, /* W   Channel A FIFO, Data 0-3 */
+  { GBA_FIFO_B     , "FIFO_B", { 0 } }, /* W   Channel B FIFO, Data 0-3 */  
 
   // DMA Transfer Channels
-  { GBA_DMA0SAD  , "DMA0SAD", {} },   /* W    DMA 0 Source Address */
-  { GBA_DMA0DAD  , "DMA0DAD", {} },   /* W    DMA 0 Destination Address */
-  { GBA_DMA0CNT_L, "DMA0CNT_L", {} },   /* W    DMA 0 Word Count */
+  { GBA_DMA0SAD  , "DMA0SAD", { 0 } },   /* W    DMA 0 Source Address */
+  { GBA_DMA0DAD  , "DMA0DAD", { 0 } },   /* W    DMA 0 Destination Address */
+  { GBA_DMA0CNT_L, "DMA0CNT_L", { 0 } },   /* W    DMA 0 Word Count */
   { GBA_DMA0CNT_H, "DMA0CNT_H", {
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
@@ -479,9 +479,9 @@ mmio_reg_t gba_io_reg_desc[]={
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 0 Control */
-  { GBA_DMA1SAD  , "DMA1SAD", {} },   /* W    DMA 1 Source Address */
-  { GBA_DMA1DAD  , "DMA1DAD", {} },   /* W    DMA 1 Destination Address */
-  { GBA_DMA1CNT_L, "DMA1CNT_L", {} },   /* W    DMA 1 Word Count */
+  { GBA_DMA1SAD  , "DMA1SAD", { 0 } },   /* W    DMA 1 Source Address */
+  { GBA_DMA1DAD  , "DMA1DAD", { 0 } },   /* W    DMA 1 Destination Address */
+  { GBA_DMA1CNT_L, "DMA1CNT_L", { 0 } },   /* W    DMA 1 Word Count */
   { GBA_DMA1CNT_H, "DMA1CNT_H", {
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
@@ -491,9 +491,9 @@ mmio_reg_t gba_io_reg_desc[]={
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 1 Control */
-  { GBA_DMA2SAD  , "DMA2SAD", {} },   /* W    DMA 2 Source Address */
-  { GBA_DMA2DAD  , "DMA2DAD", {} },   /* W    DMA 2 Destination Address */
-  { GBA_DMA2CNT_L, "DMA2CNT_L", {} },   /* W    DMA 2 Word Count */
+  { GBA_DMA2SAD  , "DMA2SAD", { 0 } },   /* W    DMA 2 Source Address */
+  { GBA_DMA2DAD  , "DMA2DAD", { 0 } },   /* W    DMA 2 Destination Address */
+  { GBA_DMA2CNT_L, "DMA2CNT_L", { 0 } },   /* W    DMA 2 Word Count */
   { GBA_DMA2CNT_H, "DMA2CNT_H", {
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
@@ -503,9 +503,9 @@ mmio_reg_t gba_io_reg_desc[]={
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 2 Control */
-  { GBA_DMA3SAD  , "DMA3SAD", {} },   /* W    DMA 3 Source Address */
-  { GBA_DMA3DAD  , "DMA3DAD", {} },   /* W    DMA 3 Destination Address */
-  { GBA_DMA3CNT_L, "DMA3CNT_L", {} },   /* W    DMA 3 Word Count */
+  { GBA_DMA3SAD  , "DMA3SAD", { 0 } },   /* W    DMA 3 Source Address */
+  { GBA_DMA3DAD  , "DMA3DAD", { 0 } },   /* W    DMA 3 Destination Address */
+  { GBA_DMA3CNT_L, "DMA3CNT_L", { 0 } },   /* W    DMA 3 Word Count */
   { GBA_DMA3CNT_H, "DMA3CNT_H", {
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
@@ -518,28 +518,28 @@ mmio_reg_t gba_io_reg_desc[]={
   } },   /* R/W  DMA 3 Control */  
 
   // Timer Registers
-  { GBA_TM0CNT_L, "TM0CNT_L", {} },   /* R/W   Timer 0 Counter/Reload */
+  { GBA_TM0CNT_L, "TM0CNT_L", {0} },   /* R/W   Timer 0 Counter/Reload */
   { GBA_TM0CNT_H, "TM0CNT_H", {
     { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
     { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
     { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
     { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
   } },   /* R/W   Timer 0 Control */
-  { GBA_TM1CNT_L, "TM1CNT_L", {} },   /* R/W   Timer 1 Counter/Reload */
+  { GBA_TM1CNT_L, "TM1CNT_L", {0} },   /* R/W   Timer 1 Counter/Reload */
   { GBA_TM1CNT_H, "TM1CNT_H", {
     { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
     { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
     { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
     { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
   } },   /* R/W   Timer 1 Control */
-  { GBA_TM2CNT_L, "TM2CNT_L", {} },   /* R/W   Timer 2 Counter/Reload */
+  { GBA_TM2CNT_L, "TM2CNT_L", {0} },   /* R/W   Timer 2 Counter/Reload */
   { GBA_TM2CNT_H, "TM2CNT_H", {
     { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
     { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
     { 6 ,1, "Timer IRQ Enable (0=Disable, 1=IRQ on Timer overflow)" },
     { 7 ,1, "Timer Start/Stop (0=Stop, 1=Operate)" },
   } },   /* R/W   Timer 2 Control */
-  { GBA_TM3CNT_L, "TM3CNT_L", {} },   /* R/W   Timer 3 Counter/Reload */
+  { GBA_TM3CNT_L, "TM3CNT_L", {0} },   /* R/W   Timer 3 Counter/Reload */
   { GBA_TM3CNT_H, "TM3CNT_H", {
     { 0 ,2, "Prescaler Selection (0=F/1, 1=F/64, 2=F/256, 3=F/1024)" },
     { 2 ,1, "Count-up (0=Normal, 1=Incr. on prev. Timer overflow)" },
@@ -548,14 +548,14 @@ mmio_reg_t gba_io_reg_desc[]={
   } },   /* R/W   Timer 3 Control */  
 
   // Serial Communication (1)
-  { GBA_SIODATA32  , "SIODATA32", {} }, /*R/W   SIO Data (Normal-32bit Mode; shared with below) */
-  { GBA_SIOMULTI0  , "SIOMULTI0", {} }, /*R/W   SIO Data 0 (Parent)    (Multi-Player Mode) */
-  { GBA_SIOMULTI1  , "SIOMULTI1", {} }, /*R/W   SIO Data 1 (1st Child) (Multi-Player Mode) */
-  { GBA_SIOMULTI2  , "SIOMULTI2", {} }, /*R/W   SIO Data 2 (2nd Child) (Multi-Player Mode) */
-  { GBA_SIOMULTI3  , "SIOMULTI3", {} }, /*R/W   SIO Data 3 (3rd Child) (Multi-Player Mode) */
-  { GBA_SIOCNT     , "SIOCNT", {} }, /*R/W   SIO Control Register */
-  { GBA_SIOMLT_SEND, "SIOMLT_SEND", {} }, /*R/W   SIO Data (Local of MultiPlayer; shared below) */
-  { GBA_SIODATA8   , "SIODATA8", {} }, /*R/W   SIO Data (Normal-8bit and UART Mode) */  
+  { GBA_SIODATA32  , "SIODATA32", {0} }, /*R/W   SIO Data (Normal-32bit Mode; shared with below) */
+  { GBA_SIOMULTI0  , "SIOMULTI0", {0} }, /*R/W   SIO Data 0 (Parent)    (Multi-Player Mode) */
+  { GBA_SIOMULTI1  , "SIOMULTI1", {0} }, /*R/W   SIO Data 1 (1st Child) (Multi-Player Mode) */
+  { GBA_SIOMULTI2  , "SIOMULTI2", {0} }, /*R/W   SIO Data 2 (2nd Child) (Multi-Player Mode) */
+  { GBA_SIOMULTI3  , "SIOMULTI3", {0} }, /*R/W   SIO Data 3 (3rd Child) (Multi-Player Mode) */
+  { GBA_SIOCNT     , "SIOCNT", {0} }, /*R/W   SIO Control Register */
+  { GBA_SIOMLT_SEND, "SIOMLT_SEND", {0} }, /*R/W   SIO Data (Local of MultiPlayer; shared below) */
+  { GBA_SIODATA8   , "SIODATA8", {0} }, /*R/W   SIO Data (Normal-8bit and UART Mode) */  
 
   // Keypad Input
   { GBA_KEYINPUT, "GBA_KEYINPUT", {
@@ -586,12 +586,12 @@ mmio_reg_t gba_io_reg_desc[]={
   } },    /* R/W    Key Interrupt Control */  
 
   // Serial Communication (2)
-  { GBA_RCNT     , "RCNT", {} },     /* R/W  SIO Mode Select/General Purpose Data */
-  { GBA_IR       , "IR", {} },     /* -    Ancient - Infrared Register (Prototypes only) */
-  { GBA_JOYCNT   , "JOYCNT", {} },     /* R/W  SIO JOY Bus Control */
-  { GBA_JOY_RECV , "JOY_RECV", {} },     /* R/W  SIO JOY Bus Receive Data */
-  { GBA_JOY_TRANS, "JOY_TRANS", {} },     /* R/W  SIO JOY Bus Transmit Data */
-  { GBA_JOYSTAT  , "JOYSTAT", {} },     /* R/?  SIO JOY Bus Receive Status */  
+  { GBA_RCNT     , "RCNT", {0} },     /* R/W  SIO Mode Select/General Purpose Data */
+  { GBA_IR       , "IR", {0} },     /* -    Ancient - Infrared Register (Prototypes only) */
+  { GBA_JOYCNT   , "JOYCNT", {0} },     /* R/W  SIO JOY Bus Control */
+  { GBA_JOY_RECV , "JOY_RECV", {0} },     /* R/W  SIO JOY Bus Receive Data */
+  { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
+  { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 };
 
 // Interrupt sources
@@ -1251,7 +1251,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
     printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
     return false;
   }  
-  *gba = (gba_t){0};               
+
   gba_reset(gba);
   memcpy(gba->mem.cart_rom, data, bytes);
   sb_free_file_data(data);

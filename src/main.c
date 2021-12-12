@@ -161,8 +161,8 @@ const char* se_keycode_to_string(int keycode){
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
-sb_gb_t gb_state = {};
-gba_t gba; 
+sb_gb_t gb_state = { 0 };
+gba_t gba = { 0 };  
 
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0;

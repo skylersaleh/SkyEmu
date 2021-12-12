@@ -482,7 +482,7 @@ void sb_draw_scanline(sb_gb_t*gb){
 
   if(!gb->lcd.wy_eq_ly)window_enable = false;
   int sprite_h = sprite8x16 ? 16: 8;
-  const int sprites_per_scanline = 10;
+  enum{sprites_per_scanline = 10};
   // HW only draws first 10 sprites that touch a scanline
   int render_sprites[sprites_per_scanline];
   int sprite_index=0;
