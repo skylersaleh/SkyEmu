@@ -1,6 +1,6 @@
 # SkyEmu
 
-SkyEmu is low level cycle accurate GameBoy, GameBoy Color and Game Boy Advance emulator that I have been developing in my spare time. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability. It is still fairly early in development and should be considered as beta quality. 
+SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator that I have been developing in my spare time. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability. It is still fairly early in development and should be considered as beta quality. 
 
 <img width="851" alt="image" src="https://user-images.githubusercontent.com/7118296/141718823-5f5251de-b60a-412d-9624-751173d56c45.png">
 
@@ -14,7 +14,7 @@ On Mobile platforms it is recommended to add to the home screen and launch from 
 
 Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
 
-Note: A GBA BIOS is not required as SkyEmu bundles an open source replacement BIOS. 
+Note: A GBA BIOS is not required as SkyEmu bundles an open source replacement BIOS. However, a dump of an official GBA BIOS should be used if you want to maximize accuracy or you like seeing the GBA intro.
 
 Controls:
 
@@ -27,6 +27,12 @@ Controls:
 - I: R shoulder
 
 On mobile platforms an onscreen touch screen controller is provided. 
+
+## Loading save files and BIOSs
+
+On web builds save files and the BIOS can be loaded by dragging them onto the page or loading them using the ROM file picker. The GBA BIOS must be named `gba_bios.bin` for the emulator to pick it up. Save files must be named the name of the rom file with the extension `.sav`. So for example if the ROM was `MyRomFile.gba` the save file must be called `MyRomFile.sav`. 
+
+On native builds the above naming convention still applies, but the files must be instead located in the same folder as the ROM, instead of being dragged or loaded in the emulator itself.
 
 ## Native Build Instructions
 
@@ -60,7 +66,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - 100% Passes all ArmWrestler Tests
 - 100% Passes all FuzzARM tests
 - 100% Passes arm.gba and thumb.gba
-- Passes 1860/1920 GBA Suite timing tests when utilizing the original Nintendo GBA BIOS (the bundled BIOS is less accurate)
+- Passes 1920/1920 GBA Suite timing tests when utilizing the official Nintendo GBA BIOS (SkyEmu is the first, and currently only emulator that is able to pass these tests).
 - Full instruction pipeline and prefetch emulation
 
 **GB**: 
