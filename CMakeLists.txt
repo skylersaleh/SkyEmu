@@ -6,8 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
 
 if (EMSCRIPTEN)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1  -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1  -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=1 ")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=1 ")
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
 endif ()
  
@@ -73,7 +73,7 @@ target_include_directories(sokol INTERFACE src/sokol)
 
 add_executable(${PROJECT_NAME} src/main.c)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=1 --closure 1 ")
 endif ()
 
 target_link_libraries(${PROJECT_NAME} sokol ${ALSA_LIBRARIES})
