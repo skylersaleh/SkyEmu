@@ -2478,7 +2478,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
 void gba_reset(gba_t*gba){
   gba->cpu = arm7_init(gba);
-  memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
   gba->mem.openbus_word = gba->mem.cart_rom[0];
   memset(gba->mem.io,0,sizeof(gba->mem.io));
   memset(gba->mem.wram0,0,sizeof(gba->mem.wram0));
@@ -2500,8 +2499,28 @@ void gba_reset(gba_t*gba){
   gba->cart.flash_state=0;
   gba->cart.flash_bank=0; 
 
-  bool skip_bios = true;
-  if(skip_bios){
+  bool loaded_bios= false;
+  const char* base, *file_name, *ext; 
+  sb_breakup_path(gba->cart.save_file_path, &base,&file_name, &ext);
+  static char bios_path[SB_FILE_PATH_SIZE];
+  snprintf(bios_path,SB_FILE_PATH_SIZE,"%s/gba_bios.bin",base);
+  bios_path[SB_FILE_PATH_SIZE-1]=0;
+  size_t bios_bytes=0;
+  uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
+  if(bios_data){
+    printf("No bios found at: %s using bundled bios\n",bios_path);
+    if(bios_bytes==16*1024){
+      printf("Loaded GBA BIOS from %s\n",bios_path);
+      memcpy(gba->mem.bios,bios_data,16*1024);
+      loaded_bios=true;
+    }else{
+      printf("GBA BIOS file at %s is incorrectly sized. Expected %d bytes, got %zu bytes",file_name,16*1024,bios_bytes);
+    }
+  }
+  free(bios_data);
+  if(!loaded_bios){
+    printf("No GBA bios found at: %s using bundled bios\n",bios_path);
+    memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
     const uint32_t initial_regs[37]={
       0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
       0x0,0x0,0x0,0x0,0x0,0x3007f00,0x8000000,0x8000000,
