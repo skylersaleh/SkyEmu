@@ -1988,6 +1988,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
             gba_io_store16(gba,GBA_IF,if_val);
           }
         }
+        if(i==0&&mode==3)mode=0;
         if(!dma_repeat||mode==0){
           cnt_h&=0x7fff;
           //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
