@@ -970,17 +970,17 @@ static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(void*user_data, uint3
   uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
   return wait;
 }
-static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
+static FORCE_INLINE uint32_t gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 
 static FORCE_INLINE uint32_t gba_dma_read32(gba_t*gba, uint32_t address){
   if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read(gba,address,4);
+    return gba_process_mmio_read(gba,address,4);
   }
   return gba_read32(gba,address);
 }
 static FORCE_INLINE uint16_t gba_dma_read16(gba_t*gba, uint32_t address){
   if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read(gba,address,2);
+    return gba_process_mmio_read(gba,address,2);
   }
   return gba_read16(gba,address);
 }
@@ -1012,7 +1012,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
   if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read((gba_t*)user_data,address,4);
+    return gba_process_mmio_read((gba_t*)user_data,address,1);
   }
   return gba_read8((gba_t*)user_data,address);
 }
@@ -1141,9 +1141,44 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     printf("Tried to push audio samples to full fifo\n");
   }
 }
-static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
+uint32_t gba_sanitize_mmio_read(gba_t* gba, uint32_t dword_address, uint32_t data){
+  if(dword_address==0x4000008)data&=0xdfffdfff;
+  else if((dword_address>=0x4000010&& dword_address<=0x4000046) ||
+          (dword_address==0x400004C) ||
+          (dword_address>=0x4000054&& dword_address<=0x400005E)||
+          (dword_address==0x400008C)||
+          (dword_address>=0x40000A0&&dword_address<=0x40000B6)||
+          (dword_address>=0x40000BC&&dword_address<=0x40000C2)||
+          (dword_address>=0x40000C8&&dword_address<=0x40000CE)||
+          (dword_address>=0x40000D4&&dword_address<=0x40000DA)||
+          (dword_address>=0x40000E0&&dword_address<=0x40000FE)||
+          (dword_address==0x400100C)
+    )data = gba->mem.openbus_word;
+  else if(dword_address==0x4000048)data &= 0x3f3f3f3f;
+  else if(dword_address==0x4000050)data &= 0x1F1F3FFF;
+  else if(dword_address==0x4000060)data &= 0xFFC0007F;
+  else if(dword_address==0x4000064||dword_address==0x400006C||dword_address==0x4000074)data &= 0x4000;
+  else if(dword_address==0x4000068)data &= 0xFFC0;
+  else if(dword_address==0x4000070)data &= 0xE00000E0;
+  else if(dword_address==0x4000078)data &= 0xff00;
+  else if(dword_address==0x400007C)data &= 0x40FF;
+  else if(dword_address==0x4000080)data &= 0x770FFF77;
+  else if(dword_address==0x4000084)data &= 0x0080;
+  else if(dword_address==0x4000088)data = 0x0000ffff;
+  else if(dword_address==0x40000B8||dword_address==0x40000C4||dword_address==0x40000D0)data&=0xf7e00000;
+  else if(dword_address==0x40000DC)data&=0xFFE00000;
+  return data; 
+}
+static FORCE_INLINE uint32_t gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
   // Force recomputing timers on timer read
   if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_tick_timers(gba,0,true);
+  uint32_t dword_address = address&0x0ffffffC;
+  uint32_t data = *((uint32_t*)(gba->mem.io+(address&0x3fC)));
+  data = gba_sanitize_mmio_read(gba,dword_address,data);
+  if(req_size_bytes==4)return data;
+  if(req_size_bytes==2)return *(uint16_t*)(((uint8_t*)&data)+(address&2));
+  return *(((uint8_t*)&data)+(address&3));
+
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
