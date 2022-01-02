@@ -220,6 +220,7 @@ typedef struct {
     }touch_points[SAPP_MAX_TOUCHPOINTS];
     float last_touch_time;
     bool draw_debug_menu;
+    int mem_view_address;
 } gui_state_t;
 gui_state_t gui_state={.volume=1.0}; 
 static sg_image* se_get_image(){
@@ -803,6 +804,23 @@ void se_update_frame() {
   sb_draw_onscreen_controller(&emu_state, controller_h);
 
 }
+void gba_draw_mem_debug_state(gui_state_t* gui, gba_t* gba){
+  igBegin("MemView", 0,0);
+  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  int v = gba_read32(gba,gui->mem_view_address);
+  if(igInputInt("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    gba_store32(gba,gui->mem_view_address,v);
+  }
+  v = gba_read16(gba,gui->mem_view_address);
+  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    gba_store16(gba,gui->mem_view_address,v);
+  }
+  v = gba_read8(gba,gui->mem_view_address);
+  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    gba_store8(gba,gui->mem_view_address,v);
+  }
+  igEnd();
+}
 
 void gba_draw_io_state(gba_t* gba){
   igBegin("MMIO", 0,0);
@@ -963,7 +981,10 @@ static void frame(void) {
   se_update_frame();
   igPopStyleVar(2);
   igEnd();
-  if(gui_state.draw_debug_menu)gba_draw_io_state(&gba); 
+  if(gui_state.draw_debug_menu){
+    gba_draw_io_state(&gba); 
+    gba_draw_mem_debug_state(&gui_state, &gba); 
+  }
 
   /*=== UI CODE ENDS HERE ===*/
 
