@@ -693,6 +693,7 @@ typedef struct{
 typedef struct{
   bool last_enable; 
   uint16_t reload_value; 
+  uint16_t pending_reload_value; 
   uint16_t prescaler_timer;
   uint16_t elapsed_audio_samples;
   int startup_delay;
@@ -725,11 +726,16 @@ typedef struct gba_t{
   uint32_t second_target_buffer[GBA_LCD_W];
   uint8_t window[GBA_LCD_W];
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
+  // Some HW has up to a 4 cycle delay before its IF propagates. 
+  // This array acts as a FIFO to keep track of that. 
+  uint16_t pipelined_if[5];
+  int active_if_pipe_stages; 
 } gba_t; 
 
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
-static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate);
-
+static FORCE_INLINE void gba_tick_timers(gba_t* gba);
+static void gba_compute_timers(gba_t* gba); 
+static void FORCE_INLINE gba_send_interrupt(gba_t*gba,int delay,int if_bit);
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
 static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only);
@@ -838,6 +844,8 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
 }
 static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+  // 8 bit ops are not supported on VRAM or ROM
+  if(baddr>=0x05000000&&baddr<0x0e000000)return;
   bool read_only;
   uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
@@ -850,7 +858,6 @@ static FORCE_INLINE void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data
 static FORCE_INLINE uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.io[baddr&0xffff];}
 static FORCE_INLINE uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xffff));}
 static FORCE_INLINE uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xffff));}
-
 static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*4]={
@@ -1143,7 +1150,7 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
   // Force recomputing timers on timer read
-  if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_tick_timers(gba,0,true);
+  if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_compute_timers(gba);
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
@@ -1171,15 +1178,16 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
 
     return true; 
   }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
-    gba_tick_timers(gba,0,true);
+    gba_compute_timers(gba);
+    int timer_off = (address_u32-GBA_TM0CNT_L)/4;
     if(word_mask&0xffff){
-      int timer_off = (address_u32-GBA_TM0CNT_L)/4;
-      gba->timers[timer_off+0].reload_value =word_data&(word_mask&0xffff);
+      gba->timers[timer_off+0].pending_reload_value = word_data&(word_mask&0xffff);
     }
     if(word_mask&0xffff0000){
       gba_store16(gba,address_u32+2,(word_data>>16)&0xffff);
+      gba->timers[timer_off+0].reload_value =gba->timers[timer_off+0].pending_reload_value;
     }
-    gba_tick_timers(gba,0,true);
+    gba->timer_ticks_before_event=0;
     return true;
   }else if(address==GBA_HALTCNT){
     gba->halt = true;
@@ -1282,8 +1290,8 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
-  gba->ppu.scan_clock+=cycles;
+static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
+  gba->ppu.scan_clock+=1;
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
@@ -1354,10 +1362,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, int cycles, bool skip_render){
         }
       }
     }
-    if(new_if){
-      new_if |= gba_io_read16(gba,GBA_IF); 
-      gba_io_store16(gba,GBA_IF,new_if);
-    }
+    gba_send_interrupt(gba,4,new_if);
   }
 
   if(skip_render)return; 
@@ -1755,9 +1760,7 @@ static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
     if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
 
     if(if_bit&&!gba->prev_key_interrupt){
-      if_bit &= gba_io_read16(gba,GBA_IE); 
-      if_bit |= gba_io_read16(gba,GBA_IF); 
-      gba_io_store16(gba,GBA_IF,if_bit);
+      gba_send_interrupt(gba,4,if_bit);
       gba->prev_key_interrupt = true;
     }else gba->prev_key_interrupt = false;
 
@@ -1818,6 +1821,9 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           }
           gba->dma[i].startup_delay=-1;
         }
+        if(dst_addr_ctl==3){        
+          gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
+        }
         bool last_vblank = gba->dma[i].last_vblank;
         bool last_hblank = gba->dma[i].last_hblank;
         gba->dma[i].last_vblank = gba->ppu.last_vblank;
@@ -1834,6 +1840,12 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           //Video dma starts at scanline 2
           if(vcount<2)continue;
           if(vcount==161)dma_repeat=false;
+        }
+        if(dst_addr_ctl==3){
+          gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
+          //GBA Suite says that these need to be force aligned
+          if(type) gba->dma[i].dest_addr&=~3;
+          else gba->dma[i].dest_addr&=~1;
         }
         if(gba->dma[i].source_addr>=0x08000000&&gba->dma[i].dest_addr>=0x08000000){
           force_first_write_sequential=true;
@@ -1972,7 +1984,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       }
       
       if(gba->dma[i].current_transaction>=cnt){
-        if(dst_addr_ctl==0)     dst+=cnt*transfer_bytes;
+        if(dst_addr_ctl==0||dst_addr_ctl==3)     dst+=cnt*transfer_bytes;
         else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
         if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
         else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
@@ -1981,12 +1993,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         gba->dma[i].dest_addr=dst;
 
         if(irq_enable){
-          uint16_t if_val = gba_io_read16(gba,GBA_IF);
           uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
-          if(if_bit){
-            if_val |= if_bit;
-            gba_io_store16(gba,GBA_IF,if_val);
-          }
+          gba_send_interrupt(gba,4,if_bit);
         }
         if(i==0&&mode==3)mode=0;
         if(!dma_repeat||mode==0){
@@ -1997,12 +2005,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           gba_io_store16(gba, GBA_DMA0CNT_H+12*i,cnt_h);
         }else{
           gba->dma[i].current_transaction=0;
-          if(dst_addr_ctl==3){
-            gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
-            //GBA Suite says that these need to be force aligned
-            if(type) gba->dma[i].dest_addr&=~3;
-            else gba->dma[i].dest_addr&=~1;
-          }
         }
       }
     }
@@ -2026,21 +2028,19 @@ static FORCE_INLINE void gba_tick_sio(gba_t* gba){
   if(active){
    
     if(irq_enabled){
-      uint16_t if_val = gba_io_read16(gba,GBA_IF);
       uint16_t if_bit = 1<<(GBA_INT_SERIAL);
-      if(if_bit){
-        if_val |= if_bit;
-        gba_io_store16(gba,GBA_IF,if_val);
-      }
+      gba_send_interrupt(gba,4,if_bit);
     }
     siocnt&= ~(1<<7);
     gba_io_store16(gba,GBA_SIOCNT,siocnt);
   }
 }
-static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recalculate){
-  gba->deferred_timer_ticks+=ticks;
-  if(gba->deferred_timer_ticks<gba->timer_ticks_before_event&&force_recalculate==false)return; 
-  ticks = gba->deferred_timer_ticks; 
+static FORCE_INLINE void gba_tick_timers(gba_t* gba){
+  gba->deferred_timer_ticks+=1;
+  if(gba->deferred_timer_ticks>=gba->timer_ticks_before_event)gba_compute_timers(gba); 
+}
+static void gba_compute_timers(gba_t* gba){
+  int ticks = gba->deferred_timer_ticks; 
   gba->deferred_timer_ticks=0;
   int last_timer_overflow = 0; 
   int timer_ticks_before_event = 32768; 
@@ -2102,13 +2102,10 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks, bool force_recal
         int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
         if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
+      gba->timers[t].reload_value=gba->timers[t].pending_reload_value;
       if(last_timer_overflow && irq_en){
         uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
-        if(if_bit){
-          uint16_t if_val = gba_io_read16(gba,GBA_IF);
-          if_val |= if_bit;
-          gba_io_store16(gba,GBA_IF,if_val);
-        }
+        gba_send_interrupt(gba,4,if_bit);        
       }
       gba_io_store16(gba,GBA_TM0CNT_L+t*4,value);
     }else last_timer_overflow=0;
@@ -2139,6 +2136,28 @@ static FORCE_INLINE float gba_bandlimited_square(float t, float duty_cycle,float
   y -= gba_polyblep(t,dt);
   y += gba_polyblep(t2,dt);
   return y;
+}
+static FORCE_INLINE void gba_send_interrupt(gba_t*gba,int delay,int if_bit){
+  if(if_bit){
+    gba->active_if_pipe_stages|=1<<delay;
+    gba->pipelined_if[delay]|= if_bit;
+  }
+}
+static FORCE_INLINE void gba_tick_interrupts(gba_t*gba){
+  if(gba->active_if_pipe_stages){
+    uint16_t if_bit = gba->pipelined_if[0];
+    if(if_bit){
+      uint16_t if_val = gba_io_read16(gba,GBA_IF);
+      if_val |= if_bit;
+      gba_io_store16(gba,GBA_IF,if_val);
+    }
+    gba->pipelined_if[0]=gba->pipelined_if[1];
+    gba->pipelined_if[1]=gba->pipelined_if[2];
+    gba->pipelined_if[2]=gba->pipelined_if[3];
+    gba->pipelined_if[3]=gba->pipelined_if[4];
+    gba->pipelined_if[4]=0;
+    gba->active_if_pipe_stages>>=1;
+  }
 }
 static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
   
@@ -2438,28 +2457,36 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
           if(int_if)gba->halt = false;
           ticks=4;
         }else{
-          if(int_if){
-            if(int_if)int_if &= gba_io_read16(gba,GBA_IE);
-            uint32_t ime = gba_io_read32(gba,GBA_IME);
-            if(SB_BFE(ime,0,1)==1)arm7_process_interrupts(&gba->cpu, int_if);
-          }
           gba->mem.requests=0;
-          arm7_exec_instruction(&gba->cpu);
-          ticks = gba->mem.requests; 
+          if(int_if){
+            int_if &= gba_io_read16(gba,GBA_IE);
+            uint32_t ime = gba_io_read32(gba,GBA_IME);
+            if(SB_BFE(ime,0,1)==1){
+              gba->cpu.i_cycles=0;
+              arm7_process_interrupts(&gba->cpu, int_if);
+              ticks=gba->cpu.i_cycles;
+            }
+          }
+          if(!ticks){
+            arm7_exec_instruction(&gba->cpu);
+            ticks = gba->mem.requests; 
+          }
         }
         bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
         breakpoint |= gba->cpu.trigger_breakpoint;
         if(breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       last_tick=ticks;
-      for(int t = 0;t<ticks;++t){
-        gba_tick_ppu(gba,1,frames_to_render>1);
-      }
       gba_tick_sio(gba);
-      gba_tick_timers(gba,ticks,false);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
       gba_tick_audio(gba, emu,delta_t);
+
+      for(int t = 0;t<ticks;++t){
+        gba_tick_interrupts(gba);
+        gba_tick_timers(gba);
+        gba_tick_ppu(gba,frames_to_render>1);
+      }
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;

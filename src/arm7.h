@@ -427,6 +427,7 @@ static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupt
     cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x12;
     //Disable interrupts(set I bit)
     cpu->registers[CPSR] |= 1<<7;
+    cpu->i_cycles=2;
     arm7_set_thumb_bit(cpu,false); 
   }
 }
