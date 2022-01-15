@@ -911,6 +911,7 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   if(L==1){ // Load
     uint32_t data = H ? arm7_read16(cpu->user_data,addr): arm7_read8(cpu->user_data,addr);
     if(S){
+      data&=0xffff;
       // Unaligned signed half words and signed byte loads sign extend the byte 
       if(H&& !(addr&1)) {
         data|= 0xffff0000*ARM7_BFE(data,15,1);
@@ -1005,7 +1006,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   //   mem[Rn+12] = R7
   //   Rn+=12
 
-  int addr = arm7_reg_read(cpu,Rn);
+  int addr = arm7_reg_read_r15_adj(cpu,Rn,4);
   int increment = U? 4: -4;
   int num_regs = 0; 
   for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
@@ -1026,7 +1027,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   // Check if other people do this to. 
   int r15_off = arm7_get_thumb_bit(cpu)? 4:8;
   // Address are word aligned
-  addr&=~3;
+  //addr&=~3;
   int cycle = 0; 
   int last_bank = -1;
   for(int i=0;i<16;++i){
@@ -1038,7 +1039,10 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // When S is set the registers are read from the user bank
     int reg_index = S ? i : arm7_reg_index(cpu,i);
     //Store happens before writeback 
-    if(!L) arm7_write32(cpu->user_data, addr,cpu->registers[reg_index] + (i==15?r15_off:0));
+    int a = addr;
+    //Inexplicablly SRAM accesses are not DWORD aligned. GBA suite memory test can be used to verify this. 
+    if((a&0xfe000000)!=0x0e000000)a&=~3;
+    if(!L) arm7_write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
 
     //Writeback happens on second cycle
     if(++cycle==1 && w){
@@ -1048,7 +1052,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // R15 is stored at PC+12
    if(L){
       int bank = ARM7_BFE(addr,24,8);
-      cpu->registers[reg_index]=arm7_read32_seq(cpu->user_data, addr,bank==last_bank);
+      cpu->registers[reg_index]=arm7_read32_seq(cpu->user_data, a,bank==last_bank);
       last_bank=bank;
    }
 
@@ -1312,7 +1316,7 @@ static FORCE_INLINE void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode){
       cpu->i_cycles++;
       break;          
     case 3: //Load Sign Extended Half
-      data = arm7_read16(cpu->user_data,addr);
+      data = arm7_read16(cpu->user_data,addr)&0xffff;
       cpu->i_cycles++;
       //Unaligned halfwords sign extend the byte
       if((addr&1)&&ARM7_BFE(data,7,1))data|=0xffffff00;

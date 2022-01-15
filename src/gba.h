@@ -642,6 +642,7 @@ typedef struct {
   uint32_t requests;
   uint32_t bios_word;
   uint32_t cartopen_bus; 
+  uint32_t sram_word;
   uint8_t wait_state_table[16*4];
   // Tracks the place of the squashable pipeline bubble that enters the pipeline after a single cycle data read
   // Each bit represents one clock cycle in time with bit 0 meaning the current cycle of the last stage of the 
@@ -830,22 +831,27 @@ static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uin
   }
 }
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
-  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));
   bool read_only;
   uint32_t *val=gba_dword_lookup(gba,baddr,&read_only);
   if(!read_only)*val= data;
 }
 static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
-  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
   bool read_only;
   uint32_t* val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,1,1);
   if(!read_only)((uint16_t*)val)[offset]=data; 
 }
 static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
-  if((baddr&0xE000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+  // 8 bit stores to palette mirror across 8 bit halves
+  if((baddr&0xff000000)==0x5000000||((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x000FFFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
   // 8 bit ops are not supported on VRAM or ROM
-  if(baddr>=0x05000000&&baddr<0x0e000000)return;
+  if(baddr>=0x06000000&&baddr<0x0e000000)return;
   bool read_only;
   uint32_t *val = gba_dword_lookup(gba,baddr,&read_only);
   int offset = SB_BFE(baddr,0,2);
@@ -1054,8 +1060,8 @@ static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t 
 bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
 void gba_reset(gba_t*gba);
  
-static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*read_only){
-  baddr&=0xffffffffc;
+static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*read_only){
+  uint32_t baddr=addr&0xffffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
 
   *read_only= false; 
@@ -1096,15 +1102,17 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr,bool*r
       }
       break;
     case 0xE:
-      if(gba->cart.backup_type==GBA_BACKUP_SRAM) ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
-      else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
+    case 0xF:
+      if(gba->cart.backup_type==GBA_BACKUP_SRAM){
+        gba->mem.sram_word= gba->mem.cart_backup[(addr&0x7fff)]*0x01010101;
+        ret = &gba->mem.sram_word;
+     }else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
       else{
         //Flash
         if(gba->cart.in_chip_id_mode&&baddr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
         else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
       }
       break;
-    case 0xF: break;
 
   }
   /*if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
@@ -1863,6 +1871,11 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
 
         if(i!=3)cnt&=0x3fff;
         if(cnt==0)cnt = i==3? 0x10000: 0x4000;
+
+        static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+        static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
+        gba->dma[i].source_addr&=src_mask[i];
+        gba->dma[i].dest_addr  &=dst_mask[i];
         gba_io_store16(gba,GBA_DMA0CNT_L+12*i,cnt);
       }
       const static int dir_lookup[4]={1,-1,0,1};
@@ -1876,6 +1889,10 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       uint32_t src = gba->dma[i].source_addr;
       uint32_t dst = gba->dma[i].dest_addr;
       uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
+
+      // ROM ignores direction and always increments
+      if(src>=0x08000000&&src<0x0e000000) src_dir=1;
+      if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
 
       bool skip_dma = false;
       // EEPROM DMA transfers
@@ -1959,24 +1976,22 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         // and Tomb Raider
         if(gba->dma[i].current_transaction<cnt){
           int x = gba->dma[i].current_transaction++;
+          int dst_addr = dst+x*transfer_bytes*dst_dir;
+          int src_addr = (src+x*transfer_bytes*src_dir);
           if(type){
-            int src_addr = (src+x*4*src_dir)&0x0fffffff;
             if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
               gba->dma[i].latched_transfer = gba_dma_read32(gba,src_addr);
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
             }
-            gba_dma_write32(gba,dst+x*4*dst_dir,gba->dma[i].latched_transfer);
-            ticks+=gba_compute_access_cycles_dma(gba, dst+x*4*dst_dir, x!=0||force_first_write_sequential? 2:3);
+            gba_dma_write32(gba,dst_addr,gba->dma[i].latched_transfer);
+            ticks+=gba_compute_access_cycles_dma(gba, dst_addr, x!=0||force_first_write_sequential? 2:3);
           }else{
-            int src_addr = (src+x*2*src_dir)&0x0fffffff;
-            int dst_addr = dst+x*2*dst_dir;
             int v = 0;
             if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
               v= gba->dma[i].latched_transfer = (gba_dma_read16(gba,src_addr))&0xffff;
               gba->dma[i].latched_transfer |= gba->dma[i].latched_transfer<<16;
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 0:1);
             }else v = gba->dma[i].latched_transfer>>(((dst_addr)&0x3)*8);
-            v&=0xffff;
             gba_dma_write16(gba,dst_addr,v&0xffff);
             ticks+=gba_compute_access_cycles_dma(gba, dst_addr, x!=0||force_first_write_sequential? 0:1);
           }
