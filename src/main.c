@@ -32,6 +32,11 @@
 #include "stb_image.h"
 #include "load_rom_png.h"
 
+static float se_dpi_scale(){
+  float dpi_scale = sapp_dpi_scale();
+  if(dpi_scale<=0)dpi_scale=1.;
+  return dpi_scale;
+}
 const char* se_keycode_to_string(int keycode){
   switch(keycode){
     default:           return "Unknown";
@@ -412,7 +417,7 @@ void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int 
   sg_image *image = se_get_image();
   if(!image)return; 
   *image =  sg_make_image(&desc);
-  float dpi_scale = sapp_dpi_scale();
+  float dpi_scale = se_dpi_scale();
   ImDrawList_AddImage(igGetWindowDrawList(),
     (ImTextureID)(uintptr_t)image->id,
     (ImVec2){x/dpi_scale,y/dpi_scale},
@@ -429,9 +434,9 @@ float sb_distance(float * a, float* b, int dims){
 }
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   if(state->run_mode!=SB_MODE_RUN)return;
-  controller_h/=sapp_dpi_scale();
-  float win_w = igGetWindowWidth()/sapp_dpi_scale();
-  float win_h = igGetWindowHeight()/sapp_dpi_scale();
+  controller_h/=se_dpi_scale();
+  float win_w = igGetWindowWidth()/se_dpi_scale();
+  float win_h = igGetWindowHeight()/se_dpi_scale();
   ImVec2 pos; 
   igGetWindowPos(&pos);
   float win_x = pos.x;
@@ -488,8 +493,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
   for(int i=0; i<SAPP_MAX_TOUCHPOINTS;++i){
     if(p<max_points&&gui_state.touch_points[i].active){
-      points[p][0]=gui_state.touch_points[i].pos[0]/sapp_dpi_scale();
-      points[p][1]=gui_state.touch_points[i].pos[1]/sapp_dpi_scale();
+      points[p][0]=gui_state.touch_points[i].pos[0]/se_dpi_scale();
+      points[p][1]=gui_state.touch_points[i].pos[1]/se_dpi_scale();
       ++p;
     }
   }
@@ -626,10 +631,10 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
 }
 
 void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
-  x/=sapp_dpi_scale();
-  y/=sapp_dpi_scale();
-  w/=sapp_dpi_scale();
-  h/=sapp_dpi_scale();
+  x/=se_dpi_scale();
+  y/=se_dpi_scale();
+  w/=se_dpi_scale();
+  h/=se_dpi_scale();
   static bool last_visible = false;
   if(visible==false){
 #if defined(EMSCRIPTEN)
@@ -698,10 +703,10 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
   //printf("Open: %s\n",file_name);
   //free(file_name);
 #endif
-  w*=sapp_dpi_scale();
-  h*=sapp_dpi_scale();
-  x*=sapp_dpi_scale();
-  y*=sapp_dpi_scale();
+  w*=se_dpi_scale();
+  h*=se_dpi_scale();
+  x*=se_dpi_scale();
+  y*=se_dpi_scale();
   int x_off = (w-load_rom_im_w)*0.5;
   int y_off = (h-load_rom_im_h)*0.5;
   se_draw_image(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true);
@@ -793,8 +798,8 @@ void se_update_frame() {
   }
   ImVec2 v;
   igGetWindowPos(&v);
-  lcd_render_x+=v.x*sapp_dpi_scale();
-  lcd_render_y+=v.y*sapp_dpi_scale();
+  lcd_render_x+=v.x*se_dpi_scale();
+  lcd_render_y+=v.y*se_dpi_scale();
   if(emu_state.system==SYSTEM_GBA){
     se_draw_image(gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
   }else{
@@ -917,7 +922,7 @@ static void init(void) {
       .context = sapp_sgcontext()
   });
   stm_setup();
-  simgui_setup(&(simgui_desc_t){ .dpi_scale= sapp_dpi_scale()});
+  simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
 
   // initial clear color
   gui_state.pass_action = (sg_pass_action) {
@@ -972,7 +977,7 @@ static void frame(void) {
   igPopStyleVar(1);
 
   igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
-  igSetNextWindowSize((ImVec2){width, height-menu_height*sapp_dpi_scale()}, ImGuiCond_Always);
+  igSetNextWindowSize((ImVec2){width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
   igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
   igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration
@@ -996,7 +1001,7 @@ static void frame(void) {
     init=true;
     ImFontAtlas* atlas = igGetIO()->Fonts;    
     ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
-      atlas,karla_compressed_data,karla_compressed_size,13*sapp_dpi_scale(),NULL,NULL);
+      atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
     int built = 0;
  
 
@@ -1020,7 +1025,7 @@ static void frame(void) {
     printf("Font: %p %d\n",igGetIO()->FontDefault,built);
     igGetIO()->FontDefault=font;
     igGetIO()->Fonts=atlas;
-    igGetIO()->FontGlobalScale/=sapp_dpi_scale();
+    igGetIO()->FontGlobalScale/=se_dpi_scale();
   }
   sg_commit();
 
