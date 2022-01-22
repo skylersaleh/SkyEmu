@@ -1770,6 +1770,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
           int frame_sel = SB_BFE(dispcnt,4,1);
           int addr = p*1+0xA000*frame_sel; 
           uint8_t pallete_id = gba->mem.vram[addr];
+          if(pallete_id==0)continue;
           col = *(uint16_t*)(gba->mem.palette+GBA_BG_PALETTE+pallete_id*2);
         }else if(bg_mode==5){
           int p = bg_x+bg_y*160;
