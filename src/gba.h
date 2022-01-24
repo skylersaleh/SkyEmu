@@ -1250,6 +1250,11 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*re
         if(addr>=gba->cart.rom_size){
           ret = (uint32_t*)(&gba->mem.cartopen_bus);
           *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
+          // Return ready when done writting EEPROM (required by Minish Cap)
+          if(gba->cart.backup_type==GBA_BACKUP_EEPROM){
+            ret = (uint32_t*)&gba->mem.eeprom_word;
+            *ret = 1; 
+          }
         }
         if(req_size!=4){
           int mask = (baddr&2)? 0xffff0000: 0xffff;
@@ -1305,13 +1310,13 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*re
   return ret;
 }
 static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
-  int free_entries = (gba->audio.fifo[fifo].write_ptr+1-gba->audio.fifo[fifo].read_ptr)&0x1f; 
+  int free_entries = (((gba->audio.fifo[fifo].write_ptr+1))-gba->audio.fifo[fifo].read_ptr)&0x1f; 
   if(free_entries){
     gba->audio.fifo[fifo].write_ptr = (gba->audio.fifo[fifo].write_ptr+1)&0x1f;
     gba->audio.fifo[fifo].data[gba->audio.fifo[fifo].write_ptr]= data; 
   }else{
-    gba->audio.fifo[fifo].write_ptr=gba->audio.fifo[fifo].read_ptr = 0; 
-    printf("Tried to push audio samples to full fifo\n");
+    //gba->audio.fifo[fifo].write_ptr=gba->audio.fifo[fifo].read_ptr = 0; 
+    //printf("Tried to push audio samples to full fifo\n");
   }
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
@@ -2483,13 +2488,14 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     int timer = SB_BFE(soundcnt_h,10+i*4,1);
     bool reset = SB_BFE(soundcnt_h,11+i*4,1);
     if(reset){
-      gba->audio.fifo[i].read_ptr=gba->audio.fifo[i].write_ptr=0;  
+      gba->audio.fifo[i].read_ptr=31;
+      gba->audio.fifo[i].write_ptr=0;  
       for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
       gba->activate_dmas=true;
     }
     int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
     //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
-    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr-gba->audio.fifo[i].read_ptr)&0x1f)){
+    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
       gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
       samples_to_pop--;
       gba->activate_dmas=true;
