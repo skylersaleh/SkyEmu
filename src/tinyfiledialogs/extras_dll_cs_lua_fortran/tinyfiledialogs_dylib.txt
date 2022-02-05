@@ -1,0 +1,2 @@
+clang -c ../tinyfiledialogs.c 
+clang -dynamiclib tinyfiledialogs.o -o tinyfiledialogs.dylib
