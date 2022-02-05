@@ -4,7 +4,7 @@ project(SkyBoy)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
-
+set(LINK_LIBS "")
 if (EMSCRIPTEN)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1  -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=1 ")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=1 ")
@@ -29,6 +29,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL Linux)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     find_package(ALSA REQUIRED)
+endif()
+
+# TinyFileDialogs
+if ((NOT IOS) OR (NOT EMSCRIPTEN) OR (NOT ANDROID))
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
+    add_library(tinyfd STATIC 
+        src/tinyfiledialogs/tinyfiledialogs.h
+        src/tinyfiledialogs/tinyfiledialogs.c
+    )
+    target_include_directories(tinyfd INTERFACE src/tinyfiledialogs)
+    set(LINK_LIBS ${LINK_LIBS} tinyfd)
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
@@ -78,7 +90,7 @@ endif()
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=1 --closure 1 ")
 endif ()
-
-target_link_libraries(${PROJECT_NAME} sokol ${ALSA_LIBRARIES})
+set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 
 # That's it! You should have an example executable that you can run. Have fun!

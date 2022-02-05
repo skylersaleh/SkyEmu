@@ -31,7 +31,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "load_rom_png.h"
-
+#ifdef USE_TINY_FILE_DIALOGS
+#include "tinyfiledialogs.h"
+#endif
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
@@ -378,7 +380,8 @@ void sb_poll_controller_input(sb_joy_t* joy){
   joy->l = gui_state.button_state[SAPP_KEYCODE_U];
   joy->r = gui_state.button_state[SAPP_KEYCODE_I];
 }
-void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
+
+void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
   if(has_alpha==false){
@@ -418,15 +421,38 @@ void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int 
   if(!image)return; 
   *image =  sg_make_image(&desc);
   float dpi_scale = se_dpi_scale();
+  unsigned tint = opacity*0xff;
+  tint*=0x010101;
+  tint|=0xff000000;
   ImDrawList_AddImage(igGetWindowDrawList(),
     (ImTextureID)(uintptr_t)image->id,
     (ImVec2){x/dpi_scale,y/dpi_scale},
     (ImVec2){(x+render_width)/dpi_scale,(y+render_height)/dpi_scale},
     (ImVec2){0,0},(ImVec2){1,1},
-    0xffffffff);
+    tint);
   if(has_alpha==false)free(rgba8_data);
 }
+void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
+  return se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,1.0);
+}
+bool se_draw_image_button(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
+  float dpi_scale = se_dpi_scale();
+  igPushStyleColorVec4(ImGuiCol_Button, (ImVec4){0.f, 0.f, 0.f, 0.f});
+  igPushStyleColorVec4(ImGuiCol_ButtonActive, (ImVec4){0.f, 0.f, 0.f, 0.0f});
+  igPushStyleColorVec4(ImGuiCol_ButtonHovered, (ImVec4){0.f, 0.f, 0.f, 0.0f});
+  igSetCursorScreenPos((ImVec2){x/dpi_scale,y/dpi_scale});
+  bool clicked = igButtonEx("",
+    (ImVec2){(render_width)/dpi_scale,(render_height)/dpi_scale},
+    ImGuiButtonFlags_None);
 
+  float opacity = 1.0; 
+  if(igIsItemActive())opacity=0.6;
+  else if(igIsItemHovered(ImGuiHoveredFlags_None))opacity=0.8;
+  se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,opacity);
+
+  igPopStyleColor(3);
+  return clicked; 
+}
 float sb_distance(float * a, float* b, int dims){
   float v = 0;
   for(int i=0;i<dims;++i)v+=(a[i]-b[i])*(a[i]-b[i]);
@@ -700,8 +726,6 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
 
   if(new_path[0])se_load_rom(new_path);
   free(new_path);
-  //printf("Open: %s\n",file_name);
-  //free(file_name);
 #endif
   w*=se_dpi_scale();
   h*=se_dpi_scale();
@@ -709,9 +733,16 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
   y*=se_dpi_scale();
   int x_off = (w-load_rom_im_w)*0.5;
   int y_off = (h-load_rom_im_h)*0.5;
-  se_draw_image(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true);
-
-
+  if(se_draw_image_button(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true)){
+    #ifdef USE_TINY_FILE_DIALOGS
+      char const * filters[3] = { "*.gb", "*.gba","*.gbc" };
+      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(filters)/sizeof(filters[0]),
+                                          filters,NULL,0);
+      if (outPath){
+          se_load_rom(outPath);
+      }
+    #endif
+  }
 }
 
 
