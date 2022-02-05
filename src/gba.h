@@ -1502,8 +1502,19 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
             if(!bg_en)continue;
             int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
             int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
-            gba->ppu.aff[aff].internal_bgx+=b;
-            gba->ppu.aff[aff].internal_bgy+=d;
+            uint16_t bgcnt = gba_io_read16(gba, GBA_BG2CNT+aff*2);
+            bool mosaic = SB_BFE(bgcnt,6,1);
+            if(mosaic){
+              uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+              int mos_y = SB_BFE(mos_reg,4,4)+1;
+              if((lcd_y%mos_y)==0){
+                gba->ppu.aff[aff].internal_bgx+=b*mos_y;
+                gba->ppu.aff[aff].internal_bgy+=d*mos_y;
+              }
+            }else{
+              gba->ppu.aff[aff].internal_bgx+=b;
+              gba->ppu.aff[aff].internal_bgy+=d;
+            }
           }
         }
       }
@@ -1617,6 +1628,13 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
           for(int x = x_start; x< x_end;++x){
             int sx = (x-x_coord);
             int sy = (lcd_y-y_coord)&0xff;
+            if(mosaic){
+              uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+              int mos_x = SB_BFE(mos_reg,8,4)+1;
+              int mos_y = SB_BFE(mos_reg,12,4)+1;
+              sx = ((x/mos_x)*mos_x-x_coord);
+              sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
+            }
             if(rot_scale){
               uint32_t param_base = rotscale_param*0x20; 
               int32_t a = *(int16_t*)(gba->mem.oam+param_base+0x6);
@@ -1748,6 +1766,13 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
           // Shift lcd_coords into fixed point
           int64_t x2 = a*lcd_x + (((int64_t)bgx));
           int64_t y2 = c*lcd_x + (((int64_t)bgy));
+          if(mosaic){
+            int16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+            int mos_x = SB_BFE(mos_reg,0,4)+1;
+            x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
+            y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
+          }
+
 
           bg_x = (x2>>8);
           bg_y = (y2>>8);
@@ -1766,6 +1791,13 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
           voff=(voff<<7)>>7;
           bg_x = (hoff+lcd_x);
           bg_y = (voff+lcd_y);
+          if(mosaic){
+            uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+            int mos_x = SB_BFE(mos_reg,0,4)+1;
+            int mos_y = SB_BFE(mos_reg,4,4)+1;
+            bg_x = hoff+(lcd_x/mos_x)*mos_x;
+            bg_y = voff+(lcd_y/mos_y)*mos_y;
+          }
         }
         if(bg_mode==3){
           int p = bg_x+bg_y*240;
@@ -1955,7 +1987,6 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
 static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   int ticks =0;
   gba->activate_dmas=false;
-
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
@@ -2700,11 +2731,17 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 }
 
 void gba_reset(gba_t*gba){
+  memset(&gba->mem.io,0,sizeof(gba->mem.io));
+  memset(&gba->mem.vram,0,sizeof(gba->mem.vram));
+  memset(&gba->mem.palette,0,sizeof(gba->mem.palette));
+  memset(&gba->mem.wram0,0,sizeof(gba->mem.wram0));
+  memset(&gba->mem.wram1,0,sizeof(gba->mem.wram1));
+  memset(&gba->ppu,0,sizeof(gba->ppu));
+  memset(&gba->dma,0,sizeof(gba->dma)*4);
+
   gba->cpu = arm7_init(gba);
   gba->mem.openbus_word = gba->mem.cart_rom[0];
-  memset(gba->mem.io,0,sizeof(gba->mem.io));
-  memset(gba->mem.wram0,0,sizeof(gba->mem.wram0));
-  memset(gba->mem.wram1,0,sizeof(gba->mem.wram1));
+  
   for(int bg = 2;bg<4;++bg){
     gba_io_store16(gba,GBA_BG2PA+(bg-2)*0x10,1<<8);
     gba_io_store16(gba,GBA_BG2PB+(bg-2)*0x10,0<<8);
