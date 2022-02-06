@@ -10,9 +10,25 @@ if (EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=1 ")
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
 endif ()
- 
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ")
-set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} ") 
+if (MSVC)
+    # Perform extremely aggressive optimization on Release builds:
+    # Flags on Visual Studio 2010 and newer:
+    # Runtime library: Multi-threaded (/MT) as opposed to default 'Multi-threaded DLL' - static runtime library allows better LTCG inlining opportunities.
+    # Optimization: Full Optimization (/Ox)
+    # Inline Function Expansion: Any Suitable (/Ob2)
+    # Enable Intrinsic Functions: Yes (/Oi)
+    # Favor Size Or Speed: Favor fast code (/Ot)
+    # Enable Fiber-Safe Optimizations: Yes (/GT)
+    # Enable String Pooling: Yes (/GF)
+    # Buffer Security Check: No (/GS-)
+    # Floating Point Model: Fast (/fp:fast)
+    # Enable Floating Point Exceptions: No (/fp:except-)
+    # Build with Multiple Processes (/MP)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} "/Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} "/Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
+
+endif()
+
 if (NOT EMSCRIPTEN)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3")
   set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -g -O3") 
