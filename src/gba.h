@@ -1152,13 +1152,11 @@ static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
 }
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, bool seq){
   gba_compute_access_cycles(user_data,address,seq?2:3);
-  uint32_t value = gba_dma_read32((gba_t*)user_data,address);
-  return arm7_rotr(value,(address&0x3)*8);
+  return gba_dma_read32((gba_t*)user_data,address);
 }
 static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address, bool seq){
   gba_compute_access_cycles(user_data,address,seq?0:1);
-  uint16_t value = gba_dma_read16((gba_t*)user_data,address);
-  return arm7_rotr(value,(address&0x1)*8);
+  return gba_dma_read16((gba_t*)user_data,address);
 }
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
@@ -2015,7 +2013,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       int  mode = SB_BFE(cnt_h,12,2);
       bool irq_enable = SB_BFE(cnt_h,14,1);
       bool force_first_write_sequential = false;
-    
+      int transfer_bytes = type? 4:2; 
+      bool skip_dma = false;
       if(gba->dma[i].current_transaction==0){
         if(gba->dma[i].startup_delay>=0){
           gba->dma[i].startup_delay-=last_tick; 
@@ -2073,12 +2072,39 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         gba->dma[i].source_addr&=src_mask[i];
         gba->dma[i].dest_addr  &=dst_mask[i];
         gba_io_store16(gba,GBA_DMA0CNT_L+12*i,cnt);
+        
+        if(src_addr_ctl==0&&(dst_addr_ctl==0||dst_addr_ctl==3)&&cnt>2){
+          int fast_dma_count = cnt-2;
+          int bytes = fast_dma_count*transfer_bytes;
+          bool read_only[4];
+          int src_addr = gba->dma[i].source_addr; 
+          int dst_addr = gba->dma[i].dest_addr; 
+
+          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,&read_only[0],transfer_bytes)+(src_addr&3);
+          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,  &read_only[1],transfer_bytes)+(dst_addr&3);
+          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,&read_only[2],transfer_bytes)+(src_addr&3);
+          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,  &read_only[3],transfer_bytes)+(dst_addr&3);
+          if(source_end-source_start==bytes&&dest_end-dest_start==bytes&&mode!=3){
+            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)&&!read_only[1]&&!read_only[3]){
+              bytes = fast_dma_count*transfer_bytes;
+              memcpy(dest_start,source_start, bytes);
+              gba->dma[i].current_transaction=fast_dma_count;
+              int trans_type = type?2:0;
+              // First non-sequential fetch
+              ticks+=gba_compute_access_cycles_dma(gba, gba->dma[i].dest_addr,trans_type+(force_first_write_sequential?0:1));
+              ticks+=gba_compute_access_cycles_dma(gba, src_addr, trans_type+1);
+              // Remaining sequential fetches
+              ticks+=gba_compute_access_cycles_dma(gba, gba->dma[i].dest_addr, trans_type)*(fast_dma_count-1);
+              ticks+=gba_compute_access_cycles_dma(gba, src_addr, trans_type)*(fast_dma_count-1);
+            }
+          }
+        }
+        
       }
       const static int dir_lookup[4]={1,-1,0,1};
       int src_dir = dir_lookup[src_addr_ctl];
       int dst_dir = dir_lookup[dst_addr_ctl];
 
-      int transfer_bytes = type? 4:2; 
 
       //if(mode==2){printf("Trigger Hblank DMA: %d->%d\n",last_hblank,gba->ppu.last_hblank);}
 
@@ -2090,7 +2116,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       if(src>=0x08000000&&src<0x0e000000) src_dir=1;
       if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
 
-      bool skip_dma = false;
       // EEPROM DMA transfers
       if(i==3 && gba->cart.backup_type==GBA_BACKUP_EEPROM){
         int src_in_eeprom = (src&0x1ffffff)>=gba->cart.rom_size||(src&0x1ffffff)>=0x01ffff00;
@@ -2173,7 +2198,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         if(gba->dma[i].current_transaction<cnt){
           int x = gba->dma[i].current_transaction++;
           int dst_addr = dst+x*transfer_bytes*dst_dir;
-          int src_addr = (src+x*transfer_bytes*src_dir);
+          int src_addr = src+x*transfer_bytes*src_dir;
           if(type){
             if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
               gba->dma[i].latched_transfer = gba_dma_read32(gba,src_addr);
@@ -2667,15 +2692,10 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     gba_tick_rtc(gba);
     gba_tick_keypad(&emu->joy,gba);
-    int max_instructions = 2808960;
-    if(emu->step_frames)max_instructions*=emu->step_frames;
-    if(emu->step_instructions) max_instructions = emu->step_instructions;
     bool prev_vblank = gba->ppu.last_vblank; 
     //Skip emulation of a frame if we get too far ahead the audio playback
-
-    gba->cpu.print_instructions = emu->run_mode ==SB_MODE_STEP;
     static int last_tick =0;
-    for(int i = 0;i<max_instructions;++i){
+    while(true){
       int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
       if(!ticks){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
@@ -2693,14 +2713,13 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
               ticks=gba->cpu.i_cycles;
             }
           }
-          if(!ticks){
+          if(gba->cpu.registers[PC]== emu->pc_breakpoint)gba->cpu.trigger_breakpoint=true;
+          else if(!ticks){
             arm7_exec_instruction(&gba->cpu);
             ticks = gba->mem.requests; 
           }
         }
-        bool breakpoint = gba->cpu.registers[PC]== emu->pc_breakpoint;
-        breakpoint |= gba->cpu.trigger_breakpoint;
-        if(breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
+        if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       last_tick=ticks;
       gba_tick_sio(gba);
