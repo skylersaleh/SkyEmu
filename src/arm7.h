@@ -266,33 +266,31 @@ static arm7_handler_t arm7t_lookup_table[4096] = { 0 };
 
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
-  int mode = ARM7_BFE(cpu->registers[CPSR],0,4);
+  int mode = cpu->registers[CPSR]&0xf;
 
-  const static int8_t lookup[18*16]={
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
-     0, 1, 2, 3, 4, 5, 6, 7,17,18,19,20,21,22,23,15,16,32, //mode 0x1 (fiq)
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,24,25,15,16,33, //mode 0x2 (irq)
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,26,27,15,16,34, //mode 0x3 (svc)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x4 (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x5 (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x6 (inv)
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,28,29,15,16,35, //mode 0x7 (abt)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x8 (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x9 (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xA (inv)
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,30,31,15,16,36, //mode 0xB (undefined)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xC (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xD (inv)
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xE (inv)
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
+  const static int8_t lookup[10*16]={
+     8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
+    17,18,19,20,21,22,23,15,16,32, //mode 0x1 (fiq)
+     8, 9,10,11,12,24,25,15,16,33, //mode 0x2 (irq)
+     8, 9,10,11,12,26,27,15,16,34, //mode 0x3 (svc)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x4 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x5 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x6 (inv)
+     8, 9,10,11,12,28,29,15,16,35, //mode 0x7 (abt)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x8 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0x9 (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xA (inv)
+     8, 9,10,11,12,30,31,15,16,36, //mode 0xB (undefined)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xC (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xD (inv)
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xE (inv)
+     8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
-  int8_t r = lookup[mode*18+reg];
-  if(r==-1){
-    cpu->trigger_breakpoint=true;
-    printf("Undefined ARM mode: %d\n",mode);
-    return 0;
-  }
-  return r;
+  int8_t r = lookup[mode*10+reg-8];
+  if(r!=-1)return r; 
+  cpu->trigger_breakpoint=true;
+  printf("Undefined ARM mode: %d\n",mode);
+  return 0;
 }
 static FORCE_INLINE void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value){
   cpu->registers[arm7_reg_index(cpu,reg)] = value;
@@ -413,11 +411,10 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
 static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
-  if(cpu->log_cmp_file)return; //Log drives interrupts when enabled
+  if(cpu->log_cmp_file||interrupts==0)return; //Log drives interrupts when enabled
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
-  if(I==0 && interrupts){
-
+  if(I==0){
     //Interrupts are enabled when I ==0
     bool thumb = arm7_get_thumb_bit(cpu);
     cpu->registers[R14_irq] = cpu->registers[PC]+4;
@@ -490,6 +487,20 @@ static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
   return false; 
 }
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  if(cpu->prefetch_pc!=cpu->registers[PC]){
+    cpu->registers[PC]&= thumb? ~1 : ~3; 
+
+    cpu->prefetch_opcode[0]=thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
+    cpu->prefetch_opcode[1]=thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+    cpu->prefetch_opcode[2]=thumb? 
+        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true):
+        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+  }
   if(cpu->log_cmp_file){
     fseek(cpu->log_cmp_file,(cpu->executed_instructions+2)*18*4,SEEK_SET);
     uint32_t cmp_regs[18];
@@ -540,52 +551,29 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
       arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
       for(int i=0;i<18;++i)arm7_reg_write(cpu,i,cmp_regs[i]);
     }
-
-  }
-  bool thumb = arm7_get_thumb_bit(cpu);
-
-  if(cpu->prefetch_pc!=cpu->registers[PC]){
-    cpu->registers[PC]&= thumb? ~1 : ~3; 
-
-   cpu->prefetch_opcode[0]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
-   cpu->prefetch_opcode[1]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-   cpu->prefetch_opcode[2]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+    uint32_t opcode = cpu->prefetch_opcode[0];
+    if(thumb==false)printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
+    else printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
   }
   cpu->i_cycles=0;
   cpu->next_fetch_sequential=true;
+  uint32_t opcode = cpu->prefetch_opcode[0];
+  cpu->prefetch_opcode[0] =cpu->prefetch_opcode[1];
+  cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
   if(thumb==false){
-    uint32_t opcode = cpu->prefetch_opcode[0];
-    cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
-    if(cpu->log_cmp_file) printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 4;
     int pref=cpu->prefetch_pc = cpu->registers[PC];
-    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
     if(arm7_check_cond_code(cpu,opcode)){
-      uint32_t old_pc = cpu->registers[PC];
-
       uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     	arm7_lookup_table[key](cpu,opcode);
-      uint32_t new_pc = cpu->registers[PC];
     }
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }else{
-    uint32_t opcode = cpu->prefetch_opcode[0];
-    cpu->prefetch_opcode[0]=cpu->prefetch_opcode[1];
-    if(cpu->log_cmp_file)printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
     cpu->registers[PC] += 2;
     int pref =cpu->prefetch_pc = cpu->registers[PC];
-    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
     uint32_t key = ((opcode>>8)&0xff);
-    uint32_t old_pc = cpu->registers[PC];
     arm7t_lookup_table[key](cpu,opcode);
-    uint32_t new_pc = cpu->registers[PC];
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
