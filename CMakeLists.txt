@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.11) # FetchContent is available in 3.11+
-project(SkyBoy)
+cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
+project(SkyEmu)
 
 
 set(CMAKE_C_STANDARD 11)
@@ -28,8 +28,8 @@ if (MSVC)
     # Exception handling model: Catch C++ exceptions only, assume that "extern C" functions will never throw a C++ exception.
     # Disable all forms of MSVC debug iterator checking in new and old Visual Studios.
     # Causes the application to use the multithread, static version of the run-time library. 
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 /MT")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 /MT")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 ")
 
 endif()
 
@@ -61,6 +61,7 @@ if ((NOT IOS) OR (NOT EMSCRIPTEN) OR (NOT ANDROID))
     )
     target_include_directories(tinyfd INTERFACE src/tinyfiledialogs)
     set(LINK_LIBS ${LINK_LIBS} tinyfd)
+    set_property(TARGET tinyfd PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
@@ -74,6 +75,8 @@ add_library(cimgui STATIC
     src/cimgui/imgui/imgui_tables.cpp
     src/cimgui/imgui/imgui_demo.cpp
     )
+set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
 target_include_directories(cimgui INTERFACE src/cimgui)
 
 #=== LIBRARY: sokol
@@ -95,6 +98,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
         "-framework Metal")
 else()
     add_library(sokol STATIC src/sokol/sokol.c ${SOKOL_HEADERS})
+    set_property(TARGET sokol PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     if (CMAKE_SYSTEM_NAME STREQUAL Linux)
         target_link_libraries(sokol INTERFACE X11 Xi Xcursor GL dl m)
         target_link_libraries(sokol PUBLIC Threads::Threads)
@@ -112,5 +116,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
 endif ()
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
+set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 # That's it! You should have an example executable that you can run. Have fun!
