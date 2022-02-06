@@ -24,8 +24,8 @@ if (MSVC)
     # Floating Point Model: Fast (/fp:fast)
     # Enable Floating Point Exceptions: No (/fp:except-)
     # Build with Multiple Processes (/MP)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} "/Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} "/Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP")
 
 endif()
 
