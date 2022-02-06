@@ -2105,9 +2105,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       int src_dir = dir_lookup[src_addr_ctl];
       int dst_dir = dir_lookup[dst_addr_ctl];
 
-
-      //if(mode==2){printf("Trigger Hblank DMA: %d->%d\n",last_hblank,gba->ppu.last_hblank);}
-
       uint32_t src = gba->dma[i].source_addr;
       uint32_t dst = gba->dma[i].dest_addr;
       uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
@@ -2738,7 +2735,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         if(emu->frame>=emu->step_frames){
           int size = sb_ring_buffer_size(&emu->audio_ring_buff);
           int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-          if(size>1.0*samples_per_buffer)break;
+          if(size>1.0*samples_per_buffer){prev_vblank = gba->ppu.last_vblank;break;}
         }
         frames_to_render--;
       }

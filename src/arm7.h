@@ -489,17 +489,17 @@ static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
   bool thumb = arm7_get_thumb_bit(cpu);
   if(cpu->prefetch_pc!=cpu->registers[PC]){
-    cpu->registers[PC]&= thumb? ~1 : ~3; 
-
-    cpu->prefetch_opcode[0]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC],false):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
-    cpu->prefetch_opcode[1]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-    cpu->prefetch_opcode[2]=thumb? 
-        arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true):
-        arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+    if(thumb){
+      cpu->registers[PC]&=~1;
+      cpu->prefetch_opcode[0]=arm7_read16_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
+      cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+    }else{
+      cpu->registers[PC]&=~3;
+      cpu->prefetch_opcode[0]=arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[2]=arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+    }
   }
   if(cpu->log_cmp_file){
     fseek(cpu->log_cmp_file,(cpu->executed_instructions+2)*18*4,SEEK_SET);
@@ -555,7 +555,6 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     if(thumb==false)printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
     else printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
   }
-  cpu->i_cycles=0;
   cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] =cpu->prefetch_opcode[1];
