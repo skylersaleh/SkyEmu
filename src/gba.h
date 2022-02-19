@@ -1359,8 +1359,19 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     }
     gba->timer_ticks_before_event=0;
     return true;
-  }else if(address==GBA_HALTCNT){
-    gba->halt = true;
+  }else if(address_u32==GBA_POSTFLG){
+    //Only BIOS can update Post Flag and haltcnt
+    if(gba->cpu.registers[15]<0x4000){
+      //Writes to haltcnt halt the CPU
+      if(word_mask&0xff00)gba->halt = true;
+      uint32_t data = gba_io_read32(gba,address_u32);
+      //POST can only be initialized once, then other writes are dropped. 
+      if((word_mask&0xff)&&(data&0xff))word_mask&=~0xff;
+      data&=~word_mask;
+      data|=word_data&word_mask;
+      gba_io_store32(gba,address_u32,data);
+    }
+    return true; 
   /*
   Ignore these for now since it is causing audio pops in Metroid Zero
   }else if(address_u32==GBA_FIFO_A){
@@ -2697,8 +2708,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       if(!ticks){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
         if(gba->halt){
-          if(int_if)gba->halt = false;
-          ticks=4;
+          ticks=2;
+          if(int_if){gba->halt = false;}
         }else{
           gba->mem.requests=0;
           if(int_if){
