@@ -363,7 +363,7 @@ void se_load_rom(const char *filename){
     emu_state.system = SYSTEM_GB;
     emu_state.rom_loaded = true; 
   }
-  if(emu_state.rom_loaded==false)printf("Unknown ROM type: %s\n", filename);
+  if(emu_state.rom_loaded==false)printf("ERROR: Unknown ROM type: %s\n", filename);
   else emu_state.run_mode= SB_MODE_RESET;
   return; 
 }
@@ -968,6 +968,10 @@ static void init(void) {
     .num_packets=16,
     .packet_frames=512
   });
+  if(emu_state.cmd_line_arg_count>=2){
+    se_load_rom(emu_state.cmd_line_args[1]);
+  }
+
 }
 
 static void frame(void) {
@@ -1146,6 +1150,9 @@ static void event(const sapp_event* ev) {
 sapp_desc sokol_main(int argc, char* argv[]) {
   (void)argc;
   (void)argv;
+  emu_state.cmd_line_arg_count =argc;
+  emu_state.cmd_line_args =argv;
+
   return (sapp_desc){
       .init_cb = init,
       .frame_cb = frame,

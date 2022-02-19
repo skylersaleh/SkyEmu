@@ -90,6 +90,8 @@ typedef struct {
   float audio_channel_output[6];
   float mix_l_volume, mix_r_volume;
   float master_volume;
+  int cmd_line_arg_count;
+  char** cmd_line_args;
 } sb_emu_state_t;
 
 typedef struct {

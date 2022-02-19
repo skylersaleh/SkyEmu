@@ -32,7 +32,7 @@ On mobile platforms an onscreen touch screen controller is provided.
 
 On web builds save files and the BIOS can be loaded by dragging them onto the page or loading them using the ROM file picker. The GBA BIOS must be named `gba_bios.bin` for the emulator to pick it up. Save files must be named the name of the rom file with the extension `.sav`. So for example if the ROM was `MyRomFile.gba` the save file must be called `MyRomFile.sav`. 
 
-On native builds the above naming convention still applies, but the files must be instead located in the same folder as the ROM, instead of being dragged or loaded in the emulator itself.
+On native builds the above naming convention still applies, but the save/BIOS files must be instead located in the same folder as the ROM file, instead of being dragged or loaded in the emulator itself.
 
 ## Native Build Instructions
 
@@ -52,8 +52,12 @@ Native builds should work for the following platforms although they are currentl
 - Windows
 - Mac OS X
 - Linux
-- iOS
-- Android
+
+Native builds support loading roms through the command line by specifying the path to the ROM as the first argument: 
+
+```
+./SkyEmu path/to/rom.gba
+```
 
 ## Accuracy/Compatibility
 
