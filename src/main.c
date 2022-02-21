@@ -6,8 +6,8 @@
  *
 **/
 
-#define SE_AUDIO_SAMPLE_RATE 44100
 #define SE_AUDIO_BUFF_SAMPLES 4096
+#define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
 #include "gba.h"
 
@@ -174,6 +174,12 @@ gba_t gba = { 0 };
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0;
 unsigned sb_save_state_index=0;
+
+double se_time(){
+  static uint64_t base_time=0;
+  if(base_time==0) base_time= stm_now();
+  return stm_sec(stm_diff(stm_now(),base_time));
+}
 
 double se_fps_counter(int tick){
   static int call = -1;
@@ -744,8 +750,6 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
     #endif
   }
 }
-
-
 void se_update_frame() {
   static unsigned frames_since_last_save = 0; 
   frames_since_last_save++;
@@ -785,7 +789,18 @@ void se_update_frame() {
   }
   emu_state.frame=0;
   int max_frames_per_tick =2+ emu_state.step_frames;
+
   emu_state.render_frame = true;
+
+  static double simulation_time = 0;
+  static double display_time = 0;
+  if(emu_state.step_frames<1)emu_state.step_frames=1;
+  double sim_fps= 1;
+  if(emu_state.system==SYSTEM_GB)sim_fps = 59.727;
+  else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
+
+  double sim_time_increment = 1./sim_fps/emu_state.step_frames;
+  if(fabs(se_time()-simulation_time)>0.5)simulation_time = se_time();
   while(--max_frames_per_tick){
     if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
     else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
@@ -793,7 +808,8 @@ void se_update_frame() {
     int size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
     int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     //Only breakout of emulation loop when we have enough audio queued up
-    if(size>1.0*samples_per_buffer&&emu_state.frame>=emu_state.step_frames)break;
+    simulation_time+=sim_time_increment;
+    if(size>1.5*samples_per_buffer&&simulation_time>se_time())break;
     emu_state.render_frame = false;
   }
  
