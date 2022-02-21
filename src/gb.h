@@ -766,21 +766,10 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
   if (emu->rom_loaded&&(emu->run_mode == SB_MODE_RUN||emu->run_mode ==SB_MODE_STEP)) {
     
     int instructions_to_execute = emu->step_instructions;
-    if(instructions_to_execute==0)instructions_to_execute=600000;
+    if(instructions_to_execute==0)instructions_to_execute=6000000;
     int frames_to_draw = 1;
-    float frame_time = emu->avg_frame_time;
-    static float avg_frame_time = 1.0/60.*1.00;
-    avg_frame_time = frame_time*0.1+avg_frame_time*0.9;
-    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-    float buffs_available = size/(float)(samples_per_buffer);
-    float time_correction_scale = (1.0+10.0)/(10.+buffs_available);
-    time_correction_scale = avg_frame_time/(1.0/60.)*0.995;
-    if(buffs_available<0.5)time_correction_scale*=1.005;
-    if(buffs_available>3)time_correction_scale*=0.98;
+    float time_correction_scale = 1.0;
 
-    //int target_buffs = 3;
-    //time_correction_scale*= (target_buffs+30)/(30+buffs_available);
     for(int i=0;i<instructions_to_execute;++i){
 
         bool double_speed = false;

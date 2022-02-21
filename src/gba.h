@@ -2735,11 +2735,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
       if(gba->ppu.last_vblank && !prev_vblank){
         emu->frame++;
-        if(emu->frame>=emu->step_frames){
-          int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-          int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-          if(size>1.0*samples_per_buffer){prev_vblank = gba->ppu.last_vblank;break;}
-        }
+        prev_vblank = gba->ppu.last_vblank;
+        if(emu->frame>=emu->step_frames)break;
         frames_to_render--;
       }
       prev_vblank = gba->ppu.last_vblank;

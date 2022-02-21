@@ -784,8 +784,15 @@ void se_update_frame() {
     }
   }
   emu_state.frame=0;
-  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
-  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
+  while(true){
+    if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
+    else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
+
+    int size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
+    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
+    //Only breakout of emulation loop when we have enough audio queued up
+    if(size>1.0*samples_per_buffer)break;
+  }
  
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
