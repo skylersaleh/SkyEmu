@@ -210,7 +210,7 @@ static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size)
   FILE *f = fopen(path, "wb");
   size_t written = -1; 
   if(f){
-    written = fwrite(data,file_size, 1, f);
+    written = fwrite(data,1,file_size, f);
   }
   if(written!=file_size){
     printf("Error failed to save: %s (wrote: %zu out of %zu)\n",path,written,file_size);

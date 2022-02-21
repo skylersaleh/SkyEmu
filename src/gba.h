@@ -1119,7 +1119,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
         }
       }
     }else {
-      gba->mem.pipeline_bubble_shift_register=((bank==0x03||bank<=0x01)&& (request_size&1))*4; 
+      gba->mem.pipeline_bubble_shift_register=((bank==0x03||bank==0x07||bank<=0x01)&& (request_size&1))*4; 
       gba->mem.prefetch_size+=wait; 
     }
   }
@@ -1434,13 +1434,13 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
     return false;
   }  
 
+  strncpy(gba->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
+  gba->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
+
   gba_reset(gba);
   memcpy(gba->mem.cart_rom, data, bytes);
   sb_free_file_data(data);
   gba->cart.rom_size = bytes; 
-
-  strncpy(gba->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
-  gba->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
 
   memcpy(gba->cart.title,gba->mem.cart_rom+0x0A0,12);
   gba->cart.title[12]=0;
@@ -1469,8 +1469,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
-  int lcd_y = (gba->ppu.scan_clock)/1232;
-  int lcd_x = (gba->ppu.scan_clock%1232)/4;
+  int lcd_y = (gba->ppu.scan_clock+44)/1232;
+  int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   if(lcd_x==0||lcd_x==240||lcd_x==296){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
@@ -1547,7 +1547,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
         }
       }
     }
-    gba_send_interrupt(gba,4,new_if);
+    gba_send_interrupt(gba,3,new_if);
   }
 
   if(skip_render)return; 
@@ -2788,7 +2788,6 @@ void gba_reset(gba_t*gba){
   size_t bios_bytes=0;
   uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
   if(bios_data){
-    printf("No bios found at: %s using bundled bios\n",bios_path);
     if(bios_bytes==16*1024){
       printf("Loaded GBA BIOS from %s\n",bios_path);
       memcpy(gba->mem.bios,bios_data,16*1024);

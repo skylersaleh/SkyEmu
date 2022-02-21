@@ -326,8 +326,6 @@ bool sb_load_rom(const char* file_path, const char* save_file){
   gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
   data = sb_load_file_data(save_file, &bytes);
   if(data){
-    printf("Loaded save file: %s, bytes: %zu\n",save_file,bytes);
-
     if(bytes!=gb_state.cart.ram_size){
       printf("Warning save file size(%zu) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
     }
@@ -759,7 +757,6 @@ void se_update_frame() {
         // Don't forget to sync to make sure you store it to IndexedDB
       EM_ASM( FS.syncfs(function (err) {}); );
    #endif
-        printf("Saved %s\n", gb_state.cart.save_file_path);
       }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
       gb_state.cart.ram_is_dirty=false;
     }
@@ -781,7 +778,6 @@ void se_update_frame() {
           #if defined(EMSCRIPTEN)
               EM_ASM( FS.syncfs(function (err) {}););
           #endif
-          printf("Saved %s\n", gba.cart.save_file_path);
         }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
       }
       gba.cart.backup_is_dirty=false;
@@ -1059,7 +1055,6 @@ static void frame(void) {
     img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
     img_desc.label = "sokol-imgui-font";
     atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
-    printf("Font: %p %d\n",igGetIO()->FontDefault,built);
     igGetIO()->FontDefault=font;
     igGetIO()->Fonts=atlas;
     igGetIO()->FontGlobalScale/=se_dpi_scale();
