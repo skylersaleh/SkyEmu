@@ -784,7 +784,8 @@ void se_update_frame() {
     }
   }
   emu_state.frame=0;
-  while(true){
+  int max_frames_per_tick =2;
+  while(--max_frames_per_tick){
     if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
     else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
 
