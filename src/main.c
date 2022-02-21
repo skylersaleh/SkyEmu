@@ -916,27 +916,75 @@ void gba_draw_io_state(gba_t* gba){
       igTreePop();
     }
     igPopID();
-
-    /*
-    for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
-      uint32_t start = gba_io_reg_desc[i].bits[f].start; 
-      uint32_t size = gba_io_reg_desc[i].bits[f].size; 
-      if(size){
-        uint32_t field_data = SB_BFE(data,start,size);
-        has_fields=true;
-        Rectangle r2 = r; 
-        if(size>1)r=sb_draw_label(r, TextFormat("[%d:%d]:", start, start+size-1));
-        else r=sb_draw_label(r, TextFormat("%d:", start));
-
-        r2.x+=30; 
-        sb_draw_label(r2, TextFormat("%2d",field_data));
-        r2.x+=25; 
-        sb_draw_label(r2, TextFormat("%s",gba_io_reg_desc[i].bits[f].name));
+  }
+  igEnd();
+}
+void gb_draw_mem_debug_state(gui_state_t* gui, sb_gb_t* gb){
+  igBegin("MemView", 0,0);
+  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  int v = sb_read16(gb,gui->mem_view_address);
+  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    sb_store16(gb,gui->mem_view_address,v);
+  }
+  v = sb_read8(gb,gui->mem_view_address);
+  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    sb_store8(gb,gui->mem_view_address,v);
+  }
+  igEnd();
+}
+void gb_draw_io_state(sb_gb_t* gb){
+  igBegin("MMIO", 0,0);
+  for(int i = 0; i<sizeof(gb_io_reg_desc)/sizeof(gb_io_reg_desc[0]);++i){
+    uint32_t addr = gb_io_reg_desc[i].addr;
+    uint16_t data = sb_read16(gb, addr);
+    bool has_fields = false;
+    igPushIDInt(i);
+    if (igTreeNodeStrStr("%s(%08x): %04x",gb_io_reg_desc[i].name,addr,data)){
+      for(int f = 0; f<sizeof(gb_io_reg_desc[i].bits)/sizeof(gb_io_reg_desc[i].bits[0]);++f){
+        igPushIDInt(f);
+        uint32_t start = gb_io_reg_desc[i].bits[f].start; 
+        uint32_t size = gb_io_reg_desc[i].bits[f].size; 
+        if(size){
+          uint32_t field_data = SB_BFE(data,start,size);
+          has_fields=true;
+          uint32_t mask = (((1<<size)-1)<<start);
+          bool edit = false;
+          if(size==1){
+            bool v = field_data!=0;
+            edit=igCheckbox("",&v);
+            data &= ~mask;
+            data |= (v<<start)&mask; 
+          }else{
+            int v = field_data;
+            igPushItemWidth(100);
+            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
+            data &= ~mask;
+            data |= (v<<start)&mask;
+            igPopItemWidth();
+          }
+          if(edit){
+            sb_store16(gb,addr,data);
+          }
+          igSameLine(0,2);
+          if(size>1)igText("%s (Bits [%d:%d])",gb_io_reg_desc[i].bits[f].name,start, start+size-1);
+          else igText("%s (Bit %d)",gb_io_reg_desc[i].bits[f].name,start);
+        }
+        igPopID();
       }
+      if(!has_fields){
+        int v = data; 
+        igPushIDInt(0);
+        igPushItemWidth(150);
+        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+          sb_store16(gb,addr,v);
+        }
+        igSameLine(0,2);
+        igText("Data");
+        igPopID();
+      }
+      igTreePop();
     }
-    Rectangle state_rect, adv_rect;
-    GuiGroupBox(state_rect, TextFormat("%s(%08x): %04x", gba_io_reg_desc[i].name, addr,data)); 
-    rect=adv_rect;*/
+    igPopID();
   }
   igEnd();
 }
@@ -1027,8 +1075,13 @@ static void frame(void) {
   igPopStyleVar(2);
   igEnd();
   if(gui_state.draw_debug_menu){
-    gba_draw_io_state(&gba); 
-    gba_draw_mem_debug_state(&gui_state, &gba); 
+    if(emu_state.system ==SYSTEM_GBA){
+      gba_draw_io_state(&gba); 
+      gba_draw_mem_debug_state(&gui_state, &gba); 
+    }else if(emu_state.system ==SYSTEM_GB){
+      gb_draw_io_state(&gb_state); 
+      gb_draw_mem_debug_state(&gui_state, &gb_state); 
+    }
   }
 
   /*=== UI CODE ENDS HERE ===*/

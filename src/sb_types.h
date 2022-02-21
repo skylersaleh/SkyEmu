@@ -93,7 +93,15 @@ typedef struct {
   int cmd_line_arg_count;
   char** cmd_line_args;
 } sb_emu_state_t;
-
+typedef struct{
+  uint32_t addr;
+  const char * name;
+  struct{
+    uint8_t start;
+    uint8_t size;
+    const char* name; 
+  } bits[16]; 
+}mmio_reg_t; 
 typedef struct {
   // Registers
   uint16_t af, bc, de, hl, sp, pc;

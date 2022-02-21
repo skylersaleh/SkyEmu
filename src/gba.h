@@ -141,16 +141,6 @@
 // #define GBA_?       0x4xx0800      /* R/W  ?         Mirrors of 4000800h (repeated each 64K) */
 // #define GBA_(3DS)   0x4700000      /* W    (3DS)     Disable ARM7 bootrom overlay (3DS only) */
 
-typedef struct{
-  uint32_t addr;
-  const char * name;
-  struct{
-    uint8_t start;
-    uint8_t size;
-    const char* name; 
-  } bits[16]; 
-}mmio_reg_t; 
-
 mmio_reg_t gba_io_reg_desc[]={
   // Interrupt, Waitstate, and Power-Down Control
   { GBA_IE     , "IE", {

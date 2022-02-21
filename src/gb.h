@@ -77,6 +77,188 @@
 #define SB_MBC_MBC6 6
 #define SB_MBC_MBC7 7
 
+mmio_reg_t gb_io_reg_desc[]={
+  { SB_IO_JOYPAD, "JOYPAD", { 
+    { 5, 1, "Select Action buttons    (0=Select)"},
+    { 4, 1, "Select Direction buttons (0=Select)"},
+    { 3, 1, "Input: Down  or Start    (0=Pressed) (Read Only)"},
+    { 2, 1, "Input: Up    or Select   (0=Pressed) (Read Only)"},
+    { 1, 1, "Input: Left  or B        (0=Pressed) (Read Only)"},
+    { 0, 1, "Input: Right or A        (0=Pressed) (Read Only)"},
+  }},       
+  { SB_IO_SERIAL_BYTE, "SERIAL_BYTE", { 
+    { 7, 1, "Transfer Start Flag (0=No transfer is in progress or requested, 1=Transfer in progress, or requested)"},
+    { 1, 1, "Clock Speed (0=Normal, 1=Fast) ** CGB Mode Only **"},
+    { 0, 1, "Shift Clock (0=External Clock, 1=Internal Clock)"},
+  }},  
+  { SB_IO_DIV, "DIV", { 0 }},          
+  { SB_IO_TIMA, "TIMA", { 0 }},         
+  { SB_IO_TMA, "TMA", { 0 }},          
+  { SB_IO_TAC, "TAC", { 
+    { 2 ,1, "Timer Enable"},
+    { 0, 2, "Clock Divider (0: Clk/1024 1: Clk/16 2: Clk/64 3: Clk/256)"}
+  }},          
+  { SB_IO_AUD1_TONE_SWEEP, "AUD1_TONE_SWEEP", { 
+    { 4,3, "Sweep Time"},
+    { 3,1, "Sweep Increase(0)/Decrease(1)"},
+    { 0,3, "Number of sweep shift (n: 0-7)"},
+  }},    
+  { SB_IO_AUD1_LENGTH_DUTY, "AUD1_LENGTH_DUTY", {
+    { 6, 2, "Wave Pattern Duty (Read/Write)"},
+    { 0, 6, "Sound length data (Write Only) (t1: 0-63)"},
+  }},   
+  { SB_IO_AUD1_VOL_ENV, "AUD1_VOL_ENV", { 
+    { 4, 4, "Initial Volume of envelope (0-0Fh) (0=No Sound)" },
+    { 3, 1, "Envelope Direction (0=Decrease, 1=Increase)" },
+    { 0, 3, "Number of envelope sweep (n: 0-7)" },
+  }},       
+  { SB_IO_AUD1_FREQ, "AUD1_FREQ", { 0 }},          
+  { SB_IO_AUD1_FREQ_HI, "AUD1_FREQ_HI", { 
+    { 7,1, "Initial (1=Restart Sound)     (Write Only)"},
+    { 6,1, "(1=Stop output when length in NR11 expires)"},
+    { 0,3, "Frequency's higher 3 bits (x) (Write Only)"},
+  }},       
+  { SB_IO_AUD2_LENGTH_DUTY, "AUD2_LENGTH_DUTY", { 
+    { 6, 2, "Wave Pattern Duty (Read/Write)"},
+    { 0, 6, "Sound length data (Write Only) (t1: 0-63)"},
+  }},   
+  { SB_IO_AUD2_VOL_ENV, "AUD2_VOL_ENV", { 
+    { 4, 4, "Initial Volume of envelope (0-0Fh) (0=No Sound)" },
+    { 3, 1, "Envelope Direction (0=Decrease, 1=Increase)" },
+    { 0, 3, "Number of envelope sweep (n: 0-7)" },
+  }},       
+  { SB_IO_AUD2_FREQ, "AUD2_FREQ", { 0 }},          
+  { SB_IO_AUD2_FREQ_HI, "AUD2_FREQ_HI", { 
+    { 7,1, "Initial (1=Restart Sound)     (Write Only)"},
+    { 6,1, "(1=Stop output when length in NR11 expires)"},
+    { 0,3, "Frequency's higher 3 bits (x) (Write Only)"},
+  }},       
+  { SB_IO_AUD3_POWER, "AUD3_POWER", { 
+    {7,1,"Sound Channel 3 Enable"}
+  }},         
+  { SB_IO_AUD3_LENGTH, "AUD3_LENGTH", { 0 }},        
+  { SB_IO_AUD3_VOL, "AUD3_VOL", { 
+    {5,2, "Volume (0: Mute 1: 100% 2: 50% 3: 25%)"}
+  }},           
+  { SB_IO_AUD3_FREQ, "AUD3_FREQ", { 0 }},          
+  { SB_IO_AUD3_FREQ_HI, "AUD3_FREQ_HI", { 
+    { 7,1, "Initial (1=Restart Sound)     (Write Only)"},
+    { 6,1, "(1=Stop output when length in NR11 expires)"},
+    { 0,3, "Frequency's higher 3 bits (x) (Write Only)"},
+  }},       
+  { SB_IO_AUD4_LENGTH, "AUD4_LENGTH", { 0 }},        
+  { SB_IO_AUD4_VOL_ENV, "AUD4_VOL_ENV", { 
+    { 4, 4, "Initial Volume of envelope (0-0Fh) (0=No Sound)" },
+    { 3, 1, "Envelope Direction (0=Decrease, 1=Increase)" },
+    { 0, 3, "Number of envelope sweep (n: 0-7)" },
+  }},       
+  { SB_IO_AUD4_POLY, "AUD4_POLY", { 
+    { 4,4, "Shift Clock Frequency (s)" },
+    { 3,1, "Counter Step/Width (0=15 bits, 1=7 bits)" },
+    { 0,3, "Dividing Ratio of Frequencies (r)" },
+  }},          
+  { SB_IO_AUD4_COUNTER, "AUD4_COUNTER", { 
+    {7,1, "Initial (1=Restart Sound)     (Write Only)"},
+    {6,1, "Counter/consecutive selection (Read/Write)"},
+  }},       
+  { SB_IO_SOUND_OUTPUT_SEL, "SOUND_OUTPUT_SEL", { 
+    { 7,1, "Output sound 4 to SO2 terminal" },
+    { 6,1, "Output sound 3 to SO2 terminal" },
+    { 5,1, "Output sound 2 to SO2 terminal" },
+    { 4,1, "Output sound 1 to SO2 terminal" },
+    { 3,1, "Output sound 4 to SO1 terminal" },
+    { 2,1, "Output sound 3 to SO1 terminal" },
+    { 1,1, "Output sound 2 to SO1 terminal" },
+    { 0,1, "Output sound 1 to SO1 terminal" },
+  }},   
+  { SB_IO_SOUND_ON_OFF, "SOUND_ON_OFF", { 
+    { 7,1, "All sound on/off (Read/Write)"},
+    { 3,1, "Sound 4 ON flag (Read Only)"},
+    { 2,1, "Sound 3 ON flag (Read Only)"},
+    { 1,1, "Sound 2 ON flag (Read Only)"},
+    { 0,1, "Sound 1 ON flag (Read Only)"},
+  }},       
+  { SB_IO_INTER_F, "INTER_F", { 
+    { 0, 1, "VBlank   Interrupt" },
+    { 1, 1, "LCD STAT Interrupt" },
+    { 2, 1, "Timer    Interrupt" },
+    { 3, 1, "Serial   Interrupt" },
+    { 4, 1, "Joypad   Interrupt" },
+  }},      
+  { SB_IO_LCD_CTRL, "LCD_CTRL", { 
+    { 7, 1, "LCD and PPU enable  0=Off, 1=On"},
+    { 6, 1, "Window tile map area  0=9800-9BFF, 1=9C00-9FFF"},
+    { 5, 1, "Window enable 0=Off, 1=On"},
+    { 4, 1, "BG and Window tile data area  0=8800-97FF, 1=8000-8FFF"},
+    { 3, 1, "BG tile map area  0=9800-9BFF, 1=9C00-9FFF"},
+    { 2, 1, "OBJ size  0=8x8, 1=8x16"},
+    { 1, 1, "OBJ enable  0=Off, 1=On"},
+    { 0, 1, "BG and Window enable/priority 0=Off, 1=On"},
+  }},     
+  { SB_IO_LCD_STAT, "LCD_STAT", { 
+    { 6,1, "LYC=LY STAT Interrupt source" },
+    { 5,1, "Mode 2 OAM STAT Interrupt source" },
+    { 4,1, "Mode 1 VBlank STAT Interrupt source" },
+    { 3,1, "Mode 0 HBlank STAT Interrupt source" },
+    { 2,1, "LYC=LY Flag" },
+    { 0,2, "Mode Flag (0:Hblank 1:Vblank 2:OAM 3:Transfer)" },
+  }},     
+  { SB_IO_LCD_SY, "LCD_SY", { 0 }},       
+  { SB_IO_LCD_SX, "LCD_SX", { 0 }},       
+  { SB_IO_LCD_LY, "LCD_LY", { 0 }},       
+  { SB_IO_LCD_LYC, "LCD_LYC", { 0 }},      
+  { SB_IO_OAM_DMA, "OAM_DMA", { 0 }},      
+  { SB_IO_PPU_BGP, "PPU_BGP", {  
+    { 6,2, "Color for index 3" },
+    { 4,2, "Color for index 2" },
+    { 2,2, "Color for index 1" },
+    { 0,2, "Color for index 0" },
+  }},      
+  { SB_IO_PPU_OBP0, "PPU_OBP0", { 
+    { 6,2, "Color for index 3" },
+    { 4,2, "Color for index 2" },
+    { 2,2, "Color for index 1" },
+    { 0,2, "Color for index 0" },
+  }},     
+  { SB_IO_PPU_OBP1, "PPU_OBP1", { 
+    { 6,2, "Color for index 3" },
+    { 4,2, "Color for index 2" },
+    { 2,2, "Color for index 1" },
+    { 0,2, "Color for index 0" },
+  }},     
+  { SB_IO_LCD_WY, "LCD_WY", { 0 }},       
+  { SB_IO_LCD_WX, "LCD_WX", { 0 }},       
+  { SB_IO_GBC_SPEED_SWITCH, "GBC_SPEED_SWITCH", { 
+    { 7,1, "Current Speed     (0=Normal, 1=Double) (Read Only)"},
+    { 0,1, "Prepare Speed Switch (0=No, 1=Prepare) (Read/Write)"},
+  }},  
+  { SB_IO_GBC_VBK, "GBC_VBK", { 
+    {0,1, "VRAM Bank Sel"}
+  }},      
+  { SB_IO_DMA_SRC_HI, "DMA_SRC_HI", { 0 }},   
+  { SB_IO_DMA_SRC_LO, "DMA_SRC_LO", { 0 }},   
+  { SB_IO_DMA_DST_HI, "DMA_DST_HI", { 0 }},   
+  { SB_IO_DMA_DST_LO, "DMA_DST_LO", { 0 }},   
+  { SB_IO_DMA_MODE_LEN, "DMA_MODE_LEN", { 
+    {7, 1, "Mode (0: General 1: HDMA)"},
+    {0, 6, "Length*16B"}
+  }},  
+  { SB_IO_GBC_BCPS, "GBC_BCPS", { 0 }},     
+  { SB_IO_GBC_BCPD, "GBC_BCPD", { 0 }},     
+  { SB_IO_GBC_OCPS, "GBC_OCPS", { 0 }},     
+  { SB_IO_GBC_OCPD, "GBC_OCPD", { 0 }},     
+  { SB_IO_GBC_SVBK, "GBC_SVBK", {
+    {0,3, "WRAM Bank Sel"}
+  }},     
+  { SB_IO_INTER_EN, "INTER_EN", { 
+    { 0, 1, "VBlank   Interrupt Enable" },
+    { 1, 1, "LCD STAT Interrupt Enable" },
+    { 2, 1, "Timer    Interrupt Enable" },
+    { 3, 1, "Serial   Interrupt Enable" },
+    { 4, 1, "Joypad   Interrupt Enable" },
+  }},     
+};
+
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
