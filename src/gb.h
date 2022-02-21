@@ -1048,7 +1048,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         sb_update_oam_dma(gb,cpu_delta_cycles);
         int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
         delta_cycles_after_speed+= dma_delta_cycles;
-        bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,frames_to_draw==1);
+        bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
         sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
 
         double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
@@ -1060,15 +1060,11 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
           emu->run_mode = SB_MODE_PAUSE;
           break;
         }
-        if(vblank){--frames_to_draw;emu->frame++;}
+        if(vblank){break;}
         
         sb_process_audio(gb,emu,delta_t);
         int size = sb_ring_buffer_size(&emu->audio_ring_buff);
-        
-       //if(size> SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS*3)break;
-       if(frames_to_draw<=0&& emu->step_instructions ==0 && emu->step_frames<=1 )break;
-       if(emu->step_frames>1 && emu->frame>=emu->step_frames)break;
-    }
+      }
 
   }
 

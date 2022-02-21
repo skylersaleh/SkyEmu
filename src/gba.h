@@ -1454,7 +1454,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
+static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.scan_clock+=1;
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
@@ -1540,7 +1540,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool skip_render){
     gba_send_interrupt(gba,3,new_if);
   }
 
-  if(skip_render)return; 
+  if(!render)return; 
 
   uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
   int bg_mode = SB_BFE(dispcnt,0,3);
@@ -2678,7 +2678,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     gba_reset(gba);
     emu->run_mode = SB_MODE_RUN;
   }
-  int frames_to_render= emu->step_frames;
   if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
     gba_tick_rtc(gba);
     gba_tick_keypad(&emu->joy,gba);
@@ -2720,14 +2719,12 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       for(int t = 0;t<ticks;++t){
         gba_tick_interrupts(gba);
         gba_tick_timers(gba);
-        gba_tick_ppu(gba,frames_to_render>1);
+        gba_tick_ppu(gba,emu->render_frame);
       }
 
       if(gba->ppu.last_vblank && !prev_vblank){
-        emu->frame++;
         prev_vblank = gba->ppu.last_vblank;
-        if(emu->frame>=emu->step_frames)break;
-        frames_to_render--;
+        break;
       }
       prev_vblank = gba->ppu.last_vblank;
     }

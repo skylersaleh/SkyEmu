@@ -85,6 +85,7 @@ typedef struct {
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
   int frame;
+  bool render_frame;
   double avg_frame_time; 
   sb_ring_buffer_t audio_ring_buff;
   float audio_channel_output[6];
