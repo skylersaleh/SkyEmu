@@ -996,13 +996,13 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
 }
 static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x05000000){
-    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
     // 8 bit stores to palette mirror across 8 bit halves
     if((baddr&0xff000000)==0x5000000)return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
     if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
-    // 8 bit ops are not supported on VRAM or ROM
-    if(baddr>=0x05000000&&baddr<0x0e000000)return;
+    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+    // Remaining 8 bit ops are not supported on VRAM or ROM
+    return; 
   }
   uint32_t *val = gba_dword_lookup(gba,baddr,GBA_REQ_WRITE|GBA_REQ_1B);
   int offset = SB_BFE(baddr,0,2);
@@ -1084,9 +1084,8 @@ static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitc
   waitcnt&=(1<<15); // Force cartridge to report as GBA cart
   gba_io_store16(gba,GBA_WAITCNT,waitcnt);
 }
-static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
-  gba_t * gba = ((gba_t*)user_data);
   bool prefetch_en= gba->mem.prefetch_en;
   if(!prefetch_en){
     if(gba->cpu.i_cycles)request_size|=1;
@@ -1128,41 +1127,37 @@ static FORCE_INLINE void gba_compute_access_cycles(void*user_data, uint32_t addr
   gba->cpu.i_cycles=0;
   gba->mem.requests+=wait;
 }
-static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(void*user_data, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
+static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(gba_t *gba, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
-  gba_t * gba = ((gba_t*)user_data);
   uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
   return wait;
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 
-static FORCE_INLINE uint32_t gba_dma_read32(gba_t*gba, uint32_t address){return gba_read32(gba,address);}
-static FORCE_INLINE uint16_t gba_dma_read16(gba_t*gba, uint32_t address){return gba_read16(gba,address);}
-
 // Memory IO functions for the emulated CPU                  
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address,3);
+  gba_compute_access_cycles((gba_t*)user_data,address,3);
   uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
 static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address,1);
+  gba_compute_access_cycles((gba_t*)user_data,address,1);
   uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, bool seq){
-  gba_compute_access_cycles(user_data,address,seq?2:3);
-  return gba_dma_read32((gba_t*)user_data,address);
+  gba_compute_access_cycles((gba_t*)user_data,address,seq?2:3);
+  return gba_read32((gba_t*)user_data,address);
 }
 static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address, bool seq){
-  gba_compute_access_cycles(user_data,address,seq?0:1);
-  return gba_dma_read16((gba_t*)user_data,address);
+  gba_compute_access_cycles((gba_t*)user_data,address,seq?0:1);
+  return gba_read16((gba_t*)user_data,address);
 }
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
-  gba_compute_access_cycles(user_data,address,1);
+  gba_compute_access_cycles((gba_t*)user_data,address,1);
   return gba_read8((gba_t*)user_data,address);
 }
 static FORCE_INLINE void gba_dma_write32(gba_t* gba, uint32_t address, uint32_t data){
@@ -1178,15 +1173,15 @@ static FORCE_INLINE void gba_dma_write16(gba_t* gba, uint32_t address, uint16_t 
   gba_store16(gba,address,data);
 }
 static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data){
-  gba_compute_access_cycles(user_data,address,3); 
+  gba_compute_access_cycles((gba_t*)user_data,address,3); 
   gba_dma_write32((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data){
-  gba_compute_access_cycles(user_data,address,1); 
+  gba_compute_access_cycles((gba_t*)user_data,address,1); 
   gba_dma_write16((gba_t*)user_data,address,data);
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
-  gba_compute_access_cycles(user_data,address,1); 
+  gba_compute_access_cycles((gba_t*)user_data,address,1); 
   if(address>=0x4000000 && address<=0x40003FE){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
@@ -1199,7 +1194,7 @@ void gba_reset(gba_t*gba);
 static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int req_type){
   uint32_t baddr=addr&0xffffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
-  switch(baddr>>24){
+  switch(addr>>24){
     case 0x0: if(baddr<0x4000){
       if(gba->cpu.registers[15]<0x4000)gba->mem.bios_word = *(uint32_t*)(gba->mem.bios+baddr);
       //else gba->mem.bios_word=0;
@@ -1249,9 +1244,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
         if(maddr>=gba->cart.rom_size){
           gba->mem.openbus_word = ((maddr/2)&0xffff)|(((maddr/2+1)&0xffff)<<16);
           // Return ready when done writting EEPROM (required by Minish Cap)
-          if(gba->cart.backup_type==GBA_BACKUP_EEPROM){
-            gba->mem.openbus_word = 1; 
-          }
+          if(gba->cart.backup_type==GBA_BACKUP_EEPROM) gba->mem.openbus_word = 1; 
         }else{
           gba->mem.openbus_word = *(uint32_t*)(gba->mem.cart_rom+maddr);
           if((req_type&0xf)!=4){
@@ -1275,7 +1268,6 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
       gba->mem.openbus_word=(*ret&0xffff)*0x10001;
       break;
   }
-  
   return ret;
 }
 
@@ -1329,7 +1321,6 @@ static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int
 }
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes){
   uint32_t address_u32 = address&~3; 
-  uint32_t address_u16 = address&~1; 
   uint32_t word_mask = 0xffffffff;
   uint32_t word_data = data; 
   if(req_size_bytes==2){
@@ -1339,7 +1330,6 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     word_data<<= (address&3)*8;
     word_mask =0x000000ff<< ((address&3)*8);
   }
-
   word_data&=word_mask;
 
   if(address_u32== GBA_IE){
@@ -1391,16 +1381,14 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
       else gba_audio_fifo_push(gba,1,gba->audio.fifo[1].data[(gba->audio.fifo[1].write_ptr)&0x1f]);
     }
   */
-  }else if(address_u32>=GBA_BG2X &&address_u32<=GBA_BG3Y){
+  }else if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
     int aff_bg = (address_u32-GBA_BG2X)/32;
-    if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
-      gba->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
-      gba->ppu.aff[aff_bg].internal_bgx|= word_data;
-    }
-    if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
-      gba->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
-      gba->ppu.aff[aff_bg].internal_bgy|= word_data;
-    }
+    gba->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
+    gba->ppu.aff[aff_bg].internal_bgx|= word_data;
+  }else if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
+    int aff_bg = (address_u32-GBA_BG2X)/32;
+    gba->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
+    gba->ppu.aff[aff_bg].internal_bgy|= word_data;
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -2189,7 +2177,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         //printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
         for(int x=0;x<4;++x){
           uint32_t src_addr=src+x*4*src_dir;
-          uint32_t data = gba_dma_read32(gba,src_addr);
+          uint32_t data = gba_read32(gba,src_addr);
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,0,8));
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,8,8));
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,16,8));
@@ -2214,7 +2202,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           int src_addr = src+x*transfer_bytes*src_dir;
           if(type){
             if(src_addr>=0x02000000){
-              gba->dma[i].latched_transfer = gba_dma_read32(gba,src_addr);
+              gba->dma[i].latched_transfer = gba_read32(gba,src_addr);
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
             }
             gba_dma_write32(gba,dst_addr,gba->dma[i].latched_transfer);
@@ -2222,7 +2210,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           }else{
             int v = 0;
             if(src_addr>=0x02000000){
-              v= gba->dma[i].latched_transfer = (gba_dma_read16(gba,src_addr))&0xffff;
+              v= gba->dma[i].latched_transfer = (gba_read16(gba,src_addr))&0xffff;
               gba->dma[i].latched_transfer |= gba->dma[i].latched_transfer<<16;
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 0:1);
             }else v = gba->dma[i].latched_transfer>>(((dst_addr)&0x3)*8);

@@ -554,14 +554,15 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     uint32_t opcode = cpu->prefetch_opcode[0];
     if(thumb==false)printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
     else printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
+    cpu->executed_instructions++;
   }
   cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
-  cpu->prefetch_opcode[0] =cpu->prefetch_opcode[1];
+  cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
   cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
   if(thumb==false){
     cpu->registers[PC] += 4;
-    int pref=cpu->prefetch_pc = cpu->registers[PC];
+    cpu->prefetch_pc = cpu->registers[PC];
     if(arm7_check_cond_code(cpu,opcode)){
       uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     	arm7_lookup_table[key](cpu,opcode);
@@ -570,13 +571,12 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }else{
     cpu->registers[PC] += 2;
-    int pref =cpu->prefetch_pc = cpu->registers[PC];
+    cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     arm7t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
-  cpu->executed_instructions++;
 
 }
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
