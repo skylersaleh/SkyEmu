@@ -624,6 +624,12 @@ mmio_reg_t gba_io_reg_desc[]={
 #define GBA_BACKUP_FLASH_64K   5 
 #define GBA_BACKUP_FLASH_128K  6  
 
+#define GBA_REQ_1B    0x01
+#define GBA_REQ_2B    0x02
+#define GBA_REQ_4B    0x04
+#define GBA_REQ_READ  0x40
+#define GBA_REQ_WRITE 0x80
+
 typedef struct {     
   uint8_t bios[16*1024];
   uint8_t wram0[256*1024];
@@ -642,8 +648,8 @@ typedef struct {
   uint32_t prefetch_size; 
   uint32_t requests;
   uint32_t bios_word;
-  uint32_t cartopen_bus; 
   uint32_t sram_word;
+  uint32_t mmio_word;
   uint8_t wait_state_table[16*4];
   // Tracks the place of the squashable pipeline bubble that enters the pipeline after a single cycle data read
   // Each bit represents one clock cycle in time with bit 0 meaning the current cycle of the last stage of the 
@@ -653,6 +659,9 @@ typedef struct {
   // Some complexity is introduced because this bubble may be squashed by upstream push back. This is modelled by 
   // extra shift rights for the multicycling of the various stages. 
   uint32_t pipeline_bubble_shift_register;
+  // Lookup tables to accelerate MMIO masking / Open bus behavior
+  uint32_t mmio_data_mask_lookup[0xff];
+  uint8_t  mmio_reg_valid_lookup[0xff];
 } gba_mem_t;
 
 typedef struct {
@@ -757,17 +766,15 @@ static void gba_compute_timers(gba_t* gba);
 static void FORCE_INLINE gba_send_interrupt(gba_t*gba,int delay,int if_bit);
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
 // ignores the lowest 2 bits. 
-static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, bool * read_only,int req_size);
-static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr){bool read_only;return *gba_dword_lookup(gba,baddr,&read_only,4);}
+static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned baddr, int req_type);
+static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr){return *gba_dword_lookup(gba,baddr,GBA_REQ_READ|GBA_REQ_4B);}
 static FORCE_INLINE uint16_t gba_read16(gba_t*gba, unsigned baddr){
-  bool read_only;
-  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only,2);
+  uint32_t* val = gba_dword_lookup(gba,baddr,GBA_REQ_READ|GBA_REQ_2B);
   int offset = SB_BFE(baddr,1,1);
   return ((uint16_t*)val)[offset];
 }
 static FORCE_INLINE uint8_t gba_read8(gba_t*gba, unsigned baddr){
-  bool read_only;
-  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only,1);
+  uint32_t* val = gba_dword_lookup(gba,baddr,GBA_REQ_READ|GBA_REQ_1B);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
 }            
@@ -958,45 +965,48 @@ static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uin
   }
 }
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
-  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));
-  if(baddr>=0x080000C4&& baddr<0x080000CA){
-    //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
-    if(baddr==0x080000c4)gba->cart.gpio_data = data;
-    gba_process_rtc_state_machine(gba);
-    return;
+  if(baddr>=0x08000000){
+    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));
+    if(baddr>=0x080000C4&& baddr<0x080000CA){
+      //Assume that the RTC is the only GPIO and is only accessed with 32 bit ops
+      if(baddr==0x080000c4)gba->cart.gpio_data = data;
+      gba_process_rtc_state_machine(gba);
+      return;
+    }
   }
-  bool read_only;
-  uint32_t *val=gba_dword_lookup(gba,baddr,&read_only,4);
-  if(!read_only)*val= data;
+  uint32_t *val=gba_dword_lookup(gba,baddr,GBA_REQ_WRITE|GBA_REQ_4B);
+  *val= data;
 }
 static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
-  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
-  if(baddr>=0x080000C4&& baddr<0x080000CA){
-    int addr = baddr&~3;
-    //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
-    if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
-    gba_process_rtc_state_machine(gba);
-    return;
+  if(baddr>=0x08000000){
+    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+    if(baddr>=0x080000C4&& baddr<0x080000CA){
+      int addr = baddr&~3;
+      //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
+      if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
+      gba_process_rtc_state_machine(gba);
+      return;
+    }
   }
-  bool read_only;
-  uint32_t* val = gba_dword_lookup(gba,baddr,&read_only,2);
+  uint32_t* val = gba_dword_lookup(gba,baddr,GBA_REQ_WRITE|GBA_REQ_2B);
   int offset = SB_BFE(baddr,1,1);
-  if(!read_only)((uint16_t*)val)[offset]=data; 
+  ((uint16_t*)val)[offset]=data; 
 }
 static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
-  //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-  if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
-  // 8 bit stores to palette mirror across 8 bit halves
-  if((baddr&0xff000000)==0x5000000)return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
-  if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
-  // 8 bit ops are not supported on VRAM or ROM
-  if(baddr>=0x05000000&&baddr<0x0e000000)return;
-  bool read_only;
-  uint32_t *val = gba_dword_lookup(gba,baddr,&read_only,1);
+  if(baddr>=0x05000000){
+    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+    // 8 bit stores to palette mirror across 8 bit halves
+    if((baddr&0xff000000)==0x5000000)return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
+    if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
+    // 8 bit ops are not supported on VRAM or ROM
+    if(baddr>=0x05000000&&baddr<0x0e000000)return;
+  }
+  uint32_t *val = gba_dword_lookup(gba,baddr,GBA_REQ_WRITE|GBA_REQ_1B);
   int offset = SB_BFE(baddr,0,2);
-  if(!read_only)((uint8_t*)val)[offset]=data; 
+  ((uint8_t*)val)[offset]=data; 
 } 
 static FORCE_INLINE void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xffff]=data;}
 static FORCE_INLINE void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xffff))=data;}
@@ -1126,28 +1136,18 @@ static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(void*user_data, uint3
 }
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes);
 
-static FORCE_INLINE uint32_t gba_dma_read32(gba_t*gba, uint32_t address){
-  if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read(gba,address,4);
-  }
-  return gba_read32(gba,address);
-}
-static FORCE_INLINE uint16_t gba_dma_read16(gba_t*gba, uint32_t address){
-  if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read(gba,address,2);
-  }
-  return gba_read16(gba,address);
-}
+static FORCE_INLINE uint32_t gba_dma_read32(gba_t*gba, uint32_t address){return gba_read32(gba,address);}
+static FORCE_INLINE uint16_t gba_dma_read16(gba_t*gba, uint32_t address){return gba_read16(gba,address);}
 
 // Memory IO functions for the emulated CPU                  
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,3);
-  uint32_t value = gba_dma_read32((gba_t*)user_data,address);
+  uint32_t value = gba_read32((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x3)*8);
 }
 static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
-  uint16_t value = gba_dma_read16((gba_t*)user_data,address);
+  uint16_t value = gba_read16((gba_t*)user_data,address);
   return arm7_rotr(value,(address&0x1)*8);
 }
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, bool seq){
@@ -1163,9 +1163,6 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
 
 static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
   gba_compute_access_cycles(user_data,address,1);
-  if(address>=0x4000000 && address<=0x40003FE){
-    gba_process_mmio_read((gba_t*)user_data,address,4);
-  }
   return gba_read8((gba_t*)user_data,address);
 }
 static FORCE_INLINE void gba_dma_write32(gba_t* gba, uint32_t address, uint32_t data){
@@ -1199,43 +1196,47 @@ static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t 
 bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
 void gba_reset(gba_t*gba);
  
-static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*read_only, int req_size){
+static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int req_type){
   uint32_t baddr=addr&0xffffffffc;
   uint32_t *ret = &gba->mem.openbus_word;
-
-  *read_only= false; 
   switch(baddr>>24){
     case 0x0: if(baddr<0x4000){
-      *read_only=true;
       if(gba->cpu.registers[15]<0x4000)gba->mem.bios_word = *(uint32_t*)(gba->mem.bios+baddr);
       //else gba->mem.bios_word=0;
-      ret=&gba->mem.bios_word;
-      gba->mem.openbus_word=*ret;
+      gba->mem.openbus_word=gba->mem.bios_word;
      } break;
     case 0x1: break;
     case 0x2: 
-      ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff)); 
+      ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3fffc)); 
       gba->mem.openbus_word=*ret;
       break;
     case 0x3: 
-      ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff)); 
+      ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7ffc)); 
       gba->mem.openbus_word=*ret;
       break;
     case 0x4: 
-      if(baddr<=0x40003FE ){ret = (uint32_t*)(gba->mem.io+(baddr&0x3ff));}
-      gba->mem.openbus_word=*ret;
+      if(baddr<=0x40003FF ){
+        if(req_type&GBA_REQ_READ){
+          int io_reg = (baddr>>2)&0xff;
+          if(gba->mem.mmio_reg_valid_lookup[io_reg]){
+            gba_process_mmio_read(gba,baddr,req_type&0xf);
+            gba->mem.mmio_word = (*(uint32_t*)(gba->mem.io+(addr&0x3fc)))&gba->mem.mmio_data_mask_lookup[io_reg];
+            ret = &gba->mem.mmio_word;
+          }
+        }else ret = (uint32_t*)(gba->mem.io+(addr&0x3fc));
+      }
       break;
     case 0x5: 
-      ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff)); 
+      ret = (uint32_t*)(gba->mem.palette+(addr&0x3fc)); 
       gba->mem.openbus_word=*ret;
       break;
     case 0x6: 
-      if(baddr&0x10000)ret = (uint32_t*)(gba->mem.vram+(baddr&0x07fff)+0x10000);
-      else ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
+      if(baddr&0x10000)ret = (uint32_t*)(gba->mem.vram+(baddr&0x07ffc)+0x10000);
+      else ret = (uint32_t*)(gba->mem.vram+(addr&0x1fffc));
       gba->mem.openbus_word=*ret;
       break;
     case 0x7: 
-      ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
+      ret = (uint32_t*)(gba->mem.oam+(addr&0x3fc));
       gba->mem.openbus_word=*ret;
       break;
     case 0x8:
@@ -1244,23 +1245,20 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*re
     case 0xB:
     case 0xC:
     case 0xD:{
-        int addr = baddr&0x1ffffff;
-        *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
-        if(addr>=gba->cart.rom_size){
-          ret = (uint32_t*)(&gba->mem.cartopen_bus);
-          *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
+        int maddr = addr&0x1fffffc;
+        if(maddr>=gba->cart.rom_size){
+          gba->mem.openbus_word = ((maddr/2)&0xffff)|(((maddr/2+1)&0xffff)<<16);
           // Return ready when done writting EEPROM (required by Minish Cap)
           if(gba->cart.backup_type==GBA_BACKUP_EEPROM){
-            ret = (uint32_t*)&gba->mem.eeprom_word;
-            *ret = 1; 
+            gba->mem.openbus_word = 1; 
+          }
+        }else{
+          gba->mem.openbus_word = *(uint32_t*)(gba->mem.cart_rom+maddr);
+          if((req_type&0xf)!=4){
+            uint32_t res16 = (gba->mem.openbus_word >> (addr&2)*8)&0xffff;
+            gba->mem.openbus_word = res16*0x10001;
           }
         }
-        if(req_size!=4){
-          int mask = (baddr&2)? 0xffff0000: 0xffff;
-          uint16_t res16 = (*ret >> (baddr&2)*8)&0xffff;
-          gba->mem.openbus_word=((addr/2)&0xffff);
-          gba->mem.openbus_word|= (res16<<16);
-        }else gba->mem.openbus_word=*ret;
       }
       break;
     case 0xE:
@@ -1271,43 +1269,16 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr,bool*re
      }else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
       else{
         //Flash
-        if(gba->cart.in_chip_id_mode&&baddr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
-        else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
+        if(gba->cart.in_chip_id_mode&&addr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
+        else ret = (uint32_t*)(gba->mem.cart_backup+(addr&0xfffc)+gba->cart.flash_bank*64*1024);
       }
       gba->mem.openbus_word=(*ret&0xffff)*0x10001;
       break;
-
   }
-  /*if(baddr>=0x8000000 && baddr<=0xDFFFFFF ){
-    int addr = baddr&0x1ffffff;
-    *read_only=true; ret = (uint32_t*)(gba->mem.cart_rom+addr);
-    if(addr>gba->cart.rom_size){
-      ret = (uint32_t*)(&gba->mem.cartopen_bus);
-      *ret = ((addr/2)&0xffff)|(((addr/2+1)&0xffff)<<16);
-    }
-  }
-  else if(baddr>=0x2000000 && baddr<=0x2FFFFFF )ret = (uint32_t*)(gba->mem.wram0+(baddr&0x3ffff));
-  else if(baddr>=0x3000000 && baddr<=0x3ffffff )ret = (uint32_t*)(gba->mem.wram1+(baddr&0x7fff));
-  else if(baddr>=0x4000000 && baddr<=0x40003FE ){
-    ret = (uint32_t*)(gba->mem.io+baddr-0x4000000);
-  }else if(baddr>=0x5000000 && baddr<=0x5ffffff )ret = (uint32_t*)(gba->mem.palette+(baddr&0x3ff));
-  else if(baddr>=0x6000000 && baddr<=0x6ffffff ){
-    if(baddr&0x10000)ret = (uint32_t*)(gba->mem.vram+(baddr&0x07fff)+0x10000);
-    else ret = (uint32_t*)(gba->mem.vram+(baddr&0x1ffff));
-  }else if(baddr>=0x7000000 && baddr<=0x7ffffff )ret = (uint32_t*)(gba->mem.oam+(baddr&0x3ff));
-  else if(baddr>=0xE000000 && baddr<=0xEffffff ){
-    if(gba->cart.backup_type==GBA_BACKUP_SRAM) ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0x7fff));
-    else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
-    else{
-      //Flash
-      if(gba->cart.in_chip_id_mode&&baddr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
-      else ret = (uint32_t*)(gba->mem.cart_backup+(baddr&0xffff)+gba->cart.flash_bank*64*1024);
-    }
-    
-  }else if(baddr<0x4000){ *read_only=true;ret= (uint32_t*)(gba->mem.bios+baddr-0x0);}
-  */
+  
   return ret;
 }
+
 static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
   int free_entries = (((gba->audio.fifo[fifo].write_ptr+1))-gba->audio.fifo[fifo].read_ptr)&0x1f; 
   if(free_entries){
@@ -1318,6 +1289,40 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     //printf("Tried to push audio samples to full fifo\n");
   }
 }
+static void gba_recompute_mmio_mask_table(gba_t* gba){
+  for(int io_reg = 0; io_reg<256;io_reg++){
+    uint32_t dword_address = 0x04000000+io_reg*4;
+    uint32_t data_mask =0xffffffff;
+    bool valid = true;
+    if(dword_address==0x4000008)data_mask&=0xdfffdfff;
+    else if(dword_address==0x4000048)data_mask &= 0x3f3f3f3f;
+    else if(dword_address==0x4000050)data_mask &= 0x1F1F3FFF;
+    else if(dword_address==0x4000060)data_mask &= 0xFFC0007F;
+    else if(dword_address==0x4000064||dword_address==0x400006C||dword_address==0x4000074)data_mask &= 0x4000;
+    else if(dword_address==0x4000068)data_mask &= 0xFFC0;
+    else if(dword_address==0x4000070)data_mask &= 0xE00000E0;
+    else if(dword_address==0x4000078)data_mask &= 0xff00;
+    else if(dword_address==0x400007C)data_mask &= 0x40FF;
+    else if(dword_address==0x4000080)data_mask &= 0x770FFF77;
+    else if(dword_address==0x4000084)data_mask &= 0x0080;
+    else if(dword_address==0x4000088)data_mask = 0x0000ffff;
+    else if(dword_address==0x40000B8||dword_address==0x40000C4||dword_address==0x40000D0)data_mask&=0xf7e00000;
+    else if(dword_address==0x40000DC)data_mask&=0xFFE00000; 
+    else if((dword_address>=0x4000010&& dword_address<=0x4000046) ||
+            (dword_address==0x400004C) ||
+            (dword_address>=0x4000054&& dword_address<=0x400005E)||
+            (dword_address==0x400008C)||
+            (dword_address>=0x40000A0&&dword_address<=0x40000B6)||
+            (dword_address>=0x40000BC&&dword_address<=0x40000C2)||
+            (dword_address>=0x40000C8&&dword_address<=0x40000CE)||
+            (dword_address>=0x40000D4&&dword_address<=0x40000DA)||
+            (dword_address>=0x40000E0&&dword_address<=0x40000FE)||
+            (dword_address==0x400100C))valid = false;
+    gba->mem.mmio_data_mask_lookup[io_reg]=data_mask;
+    gba->mem.mmio_reg_valid_lookup[io_reg]=valid;
+  }
+}
+
 static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address, int req_size_bytes){
   // Force recomputing timers on timer read
   if(address+req_size_bytes>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)gba_compute_timers(gba);
@@ -2027,6 +2032,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       int transfer_bytes = type? 4:2; 
       bool skip_dma = false;
       if(gba->dma[i].current_transaction==0){
+        if(mode==3 && i ==0)continue;
         if(gba->dma[i].startup_delay>=0){
           gba->dma[i].startup_delay-=last_tick; 
           if(gba->dma[i].startup_delay>=0){
@@ -2087,16 +2093,15 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         if(src_addr_ctl==0&&(dst_addr_ctl==0||dst_addr_ctl==3)&&cnt>2){
           int fast_dma_count = cnt-2;
           int bytes = fast_dma_count*transfer_bytes;
-          bool read_only[4];
           int src_addr = gba->dma[i].source_addr; 
           int dst_addr = gba->dma[i].dest_addr; 
 
-          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,&read_only[0],transfer_bytes)+(src_addr&3);
-          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,  &read_only[1],transfer_bytes)+(dst_addr&3);
-          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,&read_only[2],transfer_bytes)+(src_addr&3);
-          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,  &read_only[3],transfer_bytes)+(dst_addr&3);
+          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
+          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
+          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
+          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
           if(source_end-source_start==bytes&&dest_end-dest_start==bytes&&mode!=3){
-            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)&&!read_only[1]&&!read_only[3]){
+            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
               bytes = fast_dma_count*transfer_bytes;
               memcpy(dest_start,source_start, bytes);
               gba->dma[i].current_transaction=fast_dma_count;
@@ -2208,7 +2213,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           int dst_addr = dst+x*transfer_bytes*dst_dir;
           int src_addr = src+x*transfer_bytes*src_dir;
           if(type){
-            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
+            if(src_addr>=0x02000000){
               gba->dma[i].latched_transfer = gba_dma_read32(gba,src_addr);
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
             }
@@ -2216,7 +2221,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
             ticks+=gba_compute_access_cycles_dma(gba, dst_addr, x!=0||force_first_write_sequential? 2:3);
           }else{
             int v = 0;
-            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
+            if(src_addr>=0x02000000){
               v= gba->dma[i].latched_transfer = (gba_dma_read16(gba,src_addr))&0xffff;
               gba->dma[i].latched_transfer |= gba->dma[i].latched_transfer<<16;
               ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 0:1);
@@ -2240,7 +2245,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
           gba_send_interrupt(gba,4,if_bit);
         }
-        if(i==0&&mode==3)mode=0;
         if(!dma_repeat||mode==0){
           cnt_h&=0x7fff;
           //gba_io_store16(gba, GBA_DMA0CNT_L+12*i,0);
@@ -2779,6 +2783,7 @@ void gba_reset(gba_t*gba){
   gba_store16(gba,0x04000088,512);
   gba_store32(gba,0x040000DC,0x84000000);
   gba_recompute_waitstate_table(gba,0);
+  gba_recompute_mmio_mask_table(gba);
   gba->halt =false;
   gba->activate_dmas=false;
   gba->deferred_timer_ticks=0;
