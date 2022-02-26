@@ -778,7 +778,7 @@ void se_update_frame() {
 
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
   if(fabs(se_time()-simulation_time)>0.5)simulation_time = se_time();
-  while(--max_frames_per_tick){
+  while(max_frames_per_tick--){
     if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
     else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
     emu_state.frame++;
