@@ -165,7 +165,6 @@ const char* se_keycode_to_string(int keycode){
   }
 }
 
-
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
 sb_gb_t gb_state = { 0 };
@@ -199,7 +198,6 @@ double se_fps_counter(int tick){
   }
   return fps; 
 }
-
 
 void sb_pop_save_state(sb_gb_t* gb){
   if(sb_valid_save_states>0){
@@ -249,7 +247,6 @@ static void se_free_all_images(){
   }
   gui_state.current_image=0;
 }
-
 
 bool sb_load_rom(const char* file_path, const char* save_file){
   if(!sb_path_has_file_ext(file_path,".gb") && 
@@ -372,7 +369,6 @@ void se_load_rom(const char *filename){
   return; 
 }
 void sb_poll_controller_input(sb_joy_t* joy){
-  
   joy->left  = gui_state.button_state[SAPP_KEYCODE_A];
   joy->right = gui_state.button_state[SAPP_KEYCODE_D];
   joy->up    = gui_state.button_state[SAPP_KEYCODE_W];
@@ -514,8 +510,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   dpad_pos[1]+=win_y;
 
   bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
-
-  
+ 
   enum{max_points = 5};
   float points[max_points][2]={0};
 
@@ -591,15 +586,6 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
     int state = 0;
     int button_x =button_x_off+(button_w+button_padding)*b;
    
-    /*for(int i = 0;i<p;++i){
-      int dx = points[i].x-bounds.x;
-      int dy = points[i].y-bounds.y;
-      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
-        button_press|=1<<b; 
-        state =1;
-      }
-    }
-    */
     int x_min = button_x; 
     int x_max = dpad_pos[0]+dpad_sz1;
     if(b){
@@ -622,15 +608,6 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
     int state = 0;
     int button_x =button_x_off+(button_w+button_padding)*b;
    
-    /*for(int i = 0;i<p;++i){
-      int dx = points[i].x-bounds.x;
-      int dy = points[i].y-bounds.y;
-      if(dx>=-bounds.width*0.05 && dx<=bounds.width*1.05 && dy>=0 && dy<=bounds.height ){
-        button_press|=1<<b; 
-        state =1;
-      }
-    }
-    */
     int x_min = button_x; 
     int x_max = dpad_pos[0]+dpad_sz1;
     if(b){
@@ -1041,7 +1018,6 @@ static void init(void) {
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }
-
 }
 
 static void frame(void) {
@@ -1072,8 +1048,6 @@ static void frame(void) {
       igPopStyleVar(1);
       if(igButton("10x",(ImVec2){0, 0}))emu_state.step_frames=10;
     }
-    //igCheckbox("Show Settings",&gui_state.show_settings);
-    //igCheckbox("Show Developer",&gui_state.show_developer);
     igPushItemWidth(100);
     igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
     igPopItemWidth();
@@ -1102,7 +1076,6 @@ static void frame(void) {
       gb_draw_mem_debug_state(&gui_state, &gb_state); 
     }
   }
-
   /*=== UI CODE ENDS HERE ===*/
 
   sg_begin_default_pass(&gui_state.pass_action, width, height);
@@ -1172,7 +1145,6 @@ static void emsc_load_callback(const sapp_html5_fetch_response* response) {
   }
   free(response->buffer_ptr);
   free(response->user_data);
-  
 }
 #endif 
 static void event(const sapp_event* ev) {
@@ -1216,14 +1188,9 @@ static void event(const sapp_event* ev) {
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
     }
     gui_state.last_touch_time=0;
-
   }
 }
-
-
 sapp_desc sokol_main(int argc, char* argv[]) {
-  (void)argc;
-  (void)argv;
   emu_state.cmd_line_arg_count =argc;
   emu_state.cmd_line_args =argv;
 

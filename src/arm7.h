@@ -75,7 +75,7 @@ typedef struct{
 
 // This function initializes the internal state needed for the arm7 core emulation
 static arm7_t arm7_init(void* user_data);
-static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu);
+static void arm7_exec_instruction(arm7_t* cpu);
 // Memory IO functions for the emulated CPU (these must be defined by the user)
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address);
 static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address);
@@ -94,45 +94,45 @@ static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts);
 ///////////////////////////////////////////
 
 // ARM Instruction Implementations
-static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_multiply(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_multiply_long(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode);
+static void arm7_data_processing(arm7_t* cpu, uint32_t opcode);
+static void arm7_multiply(arm7_t* cpu, uint32_t opcode);
+static void arm7_multiply_long(arm7_t* cpu, uint32_t opcode);
+static void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode);
+static void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode);
+static void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm7_undefined(arm7_t* cpu, uint32_t opcode);
+static void arm7_block_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm7_branch(arm7_t* cpu, uint32_t opcode);
+static void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode);
+static void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode);
 
-static FORCE_INLINE void arm7_mrs(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7_msr(arm7_t* cpu, uint32_t opcode);
+static void arm7_mrs(arm7_t* cpu, uint32_t opcode);
+static void arm7_msr(arm7_t* cpu, uint32_t opcode);
 
 // Thumb Instruction Implementations
-static FORCE_INLINE void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_add_sub(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_mov_cmp_add_sub_imm(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_alu_op(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_load_addr(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_push_pop_reg(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_soft_interrupt(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_branch(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode);
-static FORCE_INLINE void arm7t_unknown(arm7_t* cpu, uint32_t opcode);
+static void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode);
+static void arm7t_add_sub(arm7_t* cpu, uint32_t opcode);
+static void arm7t_mov_cmp_add_sub_imm(arm7_t* cpu, uint32_t opcode);
+static void arm7t_alu_op(arm7_t* cpu, uint32_t opcode);
+static void arm7t_hi_reg_op(arm7_t* cpu, uint32_t opcode);
+static void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode);
+static void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode);
+static void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode);
+static void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode);
+static void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode);
+static void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode);
+static void arm7t_load_addr(arm7_t* cpu, uint32_t opcode);
+static void arm7t_add_off_sp(arm7_t* cpu, uint32_t opcode);
+static void arm7t_push_pop_reg(arm7_t* cpu, uint32_t opcode);
+static void arm7t_mult_ldst(arm7_t* cpu, uint32_t opcode);
+static void arm7t_cond_branch(arm7_t* cpu, uint32_t opcode);
+static void arm7t_soft_interrupt(arm7_t* cpu, uint32_t opcode);
+static void arm7t_branch(arm7_t* cpu, uint32_t opcode);
+static void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode);
+static void arm7t_unknown(arm7_t* cpu, uint32_t opcode);
 
 // Internal functions
 static FORCE_INLINE bool arm7_check_cond_code(arm7_t* cpu, uint32_t opcode);
@@ -268,7 +268,8 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
   int mode = cpu->registers[CPSR]&0xf;
 
-  const static int8_t lookup[10*16]={
+  const static int8_t lookup[10*16+8]={
+    -1,-1,-1,-1,-1,-1,-1,-1, //8 extra padding to remove the need to -8 from computation
      8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
     17,18,19,20,21,22,23,15,16,32, //mode 0x1 (fiq)
      8, 9,10,11,12,24,25,15,16,33, //mode 0x2 (irq)
@@ -286,7 +287,7 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xE (inv)
      8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
-  int8_t r = lookup[mode*10+reg-8];
+  int8_t r = lookup[mode*10+reg];
   if(r!=-1)return r; 
   cpu->trigger_breakpoint=true;
   printf("Undefined ARM mode: %d\n",mode);
@@ -486,7 +487,7 @@ static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
   };
   return false; 
 }
-static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
+static void arm7_exec_instruction(arm7_t* cpu){
   bool thumb = arm7_get_thumb_bit(cpu);
   if(cpu->prefetch_pc!=cpu->registers[PC]){
     if(thumb){
