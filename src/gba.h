@@ -680,6 +680,7 @@ typedef struct{
   bool last_hblank;
   uint32_t latched_transfer;
   int startup_delay; 
+  bool activate_audio_dma;
 } gba_dma_t; 
 typedef struct{
   int scan_clock; 
@@ -2155,6 +2156,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       }
       bool audio_dma = (mode==3) && (i==1||i==2);
       if(audio_dma){
+        if(gba->dma[i].activate_audio_dma==false)continue;
+        gba->dma[i].activate_audio_dma=false;
         int fifo = -1;
         dst&=~3;
         src&=~3;
@@ -2172,6 +2175,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,16,8));
           gba_audio_fifo_push(gba,fifo,SB_BFE(data,24,8));
           ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
+          ticks+=gba_compute_access_cycles_dma(gba, dst, x!=0||force_first_write_sequential? 2:3);
         }
         dma_repeat=true;
         dst_addr_ctl= 2; 
@@ -2388,7 +2392,27 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;
-
+  uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
+  // Channel volume for each FIFO
+  for(int i=0;i<2;++i){
+    int timer = SB_BFE(soundcnt_h,10+i*4,1);
+    bool reset = SB_BFE(soundcnt_h,11+i*4,1);
+    if(reset){
+      gba->audio.fifo[i].read_ptr=0;
+      gba->audio.fifo[i].write_ptr=0;  
+      for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
+    }
+    int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
+    if(samples_to_pop){ gba->dma[i+1].activate_audio_dma=true;gba->activate_dmas=true;}
+    //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
+    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
+      gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
+      samples_to_pop--;
+    }
+  }
+  gba->timers[0].elapsed_audio_samples= 0;
+  gba->timers[1].elapsed_audio_samples= 0;
+   
   current_sim_time +=delta_time;
   if(current_sample_generated_time >current_sim_time)return; 
   //TODO: Move these into a struct
@@ -2502,7 +2526,6 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   //These are type int to allow them to be multiplied to enable/disable
   float chan_l[6],chan_r[6];
   uint16_t chan_sel = gba_io_read16(gba,GBA_SOUNDCNT_L);
-  uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
   /* soundcnth 
   0-1   R/W  Sound # 1-4 Volume   (0=25%, 1=50%, 2=100%, 3=Prohibited)
   2     R/W  DMA Sound A Volume   (0=50%, 1=100%)
@@ -2531,21 +2554,6 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     chan_r[i+4]=chan_l[i+4]= SB_BFE(soundcnt_h,2+i,1)? 1.0: 0.5;
     chan_r[i+4]*= SB_BFE(soundcnt_h,8+i*4,1);
     chan_l[i+4]*= SB_BFE(soundcnt_h,9+i*4,1);
-    int timer = SB_BFE(soundcnt_h,10+i*4,1);
-    bool reset = SB_BFE(soundcnt_h,11+i*4,1);
-    if(reset){
-      gba->audio.fifo[i].read_ptr=31;
-      gba->audio.fifo[i].write_ptr=0;  
-      for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
-      gba->activate_dmas=true;
-    }
-    int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
-    //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
-    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
-      gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
-      samples_to_pop--;
-      gba->activate_dmas=true;
-    }
   }
   gba_io_store16(gba,GBA_SOUNDCNT_H,soundcnt_h&~((1<<11)|(1<<15)));
 
@@ -2554,8 +2562,6 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
                                              gba->audio.fifo[1].read_ptr,gba->audio.fifo[1].write_ptr,
                                              gba->timers[0].elapsed_audio_samples,gba->timers[1].elapsed_audio_samples);
   */
-  gba->timers[0].elapsed_audio_samples= 0;
-  gba->timers[1].elapsed_audio_samples= 0;
   
   float freq1_hz_base = freq_hz[0];
   uint16_t soundcnt_x = gba_io_read16(gba,GBA_SOUNDCNT_X);
