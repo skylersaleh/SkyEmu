@@ -778,15 +778,14 @@ void se_update_frame() {
 
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
   if(fabs(se_time()-simulation_time)>0.5)simulation_time = se_time();
+  int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
   while(max_frames_per_tick--){
+    if(simulation_time>se_time())break;
     if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
     else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
     emu_state.frame++;
-    int size = sb_ring_buffer_size(&emu_state.audio_ring_buff);
-    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     //Only breakout of emulation loop when we have enough audio queued up
     simulation_time+=sim_time_increment;
-    if(size>1.5*samples_per_buffer&&simulation_time>se_time())break;
     emu_state.render_frame = false;
   }
  
