@@ -183,21 +183,21 @@ double se_time(){
 double se_fps_counter(int tick){
   static int call = -1;
   static uint64_t last_t = 0;
-  static double fps = 60; 
-  if(!tick)return fps;
+  static double fps = 1.0/60.0; 
+  if(!tick)return 1.0/fps;
   if(call==-1){
     call = 0;
     last_t = stm_now();
+    fps = 1.0/60;
   }else{
     uint64_t t = stm_now();
     double delta = stm_sec(stm_diff(t,last_t));
-    float alpha = 0.1;
-
-    fps=fps*(1.0-alpha)+tick/delta*alpha;
+    double alpha = 0.1;
+    fps=fps*(1.0-alpha)+delta/(double)tick*alpha;
     last_t = t;
     
   }
-  return fps; 
+  return 1.0/fps; 
 }
 
 void sb_pop_save_state(sb_gb_t* gb){
@@ -770,7 +770,7 @@ void se_update_frame() {
 
   emu_state.render_frame = true;
 
-  static double simulation_time = 0;
+  static double simulation_time = -1;
   static double display_time = 0;
   if(emu_state.step_frames<1)emu_state.step_frames=1;
   double sim_fps= 1;
@@ -778,10 +778,14 @@ void se_update_frame() {
   else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
 
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
-  if(fabs(se_time()-simulation_time)>0.5)simulation_time = se_time()-sim_time_increment;
+  if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN)simulation_time = se_time()-sim_time_increment*2;
   int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
   while(max_frames_per_tick--){
-    if(simulation_time>se_time())break;
+    double error = se_time()-simulation_time;
+    if(emu_state.frame==0&&simulation_time>se_time())break;
+    if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){
+      break;
+    }
     if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
     else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
     emu_state.frame++;
@@ -1051,7 +1055,7 @@ static void frame(void) {
     igPushItemWidth(100);
     igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
     igPopItemWidth();
-    if(emu_state.run_mode==SB_MODE_RUN) igText("%.01fFPS",se_fps_counter(0));
+    if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
     menu_height= igGetWindowHeight();
     igEndMainMenuBar();
   }
