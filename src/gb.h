@@ -1099,6 +1099,101 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
   y += sb_polyblep(t2,dt);
   return y;
 }
+static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, const char* save_file){
+  if(!sb_path_has_file_ext(file_path,".gb") && 
+     !sb_path_has_file_ext(file_path,".gbc")) return false; 
+  size_t bytes = 0;
+  uint8_t *data = sb_load_file_data(file_path, &bytes);
+  if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
+  printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
+  for (size_t i = 0; i < bytes; ++i) {
+    gb->cart.data[i] = data[i];
+  }
+  for(size_t i = 0; i< 32*1024;++i)gb->mem.data[i] = gb->cart.data[i];
+  // Copy Header
+  for (int i = 0; i < 11; ++i) {
+    gb->cart.title[i] = gb->cart.data[i + 0x134];
+  }
+  gb->cart.title[12] ='\0';
+  // TODO PGB Mode(Values with Bit 7 set, and either Bit 2 or 3 set)
+  gb->cart.game_boy_color =
+      SB_BFE(gb->cart.data[0x143], 7, 1) == 1;
+  gb->cart.type = gb->cart.data[0x147];
+
+  switch(gb->cart.type){
+    case 0: gb->cart.mbc_type = SB_MBC_NO_MBC; break;
+
+    case 1:
+    case 2:
+    case 3: gb->cart.mbc_type = SB_MBC_MBC1; break;
+
+    case 5:
+    case 6: gb->cart.mbc_type = SB_MBC_MBC2; break;
+
+    case 0x0f:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13: gb->cart.mbc_type = SB_MBC_MBC3; break;
+
+    case 0x19:
+    case 0x1A:
+    case 0x1B:
+    case 0x1C:
+    case 0x1D:
+    case 0x1E:gb->cart.mbc_type = SB_MBC_MBC5; break;
+
+    case 0x20:gb->cart.mbc_type = SB_MBC_MBC6; break;
+    case 0x22:gb->cart.mbc_type = SB_MBC_MBC7; break;
+
+  }
+  switch (gb->cart.data[0x148]) {
+    case 0x0: gb->cart.rom_size = 32 * 1024;  break;
+    case 0x1: gb->cart.rom_size = 64 * 1024;  break;
+    case 0x2: gb->cart.rom_size = 128 * 1024; break;
+    case 0x3: gb->cart.rom_size = 256 * 1024; break;
+    case 0x4: gb->cart.rom_size = 512 * 1024; break;
+    case 0x5: gb->cart.rom_size = 1024 * 1024;     break;
+    case 0x6: gb->cart.rom_size = 2 * 1024 * 1024; break;
+    case 0x7: gb->cart.rom_size = 4 * 1024 * 1024; break;
+    case 0x8: gb->cart.rom_size = 8 * 1024 * 1024; break;
+    case 0x52: gb->cart.rom_size = 1.1 * 1024 * 1024; break;
+    case 0x53: gb->cart.rom_size = 1.2 * 1024 * 1024; break;
+    case 0x54: gb->cart.rom_size = 1.5 * 1024 * 1024; break;
+    default: gb->cart.rom_size = 32 * 1024; break;
+  }
+
+  switch (gb->cart.data[0x149]) {
+    case 0x0: gb->cart.ram_size = 0; break;
+    case 0x1: gb->cart.ram_size = 2*1024; break;
+    case 0x2: gb->cart.ram_size = 8 * 1024; break;
+    case 0x3: gb->cart.ram_size = 32 * 1024; break;
+    case 0x4: gb->cart.ram_size = 128 * 1024; break;
+    case 0x5: gb->cart.ram_size = 64 * 1024; break;
+    default: gb->cart.ram_size = 0; break;
+  }
+  emu->run_mode = SB_MODE_RESET;
+  emu->rom_loaded = true;
+  sb_free_file_data(data);
+
+  strncpy(gb->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
+  gb->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
+  data = sb_load_file_data(save_file, &bytes);
+  if(data){
+    if(bytes!=gb->cart.ram_size){
+      printf("Warning save file size(%zu) doesn't match size expected(%d) for the cartridge type", bytes, gb->cart.ram_size);
+    }
+    if(bytes>gb->cart.ram_size){
+      bytes = gb->cart.ram_size;
+    }
+    memcpy(gb->cart.ram_data, data, bytes);
+    sb_free_file_data(data);
+  }else{
+    printf("Could not find save file: %s\n",save_file);
+    memset(gb->cart.ram_data,0,MAX_CARTRIDGE_RAM);
+  }
+  return true; 
+}
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;

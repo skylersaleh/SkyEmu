@@ -10,7 +10,7 @@
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
 #include "gba.h"
-
+#include "nds.h"
 #include "gb.h"
 #define SB_NUM_SAVE_STATES 5
 
@@ -34,6 +34,11 @@
 #ifdef USE_TINY_FILE_DIALOGS
 #include "tinyfiledialogs.h"
 #endif
+
+void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
+void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
+void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
+
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
@@ -169,6 +174,7 @@ const char* se_keycode_to_string(int keycode){
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
 sb_gb_t gb_state = { 0 };
 gba_t gba = { 0 };  
+nds_t nds = { 0 };
 
 sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
 int sb_valid_save_states = 0;
@@ -248,104 +254,119 @@ static void se_free_all_images(){
   }
   gui_state.current_image=0;
 }
+typedef uint8_t (*emu_byte_read_t)(uint64_t address);
+typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
 
-bool sb_load_rom(const char* file_path, const char* save_file){
-  if(!sb_path_has_file_ext(file_path,".gb") && 
-     !sb_path_has_file_ext(file_path,".gbc")) return false; 
-  size_t bytes = 0;
-  uint8_t *data = sb_load_file_data(file_path, &bytes);
-  if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
-  printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
-  for (size_t i = 0; i < bytes; ++i) {
-    gb_state.cart.data[i] = data[i];
-  }
-  for(size_t i = 0; i< 32*1024;++i)gb_state.mem.data[i] = gb_state.cart.data[i];
-  // Copy Header
-  for (int i = 0; i < 11; ++i) {
-    gb_state.cart.title[i] = gb_state.cart.data[i + 0x134];
-  }
-  gb_state.cart.title[12] ='\0';
-  // TODO PGB Mode(Values with Bit 7 set, and either Bit 2 or 3 set)
-  gb_state.cart.game_boy_color =
-      SB_BFE(gb_state.cart.data[0x143], 7, 1) == 1;
-  gb_state.cart.type = gb_state.cart.data[0x147];
-
-  switch(gb_state.cart.type){
-    case 0: gb_state.cart.mbc_type = SB_MBC_NO_MBC; break;
-
-    case 1:
-    case 2:
-    case 3: gb_state.cart.mbc_type = SB_MBC_MBC1; break;
-
-    case 5:
-    case 6: gb_state.cart.mbc_type = SB_MBC_MBC2; break;
-
-    case 0x0f:
-    case 0x10:
-    case 0x11:
-    case 0x12:
-    case 0x13: gb_state.cart.mbc_type = SB_MBC_MBC3; break;
-
-    case 0x19:
-    case 0x1A:
-    case 0x1B:
-    case 0x1C:
-    case 0x1D:
-    case 0x1E:gb_state.cart.mbc_type = SB_MBC_MBC5; break;
-
-    case 0x20:gb_state.cart.mbc_type = SB_MBC_MBC6; break;
-    case 0x22:gb_state.cart.mbc_type = SB_MBC_MBC7; break;
-
-  }
-  switch (gb_state.cart.data[0x148]) {
-    case 0x0: gb_state.cart.rom_size = 32 * 1024;  break;
-    case 0x1: gb_state.cart.rom_size = 64 * 1024;  break;
-    case 0x2: gb_state.cart.rom_size = 128 * 1024; break;
-    case 0x3: gb_state.cart.rom_size = 256 * 1024; break;
-    case 0x4: gb_state.cart.rom_size = 512 * 1024; break;
-    case 0x5: gb_state.cart.rom_size = 1024 * 1024;     break;
-    case 0x6: gb_state.cart.rom_size = 2 * 1024 * 1024; break;
-    case 0x7: gb_state.cart.rom_size = 4 * 1024 * 1024; break;
-    case 0x8: gb_state.cart.rom_size = 8 * 1024 * 1024; break;
-    case 0x52: gb_state.cart.rom_size = 1.1 * 1024 * 1024; break;
-    case 0x53: gb_state.cart.rom_size = 1.2 * 1024 * 1024; break;
-    case 0x54: gb_state.cart.rom_size = 1.5 * 1024 * 1024; break;
-    default: gb_state.cart.rom_size = 32 * 1024; break;
-  }
-
-  switch (gb_state.cart.data[0x149]) {
-    case 0x0: gb_state.cart.ram_size = 0; break;
-    case 0x1: gb_state.cart.ram_size = 2*1024; break;
-    case 0x2: gb_state.cart.ram_size = 8 * 1024; break;
-    case 0x3: gb_state.cart.ram_size = 32 * 1024; break;
-    case 0x4: gb_state.cart.ram_size = 128 * 1024; break;
-    case 0x5: gb_state.cart.ram_size = 64 * 1024; break;
-    default: gb_state.cart.ram_size = 0; break;
-  }
-  emu_state.run_mode = SB_MODE_RESET;
-  emu_state.rom_loaded = true;
-  sb_free_file_data(data);
-
-  strncpy(gb_state.cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
-  gb_state.cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
-  data = sb_load_file_data(save_file, &bytes);
-  if(data){
-    if(bytes!=gb_state.cart.ram_size){
-      printf("Warning save file size(%zu) doesn't match size expected(%d) for the cartridge type", bytes, gb_state.cart.ram_size);
-    }
-    if(bytes>gb_state.cart.ram_size){
-      bytes = gb_state.cart.ram_size;
-    }
-    memcpy(gb_state.cart.ram_data, data, bytes);
-    sb_free_file_data(data);
-  }else{
-    printf("Could not find save file: %s\n",save_file);
-    memset(gb_state.cart.ram_data,0,MAX_CARTRIDGE_RAM);
-  }
-  return true; 
+static uint16_t se_read16(emu_byte_read_t read,uint64_t address){
+  uint16_t data = (*read)(address+1);
+  data<<=8;
+  data |= (*read)(address+0);
+  return data;
 }
+static uint32_t se_read32(emu_byte_read_t read,uint64_t address){
+  uint32_t data = (*read)(address+3);
+  data<<=8;
+  data |= (*read)(address+2);
+  data<<=8;
+  data |= (*read)(address+1);
+  data<<=8;
+  data |= (*read)(address+0);
+  return data;
+}
+static void se_write16(emu_byte_write_t write, uint64_t address,uint16_t data){
+  write(address,SB_BFE(data,0,8));
+  write(address+1,SB_BFE(data,8,8));
+}
+static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
+  write(address,SB_BFE(data,0,8));
+  write(address+1,SB_BFE(data,8,8));
+  write(address+2,SB_BFE(data,16,8));
+  write(address+3,SB_BFE(data,24,8));
+}
+void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
+  igBegin(label, 0,0);
+  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  int v = se_read32(read,gui->mem_view_address);
+  if(igInputInt("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    se_write32(write,gui->mem_view_address,v);
+  }
+  v = se_read16(read,gui->mem_view_address);
+  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    se_write16(write,gui->mem_view_address,v);
+  }
+  v = (*read)(gui->mem_view_address);
+  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    (*write)(gui->mem_view_address,v);
+  }
+  igEnd();
+}
+void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write){
+  igBegin(label, 0,0);
+  for(int i = 0; i<mmios_size;++i){
+    uint32_t addr = mmios[i].addr;
+    uint16_t data = se_read16(read, addr);
+    bool has_fields = false;
+    igPushIDInt(i);
+    if (igTreeNodeStrStr("%s(%08x): %04x",mmios[i].name,addr,data)){
+      for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
+        igPushIDInt(f);
+        uint32_t start = mmios[i].bits[f].start; 
+        uint32_t size = mmios[i].bits[f].size; 
+        if(size){
+          uint32_t field_data = SB_BFE(data,start,size);
+          has_fields=true;
+          uint32_t mask = (((1<<size)-1)<<start);
+          bool edit = false;
+          if(size==1){
+            bool v = field_data!=0;
+            edit=igCheckbox("",&v);
+            data &= ~mask;
+            data |= (v<<start)&mask; 
+          }else{
+            int v = field_data;
+            igPushItemWidth(100);
+            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
+            data &= ~mask;
+            data |= (v<<start)&mask;
+            igPopItemWidth();
+          }
+          if(edit){
+            se_write16(write,addr,data);
+          }
+          igSameLine(0,2);
+          if(size>1)igText("%s (Bits [%d:%d])",mmios[i].bits[f].name,start, start+size-1);
+          else igText("%s (Bit %d)",mmios[i].bits[f].name,start);
+        }
+        igPopID();
+      }
+      if(!has_fields){
+        int v = data; 
+        igPushIDInt(0);
+        igPushItemWidth(150);
+        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+          se_write16(write,addr,v);
+        }
+        igSameLine(0,2);
+        igText("Data");
+        igPopID();
+      }
+      igTreePop();
+    }
+    igPopID();
+  }
+  igEnd();
+}
+/////////////////////////////////
+// BEGIN UPDATE FOR NEW SYSTEM //
+/////////////////////////////////
+
+// Used for file loading dialogs
+static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
 
 void se_load_rom(const char *filename){
+  if(emu_state.rom_loaded){
+    if(emu_state.system==SYSTEM_NDS)nds_unload(&nds);
+  }
   char save_file[4096]; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
@@ -360,15 +381,139 @@ void se_load_rom(const char *filename){
   if(gba_load_rom(&gba, filename,save_file)){
     emu_state.system = SYSTEM_GBA;
     emu_state.rom_loaded = true;
-  }
-  if(sb_load_rom(filename,save_file)){
+  }else if(sb_load_rom(&gb_state, &emu_state,filename,save_file)){
     emu_state.system = SYSTEM_GB;
+    emu_state.rom_loaded = true; 
+  }else if(nds_load_rom(&nds,filename,save_file)){
+    emu_state.system = SYSTEM_NDS;
     emu_state.rom_loaded = true; 
   }
   if(emu_state.rom_loaded==false)printf("ERROR: Unknown ROM type: %s\n", filename);
   else emu_state.run_mode= SB_MODE_RESET;
   return; 
 }
+static bool se_sync_save_to_disk(){
+  bool saved = false;
+  if(emu_state.system== SYSTEM_GB){
+    if(gb_state.cart.ram_is_dirty){
+      saved=true;
+      if(sb_save_file_data(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
+      }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
+      gb_state.cart.ram_is_dirty=false;
+    }
+  }else if(emu_state.system ==SYSTEM_GBA){
+    if(gba.cart.backup_is_dirty){
+      int size = 0; 
+      switch(gba.cart.backup_type){
+        case GBA_BACKUP_NONE       : size = 0;       break;
+        case GBA_BACKUP_EEPROM     : size = 8*1024;  break;
+        case GBA_BACKUP_EEPROM_512B: size = 512;     break;
+        case GBA_BACKUP_EEPROM_8KB : size = 8*1024;  break;
+        case GBA_BACKUP_SRAM       : size = 32*1024; break;
+        case GBA_BACKUP_FLASH_64K  : size = 64*1024; break;
+        case GBA_BACKUP_FLASH_128K : size = 128*1024;break;
+      }
+      if(size){
+        saved =true;
+        if(sb_save_file_data(gba.cart.save_file_path,gba.mem.cart_backup,size)){
+        }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
+      }
+      gba.cart.backup_is_dirty=false;
+    }
+  }
+  return saved;
+}
+static double se_get_sim_fps(){
+  double sim_fps=1.0;
+  if(emu_state.system==SYSTEM_GB)sim_fps = 59.727;
+  else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
+  else if(emu_state.system == SYSTEM_NDS) sim_fps = 59.727;
+  return sim_fps;
+}
+static void se_emulate_single_frame(){
+  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
+  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
+  else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &nds);
+}
+static void se_draw_emulated_system_screen(){
+  int lcd_render_x = 0, lcd_render_y = 0; 
+  int lcd_render_w = 0, lcd_render_h = 0; 
+
+
+  float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
+  if(emu_state.system==SYSTEM_GBA){
+    lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
+  }else if(emu_state.system==SYSTEM_NDS){
+    lcd_aspect= NDS_LCD_H*2/(float)NDS_LCD_W;
+  }
+  // Square Screen
+  float scr_w = igGetWindowWidth();
+  float scr_h = igGetWindowHeight();
+  float height = scr_h;
+  float extra_space=0;
+  if(scr_w*lcd_aspect>height){
+    //Too wide
+    extra_space = scr_w-height/lcd_aspect;
+    //lcd_rect = (Rectangle){extra_space*0.5, panel_height, height/lcd_aspect,height};
+    lcd_render_x = extra_space*0.5;
+    lcd_render_w = scr_h/lcd_aspect;
+    lcd_render_h = height;
+  }else{
+    //Too tall
+    extra_space = height-scr_w*lcd_aspect;
+    lcd_render_y = extra_space*0.5;
+    lcd_render_w = scr_w;
+    lcd_render_h = scr_w*lcd_aspect;
+  }
+
+  int controller_h = scr_h; 
+  if(lcd_render_h*1.8<scr_h){
+    lcd_render_y = extra_space*0.05;
+    controller_h = scr_h-lcd_render_h-lcd_render_y;
+  }
+  ImVec2 v;
+  igGetWindowPos(&v);
+  lcd_render_x+=v.x*se_dpi_scale();
+  lcd_render_y+=v.y*se_dpi_scale();
+  if(emu_state.system==SYSTEM_GBA){
+    se_draw_image(gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+  }else if (emu_state.system==SYSTEM_NDS){
+    se_draw_image(nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h*0.5,false);
+    se_draw_image(nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y+lcd_render_h*0.5, lcd_render_w, lcd_render_h*0.5,false);
+  }else{
+    se_draw_image(gb_state.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+  }
+  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,emu_state.run_mode!=SB_MODE_RUN);
+  sb_draw_onscreen_controller(&emu_state, controller_h);
+}
+static uint8_t gba_byte_read(uint64_t address){return gba_read8(&gba,address);}
+static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&gba,address,data);}
+static uint8_t gb_byte_read(uint64_t address){return sb_read8(&gb_state,address);}
+static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&gb_state,address,data);}
+
+static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&nds,address);}
+static void nds9_byte_write(uint64_t address, uint8_t data){nds9_store8(&nds,address,data);}
+static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&nds,address);}
+static void nds7_byte_write(uint64_t address, uint8_t data){nds7_store8(&nds,address,data);}
+
+static void se_draw_debug(){
+  if(emu_state.system ==SYSTEM_GBA){
+    se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write); 
+    se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); 
+  }else if(emu_state.system ==SYSTEM_GB){
+    se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write); 
+    se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write); 
+  }else if(emu_state.system ==SYSTEM_NDS){
+    se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write); 
+    se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); 
+    se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); 
+    se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write); 
+  }
+}
+///////////////////////////////
+// END UPDATE FOR NEW SYSTEM //
+///////////////////////////////
+
 void sb_poll_controller_input(sb_joy_t* joy){
   joy->left  = gui_state.button_state[SAPP_KEYCODE_A];
   joy->right = gui_state.button_state[SAPP_KEYCODE_D];
@@ -719,9 +864,8 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
   int y_off = (h-load_rom_im_h)*0.5;
   if(se_draw_image_button(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true)){
     #ifdef USE_TINY_FILE_DIALOGS
-      char const * filters[3] = { "*.gb", "*.gba","*.gbc" };
-      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(filters)/sizeof(filters[0]),
-                                          filters,NULL,0);
+      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
+                                          valid_rom_file_types,NULL,0);
       if (outPath){
           se_load_rom(outPath);
       }
@@ -731,38 +875,13 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
 void se_update_frame() {
   static unsigned frames_since_last_save = 0; 
   frames_since_last_save++;
-  if(emu_state.system== SYSTEM_GB){
-    if(gb_state.cart.ram_is_dirty && frames_since_last_save>10){
-      frames_since_last_save = 0; 
-      if(sb_save_file_data(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
-   #if defined(EMSCRIPTEN)
-        // Don't forget to sync to make sure you store it to IndexedDB
-      EM_ASM( FS.syncfs(function (err) {}); );
-   #endif
-      }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
-      gb_state.cart.ram_is_dirty=false;
-    }
-  }else if(emu_state.system ==SYSTEM_GBA){
-    if(gba.cart.backup_is_dirty && frames_since_last_save>10){
-      frames_since_last_save = 0; 
-      int size = 0; 
-      switch(gba.cart.backup_type){
-        case GBA_BACKUP_NONE       : size = 0;       break;
-        case GBA_BACKUP_EEPROM     : size = 8*1024;  break;
-        case GBA_BACKUP_EEPROM_512B: size = 512;     break;
-        case GBA_BACKUP_EEPROM_8KB : size = 8*1024;  break;
-        case GBA_BACKUP_SRAM       : size = 32*1024; break;
-        case GBA_BACKUP_FLASH_64K  : size = 64*1024; break;
-        case GBA_BACKUP_FLASH_128K : size = 128*1024;break;
-      }
-      if(size){
-        if(sb_save_file_data(gba.cart.save_file_path,gba.mem.cart_backup,size)){
-          #if defined(EMSCRIPTEN)
-              EM_ASM( FS.syncfs(function (err) {}););
-          #endif
-        }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
-      }
-      gba.cart.backup_is_dirty=false;
+  if(frames_since_last_save>10){
+    bool saved = se_sync_save_to_disk();
+    if(saved){
+      frames_since_last_save=0;
+      #if defined(EMSCRIPTEN)
+        EM_ASM( FS.syncfs(function (err) {}););
+      #endif
     }
   }
   emu_state.frame=0;
@@ -773,11 +892,10 @@ void se_update_frame() {
   static double simulation_time = -1;
   static double display_time = 0;
   if(emu_state.step_frames<1)emu_state.step_frames=1;
-  double sim_fps= 1;
-  if(emu_state.system==SYSTEM_GB)sim_fps = 59.727;
-  else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
 
+  double sim_fps= se_get_sim_fps();
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
+
   if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN)simulation_time = se_time()-sim_time_increment*2;
   int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
   while(max_frames_per_tick--){
@@ -786,8 +904,7 @@ void se_update_frame() {
     if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){
       break;
     }
-    if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
-    else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
+    se_emulate_single_frame();
     emu_state.frame++;
     //Only breakout of emulation loop when we have enough audio queued up
     simulation_time+=sim_time_increment;
@@ -798,197 +915,8 @@ void se_update_frame() {
   bool mute = emu_state.run_mode != SB_MODE_RUN;
 
   sb_poll_controller_input(&emu_state.joy);
-  int lcd_render_x = 0, lcd_render_y = 0; 
-  int lcd_render_w = 0, lcd_render_h = 0; 
-
-
-  float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
-  if(emu_state.system==SYSTEM_GBA){
-    lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
-  }
-  
-  // Square Screen
-  float scr_w = igGetWindowWidth();
-  float scr_h = igGetWindowHeight();
-  float height = scr_h;
-  float extra_space=0;
-  if(scr_w*lcd_aspect>height){
-    //Too wide
-    extra_space = scr_w-height/lcd_aspect;
-    //lcd_rect = (Rectangle){extra_space*0.5, panel_height, height/lcd_aspect,height};
-    lcd_render_x = extra_space*0.5;
-    lcd_render_w = scr_h/lcd_aspect;
-    lcd_render_h = height;
-  }else{
-    //Too tall
-    extra_space = height-scr_w*lcd_aspect;
-    lcd_render_y = extra_space*0.5;
-    lcd_render_w = scr_w;
-    lcd_render_h = scr_w*lcd_aspect;
-  }
-
-  int controller_h = scr_h; 
-  if(lcd_render_h*1.8<scr_h){
-    lcd_render_y = extra_space*0.05;
-    controller_h = scr_h-lcd_render_h-lcd_render_y;
-  }
-  ImVec2 v;
-  igGetWindowPos(&v);
-  lcd_render_x+=v.x*se_dpi_scale();
-  lcd_render_y+=v.y*se_dpi_scale();
-  if(emu_state.system==SYSTEM_GBA){
-    se_draw_image(gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
-  }else{
-    se_draw_image(gb_state.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
-  }
-  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,emu_state.run_mode!=SB_MODE_RUN);
-  sb_draw_onscreen_controller(&emu_state, controller_h);
-
+  se_draw_emulated_system_screen();
 }
-void gba_draw_mem_debug_state(gui_state_t* gui, gba_t* gba){
-  igBegin("MemView", 0,0);
-  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
-  int v = gba_read32(gba,gui->mem_view_address);
-  if(igInputInt("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-    gba_store32(gba,gui->mem_view_address,v);
-  }
-  v = gba_read16(gba,gui->mem_view_address);
-  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-    gba_store16(gba,gui->mem_view_address,v);
-  }
-  v = gba_read8(gba,gui->mem_view_address);
-  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-    gba_store8(gba,gui->mem_view_address,v);
-  }
-  igEnd();
-}
-
-void gba_draw_io_state(gba_t* gba){
-  igBegin("MMIO", 0,0);
-  for(int i = 0; i<sizeof(gba_io_reg_desc)/sizeof(gba_io_reg_desc[0]);++i){
-    uint32_t addr = gba_io_reg_desc[i].addr;
-    uint16_t data = gba_read16(gba, addr);
-    bool has_fields = false;
-    igPushIDInt(i);
-    if (igTreeNodeStrStr("%s(%08x): %04x",gba_io_reg_desc[i].name,addr,data)){
-      for(int f = 0; f<sizeof(gba_io_reg_desc[i].bits)/sizeof(gba_io_reg_desc[i].bits[0]);++f){
-        igPushIDInt(f);
-        uint32_t start = gba_io_reg_desc[i].bits[f].start; 
-        uint32_t size = gba_io_reg_desc[i].bits[f].size; 
-        if(size){
-          uint32_t field_data = SB_BFE(data,start,size);
-          has_fields=true;
-          uint32_t mask = (((1<<size)-1)<<start);
-          bool edit = false;
-          if(size==1){
-            bool v = field_data!=0;
-            edit=igCheckbox("",&v);
-            data &= ~mask;
-            data |= (v<<start)&mask; 
-          }else{
-            int v = field_data;
-            igPushItemWidth(100);
-            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
-            data &= ~mask;
-            data |= (v<<start)&mask;
-            igPopItemWidth();
-          }
-          if(edit){
-            gba_store16(gba,addr,data);
-          }
-          igSameLine(0,2);
-          if(size>1)igText("%s (Bits [%d:%d])",gba_io_reg_desc[i].bits[f].name,start, start+size-1);
-          else igText("%s (Bit %d)",gba_io_reg_desc[i].bits[f].name,start);
-        }
-        igPopID();
-      }
-      if(!has_fields){
-        int v = data; 
-        igPushIDInt(0);
-        igPushItemWidth(150);
-        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-          gba_store16(gba,addr,v);
-        }
-        igSameLine(0,2);
-        igText("Data");
-        igPopID();
-      }
-      igTreePop();
-    }
-    igPopID();
-  }
-  igEnd();
-}
-void gb_draw_mem_debug_state(gui_state_t* gui, sb_gb_t* gb){
-  igBegin("MemView", 0,0);
-  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
-  int v = sb_read16(gb,gui->mem_view_address);
-  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-    sb_store16(gb,gui->mem_view_address,v);
-  }
-  v = sb_read8(gb,gui->mem_view_address);
-  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-    sb_store8(gb,gui->mem_view_address,v);
-  }
-  igEnd();
-}
-void gb_draw_io_state(sb_gb_t* gb){
-  igBegin("MMIO", 0,0);
-  for(int i = 0; i<sizeof(gb_io_reg_desc)/sizeof(gb_io_reg_desc[0]);++i){
-    uint32_t addr = gb_io_reg_desc[i].addr;
-    uint16_t data = sb_read16(gb, addr);
-    bool has_fields = false;
-    igPushIDInt(i);
-    if (igTreeNodeStrStr("%s(%08x): %04x",gb_io_reg_desc[i].name,addr,data)){
-      for(int f = 0; f<sizeof(gb_io_reg_desc[i].bits)/sizeof(gb_io_reg_desc[i].bits[0]);++f){
-        igPushIDInt(f);
-        uint32_t start = gb_io_reg_desc[i].bits[f].start; 
-        uint32_t size = gb_io_reg_desc[i].bits[f].size; 
-        if(size){
-          uint32_t field_data = SB_BFE(data,start,size);
-          has_fields=true;
-          uint32_t mask = (((1<<size)-1)<<start);
-          bool edit = false;
-          if(size==1){
-            bool v = field_data!=0;
-            edit=igCheckbox("",&v);
-            data &= ~mask;
-            data |= (v<<start)&mask; 
-          }else{
-            int v = field_data;
-            igPushItemWidth(100);
-            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
-            data &= ~mask;
-            data |= (v<<start)&mask;
-            igPopItemWidth();
-          }
-          if(edit){
-            sb_store16(gb,addr,data);
-          }
-          igSameLine(0,2);
-          if(size>1)igText("%s (Bits [%d:%d])",gb_io_reg_desc[i].bits[f].name,start, start+size-1);
-          else igText("%s (Bit %d)",gb_io_reg_desc[i].bits[f].name,start);
-        }
-        igPopID();
-      }
-      if(!has_fields){
-        int v = data; 
-        igPushIDInt(0);
-        igPushItemWidth(150);
-        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-          sb_store16(gb,addr,v);
-        }
-        igSameLine(0,2);
-        igText("Data");
-        igPopID();
-      }
-      igTreePop();
-    }
-    igPopID();
-  }
-  igEnd();
-}
-
 static void init(void) {
 
   #if defined(EMSCRIPTEN)
@@ -1071,15 +999,7 @@ static void frame(void) {
   se_update_frame();
   igPopStyleVar(2);
   igEnd();
-  if(gui_state.draw_debug_menu){
-    if(emu_state.system ==SYSTEM_GBA){
-      gba_draw_io_state(&gba); 
-      gba_draw_mem_debug_state(&gui_state, &gba); 
-    }else if(emu_state.system ==SYSTEM_GB){
-      gb_draw_io_state(&gb_state); 
-      gb_draw_mem_debug_state(&gui_state, &gb_state); 
-    }
-  }
+  if(gui_state.draw_debug_menu)se_draw_debug();
   /*=== UI CODE ENDS HERE ===*/
 
   sg_begin_default_pass(&gui_state.pass_action, width, height);

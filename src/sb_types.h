@@ -64,6 +64,8 @@
 #define SYSTEM_UNKNOWN 0
 #define SYSTEM_GB 1
 #define SYSTEM_GBA 2
+#define SYSTEM_NDS 3
+
 typedef struct{
   bool up,down,left,right;
   bool a, b, start, select;
@@ -256,5 +258,26 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
       break; 
     }
   }
+}
+static bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size){
+  bool loaded_bios=false;
+  const char* base, *file, *ext; 
+  sb_breakup_path(base_path, &base,&file, &ext);
+  static char bios_path[SB_FILE_PATH_SIZE];
+  snprintf(bios_path,SB_FILE_PATH_SIZE,"%s/%s",base, file_name);
+  bios_path[SB_FILE_PATH_SIZE-1]=0;
+  size_t bios_bytes=0;
+  uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
+  if(bios_data){
+    if(bios_bytes==data_size){
+      printf("Loaded %s from %s\n",name, bios_path);
+      memcpy(data,bios_data,data_size);
+      loaded_bios=true;
+    }else{
+      printf("%s file at %s is incorrectly sized. Expected %zu bytes, got %zu bytes",name,file_name,data_size,bios_bytes);
+    }
+  }
+  free(bios_data);
+  return loaded_bios;
 }
 #endif

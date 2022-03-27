@@ -2768,26 +2768,10 @@ void gba_reset(gba_t*gba){
   gba->cart.flash_state=0;
   gba->cart.flash_bank=0; 
 
-  bool loaded_bios= false;
-  const char* base, *file_name, *ext; 
-  sb_breakup_path(gba->cart.save_file_path, &base,&file_name, &ext);
-  static char bios_path[SB_FILE_PATH_SIZE];
-  snprintf(bios_path,SB_FILE_PATH_SIZE,"%s/gba_bios.bin",base);
-  bios_path[SB_FILE_PATH_SIZE-1]=0;
-  size_t bios_bytes=0;
-  uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
-  if(bios_data){
-    if(bios_bytes==16*1024){
-      printf("Loaded GBA BIOS from %s\n",bios_path);
-      memcpy(gba->mem.bios,bios_data,16*1024);
-      loaded_bios=true;
-    }else{
-      printf("GBA BIOS file at %s is incorrectly sized. Expected %d bytes, got %zu bytes",file_name,16*1024,bios_bytes);
-    }
-  }
-  free(bios_data);
+  bool loaded_bios= se_load_bios_file("GBA BIOS", gba->cart.save_file_path, "gba_bios.bin", gba->mem.bios,16*1024);
+  
   if(!loaded_bios){
-    printf("No GBA bios found at: %s using bundled bios\n",bios_path);
+    printf("No GBA bios using bundled bios\n");
     memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
     const uint32_t initial_regs[37]={
       0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
