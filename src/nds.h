@@ -553,10 +553,10 @@ mmio_reg_t nds9_io_reg_desc[]={
     {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
   } }, /* R/W Alpha Blending Coefficients */
   { GBA_BLDY    , "BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
-  { NDS_DISP3DCNT,       "DISP3DCNT",       {}}, /* 3D Display Control Register (R/W) */
-  { NDS_DISPCAPCNT,      "DISPCAPCNT",      {}}, /* Display Capture Control Register (R/W) */
-  { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  {}}, /* Main Memory Display FIFO (R?/W) */
-  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", {}}, /* Master Brightness Up/Down */
+  { NDS_DISP3DCNT,       "DISP3DCNT",       { 0 } }, /* 3D Display Control Register (R/W) */
+  { NDS_DISPCAPCNT,      "DISPCAPCNT",      { 0 } }, /* Display Capture Control Register (R/W) */
+  { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  { 0 } }, /* Main Memory Display FIFO (R?/W) */
+  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", { 0 } }, /* Master Brightness Up/Down */
 
   // DMA Transfer Channels
   { GBA_DMA0SAD  , "DMA0SAD", { 0 } },   /* W    DMA 0 Source Address */
@@ -914,7 +914,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   } }, /* R/W Alpha Blending Coefficients */
   { NDS9_B_BLDY    , "(2D-B) BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
 
-  { NDS9_B_MASTER_BRIGHT  ,"(2D-B) MASTER_BRIGHT",  {}}, /* Master Brightness Up/Down */
+  { NDS9_B_MASTER_BRIGHT  ,"(2D-B) MASTER_BRIGHT",  { 0 } }, /* Master Brightness Up/Down */
 };
 
 mmio_reg_t nds7_io_reg_desc[]={
@@ -1078,10 +1078,10 @@ mmio_reg_t nds7_io_reg_desc[]={
     {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
   } }, /* R/W Alpha Blending Coefficients */
   { GBA_BLDY    , "BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
-  { NDS_DISP3DCNT,       "DISP3DCNT",       {}}, /* 3D Display Control Register (R/W) */
-  { NDS_DISPCAPCNT,      "DISPCAPCNT",      {}}, /* Display Capture Control Register (R/W) */
-  { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  {}}, /* Main Memory Display FIFO (R?/W) */
-  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", {}}, /* Master Brightness Up/Down */
+  { NDS_DISP3DCNT,       "DISP3DCNT",       { 0 } }, /* 3D Display Control Register (R/W) */
+  { NDS_DISPCAPCNT,      "DISPCAPCNT",      { 0 } }, /* Display Capture Control Register (R/W) */
+  { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  { 0 } }, /* Main Memory Display FIFO (R?/W) */
+  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", { 0 } }, /* Master Brightness Up/Down */
 
   // DMA Transfer Channels
   { GBA_DMA0SAD  , "DMA0SAD", { 0 } },   /* W    DMA 0 Source Address */

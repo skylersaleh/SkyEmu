@@ -958,7 +958,7 @@ static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uin
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));
+    if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data>>((baddr&3)*8)); return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
       //Assume that the RTC is the only GPIO and is only accessed with 32 bit ops
       if(baddr==0x080000c4)gba->cart.gpio_data = data;
@@ -972,7 +972,7 @@ static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
 static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+    if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data); return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
       int addr = baddr&~3;
       //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
@@ -988,10 +988,10 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
 static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x05000000){
     // 8 bit stores to palette mirror across 8 bit halves
-    if((baddr&0xff000000)==0x5000000)return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
+    if((baddr&0xff000000)==0x5000000){gba_store16(gba,baddr&~1,(data&0xff)*0x0101); return; }
     if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000)return gba_process_backup_write(gba,baddr,data);
+    if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
     // Remaining 8 bit ops are not supported on VRAM or ROM
     return; 
   }
