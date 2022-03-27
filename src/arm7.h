@@ -33,6 +33,16 @@
 #define SPSR_und 36 
 
 #define UNINTIALIZED_PREFETCH_PC -3
+// Memory IO functions for the emulated CPU (these must be defined by the user)
+typedef uint32_t (*arm_read32_fn_t)(void* user_data, uint32_t address);
+typedef uint32_t (*arm_read16_fn_t)(void* user_data, uint32_t address);
+typedef uint32_t (*arm_read32_seq_fn_t)(void* user_data, uint32_t address,bool is_sequential);
+typedef uint32_t (*arm_read16_seq_fn_t)(void* user_data, uint32_t address,bool is_sequential);
+typedef uint8_t (*arm_read8_fn_t)(void* user_data, uint32_t address);
+typedef void (*arm_write32_fn_t)(void* user_data, uint32_t address, uint32_t data);
+typedef void (*arm_write16_fn_t)(void* user_data, uint32_t address, uint16_t data);
+typedef void (*arm_write8_fn_t)(void* user_data, uint32_t address, uint8_t data);
+
 
 typedef struct {
   // Registers
@@ -60,6 +70,14 @@ typedef struct {
   bool print_instructions;
   void* user_data;
   FILE* log_cmp_file;
+  arm_read32_fn_t     read32;
+  arm_read16_fn_t     read16;
+  arm_read32_seq_fn_t read32_seq;
+  arm_read16_seq_fn_t read16_seq;
+  arm_read8_fn_t      read8;
+  arm_write32_fn_t    write32;
+  arm_write16_fn_t    write16;
+  arm_write8_fn_t     write8;
 } arm7_t;     
 
 typedef void (*arm7_handler_t)(arm7_t *cpu, uint32_t opcode);
@@ -76,15 +94,7 @@ typedef struct{
 // This function initializes the internal state needed for the arm7 core emulation
 static arm7_t arm7_init(void* user_data);
 static void arm7_exec_instruction(arm7_t* cpu);
-// Memory IO functions for the emulated CPU (these must be defined by the user)
-static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address);
-static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address);
-static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address,bool is_sequential);
-static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address,bool is_sequential);
-static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address);
-static FORCE_INLINE void arm7_write32(void* user_data, uint32_t address, uint32_t data);
-static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_t data);
-static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data);
+
 // Write the dissassembled opcode from mem_address into the out_disasm string up to out_size characters
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size);
 // Used to send an interrupt to the emulated CPU. The n'th set bit triggers the n'th interrupt
@@ -434,7 +444,7 @@ static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
   const char * cond_code = "";
   const char * name = "INVALID";
   if(arm7_get_thumb_bit(cpu)==false){
-    uint32_t opcode = arm7_read32(cpu->user_data,mem_address);
+    uint32_t opcode = cpu->read32(cpu->user_data,mem_address);
 
     const char* cond_code_table[16]=
       {"EQ","NE","CS","CC","MI","PL","VS","VC","HI","LS","GE","LT","GT","LE","","INV"};
@@ -452,7 +462,7 @@ static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
         name = op_name[ARM7_BFE(opcode,21,4)];
     }
   }else{
-    uint16_t opcode = arm7_read16(cpu->user_data,mem_address);
+    uint16_t opcode = cpu->read16(cpu->user_data,mem_address);
     uint32_t key = ((opcode>>8)&0xff);
     int instr_class = arm7_lookup_thumb_instruction_class(key);
     name = instr_class==-1? "INVALID" : arm7t_instruction_classes[instr_class].name;
@@ -492,14 +502,14 @@ static void arm7_exec_instruction(arm7_t* cpu){
   if(cpu->prefetch_pc!=cpu->registers[PC]){
     if(thumb){
       cpu->registers[PC]&=~1;
-      cpu->prefetch_opcode[0]=arm7_read16_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
-      cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
+      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
     }else{
       cpu->registers[PC]&=~3;
-      cpu->prefetch_opcode[0]=arm7_read32_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=arm7_read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-      cpu->prefetch_opcode[2]=arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
   }
   if(cpu->log_cmp_file){
@@ -569,14 +579,14 @@ static void arm7_exec_instruction(arm7_t* cpu){
     	arm7_lookup_table[key](cpu,opcode);
     }
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =arm7_read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }else{
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     arm7t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=arm7_read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
 
 }
@@ -851,11 +861,11 @@ static FORCE_INLINE void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   uint32_t Rd = ARM7_BFE(opcode,12,4);
   uint32_t Rm = ARM7_BFE(opcode,0,4);
   // Load
-  uint32_t read_data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+  uint32_t read_data = B ? cpu->read8(cpu->user_data,addr): cpu->read32(cpu->user_data,addr);
 
   uint32_t store_data = arm7_reg_read_r15_adj(cpu,Rm,8);
-  if(B==1)arm7_write8(cpu->user_data,addr,store_data);
-  else arm7_write32(cpu->user_data,addr,store_data);
+  if(B==1)cpu->write8(cpu->user_data,addr,store_data);
+  else cpu->write32(cpu->user_data,addr,store_data);
 
   arm7_reg_write(cpu,Rd,read_data);
   cpu->i_cycles=1;    
@@ -890,14 +900,14 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   // Store before writeback
   if(L==0){ 
     uint32_t data = arm7_reg_read(cpu,Rd);
-    if(H==1)arm7_write16(cpu->user_data,addr,data);
-    else arm7_write8(cpu->user_data,addr,data);
+    if(H==1)cpu->write16(cpu->user_data,addr,data);
+    else cpu->write8(cpu->user_data,addr,data);
   }
   uint32_t write_back_addr = addr;
   if(!P) {write_back_addr+=increment;W=true;}
   if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
   if(L==1){ // Load
-    uint32_t data = H ? arm7_read16(cpu->user_data,addr): arm7_read8(cpu->user_data,addr);
+    uint32_t data = H ? cpu->read16(cpu->user_data,addr): cpu->read8(cpu->user_data,addr);
     if(S){
       data&=0xffff;
       // Unaligned signed half words and signed byte loads sign extend the byte 
@@ -932,8 +942,8 @@ static FORCE_INLINE void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   // Store before write back
   if(L==0){ 
     uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
-    if(B==1)arm7_write8(cpu->user_data,addr,data);
-    else arm7_write32(cpu->user_data,addr,data);
+    if(B==1)cpu->write8(cpu->user_data,addr,data);
+    else cpu->write32(cpu->user_data,addr,data);
   }
 
   //Write back address before load
@@ -942,7 +952,7 @@ static FORCE_INLINE void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
 
   if(L==1){ // Load
-    uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+    uint32_t data = B ? cpu->read8(cpu->user_data,addr): cpu->read32(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data); 
     cpu->i_cycles=1; 
   }
@@ -1030,7 +1040,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     int a = addr;
     //Inexplicablly SRAM accesses are not DWORD aligned. GBA suite memory test can be used to verify this. 
     if((a&0xfe000000)!=0x0e000000)a&=~3;
-    if(!L) arm7_write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
+    if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
 
     //Writeback happens on second cycle
     if(++cycle==1 && w){
@@ -1040,7 +1050,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // R15 is stored at PC+12
    if(L){
       int bank = ARM7_BFE(addr,24,8);
-      cpu->registers[reg_index]=arm7_read32_seq(cpu->user_data, a,bank==last_bank);
+      cpu->registers[reg_index]=cpu->read32_seq(cpu->user_data, a,bank==last_bank);
       last_bank=bank;
    }
 
@@ -1249,7 +1259,7 @@ static FORCE_INLINE void arm7t_pc_rel_ldst(arm7_t* cpu, uint32_t opcode){
   int offset = ARM7_BFE(opcode,0,8)*4;
   int Rd = ARM7_BFE(opcode,8,3);
   uint32_t addr = (cpu->registers[PC]+offset+2)&(~3);
-  uint32_t data = arm7_read32(cpu->user_data,addr);
+  uint32_t data = cpu->read32(cpu->user_data,addr);
   arm7_reg_write(cpu,Rd,data);  
   cpu->i_cycles++;
 }
@@ -1268,10 +1278,10 @@ static FORCE_INLINE void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
   // Store before write back
   if(L==0){ 
     uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,r15_off);
-    if(B==1)arm7_write8(cpu->user_data,addr,data);
-    else arm7_write32(cpu->user_data,addr,data);
+    if(B==1)cpu->write8(cpu->user_data,addr,data);
+    else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
-    uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+    uint32_t data = B ? cpu->read8(cpu->user_data,addr): cpu->read32(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
     cpu->i_cycles++;
   }
@@ -1295,23 +1305,23 @@ static FORCE_INLINE void arm7t_ldst_bh(arm7_t* cpu, uint32_t opcode){
       data = arm7_reg_read_r15_adj(cpu,Rd,r15_off);
       break;
     case 1: //Load Sign Extended Byte
-      data = arm7_read8(cpu->user_data,addr);
+      data = cpu->read8(cpu->user_data,addr);
       cpu->i_cycles++;
       if(ARM7_BFE(data,7,1))data|=0xffffff00;
       break; 
     case 2: //Load Halfword
-      data = arm7_read16(cpu->user_data,addr);
+      data = cpu->read16(cpu->user_data,addr);
       cpu->i_cycles++;
       break;          
     case 3: //Load Sign Extended Half
-      data = arm7_read16(cpu->user_data,addr)&0xffff;
+      data = cpu->read16(cpu->user_data,addr)&0xffff;
       cpu->i_cycles++;
       //Unaligned halfwords sign extend the byte
       if((addr&1)&&ARM7_BFE(data,7,1))data|=0xffffff00;
       else if(ARM7_BFE(data,15,1))data|=0xffff0000;
       break; 
   }
-  if(op==0)arm7_write16(cpu->user_data,addr,data);
+  if(op==0)cpu->write16(cpu->user_data,addr,data);
   else arm7_reg_write(cpu,Rd,data);
 }
 static FORCE_INLINE void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
@@ -1327,10 +1337,10 @@ static FORCE_INLINE void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   addr += offset;
   if(L==0){ // Store
     uint32_t data = arm7_reg_read(cpu,Rd);
-    if(B==1)arm7_write8(cpu->user_data,addr,data);
-    else arm7_write32(cpu->user_data,addr,data);
+    if(B==1)cpu->write8(cpu->user_data,addr,data);
+    else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
-    uint32_t data = B ? arm7_read8(cpu->user_data,addr): arm7_read32(cpu->user_data,addr);
+    uint32_t data = B ? cpu->read8(cpu->user_data,addr): cpu->read32(cpu->user_data,addr);
     cpu->i_cycles++;
     arm7_reg_write(cpu,Rd,data);  
   }
@@ -1346,9 +1356,9 @@ static FORCE_INLINE void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
   uint32_t data=0;
   if(L==0){ // Store
     data = arm7_reg_read(cpu,Rd);
-    arm7_write16(cpu->user_data,addr,data);
+    cpu->write16(cpu->user_data,addr,data);
   }else{ // Load
-    data = arm7_read16(cpu->user_data,addr);
+    data = cpu->read16(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
     cpu->i_cycles++;
   }
@@ -1363,9 +1373,9 @@ static FORCE_INLINE void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   uint32_t data; 
   if(L==0){ // Store
     data = arm7_reg_read(cpu,Rd);
-    arm7_write32(cpu->user_data,addr,data);
+    cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
-    data = arm7_read32(cpu->user_data,addr);
+    data = cpu->read32(cpu->user_data,addr);
     arm7_reg_write(cpu,Rd,data);  
     cpu->i_cycles++;
   }

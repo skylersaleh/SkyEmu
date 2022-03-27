@@ -685,102 +685,102 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 
-  { NDS9_IPCSYNC     , "IPCSYNC",     {}}, /*IPC Synchronize Register (R/W)*/
-  { NDS9_IPCFIFOCNT  , "IPCFIFOCNT",  {}}, /*IPC Fifo Control Register (R/W)*/
-  { NDS9_IPCFIFOSEND , "IPCFIFOSEND", {}}, /*IPC Send Fifo (W)*/
-  { NDS9_AUXSPICNT   , "AUXSPICNT",   {}}, /*Gamecard ROM and SPI Control*/
-  { NDS9_AUXSPIDATA  , "AUXSPIDATA",  {}}, /*Gamecard SPI Bus Data/Strobe*/
-  { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  {}}, /*Gamecard bus timing/control*/
-  { NDS9_GC_BUS_DAT  , "GC_BUS_DAT",  {}}, /*Gamecard bus 8-byte command out*/
-  { NDS9_GC_ENC0_LO  , "GC_ENC0_LO",  {}}, /*Gamecard Encryption Seed 0 Lower 32bit*/
-  { NDS9_GC_ENC1_LO  , "GC_ENC1_LO",  {}}, /*Gamecard Encryption Seed 1 Lower 32bit*/
-  { NDS9_GC_ENC0_HI  , "GC_ENC0_HI",  {}}, /*Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused)*/
-  { NDS9_GC_ENC1_HI  , "GC_ENC1_HI",  {}}, /*Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused)*/
+  { NDS9_IPCSYNC     , "IPCSYNC",     { 0 } }, /*IPC Synchronize Register (R/W)*/
+  { NDS9_IPCFIFOCNT  , "IPCFIFOCNT",  { 0 } }, /*IPC Fifo Control Register (R/W)*/
+  { NDS9_IPCFIFOSEND , "IPCFIFOSEND", { 0 } }, /*IPC Send Fifo (W)*/
+  { NDS9_AUXSPICNT   , "AUXSPICNT",   { 0 } }, /*Gamecard ROM and SPI Control*/
+  { NDS9_AUXSPIDATA  , "AUXSPIDATA",  { 0 } }, /*Gamecard SPI Bus Data/Strobe*/
+  { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  { 0 } }, /*Gamecard bus timing/control*/
+  { NDS9_GC_BUS_DAT  , "GC_BUS_DAT",  { 0 } }, /*Gamecard bus 8-byte command out*/
+  { NDS9_GC_ENC0_LO  , "GC_ENC0_LO",  { 0 } }, /*Gamecard Encryption Seed 0 Lower 32bit*/
+  { NDS9_GC_ENC1_LO  , "GC_ENC1_LO",  { 0 } }, /*Gamecard Encryption Seed 1 Lower 32bit*/
+  { NDS9_GC_ENC0_HI  , "GC_ENC0_HI",  { 0 } }, /*Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused)*/
+  { NDS9_GC_ENC1_HI  , "GC_ENC1_HI",  { 0 } }, /*Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused)*/
   
   // ARM9 Memory and IRQ Control
-  { NDS9_EXMEMCNT , "EXMEMCNT",  {}}, /* External Memory Control (R/W) */
-  { NDS9_IME      , "IME",       {}}, /* Interrupt Master Enable (R/W) */
-  { NDS9_IE       , "IE",        {}}, /* Interrupt Enable (R/W) */
-  { NDS9_IF       , "IF",        {}}, /* Interrupt Request Flags (R/W) */
-  { NDS9_VRAMCNT_A, "VRAMCNT_A", {}}, /* VRAM-A (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_B, "VRAMCNT_B", {}}, /* VRAM-B (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_C, "VRAMCNT_C", {}}, /* VRAM-C (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_D, "VRAMCNT_D", {}}, /* VRAM-D (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_E, "VRAMCNT_E", {}}, /* VRAM-E (64K) Bank Control (W) */
-  { NDS9_VRAMCNT_F, "VRAMCNT_F", {}}, /* VRAM-F (16K) Bank Control (W) */
-  { NDS9_VRAMCNT_G, "VRAMCNT_G", {}}, /* VRAM-G (16K) Bank Control (W) */
-  { NDS9_WRAMCNT  , "WRAMCNT",   {}}, /* WRAM Bank Control (W) */
-  { NDS9_VRAMCNT_H, "VRAMCNT_H", {}}, /* VRAM-H (32K) Bank Control (W) */
-  { NDS9_VRAMCNT_I, "VRAMCNT_I", {}}, /* VRAM-I (16K) Bank Control (W) */
+  { NDS9_EXMEMCNT , "EXMEMCNT",  { 0 } }, /* External Memory Control (R/W) */
+  { NDS9_IME      , "IME",       { 0 } }, /* Interrupt Master Enable (R/W) */
+  { NDS9_IE       , "IE",        { 0 } }, /* Interrupt Enable (R/W) */
+  { NDS9_IF       , "IF",        { 0 } }, /* Interrupt Request Flags (R/W) */
+  { NDS9_VRAMCNT_A, "VRAMCNT_A", { 0 } }, /* VRAM-A (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_B, "VRAMCNT_B", { 0 } }, /* VRAM-B (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_C, "VRAMCNT_C", { 0 } }, /* VRAM-C (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_D, "VRAMCNT_D", { 0 } }, /* VRAM-D (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_E, "VRAMCNT_E", { 0 } }, /* VRAM-E (64K) Bank Control (W) */
+  { NDS9_VRAMCNT_F, "VRAMCNT_F", { 0 } }, /* VRAM-F (16K) Bank Control (W) */
+  { NDS9_VRAMCNT_G, "VRAMCNT_G", { 0 } }, /* VRAM-G (16K) Bank Control (W) */
+  { NDS9_WRAMCNT  , "WRAMCNT",   { 0 } }, /* WRAM Bank Control (W) */
+  { NDS9_VRAMCNT_H, "VRAMCNT_H", { 0 } }, /* VRAM-H (32K) Bank Control (W) */
+  { NDS9_VRAMCNT_I, "VRAMCNT_I", { 0 } }, /* VRAM-I (16K) Bank Control (W) */
   
   // ARM9 Maths
-  { NDS9_DIVCNT,        "DIVCNT",        {}}, /* Division Control (R/W) */
-  { NDS9_DIV_NUMER,     "DIV_NUMER",     {}}, /* Division Numerator (R/W) */
-  { NDS9_DIV_DENOM,     "DIV_DENOM",     {}}, /* Division Denominator (R/W) */
-  { NDS9_DIV_RESULT,    "DIV_RESULT",    {}}, /* Division Quotient (=Numer/Denom) (R) */
-  { NDS9_DIVREM_RESULT, "DIVREM_RESULT", {}}, /* Division Remainder (=Numer MOD Denom) (R) */
-  { NDS9_SQRTCNT,       "SQRTCNT",       {}}, /* Square Root Control (R/W) */
-  { NDS9_SQRT_RESULT,   "SQRT_RESULT",   {}}, /* Square Root Result (R) */
-  { NDS9_SQRT_PARAM,    "SQRT_PARAM",    {}}, /* Square Root Parameter Input (R/W) */
-  { NDS9_POSTFLG,       "POSTFLG",       {}}, /* Undoc */
-  { NDS9_POWCNT1,       "POWCNT1",       {}}, /* Graphics Power Control Register (R/W) */
+  { NDS9_DIVCNT,        "DIVCNT",        { 0 } }, /* Division Control (R/W) */
+  { NDS9_DIV_NUMER,     "DIV_NUMER",     { 0 } }, /* Division Numerator (R/W) */
+  { NDS9_DIV_DENOM,     "DIV_DENOM",     { 0 } }, /* Division Denominator (R/W) */
+  { NDS9_DIV_RESULT,    "DIV_RESULT",    { 0 } }, /* Division Quotient (=Numer/Denom) (R) */
+  { NDS9_DIVREM_RESULT, "DIVREM_RESULT", { 0 } }, /* Division Remainder (=Numer MOD Denom) (R) */
+  { NDS9_SQRTCNT,       "SQRTCNT",       { 0 } }, /* Square Root Control (R/W) */
+  { NDS9_SQRT_RESULT,   "SQRT_RESULT",   { 0 } }, /* Square Root Result (R) */
+  { NDS9_SQRT_PARAM,    "SQRT_PARAM",    { 0 } }, /* Square Root Parameter Input (R/W) */
+  { NDS9_POSTFLG,       "POSTFLG",       { 0 } }, /* Undoc */
+  { NDS9_POWCNT1,       "POWCNT1",       { 0 } }, /* Graphics Power Control Register (R/W) */
 
   // ARM9 3D Display Engine
-  { NDS9_RDLINES_COUNT,   "RDLINES_COUNT",   {}}, /* Rendered Line Count Register (R) */
-  { NDS9_EDGE_COLOR,      "EDGE_COLOR",      {}}, /* Edge Colors 0..7 (W) */
-  { NDS9_ALPHA_TEST_REF,  "ALPHA_TEST_REF",  {}}, /* Alpha-Test Comparision Value (W) */
-  { NDS9_CLEAR_COLOR,     "CLEAR_COLOR",     {}}, /* Clear Color Attribute Register (W) */
-  { NDS9_CLEAR_DEPTH,     "CLEAR_DEPTH",     {}}, /* Clear Depth Register (W) */
-  { NDS9_CLRIMAGE_OFFSET, "CLRIMAGE_OFFSET", {}}, /* Rear-plane Bitmap Scroll Offsets (W) */
-  { NDS9_FOG_COLOR,       "FOG_COLOR",       {}}, /* Fog Color (W) */
-  { NDS9_FOG_OFFSET,      "FOG_OFFSET",      {}}, /* Fog Depth Offset (W) */
-  { NDS9_FOG_TABLE,       "FOG_TABLE",       {}}, /* Fog Density Table, 32 entries (W) */
-  { NDS9_TOON_TABLE,      "TOON_TABLE",      {}}, /* Toon Table, 32 colors (W) */
-  { NDS9_GXFIFO,          "GXFIFO",          {}}, /* Geometry Command FIFO (W) */
-  { NDS9_MTX_MODE,        "MTX_MODE",        {}}, /* Set Matrix Mode (W) */ 
-  { NDS9_MTX_PUSH,        "MTX_PUSH",        {}}, /* Push Current Matrix on Stack (W) */ 
-  { NDS9_MTX_POP,         "MTX_POP",         {}}, /* Pop Current Matrix from Stack (W) */ 
-  { NDS9_MTX_STORE,       "MTX_STORE",       {}}, /* Store Current Matrix on Stack (W) */ 
-  { NDS9_MTX_RESTORE,     "MTX_RESTORE",     {}}, /* Restore Current Matrix from Stack (W) */ 
-  { NDS9_MTX_IDENTITY,    "MTX_IDENTITY",    {}}, /* Load Unit Matrix to Current Matrix (W) */ 
-  { NDS9_MTX_LOAD_4x4,    "MTX_LOAD_4x4",    {}}, /* Load 4x4 Matrix to Current Matrix (W) */ 
-  { NDS9_MTX_LOAD_4x3,    "MTX_LOAD_4x3",    {}}, /* Load 4x3 Matrix to Current Matrix (W) */ 
-  { NDS9_MTX_MULT_4x4,    "MTX_MULT_4x4",    {}}, /* Multiply Current Matrix by 4x4 Matrix (W) */ 
-  { NDS9_MTX_MULT_4x3,    "MTX_MULT_4x3",    {}}, /* Multiply Current Matrix by 4x3 Matrix (W) */ 
-  { NDS9_MTX_MULT_3x3,    "MTX_MULT_3x3",    {}}, /* Multiply Current Matrix by 3x3 Matrix (W) */ 
-  { NDS9_MTX_SCALE,       "MTX_SCALE",       {}}, /* Multiply Current Matrix by Scale Matrix (W) */ 
-  { NDS9_MTX_TRANS,       "MTX_TRANS",       {}}, /* Mult. Curr. Matrix by Translation Matrix (W) */ 
-  { NDS9_COLOR,           "COLOR",           {}}, /* Directly Set Vertex Color (W) */ 
-  { NDS9_NORMAL,          "NORMAL",          {}}, /* Set Normal Vector (W) */ 
-  { NDS9_TEXCOORD,        "TEXCOORD",        {}}, /* Set Texture Coordinates (W) */ 
-  { NDS9_VTX_16,          "VTX_16",          {}}, /* Set Vertex XYZ Coordinates (W) */ 
-  { NDS9_VTX_10,          "VTX_10",          {}}, /* Set Vertex XYZ Coordinates (W) */ 
-  { NDS9_VTX_XY,          "VTX_XY",          {}}, /* Set Vertex XY Coordinates (W) */ 
-  { NDS9_VTX_XZ,          "VTX_XZ",          {}}, /* Set Vertex XZ Coordinates (W) */ 
-  { NDS9_VTX_YZ,          "VTX_YZ",          {}}, /* Set Vertex YZ Coordinates (W) */ 
-  { NDS9_VTX_DIFF,        "VTX_DIFF",        {}}, /* Set Relative Vertex Coordinates (W) */ 
-  { NDS9_POLYGON_ATTR,    "POLYGON_ATTR",    {}}, /* Set Polygon Attributes (W) */ 
-  { NDS9_TEXIMAGE_PARAM,  "TEXIMAGE_PARAM",  {}}, /* Set Texture Parameters (W) */ 
-  { NDS9_PLTT_BASE,       "PLTT_BASE",       {}}, /* Set Texture Palette Base Address (W) */ 
-  { NDS9_DIF_AMB,         "DIF_AMB",         {}}, /* MaterialColor0 - Diffuse/Ambient Reflect. (W) */ 
-  { NDS9_SPE_EMI,         "SPE_EMI",         {}}, /* MaterialColor1 - Specular Ref. & Emission (W) */ 
-  { NDS9_LIGHT_VECTOR,    "LIGHT_VECTOR",    {}}, /* Set Light's Directional Vector (W) */ 
-  { NDS9_LIGHT_COLOR,     "LIGHT_COLOR",     {}}, /* Set Light Color (W) */ 
-  { NDS9_SHININESS,       "SHININESS",       {}}, /* Specular Reflection Shininess Table (W) */ 
-  { NDS9_BEGIN_VTXS,      "BEGIN_VTXS",      {}}, /* Start of Vertex List (W) */ 
-  { NDS9_END_VTXS,        "END_VTXS",        {}}, /* End of Vertex List (W) */ 
-  { NDS9_SWAP_BUFFERS,    "SWAP_BUFFERS",    {}}, /* Swap Rendering Engine Buffer (W) */ 
-  { NDS9_VIEWPORT,        "VIEWPORT",        {}}, /* Set Viewport (W) */ 
-  { NDS9_BOX_TEST,        "BOX_TEST",        {}}, /* Test if Cuboid Sits inside View Volume (W) */ 
-  { NDS9_POS_TEST,        "POS_TEST",        {}}, /* Set Position Coordinates for Test (W) */ 
-  { NDS9_VEC_TEST,        "VEC_TEST",        {}}, /* Set Directional Vector for Test (W) */ 
-  { NDS9_GXSTAT,          "GXSTAT",          {}}, /* Geometry Engine Status Register (R and R/W) */
-  { NDS9_RAM_COUNT,       "RAM_COUNT",       {}}, /* Polygon List & Vertex RAM Count Register (R) */
-  { NDS9_DISP_1DOT_DEPTH, "DISP_1DOT_DEPTH", {}}, /* 1-Dot Polygon Display Boundary Depth (W) */
-  { NDS9_POS_RESULT,      "POS_RESULT",      {}}, /* Position Test Results (R) */
-  { NDS9_VEC_RESULT,      "VEC_RESULT",      {}}, /* Vector Test Results (R) */
-  { NDS9_CLIPMTX_RESULT,  "CLIPMTX_RESULT",  {}}, /* Read Current Clip Coordinates Matrix (R) */
-  { NDS9_VECMTX_RESULT,   "VECMTX_RESULT",   {}}, /* Read Current Directional Vector Matrix (R) */
+  { NDS9_RDLINES_COUNT,   "RDLINES_COUNT",   { 0 } }, /* Rendered Line Count Register (R) */
+  { NDS9_EDGE_COLOR,      "EDGE_COLOR",      { 0 } }, /* Edge Colors 0..7 (W) */
+  { NDS9_ALPHA_TEST_REF,  "ALPHA_TEST_REF",  { 0 } }, /* Alpha-Test Comparision Value (W) */
+  { NDS9_CLEAR_COLOR,     "CLEAR_COLOR",     { 0 } }, /* Clear Color Attribute Register (W) */
+  { NDS9_CLEAR_DEPTH,     "CLEAR_DEPTH",     { 0 } }, /* Clear Depth Register (W) */
+  { NDS9_CLRIMAGE_OFFSET, "CLRIMAGE_OFFSET", { 0 } }, /* Rear-plane Bitmap Scroll Offsets (W) */
+  { NDS9_FOG_COLOR,       "FOG_COLOR",       { 0 } }, /* Fog Color (W) */
+  { NDS9_FOG_OFFSET,      "FOG_OFFSET",      { 0 } }, /* Fog Depth Offset (W) */
+  { NDS9_FOG_TABLE,       "FOG_TABLE",       { 0 } }, /* Fog Density Table, 32 entries (W) */
+  { NDS9_TOON_TABLE,      "TOON_TABLE",      { 0 } }, /* Toon Table, 32 colors (W) */
+  { NDS9_GXFIFO,          "GXFIFO",          { 0 } }, /* Geometry Command FIFO (W) */
+  { NDS9_MTX_MODE,        "MTX_MODE",        { 0 } }, /* Set Matrix Mode (W) */ 
+  { NDS9_MTX_PUSH,        "MTX_PUSH",        { 0 } }, /* Push Current Matrix on Stack (W) */ 
+  { NDS9_MTX_POP,         "MTX_POP",         { 0 } }, /* Pop Current Matrix from Stack (W) */ 
+  { NDS9_MTX_STORE,       "MTX_STORE",       { 0 } }, /* Store Current Matrix on Stack (W) */ 
+  { NDS9_MTX_RESTORE,     "MTX_RESTORE",     { 0 } }, /* Restore Current Matrix from Stack (W) */ 
+  { NDS9_MTX_IDENTITY,    "MTX_IDENTITY",    { 0 } }, /* Load Unit Matrix to Current Matrix (W) */ 
+  { NDS9_MTX_LOAD_4x4,    "MTX_LOAD_4x4",    { 0 } }, /* Load 4x4 Matrix to Current Matrix (W) */ 
+  { NDS9_MTX_LOAD_4x3,    "MTX_LOAD_4x3",    { 0 } }, /* Load 4x3 Matrix to Current Matrix (W) */ 
+  { NDS9_MTX_MULT_4x4,    "MTX_MULT_4x4",    { 0 } }, /* Multiply Current Matrix by 4x4 Matrix (W) */ 
+  { NDS9_MTX_MULT_4x3,    "MTX_MULT_4x3",    { 0 } }, /* Multiply Current Matrix by 4x3 Matrix (W) */ 
+  { NDS9_MTX_MULT_3x3,    "MTX_MULT_3x3",    { 0 } }, /* Multiply Current Matrix by 3x3 Matrix (W) */ 
+  { NDS9_MTX_SCALE,       "MTX_SCALE",       { 0 } }, /* Multiply Current Matrix by Scale Matrix (W) */ 
+  { NDS9_MTX_TRANS,       "MTX_TRANS",       { 0 } }, /* Mult. Curr. Matrix by Translation Matrix (W) */ 
+  { NDS9_COLOR,           "COLOR",           { 0 } }, /* Directly Set Vertex Color (W) */ 
+  { NDS9_NORMAL,          "NORMAL",          { 0 } }, /* Set Normal Vector (W) */ 
+  { NDS9_TEXCOORD,        "TEXCOORD",        { 0 } }, /* Set Texture Coordinates (W) */ 
+  { NDS9_VTX_16,          "VTX_16",          { 0 } }, /* Set Vertex XYZ Coordinates (W) */ 
+  { NDS9_VTX_10,          "VTX_10",          { 0 } }, /* Set Vertex XYZ Coordinates (W) */ 
+  { NDS9_VTX_XY,          "VTX_XY",          { 0 } }, /* Set Vertex XY Coordinates (W) */ 
+  { NDS9_VTX_XZ,          "VTX_XZ",          { 0 } }, /* Set Vertex XZ Coordinates (W) */ 
+  { NDS9_VTX_YZ,          "VTX_YZ",          { 0 } }, /* Set Vertex YZ Coordinates (W) */ 
+  { NDS9_VTX_DIFF,        "VTX_DIFF",        { 0 } }, /* Set Relative Vertex Coordinates (W) */ 
+  { NDS9_POLYGON_ATTR,    "POLYGON_ATTR",    { 0 } }, /* Set Polygon Attributes (W) */ 
+  { NDS9_TEXIMAGE_PARAM,  "TEXIMAGE_PARAM",  { 0 } }, /* Set Texture Parameters (W) */ 
+  { NDS9_PLTT_BASE,       "PLTT_BASE",       { 0 } }, /* Set Texture Palette Base Address (W) */ 
+  { NDS9_DIF_AMB,         "DIF_AMB",         { 0 } }, /* MaterialColor0 - Diffuse/Ambient Reflect. (W) */ 
+  { NDS9_SPE_EMI,         "SPE_EMI",         { 0 } }, /* MaterialColor1 - Specular Ref. & Emission (W) */ 
+  { NDS9_LIGHT_VECTOR,    "LIGHT_VECTOR",    { 0 } }, /* Set Light's Directional Vector (W) */ 
+  { NDS9_LIGHT_COLOR,     "LIGHT_COLOR",     { 0 } }, /* Set Light Color (W) */ 
+  { NDS9_SHININESS,       "SHININESS",       { 0 } }, /* Specular Reflection Shininess Table (W) */ 
+  { NDS9_BEGIN_VTXS,      "BEGIN_VTXS",      { 0 } }, /* Start of Vertex List (W) */ 
+  { NDS9_END_VTXS,        "END_VTXS",        { 0 } }, /* End of Vertex List (W) */ 
+  { NDS9_SWAP_BUFFERS,    "SWAP_BUFFERS",    { 0 } }, /* Swap Rendering Engine Buffer (W) */ 
+  { NDS9_VIEWPORT,        "VIEWPORT",        { 0 } }, /* Set Viewport (W) */ 
+  { NDS9_BOX_TEST,        "BOX_TEST",        { 0 } }, /* Test if Cuboid Sits inside View Volume (W) */ 
+  { NDS9_POS_TEST,        "POS_TEST",        { 0 } }, /* Set Position Coordinates for Test (W) */ 
+  { NDS9_VEC_TEST,        "VEC_TEST",        { 0 } }, /* Set Directional Vector for Test (W) */ 
+  { NDS9_GXSTAT,          "GXSTAT",          { 0 } }, /* Geometry Engine Status Register (R and R/W) */
+  { NDS9_RAM_COUNT,       "RAM_COUNT",       { 0 } }, /* Polygon List & Vertex RAM Count Register (R) */
+  { NDS9_DISP_1DOT_DEPTH, "DISP_1DOT_DEPTH", { 0 } }, /* 1-Dot Polygon Display Boundary Depth (W) */
+  { NDS9_POS_RESULT,      "POS_RESULT",      { 0 } }, /* Position Test Results (R) */
+  { NDS9_VEC_RESULT,      "VEC_RESULT",      { 0 } }, /* Vector Test Results (R) */
+  { NDS9_CLIPMTX_RESULT,  "CLIPMTX_RESULT",  { 0 } }, /* Read Current Clip Coordinates Matrix (R) */
+  { NDS9_VECMTX_RESULT,   "VECMTX_RESULT",   { 0 } }, /* Read Current Directional Vector Matrix (R) */
 
   // ARM9 Display Engine B
   { NDS9_B_BG0CNT  , "(2D-B) BG0CNT  ", { 
@@ -1210,125 +1210,125 @@ mmio_reg_t nds7_io_reg_desc[]={
   { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 
-  { NDS7_DEBUG_RCNT,      "DEBUG_RCNT",     {}}, /* Debug RCNT */
-  { NDS7_EXTKEYIN,        "EXTKEYIN",       {}}, /* EXTKEYIN */
-  { NDS7_RTC_BUS,         "RTC_BUS",        {}}, /* RTC Realtime Clock Bus */
-  { NDS7_IPCSYNC,         "IPCSYNC",        {}}, /* IPC Synchronize Register (R/W) */
-  { NDS7_IPCFIFOCNT,      "IPCFIFOCNT",     {}}, /* IPC Fifo Control Register (R/W) */
-  { NDS7_IPCFIFOSEND,     "IPCFIFOSEND",    {}}, /* IPC Send Fifo (W) */
-  { NDS7_AUXSPICNT,       "AUXSPICNT",      {}}, /* Gamecard ROM and SPI Control */
-  { NDS7_AUXSPIDATA,      "AUXSPIDATA",     {}}, /* Gamecard SPI Bus Data/Strobe */
-  { NDS7_GCBUS_CTL,       "GCBUS_CTL",      {}}, /* Gamecard bus timing/control */
-  { NDS7_GCBUS_CMD,       "GCBUS_CMD",      {}}, /* Gamecard bus 8-byte command out */
-  { NDS7_GCBUS_SEED0_LO,  "GCBUS_SEED0_LO", {}}, /* Gamecard Encryption Seed 0 Lower 32bit */
-  { NDS7_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", {}}, /* Gamecard Encryption Seed 1 Lower 32bit */
-  { NDS7_GCBUS_SEED0_HI,  "GCBUS_SEED0_HI", {}}, /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
-  { NDS7_GCBUS_SEED1_HI,  "GCBUS_SEED1_HI", {}}, /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
-  { NDS7_SPI_BUS_CTL,     "SPI_BUS_CTL",    {}}, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
-  { NDS7_SPI_BUS_DATA,    "SPI_BUS_DATA",   {}}, /* SPI bus Data */
+  { NDS7_DEBUG_RCNT,      "DEBUG_RCNT",     { 0 } }, /* Debug RCNT */
+  { NDS7_EXTKEYIN,        "EXTKEYIN",       { 0 } }, /* EXTKEYIN */
+  { NDS7_RTC_BUS,         "RTC_BUS",        { 0 } }, /* RTC Realtime Clock Bus */
+  { NDS7_IPCSYNC,         "IPCSYNC",        { 0 } }, /* IPC Synchronize Register (R/W) */
+  { NDS7_IPCFIFOCNT,      "IPCFIFOCNT",     { 0 } }, /* IPC Fifo Control Register (R/W) */
+  { NDS7_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
+  { NDS7_AUXSPICNT,       "AUXSPICNT",      { 0 } }, /* Gamecard ROM and SPI Control */
+  { NDS7_AUXSPIDATA,      "AUXSPIDATA",     { 0 } }, /* Gamecard SPI Bus Data/Strobe */
+  { NDS7_GCBUS_CTL,       "GCBUS_CTL",      { 0 } }, /* Gamecard bus timing/control */
+  { NDS7_GCBUS_CMD,       "GCBUS_CMD",      { 0 } }, /* Gamecard bus 8-byte command out */
+  { NDS7_GCBUS_SEED0_LO,  "GCBUS_SEED0_LO", { 0 } }, /* Gamecard Encryption Seed 0 Lower 32bit */
+  { NDS7_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", { 0 } }, /* Gamecard Encryption Seed 1 Lower 32bit */
+  { NDS7_GCBUS_SEED0_HI,  "GCBUS_SEED0_HI", { 0 } }, /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
+  { NDS7_GCBUS_SEED1_HI,  "GCBUS_SEED1_HI", { 0 } }, /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
+  { NDS7_SPI_BUS_CTL,     "SPI_BUS_CTL",    { 0 } }, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
+  { NDS7_SPI_BUS_DATA,    "SPI_BUS_DATA",   { 0 } }, /* SPI bus Data */
   // ARM7 Memory and IRQ Control
-  { NDS7_EXMEMSTAT,   "EXMEMSTAT",   {}}, /* EXMEMSTAT - External Memory Status */
-  { NDS7_WIFIWAITCNT, "WIFIWAITCNT", {}}, /* WIFIWAITCNT */
-  { NDS7_IME,         "IME",         {}}, /* IME - Interrupt Master Enable (R/W) */
-  { NDS7_IE,          "IE",          {}}, /* IE  - Interrupt Enable (R/W) */
-  { NDS7_IF,          "IF",          {}}, /* IF  - Interrupt Request Flags (R/W) */
-  { NDS7_VRAMSTAT,    "VRAMSTAT",    {}}, /* VRAMSTAT - VRAM-C,D Bank Status (R) */
-  { NDS7_WRAMSTAT,    "WRAMSTAT",    {}}, /* WRAMSTAT - WRAM Bank Status (R) */
-  { NDS7_POSTFLG,     "POSTFLG",     {}}, /* POSTFLG */
-  { NDS7_HALTCNT,     "HALTCNT",     {}}, /* HALTCNT (different bits than on GBA) (plus NOP delay) */
-  { NDS7_POWCNT2,     "POWCNT2",     {}}, /* POWCNT2  Sound/Wifi Power Control Register (R/W) */
-  { NDS7_BIOSPROT,    "BIOSPROT",    {}}, /* BIOSPROT - Bios-data-read-protection address */
+  { NDS7_EXMEMSTAT,   "EXMEMSTAT",   { 0 }}, /* EXMEMSTAT - External Memory Status */
+  { NDS7_WIFIWAITCNT, "WIFIWAITCNT", { 0 }}, /* WIFIWAITCNT */
+  { NDS7_IME,         "IME",         { 0 }}, /* IME - Interrupt Master Enable (R/W) */
+  { NDS7_IE,          "IE",          { 0 }}, /* IE  - Interrupt Enable (R/W) */
+  { NDS7_IF,          "IF",          { 0 }}, /* IF  - Interrupt Request Flags (R/W) */
+  { NDS7_VRAMSTAT,    "VRAMSTAT",    { 0 }}, /* VRAMSTAT - VRAM-C,D Bank Status (R) */
+  { NDS7_WRAMSTAT,    "WRAMSTAT",    { 0 }}, /* WRAMSTAT - WRAM Bank Status (R) */
+  { NDS7_POSTFLG,     "POSTFLG",     { 0 }}, /* POSTFLG */
+  { NDS7_HALTCNT,     "HALTCNT",     { 0 }}, /* HALTCNT (different bits than on GBA) (plus NOP delay) */
+  { NDS7_POWCNT2,     "POWCNT2",     { 0 }}, /* POWCNT2  Sound/Wifi Power Control Register (R/W) */
+  { NDS7_BIOSPROT,    "BIOSPROT",    { 0 }}, /* BIOSPROT - Bios-data-read-protection address */
 
   // ARM7 Sound Registers (Sound Channel 0..15 (10h bytes each)) 
-  { NDS7_SOUND0_CNT, "SOUND0_CNT", {}}, /* Sound Channel 0 Control Register (R/W) */
-  { NDS7_SOUND0_SAD, "SOUND0_SAD", {}}, /* Sound Channel 0 Data Source Register (W) */
-  { NDS7_SOUND0_TMR, "SOUND0_TMR", {}}, /* Sound Channel 0 Timer Register (W) */
-  { NDS7_SOUND0_PNT, "SOUND0_PNT", {}}, /* Sound Channel 0 Loopstart Register (W) */
-  { NDS7_SOUND0_LEN, "SOUND0_LEN", {}}, /* Sound Channel 0 Length Register (W) */
-  { NDS7_SOUND1_CNT, "SOUND1_CNT", {}}, /* Sound Channel 1 Control Register (R/W) */
-  { NDS7_SOUND1_SAD, "SOUND1_SAD", {}}, /* Sound Channel 1 Data Source Register (W) */
-  { NDS7_SOUND1_TMR, "SOUND1_TMR", {}}, /* Sound Channel 1 Timer Register (W) */
-  { NDS7_SOUND1_PNT, "SOUND1_PNT", {}}, /* Sound Channel 1 Loopstart Register (W) */
-  { NDS7_SOUND1_LEN, "SOUND1_LEN", {}}, /* Sound Channel 1 Length Register (W) */
-  { NDS7_SOUND2_CNT, "SOUND2_CNT", {}}, /* Sound Channel 2 Control Register (R/W) */
-  { NDS7_SOUND2_SAD, "SOUND2_SAD", {}}, /* Sound Channel 2 Data Source Register (W) */
-  { NDS7_SOUND2_TMR, "SOUND2_TMR", {}}, /* Sound Channel 2 Timer Register (W) */
-  { NDS7_SOUND2_PNT, "SOUND2_PNT", {}}, /* Sound Channel 2 Loopstart Register (W) */
-  { NDS7_SOUND2_LEN, "SOUND2_LEN", {}}, /* Sound Channel 2 Length Register (W) */
-  { NDS7_SOUND3_CNT, "SOUND3_CNT", {}}, /* Sound Channel 3 Control Register (R/W) */
-  { NDS7_SOUND3_SAD, "SOUND3_SAD", {}}, /* Sound Channel 3 Data Source Register (W) */
-  { NDS7_SOUND3_TMR, "SOUND3_TMR", {}}, /* Sound Channel 3 Timer Register (W) */
-  { NDS7_SOUND3_PNT, "SOUND3_PNT", {}}, /* Sound Channel 3 Loopstart Register (W) */
-  { NDS7_SOUND3_LEN, "SOUND3_LEN", {}}, /* Sound Channel 3 Length Register (W) */
-  { NDS7_SOUND4_CNT, "SOUND4_CNT", {}}, /* Sound Channel 4 Control Register (R/W) */
-  { NDS7_SOUND4_SAD, "SOUND4_SAD", {}}, /* Sound Channel 4 Data Source Register (W) */
-  { NDS7_SOUND4_TMR, "SOUND4_TMR", {}}, /* Sound Channel 4 Timer Register (W) */
-  { NDS7_SOUND4_PNT, "SOUND4_PNT", {}}, /* Sound Channel 4 Loopstart Register (W) */
-  { NDS7_SOUND4_LEN, "SOUND4_LEN", {}}, /* Sound Channel 4 Length Register (W) */
-  { NDS7_SOUND5_CNT, "SOUND5_CNT", {}}, /* Sound Channel 5 Control Register (R/W) */
-  { NDS7_SOUND5_SAD, "SOUND5_SAD", {}}, /* Sound Channel 5 Data Source Register (W) */
-  { NDS7_SOUND5_TMR, "SOUND5_TMR", {}}, /* Sound Channel 5 Timer Register (W) */
-  { NDS7_SOUND5_PNT, "SOUND5_PNT", {}}, /* Sound Channel 5 Loopstart Register (W) */
-  { NDS7_SOUND5_LEN, "SOUND5_LEN", {}}, /* Sound Channel 5 Length Register (W) */
-  { NDS7_SOUND6_CNT, "SOUND6_CNT", {}}, /* Sound Channel 6 Control Register (R/W) */
-  { NDS7_SOUND6_SAD, "SOUND6_SAD", {}}, /* Sound Channel 6 Data Source Register (W) */
-  { NDS7_SOUND6_TMR, "SOUND6_TMR", {}}, /* Sound Channel 6 Timer Register (W) */
-  { NDS7_SOUND6_PNT, "SOUND6_PNT", {}}, /* Sound Channel 6 Loopstart Register (W) */
-  { NDS7_SOUND6_LEN, "SOUND6_LEN", {}}, /* Sound Channel 6 Length Register (W) */
-  { NDS7_SOUND7_CNT, "SOUND7_CNT", {}}, /* Sound Channel 7 Control Register (R/W) */
-  { NDS7_SOUND7_SAD, "SOUND7_SAD", {}}, /* Sound Channel 7 Data Source Register (W) */
-  { NDS7_SOUND7_TMR, "SOUND7_TMR", {}}, /* Sound Channel 7 Timer Register (W) */
-  { NDS7_SOUND7_PNT, "SOUND7_PNT", {}}, /* Sound Channel 7 Loopstart Register (W) */
-  { NDS7_SOUND7_LEN, "SOUND7_LEN", {}}, /* Sound Channel 7 Length Register (W) */
-  { NDS7_SOUND8_CNT, "SOUND8_CNT", {}}, /* Sound Channel 8 Control Register (R/W) */
-  { NDS7_SOUND8_SAD, "SOUND8_SAD", {}}, /* Sound Channel 8 Data Source Register (W) */
-  { NDS7_SOUND8_TMR, "SOUND8_TMR", {}}, /* Sound Channel 8 Timer Register (W) */
-  { NDS7_SOUND8_PNT, "SOUND8_PNT", {}}, /* Sound Channel 8 Loopstart Register (W) */
-  { NDS7_SOUND8_LEN, "SOUND8_LEN", {}}, /* Sound Channel 8 Length Register (W) */
-  { NDS7_SOUND9_CNT, "SOUND9_CNT", {}}, /* Sound Channel 9 Control Register (R/W) */
-  { NDS7_SOUND9_SAD, "SOUND9_SAD", {}}, /* Sound Channel 9 Data Source Register (W) */
-  { NDS7_SOUND9_TMR, "SOUND9_TMR", {}}, /* Sound Channel 9 Timer Register (W) */
-  { NDS7_SOUND9_PNT, "SOUND9_PNT", {}}, /* Sound Channel 9 Loopstart Register (W) */
-  { NDS7_SOUND9_LEN, "SOUND9_LEN", {}}, /* Sound Channel 9 Length Register (W) */
-  { NDS7_SOUNDA_CNT, "SOUNDA_CNT", {}}, /* Sound Channel 10 Control Register (R/W) */
-  { NDS7_SOUNDA_SAD, "SOUNDA_SAD", {}}, /* Sound Channel 10 Data Source Register (W) */
-  { NDS7_SOUNDA_TMR, "SOUNDA_TMR", {}}, /* Sound Channel 10 Timer Register (W) */
-  { NDS7_SOUNDA_PNT, "SOUNDA_PNT", {}}, /* Sound Channel 10 Loopstart Register (W) */
-  { NDS7_SOUNDA_LEN, "SOUNDA_LEN", {}}, /* Sound Channel 10 Length Register (W) */
-  { NDS7_SOUNDB_CNT, "SOUNDB_CNT", {}}, /* Sound Channel 11 Control Register (R/W) */
-  { NDS7_SOUNDB_SAD, "SOUNDB_SAD", {}}, /* Sound Channel 11 Data Source Register (W) */
-  { NDS7_SOUNDB_TMR, "SOUNDB_TMR", {}}, /* Sound Channel 11 Timer Register (W) */
-  { NDS7_SOUNDB_PNT, "SOUNDB_PNT", {}}, /* Sound Channel 11 Loopstart Register (W) */
-  { NDS7_SOUNDB_LEN, "SOUNDB_LEN", {}}, /* Sound Channel 11 Length Register (W) */
-  { NDS7_SOUNDC_CNT, "SOUNDC_CNT", {}}, /* Sound Channel 12 Control Register (R/W) */
-  { NDS7_SOUNDC_SAD, "SOUNDC_SAD", {}}, /* Sound Channel 12 Data Source Register (W) */
-  { NDS7_SOUNDC_TMR, "SOUNDC_TMR", {}}, /* Sound Channel 12 Timer Register (W) */
-  { NDS7_SOUNDC_PNT, "SOUNDC_PNT", {}}, /* Sound Channel 12 Loopstart Register (W) */
-  { NDS7_SOUNDC_LEN, "SOUNDC_LEN", {}}, /* Sound Channel 12 Length Register (W) */
-  { NDS7_SOUNDD_CNT, "SOUNDD_CNT", {}}, /* Sound Channel 13 Control Register (R/W) */
-  { NDS7_SOUNDD_SAD, "SOUNDD_SAD", {}}, /* Sound Channel 13 Data Source Register (W) */
-  { NDS7_SOUNDD_TMR, "SOUNDD_TMR", {}}, /* Sound Channel 13 Timer Register (W) */
-  { NDS7_SOUNDD_PNT, "SOUNDD_PNT", {}}, /* Sound Channel 13 Loopstart Register (W) */
-  { NDS7_SOUNDD_LEN, "SOUNDD_LEN", {}}, /* Sound Channel 13 Length Register (W) */
-  { NDS7_SOUNDE_CNT, "SOUNDE_CNT", {}}, /* Sound Channel 14 Control Register (R/W) */
-  { NDS7_SOUNDE_SAD, "SOUNDE_SAD", {}}, /* Sound Channel 14 Data Source Register (W) */
-  { NDS7_SOUNDE_TMR, "SOUNDE_TMR", {}}, /* Sound Channel 14 Timer Register (W) */
-  { NDS7_SOUNDE_PNT, "SOUNDE_PNT", {}}, /* Sound Channel 14 Loopstart Register (W) */
-  { NDS7_SOUNDE_LEN, "SOUNDE_LEN", {}}, /* Sound Channel 14 Length Register (W) */
-  { NDS7_SOUNDF_CNT, "SOUNDF_CNT", {}}, /* Sound Channel 15 Control Register (R/W) */
-  { NDS7_SOUNDF_SAD, "SOUNDF_SAD", {}}, /* Sound Channel 15 Data Source Register (W) */
-  { NDS7_SOUNDF_TMR, "SOUNDF_TMR", {}}, /* Sound Channel 15 Timer Register (W) */
-  { NDS7_SOUNDF_PNT, "SOUNDF_PNT", {}}, /* Sound Channel 15 Loopstart Register (W) */
-  { NDS7_SOUNDF_LEN, "SOUNDF_LEN", {}}, /* Sound Channel 15 Length Register (W) */
+  { NDS7_SOUND0_CNT, "SOUND0_CNT", { 0 }}, /* Sound Channel 0 Control Register (R/W) */
+  { NDS7_SOUND0_SAD, "SOUND0_SAD", { 0 }}, /* Sound Channel 0 Data Source Register (W) */
+  { NDS7_SOUND0_TMR, "SOUND0_TMR", { 0 }}, /* Sound Channel 0 Timer Register (W) */
+  { NDS7_SOUND0_PNT, "SOUND0_PNT", { 0 }}, /* Sound Channel 0 Loopstart Register (W) */
+  { NDS7_SOUND0_LEN, "SOUND0_LEN", { 0 }}, /* Sound Channel 0 Length Register (W) */
+  { NDS7_SOUND1_CNT, "SOUND1_CNT", { 0 }}, /* Sound Channel 1 Control Register (R/W) */
+  { NDS7_SOUND1_SAD, "SOUND1_SAD", { 0 }}, /* Sound Channel 1 Data Source Register (W) */
+  { NDS7_SOUND1_TMR, "SOUND1_TMR", { 0 }}, /* Sound Channel 1 Timer Register (W) */
+  { NDS7_SOUND1_PNT, "SOUND1_PNT", { 0 }}, /* Sound Channel 1 Loopstart Register (W) */
+  { NDS7_SOUND1_LEN, "SOUND1_LEN", { 0 }}, /* Sound Channel 1 Length Register (W) */
+  { NDS7_SOUND2_CNT, "SOUND2_CNT", { 0 }}, /* Sound Channel 2 Control Register (R/W) */
+  { NDS7_SOUND2_SAD, "SOUND2_SAD", { 0 }}, /* Sound Channel 2 Data Source Register (W) */
+  { NDS7_SOUND2_TMR, "SOUND2_TMR", { 0 }}, /* Sound Channel 2 Timer Register (W) */
+  { NDS7_SOUND2_PNT, "SOUND2_PNT", { 0 }}, /* Sound Channel 2 Loopstart Register (W) */
+  { NDS7_SOUND2_LEN, "SOUND2_LEN", { 0 }}, /* Sound Channel 2 Length Register (W) */
+  { NDS7_SOUND3_CNT, "SOUND3_CNT", { 0 }}, /* Sound Channel 3 Control Register (R/W) */
+  { NDS7_SOUND3_SAD, "SOUND3_SAD", { 0 }}, /* Sound Channel 3 Data Source Register (W) */
+  { NDS7_SOUND3_TMR, "SOUND3_TMR", { 0 }}, /* Sound Channel 3 Timer Register (W) */
+  { NDS7_SOUND3_PNT, "SOUND3_PNT", { 0 }}, /* Sound Channel 3 Loopstart Register (W) */
+  { NDS7_SOUND3_LEN, "SOUND3_LEN", { 0 }}, /* Sound Channel 3 Length Register (W) */
+  { NDS7_SOUND4_CNT, "SOUND4_CNT", { 0 }}, /* Sound Channel 4 Control Register (R/W) */
+  { NDS7_SOUND4_SAD, "SOUND4_SAD", { 0 }}, /* Sound Channel 4 Data Source Register (W) */
+  { NDS7_SOUND4_TMR, "SOUND4_TMR", { 0 }}, /* Sound Channel 4 Timer Register (W) */
+  { NDS7_SOUND4_PNT, "SOUND4_PNT", { 0 }}, /* Sound Channel 4 Loopstart Register (W) */
+  { NDS7_SOUND4_LEN, "SOUND4_LEN", { 0 }}, /* Sound Channel 4 Length Register (W) */
+  { NDS7_SOUND5_CNT, "SOUND5_CNT", { 0 }}, /* Sound Channel 5 Control Register (R/W) */
+  { NDS7_SOUND5_SAD, "SOUND5_SAD", { 0 }}, /* Sound Channel 5 Data Source Register (W) */
+  { NDS7_SOUND5_TMR, "SOUND5_TMR", { 0 }}, /* Sound Channel 5 Timer Register (W) */
+  { NDS7_SOUND5_PNT, "SOUND5_PNT", { 0 }}, /* Sound Channel 5 Loopstart Register (W) */
+  { NDS7_SOUND5_LEN, "SOUND5_LEN", { 0 }}, /* Sound Channel 5 Length Register (W) */
+  { NDS7_SOUND6_CNT, "SOUND6_CNT", { 0 }}, /* Sound Channel 6 Control Register (R/W) */
+  { NDS7_SOUND6_SAD, "SOUND6_SAD", { 0 }}, /* Sound Channel 6 Data Source Register (W) */
+  { NDS7_SOUND6_TMR, "SOUND6_TMR", { 0 }}, /* Sound Channel 6 Timer Register (W) */
+  { NDS7_SOUND6_PNT, "SOUND6_PNT", { 0 }}, /* Sound Channel 6 Loopstart Register (W) */
+  { NDS7_SOUND6_LEN, "SOUND6_LEN", { 0 }}, /* Sound Channel 6 Length Register (W) */
+  { NDS7_SOUND7_CNT, "SOUND7_CNT", { 0 }}, /* Sound Channel 7 Control Register (R/W) */
+  { NDS7_SOUND7_SAD, "SOUND7_SAD", { 0 }}, /* Sound Channel 7 Data Source Register (W) */
+  { NDS7_SOUND7_TMR, "SOUND7_TMR", { 0 }}, /* Sound Channel 7 Timer Register (W) */
+  { NDS7_SOUND7_PNT, "SOUND7_PNT", { 0 }}, /* Sound Channel 7 Loopstart Register (W) */
+  { NDS7_SOUND7_LEN, "SOUND7_LEN", { 0 }}, /* Sound Channel 7 Length Register (W) */
+  { NDS7_SOUND8_CNT, "SOUND8_CNT", { 0 }}, /* Sound Channel 8 Control Register (R/W) */
+  { NDS7_SOUND8_SAD, "SOUND8_SAD", { 0 }}, /* Sound Channel 8 Data Source Register (W) */
+  { NDS7_SOUND8_TMR, "SOUND8_TMR", { 0 }}, /* Sound Channel 8 Timer Register (W) */
+  { NDS7_SOUND8_PNT, "SOUND8_PNT", { 0 }}, /* Sound Channel 8 Loopstart Register (W) */
+  { NDS7_SOUND8_LEN, "SOUND8_LEN", { 0 }}, /* Sound Channel 8 Length Register (W) */
+  { NDS7_SOUND9_CNT, "SOUND9_CNT", { 0 }}, /* Sound Channel 9 Control Register (R/W) */
+  { NDS7_SOUND9_SAD, "SOUND9_SAD", { 0 }}, /* Sound Channel 9 Data Source Register (W) */
+  { NDS7_SOUND9_TMR, "SOUND9_TMR", { 0 }}, /* Sound Channel 9 Timer Register (W) */
+  { NDS7_SOUND9_PNT, "SOUND9_PNT", { 0 }}, /* Sound Channel 9 Loopstart Register (W) */
+  { NDS7_SOUND9_LEN, "SOUND9_LEN", { 0 }}, /* Sound Channel 9 Length Register (W) */
+  { NDS7_SOUNDA_CNT, "SOUNDA_CNT", { 0 }}, /* Sound Channel 10 Control Register (R/W) */
+  { NDS7_SOUNDA_SAD, "SOUNDA_SAD", { 0 }}, /* Sound Channel 10 Data Source Register (W) */
+  { NDS7_SOUNDA_TMR, "SOUNDA_TMR", { 0 }}, /* Sound Channel 10 Timer Register (W) */
+  { NDS7_SOUNDA_PNT, "SOUNDA_PNT", { 0 }}, /* Sound Channel 10 Loopstart Register (W) */
+  { NDS7_SOUNDA_LEN, "SOUNDA_LEN", { 0 }}, /* Sound Channel 10 Length Register (W) */
+  { NDS7_SOUNDB_CNT, "SOUNDB_CNT", { 0 }}, /* Sound Channel 11 Control Register (R/W) */
+  { NDS7_SOUNDB_SAD, "SOUNDB_SAD", { 0 }}, /* Sound Channel 11 Data Source Register (W) */
+  { NDS7_SOUNDB_TMR, "SOUNDB_TMR", { 0 }}, /* Sound Channel 11 Timer Register (W) */
+  { NDS7_SOUNDB_PNT, "SOUNDB_PNT", { 0 }}, /* Sound Channel 11 Loopstart Register (W) */
+  { NDS7_SOUNDB_LEN, "SOUNDB_LEN", { 0 }}, /* Sound Channel 11 Length Register (W) */
+  { NDS7_SOUNDC_CNT, "SOUNDC_CNT", { 0 }}, /* Sound Channel 12 Control Register (R/W) */
+  { NDS7_SOUNDC_SAD, "SOUNDC_SAD", { 0 }}, /* Sound Channel 12 Data Source Register (W) */
+  { NDS7_SOUNDC_TMR, "SOUNDC_TMR", { 0 }}, /* Sound Channel 12 Timer Register (W) */
+  { NDS7_SOUNDC_PNT, "SOUNDC_PNT", { 0 }}, /* Sound Channel 12 Loopstart Register (W) */
+  { NDS7_SOUNDC_LEN, "SOUNDC_LEN", { 0 }}, /* Sound Channel 12 Length Register (W) */
+  { NDS7_SOUNDD_CNT, "SOUNDD_CNT", { 0 }}, /* Sound Channel 13 Control Register (R/W) */
+  { NDS7_SOUNDD_SAD, "SOUNDD_SAD", { 0 }}, /* Sound Channel 13 Data Source Register (W) */
+  { NDS7_SOUNDD_TMR, "SOUNDD_TMR", { 0 }}, /* Sound Channel 13 Timer Register (W) */
+  { NDS7_SOUNDD_PNT, "SOUNDD_PNT", { 0 }}, /* Sound Channel 13 Loopstart Register (W) */
+  { NDS7_SOUNDD_LEN, "SOUNDD_LEN", { 0 }}, /* Sound Channel 13 Length Register (W) */
+  { NDS7_SOUNDE_CNT, "SOUNDE_CNT", { 0 }}, /* Sound Channel 14 Control Register (R/W) */
+  { NDS7_SOUNDE_SAD, "SOUNDE_SAD", { 0 }}, /* Sound Channel 14 Data Source Register (W) */
+  { NDS7_SOUNDE_TMR, "SOUNDE_TMR", { 0 }}, /* Sound Channel 14 Timer Register (W) */
+  { NDS7_SOUNDE_PNT, "SOUNDE_PNT", { 0 }}, /* Sound Channel 14 Loopstart Register (W) */
+  { NDS7_SOUNDE_LEN, "SOUNDE_LEN", { 0 }}, /* Sound Channel 14 Length Register (W) */
+  { NDS7_SOUNDF_CNT, "SOUNDF_CNT", { 0 }}, /* Sound Channel 15 Control Register (R/W) */
+  { NDS7_SOUNDF_SAD, "SOUNDF_SAD", { 0 }}, /* Sound Channel 15 Data Source Register (W) */
+  { NDS7_SOUNDF_TMR, "SOUNDF_TMR", { 0 }}, /* Sound Channel 15 Timer Register (W) */
+  { NDS7_SOUNDF_PNT, "SOUNDF_PNT", { 0 }}, /* Sound Channel 15 Loopstart Register (W) */
+  { NDS7_SOUNDF_LEN, "SOUNDF_LEN", { 0 }}, /* Sound Channel 15 Length Register (W) */
 
-  { NDS7_SOUNDCNT,   "SOUNDCNT",   {}}, /* Sound Control Register (R/W) */
-  { NDS7_SOUNDBIAS,  "SOUNDBIAS",  {}}, /* Sound Bias Register (R/W) */
-  { NDS7_SNDCAP0CNT, "SNDCAP0CNT", {}}, /* Sound Capture 0 Control Register (R/W) */
-  { NDS7_SNDCAP1CNT, "SNDCAP1CNT", {}}, /* Sound Capture 1 Control Register (R/W) */
-  { NDS7_SNDCAP0DAD, "SNDCAP0DAD", {}}, /* Sound Capture 0 Destination Address (R/W) */
-  { NDS7_SNDCAP0LEN, "SNDCAP0LEN", {}}, /* Sound Capture 0 Length (W) */
-  { NDS7_SNDCAP1DAD, "SNDCAP1DAD", {}}, /* Sound Capture 1 Destination Address (R/W) */
-  { NDS7_SNDCAP1LEN, "SNDCAP1LEN", {}}, /* Sound Capture 1 Length (W) */
+  { NDS7_SOUNDCNT,   "SOUNDCNT",   { 0 }}, /* Sound Control Register (R/W) */
+  { NDS7_SOUNDBIAS,  "SOUNDBIAS",  { 0 }}, /* Sound Bias Register (R/W) */
+  { NDS7_SNDCAP0CNT, "SNDCAP0CNT", { 0 }}, /* Sound Capture 0 Control Register (R/W) */
+  { NDS7_SNDCAP1CNT, "SNDCAP1CNT", { 0 }}, /* Sound Capture 1 Control Register (R/W) */
+  { NDS7_SNDCAP0DAD, "SNDCAP0DAD", { 0 }}, /* Sound Capture 0 Destination Address (R/W) */
+  { NDS7_SNDCAP0LEN, "SNDCAP0LEN", { 0 }}, /* Sound Capture 0 Length (W) */
+  { NDS7_SNDCAP1DAD, "SNDCAP1DAD", { 0 }}, /* Sound Capture 1 Destination Address (R/W) */
+  { NDS7_SNDCAP1LEN, "SNDCAP1LEN", { 0 }}, /* Sound Capture 1 Length (W) */
 
 };
 
@@ -1497,6 +1497,9 @@ typedef struct{
     int32_t internal_bgy;
   }aff[2];
   uint16_t dispcnt_pipeline[3];
+  uint32_t first_target_buffer[NDS_LCD_W];
+  uint32_t second_target_buffer[NDS_LCD_W];
+  uint8_t window[NDS_LCD_W];
 }nds_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1539,16 +1542,14 @@ typedef struct nds_t{
   uint32_t deferred_timer_ticks;
   bool halt; 
   bool prev_key_interrupt;
-  uint32_t first_target_buffer[GBA_LCD_W];
-  uint32_t second_target_buffer[GBA_LCD_W];
-  uint8_t window[GBA_LCD_W];
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*3];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*3];
   // Some HW has up to a 4 cycle delay before its IF propagates. 
   // This array acts as a FIFO to keep track of that. 
   uint16_t pipelined_if[5];
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
+
+  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*3];
+  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*3];
 } nds_t; 
 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
@@ -1603,41 +1604,6 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
 }
 static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
-  /*
-  NDS9 Memory Map
-
-  00000000h  Instruction TCM (32KB) (not moveable) (mirror-able to 1000000h)
-  0xxxx000h  Data TCM        (16KB) (moveable)
-  02000000h  Main Memory     (4MB)
-  03000000h  Shared WRAM     (0KB, 16KB, or 32KB can be allocated to ARM9)
-  04000000h  ARM9-I/O Ports
-  05000000h  Standard Palettes (2KB) (Engine A BG/OBJ, Engine B BG/OBJ)
-  06000000h  VRAM - Engine A, BG VRAM  (max 512KB)
-  06200000h  VRAM - Engine B, BG VRAM  (max 128KB)
-  06400000h  VRAM - Engine A, OBJ VRAM (max 256KB)
-  06600000h  VRAM - Engine B, OBJ VRAM (max 128KB)
-  06800000h  VRAM - "LCDC"-allocated (max 656KB)
-  07000000h  OAM (2KB) (Engine A, Engine B)
-  08000000h  GBA Slot ROM (max 32MB)
-  0A000000h  GBA Slot RAM (max 64KB)
-  FFFF0000h  ARM9-BIOS (32KB) (only 3K used)
-
-The ARM9 Exception Vectors are located at FFFF0000h. The IRQ handler redirects to [DTCM+3FFCh].
-
-NDS7 Memory Map
-
-  00000000h  ARM7-BIOS (16KB)
-  02000000h  Main Memory (4MB)
-  03000000h  Shared WRAM (0KB, 16KB, or 32KB can be allocated to ARM7)
-  03800000h  ARM7-WRAM (64KB)
-  04000000h  ARM7-I/O Ports
-  04800000h  Wireless Communications Wait State 0 (8KB RAM at 4804000h)
-  04808000h  Wireless Communications Wait State 1 (I/O Ports at 4808000h)
-  06000000h  VRAM allocated as Work RAM to ARM7 (max 256K)
-  08000000h  GBA Slot ROM (max 32MB)
-  0A000000h  GBA Slot RAM (max 64KB)
-*/
-
   switch(addr>>24){
     case 0x0: //BIOS(NDS7), TCM(NDS9)
       if(transaction_type&NDS_MEM_ARM7){
@@ -1819,22 +1785,22 @@ NDS7 Memory Map
 //    }
 //  }
 //}
-static FORCE_INLINE void nds9_store32(nds_t*nds, unsigned baddr, uint32_t data){
+static FORCE_INLINE void nds9_write32(nds_t*nds, unsigned baddr, uint32_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9);
 }
-static FORCE_INLINE void nds7_store32(nds_t*nds, unsigned baddr, uint32_t data){
+static FORCE_INLINE void nds7_write32(nds_t*nds, unsigned baddr, uint32_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM7);
 }
-static FORCE_INLINE void nds9_store16(nds_t*nds, unsigned baddr, uint16_t data){
+static FORCE_INLINE void nds9_write16(nds_t*nds, unsigned baddr, uint16_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9);
 }
-static FORCE_INLINE void nds7_store16(nds_t*nds, unsigned baddr, uint16_t data){
+static FORCE_INLINE void nds7_write16(nds_t*nds, unsigned baddr, uint16_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM7);
 }
-static FORCE_INLINE void nds9_store8(nds_t*nds, unsigned baddr, uint8_t data){
+static FORCE_INLINE void nds9_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
 }
-static FORCE_INLINE void nds7_store8(nds_t*nds, unsigned baddr, uint8_t data){
+static FORCE_INLINE void nds7_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7);
 }
 
@@ -1858,13 +1824,31 @@ static FORCE_INLINE uint8_t nds7_read8(nds_t*nds, unsigned baddr){
   return nds_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7);
 }
 
-static FORCE_INLINE void nds_io_store8(nds_t*nds, unsigned baddr, uint8_t data){nds->mem.io[baddr&0xffff]=data;}
-static FORCE_INLINE void nds_io_store16(nds_t*nds, unsigned baddr, uint16_t data){*(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;}
-static FORCE_INLINE void nds_io_store32(nds_t*nds, unsigned baddr, uint32_t data){*(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;}
+uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_read32((nds_t*)user_data,address);}
+uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_read16((nds_t*)user_data,address);}
+uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_read32((nds_t*)user_data,address);}
+uint32_t nds9_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_read16((nds_t*)user_data,address);}
+uint8_t nds9_arm_read8(void* user_data, uint32_t address){return nds9_read8((nds_t*)user_data,address);}
+void nds9_arm_write32(void* user_data, uint32_t address, uint32_t data){nds9_write32((nds_t*)user_data,address,data);}
+void nds9_arm_write16(void* user_data, uint32_t address, uint16_t data){nds9_write16((nds_t*)user_data,address,data);}
+void nds9_arm_write8(void* user_data, uint32_t address, uint8_t data){nds9_write8((nds_t*)user_data,address,data);}
 
-static FORCE_INLINE uint8_t  nds_io_read8(nds_t*nds, unsigned baddr) {return nds->mem.io[baddr&0xffff];}
-static FORCE_INLINE uint16_t nds_io_read16(nds_t*nds, unsigned baddr){return *(uint16_t*)(nds->mem.io+(baddr&0xffff));}
-static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds, unsigned baddr){return *(uint32_t*)(nds->mem.io+(baddr&0xffff));}
+uint32_t nds7_arm_read32(void* user_data, uint32_t address){return nds7_read32((nds_t*)user_data,address);}
+uint32_t nds7_arm_read16(void* user_data, uint32_t address){return nds7_read16((nds_t*)user_data,address);}
+uint32_t nds7_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read32((nds_t*)user_data,address);}
+uint32_t nds7_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read16((nds_t*)user_data,address);}
+uint8_t nds7_arm_read8(void* user_data, uint32_t address){return nds7_read8((nds_t*)user_data,address);}
+void nds7_arm_write32(void* user_data, uint32_t address, uint32_t data){nds7_write32((nds_t*)user_data,address,data);}
+void nds7_arm_write16(void* user_data, uint32_t address, uint16_t data){nds7_write16((nds_t*)user_data,address,data);}
+void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write8((nds_t*)user_data,address,data);}
+
+static FORCE_INLINE void nds9_io_store8(nds_t*nds, unsigned baddr, uint8_t data){nds->mem.io[baddr&0xffff]=data;}
+static FORCE_INLINE void nds9_io_store16(nds_t*nds, unsigned baddr, uint16_t data){*(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;}
+static FORCE_INLINE void nds9_io_store32(nds_t*nds, unsigned baddr, uint32_t data){*(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;}
+
+static FORCE_INLINE uint8_t  nds9_io_read8(nds_t*nds, unsigned baddr) {return nds->mem.io[baddr&0xffff];}
+static FORCE_INLINE uint16_t nds9_io_read16(nds_t*nds, unsigned baddr){return *(uint16_t*)(nds->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint32_t nds9_io_read32(nds_t*nds, unsigned baddr){return *(uint32_t*)(nds->mem.io+(baddr&0xffff));}
 static FORCE_INLINE void nds_recompute_waitstate_table(nds_t* nds,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*4]={
@@ -1932,7 +1916,7 @@ static FORCE_INLINE void nds_recompute_waitstate_table(nds_t* nds,uint16_t waitc
   nds->mem.wait_state_table[(0x0E*4)+2]= 1+primary_table[sram_wait];
   nds->mem.wait_state_table[(0x0E*4)+3]= 1+primary_table[sram_wait];
   waitcnt&=(1<<15); // Force cartridge to report as GBA cart
-  nds_io_store16(nds,GBA_WAITCNT,waitcnt);
+  nds9_io_store16(nds,GBA_WAITCNT,waitcnt);
 }
 static FORCE_INLINE void nds_compute_access_cycles(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
 //  int bank = SB_BFE(address,24,4);
@@ -2244,479 +2228,482 @@ static void nds_unload(nds_t* nds){
   sb_free_file_data(nds->mem.card_data);
 }
     
-static FORCE_INLINE void nds_tick_ppu(nds_t* nds, bool render){
-//  nds->ppu.scan_clock+=1;
-//  if(nds->ppu.scan_clock%4)return;
-//  if(nds->ppu.scan_clock>=280896)nds->ppu.scan_clock-=280896;
-//
-//  int lcd_y = (nds->ppu.scan_clock+44)/1232;
-//  int lcd_x = ((nds->ppu.scan_clock)%1232)/4;
-//  if(lcd_x==0||lcd_x==240||lcd_x==296){
-//    uint16_t disp_stat = nds_io_read16(nds, GBA_DISPSTAT)&~0x7;
-//    uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-//    bool vblank = lcd_y>=160&&lcd_y<227;
-//    bool hblank = lcd_x>=240&&lcd_x< 296;
-//    disp_stat |= vblank ? 0x1: 0; 
-//    disp_stat |= hblank ? 0x2: 0;      
-//    disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
-//    nds_io_store16(nds,GBA_VCOUNT,lcd_y);   
-//    nds_io_store16(nds,GBA_DISPSTAT,disp_stat);
-//    uint32_t new_if = 0;
-//    if(hblank!=nds->ppu.last_hblank){
-//      nds->ppu.last_hblank = hblank;
-//      bool hblank_irq_en = SB_BFE(disp_stat,4,1);
-//      if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-//      nds->activate_dmas=true;
-//      if(!hblank){
-//        nds->ppu.dispcnt_pipeline[0]=nds->ppu.dispcnt_pipeline[1];
-//        nds->ppu.dispcnt_pipeline[1]=nds->ppu.dispcnt_pipeline[2];
-//        nds->ppu.dispcnt_pipeline[2]=nds_io_read16(nds, GBA_DISPCNT);
-//      }else{
-//        uint16_t dispcnt = nds->ppu.dispcnt_pipeline[0];
-//
-//        int bg_mode = SB_BFE(dispcnt,0,3);
-//
-//        // From Mirei: Affine registers are only incremented when bg_mode is not 0
-//        // and the bg is enabled.
-//        if(bg_mode!=0){
-//          for(int aff=0;aff<2;++aff){
-//            bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
-//            if(!bg_en)continue;
-//            int32_t b = (int16_t)nds_io_read16(nds,GBA_BG2PB+(aff)*0x10);
-//            int32_t d = (int16_t)nds_io_read16(nds,GBA_BG2PD+(aff)*0x10);
-//            uint16_t bgcnt = nds_io_read16(nds, GBA_BG2CNT+aff*2);
-//            bool mosaic = SB_BFE(bgcnt,6,1);
-//            if(mosaic){
-//              uint16_t mos_reg = nds_io_read16(nds,GBA_MOSAIC);
-//              int mos_y = SB_BFE(mos_reg,4,4)+1;
-//              if((lcd_y%mos_y)==0){
-//                nds->ppu.aff[aff].internal_bgx+=b*mos_y;
-//                nds->ppu.aff[aff].internal_bgy+=d*mos_y;
-//              }
-//            }else{
-//              nds->ppu.aff[aff].internal_bgx+=b;
-//              nds->ppu.aff[aff].internal_bgy+=d;
-//            }
-//          }
-//        }
-//      }
-//    }
-//    if(lcd_y != nds->ppu.last_lcd_y){
-//      if(vblank!=nds->ppu.last_vblank){
-//        nds->ppu.last_vblank = vblank;
-//        bool vblank_irq_en = SB_BFE(disp_stat,3,1);
-//        if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
-//        nds->activate_dmas=true;
-//      }
-//      nds->ppu.last_lcd_y  = lcd_y;
-//      if(lcd_y==vcount_cmp) {
-//        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
-//        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
-//      }
-//      //Latch BGX and BGY registers
-//      if(lcd_y==0){
-//        for(int aff=0;aff<2;++aff){
-//          nds->ppu.aff[aff].internal_bgx=nds_io_read32(nds,GBA_BG2X+(aff)*0x10);
-//          nds->ppu.aff[aff].internal_bgy=nds_io_read32(nds,GBA_BG2Y+(aff)*0x10);
-//
-//          nds->ppu.aff[aff].internal_bgx = SB_BFE(nds->ppu.aff[aff].internal_bgx,0,28);
-//          nds->ppu.aff[aff].internal_bgy = SB_BFE(nds->ppu.aff[aff].internal_bgy,0,28);
-//
-//          nds->ppu.aff[aff].internal_bgx = (nds->ppu.aff[aff].internal_bgx<<4)>>4;
-//          nds->ppu.aff[aff].internal_bgy = (nds->ppu.aff[aff].internal_bgy<<4)>>4;
-//        }
-//      }
-//    }
-//    nds_send_interrupt(nds,3,new_if);
-//  }
-//
-//  if(!render)return; 
-//
-//  uint16_t dispcnt = nds_io_read16(nds, GBA_DISPCNT);
-//  int bg_mode = SB_BFE(dispcnt,0,3);
-//  int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
-//  int forced_blank = SB_BFE(dispcnt,7,1);
-//  if(forced_blank)return;
-//  bool visible = lcd_x<240 && lcd_y<160;
-//  //Render sprites over scanline when it completes
-//  if(lcd_y<160 && lcd_x == 0){
-    //
-//    //Render sprites over scanline when it completes
-//    uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
-//    bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
-//    uint16_t WINOUT = nds_io_read16(nds, GBA_WINOUT);
-//    if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
-  //
-//    for(int x=0;x<240;++x){nds->window[x] = default_window_control;}
-//    uint8_t obj_window_control = default_window_control;
-//    bool obj_window_enable = SB_BFE(dispcnt,15,1);
-//    if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
-//    bool display_obj = SB_BFE(dispcnt,12,1);
-//    if(display_obj){
-//      for(int o=0;o<128;++o){
-//        uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0);
-//        //Attr0
-//        uint8_t y_coord = SB_BFE(attr0,0,8);
-//        bool rot_scale =  SB_BFE(attr0,8,1);
-//        bool double_size = SB_BFE(attr0,9,1)&&rot_scale;
-//        bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
-//        if(obj_disable) continue; 
-//
-//        int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=Prohibited)
-//        bool mosaic  = SB_BFE(attr0,12,1);
-//        bool colors_or_palettes = SB_BFE(attr0,13,1);
-//        int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
-//        uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2);
-//
-//        int rotscale_param = SB_BFE(attr1,9,5);
-//        bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
-//        bool v_flip = SB_BFE(attr1,13,1)&&!rot_scale;
-//        int obj_size = SB_BFE(attr1,14,2);
-//        // Size  Square   Horizontal  Vertical
-//        // 0     8x8      16x8        8x16
-//        // 1     16x16    32x8        8x32
-//        // 2     32x32    32x16       16x32
-//        // 3     64x64    64x32       32x64
-//        const int xsize_lookup[16]={
-//          8,16,8,0,
-//          16,32,8,0,
-//          32,32,16,0,
-//          64,64,32,0
-//        };
-//        const int ysize_lookup[16]={
-//          8,8,16,0,
-//          16,8,32,0,
-//          32,16,32,0,
-//          64,32,64,0
-//        }; 
-//
-//        int y_size = ysize_lookup[obj_size*4+obj_shape];
-//
-//        if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
-//          int16_t x_coord = SB_BFE(attr1,0,9);
-//          if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
-//
-//          int x_size = xsize_lookup[obj_size*4+obj_shape];
-//          int x_start = x_coord>=0?x_coord:0;
-//          int x_end   = x_coord+x_size*(double_size?2:1);
-//          if(x_end>=240)x_end=240;
-//          //Attr2
-//          //Skip objects disabled by window
-//          uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4);
-//          int tile_base = SB_BFE(attr2,0,10);
-//          // Always place sprites as the highest priority
-//          int priority = SB_BFE(attr2,10,2);
-//          int palette = SB_BFE(attr2,12,4);
-//          for(int x = x_start; x< x_end;++x){
-//            int sx = (x-x_coord);
-//            int sy = (lcd_y-y_coord)&0xff;
-//            if(mosaic){
-//              uint16_t mos_reg = nds_io_read16(nds,GBA_MOSAIC);
-//              int mos_x = SB_BFE(mos_reg,8,4)+1;
-//              int mos_y = SB_BFE(mos_reg,12,4)+1;
-//              sx = ((x/mos_x)*mos_x-x_coord);
-//              sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
-//            }
-//            if(rot_scale){
-//              uint32_t param_base = rotscale_param*0x20; 
-//              int32_t a = *(int16_t*)(nds->mem.oam+param_base+0x6);
-//              int32_t b = *(int16_t*)(nds->mem.oam+param_base+0xe);
-//              int32_t c = *(int16_t*)(nds->mem.oam+param_base+0x16);
-//              int32_t d = *(int16_t*)(nds->mem.oam+param_base+0x1e);
-   //
-//              int64_t x1 = sx<<8;
-//              int64_t y1 = sy<<8;
-//              int64_t objref_x = (x_size<<(double_size?8:7));
-//              int64_t objref_y = (y_size<<(double_size?8:7));
-              //
-//              int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y)+(x_size<<15);
-//              int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y)+(y_size<<15);
-//
-//              sx = (x2>>16);
-//              sy = (y2>>16);
-//              if(sx>=x_size||sy>=y_size||sx<0||sy<0)continue;
-//            }else{
-//              if(h_flip)sx=x_size-sx-1;
-//              if(v_flip)sy=y_size-sy-1;
-//            }
-//            int tx = sx%8;
-//            int ty = sy%8;
-                      //
-//            int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
-//            int tile = tile_base + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
-//            //Tiles >511 are not rendered in bg_mode3-5 since that memory is used to store the bitmap graphics. 
-//            if(tile<512&&bg_mode>=3&&bg_mode<=5)continue;
-//            uint8_t palette_id;
-//            int obj_tile_base = GBA_OBJ_TILES0_2;
-//            if(colors_or_palettes==false){
-//              palette_id= nds->mem.vram[obj_tile_base+tile*8*4+tx/2+ty*4];
-//              palette_id= (palette_id>>((tx&1)*4))&0xf;
-//              if(palette_id==0)continue;
-//              palette_id+=palette*16;
-//            }else{
-//              palette_id=nds->mem.vram[obj_tile_base+tile*8*4+tx+ty*8];
-//              if(palette_id==0)continue;
-//            }
-//
-//            uint32_t col = *(uint16_t*)(nds->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
-//            //Handle window objects(not displayed but control the windowing of other things)
-//            if(obj_mode==2){nds->window[x]=obj_window_control; 
-//            }else if(obj_mode!=3){
-//              int type =4;
-//              col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
-//              if(obj_mode==1)col|=1<<16;
-//              if((col>>17)>(nds->first_target_buffer[x]>>17))nds->first_target_buffer[x]=col;
-//            }  
-//          }
-//        }
-//      }
-//    }
-//    int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
-//    if(enabled_windows){
-//      for(int win=1;win>=0;--win){
-//        bool win_enable = SB_BFE(dispcnt,13+win,1);
-//        if(!win_enable)continue;
-//        uint16_t WINH = nds_io_read16(nds, GBA_WIN0H+2*win);
-//        uint16_t WINV = nds_io_read16(nds, GBA_WIN0V+2*win);
-//        int win_xmin = SB_BFE(WINH,8,8);
-//        int win_xmax = SB_BFE(WINH,0,8);
-//        int win_ymin = SB_BFE(WINV,8,8);
-//        int win_ymax = SB_BFE(WINV,0,8);
-//        // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
-//        // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
-//        if(win_xmin>win_xmax)win_xmax=240;
-//        if(win_ymin>win_ymax)win_ymax=161;
-//        if(win_xmax>240)win_xmax=240;
-//        if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
-//        uint16_t winin = nds_io_read16(nds,GBA_WININ);
-//        uint8_t win_value = SB_BFE(winin,win*8,6);
-//        for(int x=win_xmin;x<win_xmax;++x)nds->window[x] = win_value;
-//      }
-//      int backdrop_type = 5;
-//      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
-//      for(int x=0;x<240;++x){
-//        uint8_t window_control = nds->window[x];
-//        if(SB_BFE(window_control,4,1)==0)nds->first_target_buffer[x]=backdrop_col;
-//      }
-//    }
-//  }
-//
-//  if(visible){
-//    uint8_t window_control =nds->window[lcd_x];
-//    if(bg_mode==6 ||bg_mode==7){
-//      //Palette 0 is taken as the background
-//    }else if (bg_mode<=5){     
-//      for(int bg = 3; bg>=0;--bg){
-//        uint32_t col =0;         
-//        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
-//        bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(nds->ppu.dispcnt_pipeline[0],8+bg,1);
-//        if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
-//
-//        bool rot_scale = bg_mode>=1&&bg>=2;
-//        uint16_t bgcnt = nds_io_read16(nds, GBA_BG0CNT+bg*2);
-//        int priority = SB_BFE(bgcnt,0,2);
-//        int character_base = SB_BFE(bgcnt,2,2);
-//        bool mosaic = SB_BFE(bgcnt,6,1);
-//        bool colors = SB_BFE(bgcnt,7,1);
-//        int screen_base = SB_BFE(bgcnt,8,5);
-//        bool display_overflow =SB_BFE(bgcnt,13,1);
-//        int screen_size = SB_BFE(bgcnt,14,2);
-//
-//        int screen_size_x = (screen_size&1)?512:256;
-//        int screen_size_y = (screen_size>=2)?512:256;
-        //
-//        int bg_x = 0;
-//        int bg_y = 0;
-        //
-//        if(rot_scale){
-//          screen_size_x = screen_size_y = (16*8)<<screen_size;
-//          if(bg_mode==3||bg_mode==4){
-//            screen_size_x=240;
-//            screen_size_y=160;
-//          }else if(bg_mode==5){
-//            screen_size_x=160;
-//            screen_size_y=128;
-//          }
-//          colors = true;
-//
-//          int32_t bgx = nds->ppu.aff[bg-2].internal_bgx;
-//          int32_t bgy = nds->ppu.aff[bg-2].internal_bgy;
-//
-//          int32_t a = (int16_t)nds_io_read16(nds,GBA_BG2PA+(bg-2)*0x10);
-//          int32_t c = (int16_t)nds_io_read16(nds,GBA_BG2PC+(bg-2)*0x10);
-//
-//          // Shift lcd_coords into fixed point
-//          int64_t x2 = a*lcd_x + (((int64_t)bgx));
-//          int64_t y2 = c*lcd_x + (((int64_t)bgy));
-//          if(mosaic){
-//            int16_t mos_reg = nds_io_read16(nds,GBA_MOSAIC);
-//            int mos_x = SB_BFE(mos_reg,0,4)+1;
-//            x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
-//            y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
-//          }
-//
-//
-//          bg_x = (x2>>8);
-//          bg_y = (y2>>8);
-//
-//          if(display_overflow==0){
-//            if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
-//          }else{
-//            bg_x%=screen_size_x;
-//            bg_y%=screen_size_y;
-//          }
-                              //
-//        }else{
-//          int16_t hoff = nds_io_read16(nds,GBA_BG0HOFS+bg*4);
-//          int16_t voff = nds_io_read16(nds,GBA_BG0VOFS+bg*4);
-//          hoff=(hoff<<7)>>7;
-//          voff=(voff<<7)>>7;
-//          bg_x = (hoff+lcd_x);
-//          bg_y = (voff+lcd_y);
-//          if(mosaic){
-//            uint16_t mos_reg = nds_io_read16(nds,GBA_MOSAIC);
-//            int mos_x = SB_BFE(mos_reg,0,4)+1;
-//            int mos_y = SB_BFE(mos_reg,4,4)+1;
-//            bg_x = hoff+(lcd_x/mos_x)*mos_x;
-//            bg_y = voff+(lcd_y/mos_y)*mos_y;
-//          }
-//        }
-//        if(bg_mode==3){
-//          int p = bg_x+bg_y*240;
-//          int addr = p*2; 
-//          col  = *(uint16_t*)(nds->mem.vram+addr);
-//        }else if(bg_mode==4){
-//          int p = bg_x+bg_y*240;
-//          int frame_sel = SB_BFE(dispcnt,4,1);
-//          int addr = p*1+0xA000*frame_sel; 
-//          uint8_t pallete_id = nds->mem.vram[addr];
-//          if(pallete_id==0)continue;
-//          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
-//        }else if(bg_mode==5){
-//          int p = bg_x+bg_y*160;
-//          int frame_sel = SB_BFE(dispcnt,4,1);
-//          int addr = p*2+0xA000*frame_sel; 
-//          col  = *(uint16_t*)(nds->mem.vram+addr);
-//        }else{
-//          bg_x = bg_x&(screen_size_x-1);
-//          bg_y = bg_y&(screen_size_y-1);
-//          int bg_tile_x = bg_x/8;
-//          int bg_tile_y = bg_y/8;
-//
-//          int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
-//
-//          int screen_base_addr =    screen_base*2048;
-//          int character_base_addr = character_base*16*1024;
-//
-//          uint16_t tile_data =0;
-//
-//          int px = bg_x%8;
-//          int py = bg_y%8;
-//
-//          if(rot_scale)tile_data=nds->mem.vram[screen_base_addr+tile_off];
-//          else{
-//            int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
-//            if(bg_tile_x>=32)tile_off+=32*32;
-//            if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
-//            tile_data=*(uint16_t*)(nds->mem.vram+screen_base_addr+tile_off*2);
-//
-//            int h_flip = SB_BFE(tile_data,10,1);
-//            int v_flip = SB_BFE(tile_data,11,1);
-//            if(h_flip)px=7-px;
-//            if(v_flip)py=7-py;
-//          }
-//          int tile_id = SB_BFE(tile_data,0,10);
-//          int palette = SB_BFE(tile_data,12,4);
-//
-//          uint8_t tile_d=tile_id;
-//          if(colors==false){
-//            tile_d=nds->mem.vram[character_base_addr+tile_id*8*4+px/2+py*4];
-//            tile_d= (tile_d>>((px&1)*4))&0xf;
-//            if(tile_d==0)continue;
-//            tile_d+=palette*16;
-//          }else{
-//            tile_d=nds->mem.vram[character_base_addr+tile_id*8*8+px+py*8];
-//            if(tile_d==0)continue;
-//          }
-//          uint8_t pallete_id = tile_d;
-//          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
-//        }
-//        col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
-//        if(col>nds->first_target_buffer[lcd_x]){
-//          uint32_t t = nds->first_target_buffer[lcd_x];
-//          nds->first_target_buffer[lcd_x]=col;
-//          col = t;
-//        }
-//        if(col>nds->second_target_buffer[lcd_x])nds->second_target_buffer[lcd_x]=col;          
-//      }
-//    }
-//    uint32_t col = nds->first_target_buffer[lcd_x];
-//    int r = SB_BFE(col,0,5);
-//    int g = SB_BFE(col,5,5);
-//    int b = SB_BFE(col,10,5);
-//    uint32_t type = SB_BFE(col,17,3);
-//
-//    bool effect_enable = SB_BFE(window_control,5,1);
-//    uint16_t bldcnt = nds_io_read16(nds,GBA_BLDCNT);
-//    int mode = SB_BFE(bldcnt,6,2);
-//
-//    //Semitransparent objects are always selected for blending
-//    if(SB_BFE(col,16,1)){
-//      uint32_t col2 = nds->second_target_buffer[lcd_x];
-//      uint32_t type2 = SB_BFE(col2,17,3);
-//      bool blend = SB_BFE(bldcnt,8+type2,1);
-//      if(blend){mode=1;effect_enable=true;}
-//      else effect_enable &= SB_BFE(bldcnt,type,1);
-//    }else effect_enable &= SB_BFE(bldcnt,type,1);
-//    if(effect_enable){
-//      uint16_t bldy = nds_io_read16(nds,GBA_BLDY);
-//      float evy = SB_BFE(bldy,0,5)/16.;
-//      if(evy>1.0)evy=1;
-//      switch(mode){
-//        case 0: break; //None
-//        case 1: {
-//          uint32_t col2 = nds->second_target_buffer[lcd_x];
-//          uint32_t type2 = SB_BFE(col2,17,3);
-//          bool blend = SB_BFE(bldcnt,8+type2,1);
-//          if(blend){
-//            uint16_t bldalpha= nds_io_read16(nds,GBA_BLDALPHA);
-//            int r2 = SB_BFE(col2,0,5);
-//            int g2 = SB_BFE(col2,5,5);
-//            int b2 = SB_BFE(col2,10,5);
-//            int eva = SB_BFE(bldalpha,0,5);
-//            int evb = SB_BFE(bldalpha,8,5);
-//            if(eva>16)eva=16;
-//            if(evb>16)evb=16;
-//            r = (r*eva+r2*evb)/16;
-//            g = (g*eva+g2*evb)/16;
-//            b = (b*eva+b2*evb)/16;
-//            if(r>31)r = 31;
-//            if(g>31)g = 31;
-//            if(b>31)b = 31;
-//          }
-//        }break; //Alpha Blend
-//        case 2: //Lighten
-//          r = r+(31-r)*evy;
-//          g = g+(31-g)*evy;
-//          b = b+(31-b)*evy;  
-//          break; 
-//        case 3: //Darken
-//          r = r-(r)*evy;
-//          g = g-(g)*evy;
-//          b = b-(b)*evy;         
-//          break; 
-//      }
-//    }
-//    int p = (lcd_x+lcd_y*240)*3;
-//    float screen_blend_factor = 0.7;
-//    nds->framebuffer[p+0] = r*7*screen_blend_factor+nds->framebuffer[p+0]*(1.0-screen_blend_factor);
-//    nds->framebuffer[p+1] = g*7*screen_blend_factor+nds->framebuffer[p+1]*(1.0-screen_blend_factor);
-//    nds->framebuffer[p+2] = b*7*screen_blend_factor+nds->framebuffer[p+2]*(1.0-screen_blend_factor);  
-//    int backdrop_type = 5;
-//    uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
-//    nds->first_target_buffer[lcd_x] = backdrop_col;
-//    nds->second_target_buffer[lcd_x] = backdrop_col;
-//  }
+static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
+  nds_ppu_t * ppu = nds->ppu+ppu_id;
+  ppu->scan_clock+=1;
+  if(ppu->scan_clock%4)return;
+  int clocks_per_frame = 355*263*23*6;
+  if(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
+
+  int clocks_per_line = 355*6;
+  int lcd_y = (ppu->scan_clock+44)/clocks_per_line;
+  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/6;
+  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==296){
+    uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
+    uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+    bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<227;
+    bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< 296;
+    disp_stat |= vblank ? 0x1: 0; 
+    disp_stat |= hblank ? 0x2: 0;      
+    disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
+    nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
+    nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
+    uint32_t new_if = 0;
+    if(hblank!=ppu->last_hblank){
+      ppu->last_hblank = hblank;
+      bool hblank_irq_en = SB_BFE(disp_stat,4,1);
+      if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+      nds->activate_dmas=true;
+      if(!hblank){
+        ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
+        ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
+        ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT);
+      }else{
+        uint16_t dispcnt = ppu->dispcnt_pipeline[0];
+
+        int bg_mode = SB_BFE(dispcnt,0,3);
+
+        // From Mirei: Affine registers are only incremented when bg_mode is not 0
+        // and the bg is enabled.
+        if(bg_mode!=0){
+          for(int aff=0;aff<2;++aff){
+            bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
+            if(!bg_en)continue;
+            int32_t b = (int16_t)nds9_io_read16(nds,GBA_BG2PB+(aff)*0x10);
+            int32_t d = (int16_t)nds9_io_read16(nds,GBA_BG2PD+(aff)*0x10);
+            uint16_t bgcnt = nds9_io_read16(nds, GBA_BG2CNT+aff*2);
+            bool mosaic = SB_BFE(bgcnt,6,1);
+            if(mosaic){
+              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+              int mos_y = SB_BFE(mos_reg,4,4)+1;
+              if((lcd_y%mos_y)==0){
+                ppu->aff[aff].internal_bgx+=b*mos_y;
+                ppu->aff[aff].internal_bgy+=d*mos_y;
+              }
+            }else{
+              ppu->aff[aff].internal_bgx+=b;
+              ppu->aff[aff].internal_bgy+=d;
+            }
+          }
+        }
+      }
+    }
+    if(lcd_y != ppu->last_lcd_y){
+      if(vblank!=ppu->last_vblank){
+        ppu->last_vblank = vblank;
+        bool vblank_irq_en = SB_BFE(disp_stat,3,1);
+        if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
+        nds->activate_dmas=true;
+      }
+      ppu->last_lcd_y  = lcd_y;
+      if(lcd_y==vcount_cmp) {
+        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
+        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
+      }
+      //Latch BGX and BGY registers
+      if(lcd_y==0){
+        for(int aff=0;aff<2;++aff){
+          ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10);
+          ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10);
+
+          ppu->aff[aff].internal_bgx = SB_BFE(ppu->aff[aff].internal_bgx,0,28);
+          ppu->aff[aff].internal_bgy = SB_BFE(ppu->aff[aff].internal_bgy,0,28);
+
+          ppu->aff[aff].internal_bgx = (ppu->aff[aff].internal_bgx<<4)>>4;
+          ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
+        }
+      }
+    }
+    nds_send_interrupt(nds,3,new_if);
+  }
+
+  if(!render)return; 
+
+  uint16_t dispcnt = nds9_io_read16(nds, GBA_DISPCNT);
+  int bg_mode = SB_BFE(dispcnt,0,3);
+  int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
+  int forced_blank = SB_BFE(dispcnt,7,1);
+  if(forced_blank)return;
+  bool visible = lcd_x<NDS_LCD_W && lcd_y<NDS_LCD_H;
+  //Render sprites over scanline when it completes
+  if(lcd_y<NDS_LCD_H && lcd_x == 0){
+  
+    //Render sprites over scanline when it completes
+    uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
+    bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
+    uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT);
+    if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
+
+    for(int x=0;x<240;++x){ppu->window[x] = default_window_control;}
+    uint8_t obj_window_control = default_window_control;
+    bool obj_window_enable = SB_BFE(dispcnt,15,1);
+    if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
+    bool display_obj = SB_BFE(dispcnt,12,1);
+    if(display_obj){
+      for(int o=0;o<128;++o){
+        uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0);
+        //Attr0
+        uint8_t y_coord = SB_BFE(attr0,0,8);
+        bool rot_scale =  SB_BFE(attr0,8,1);
+        bool double_size = SB_BFE(attr0,9,1)&&rot_scale;
+        bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
+        if(obj_disable) continue; 
+
+        int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=Prohibited)
+        bool mosaic  = SB_BFE(attr0,12,1);
+        bool colors_or_palettes = SB_BFE(attr0,13,1);
+        int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
+        uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2);
+
+        int rotscale_param = SB_BFE(attr1,9,5);
+        bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
+        bool v_flip = SB_BFE(attr1,13,1)&&!rot_scale;
+        int obj_size = SB_BFE(attr1,14,2);
+        // Size  Square   Horizontal  Vertical
+        // 0     8x8      16x8        8x16
+        // 1     16x16    32x8        8x32
+        // 2     32x32    32x16       16x32
+        // 3     64x64    64x32       32x64
+        const int xsize_lookup[16]={
+          8,16,8,0,
+          16,32,8,0,
+          32,32,16,0,
+          64,64,32,0
+        };
+        const int ysize_lookup[16]={
+          8,8,16,0,
+          16,8,32,0,
+          32,16,32,0,
+          64,32,64,0
+        }; 
+
+        int y_size = ysize_lookup[obj_size*4+obj_shape];
+
+        if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
+          int16_t x_coord = SB_BFE(attr1,0,9);
+          if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
+
+          int x_size = xsize_lookup[obj_size*4+obj_shape];
+          int x_start = x_coord>=0?x_coord:0;
+          int x_end   = x_coord+x_size*(double_size?2:1);
+          if(x_end>=NDS_LCD_W)x_end=NDS_LCD_W;
+          //Attr2
+          //Skip objects disabled by window
+          uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4);
+          int tile_base = SB_BFE(attr2,0,10);
+          // Always place sprites as the highest priority
+          int priority = SB_BFE(attr2,10,2);
+          int palette = SB_BFE(attr2,12,4);
+          for(int x = x_start; x< x_end;++x){
+            int sx = (x-x_coord);
+            int sy = (lcd_y-y_coord)&0xff;
+            if(mosaic){
+              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+              int mos_x = SB_BFE(mos_reg,8,4)+1;
+              int mos_y = SB_BFE(mos_reg,12,4)+1;
+              sx = ((x/mos_x)*mos_x-x_coord);
+              sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
+            }
+            if(rot_scale){
+              uint32_t param_base = rotscale_param*0x20; 
+              int32_t a = *(int16_t*)(nds->mem.oam+param_base+0x6);
+              int32_t b = *(int16_t*)(nds->mem.oam+param_base+0xe);
+              int32_t c = *(int16_t*)(nds->mem.oam+param_base+0x16);
+              int32_t d = *(int16_t*)(nds->mem.oam+param_base+0x1e);
+ 
+              int64_t x1 = sx<<8;
+              int64_t y1 = sy<<8;
+              int64_t objref_x = (x_size<<(double_size?8:7));
+              int64_t objref_y = (y_size<<(double_size?8:7));
+            
+              int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y)+(x_size<<15);
+              int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y)+(y_size<<15);
+
+              sx = (x2>>16);
+              sy = (y2>>16);
+              if(sx>=x_size||sy>=y_size||sx<0||sy<0)continue;
+            }else{
+              if(h_flip)sx=x_size-sx-1;
+              if(v_flip)sy=y_size-sy-1;
+            }
+            int tx = sx%8;
+            int ty = sy%8;
+                    
+            int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
+            int tile = tile_base + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
+            //Tiles >511 are not rendered in bg_mode3-5 since that memory is used to store the bitmap graphics. 
+            if(tile<512&&bg_mode>=3&&bg_mode<=5)continue;
+            uint8_t palette_id;
+            int obj_tile_base = GBA_OBJ_TILES0_2;
+            if(colors_or_palettes==false){
+              palette_id= nds->mem.vram[obj_tile_base+tile*8*4+tx/2+ty*4];
+              palette_id= (palette_id>>((tx&1)*4))&0xf;
+              if(palette_id==0)continue;
+              palette_id+=palette*16;
+            }else{
+              palette_id=nds->mem.vram[obj_tile_base+tile*8*4+tx+ty*8];
+              if(palette_id==0)continue;
+            }
+
+            uint32_t col = *(uint16_t*)(nds->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
+            //Handle window objects(not displayed but control the windowing of other things)
+            if(obj_mode==2){ppu->window[x]=obj_window_control; 
+            }else if(obj_mode!=3){
+              int type =4;
+              col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
+              if(obj_mode==1)col|=1<<16;
+              if((col>>17)>(ppu->first_target_buffer[x]>>17))ppu->first_target_buffer[x]=col;
+            }  
+          }
+        }
+      }
+    }
+    int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
+    if(enabled_windows){
+      for(int win=1;win>=0;--win){
+        bool win_enable = SB_BFE(dispcnt,13+win,1);
+        if(!win_enable)continue;
+        uint16_t WINH = nds9_io_read16(nds, GBA_WIN0H+2*win);
+        uint16_t WINV = nds9_io_read16(nds, GBA_WIN0V+2*win);
+        int win_xmin = SB_BFE(WINH,8,8);
+        int win_xmax = SB_BFE(WINH,0,8);
+        int win_ymin = SB_BFE(WINV,8,8);
+        int win_ymax = SB_BFE(WINV,0,8);
+        // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
+        // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
+        if(win_xmin>win_xmax)win_xmax=240;
+        if(win_ymin>win_ymax)win_ymax=161;
+        if(win_xmax>240)win_xmax=240;
+        if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
+        uint16_t winin = nds9_io_read16(nds,GBA_WININ);
+        uint8_t win_value = SB_BFE(winin,win*8,6);
+        for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
+      }
+      int backdrop_type = 5;
+      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+      for(int x=0;x<240;++x){
+        uint8_t window_control = ppu->window[x];
+        if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
+      }
+    }
+  }
+
+  if(visible){
+    uint8_t window_control =ppu->window[lcd_x];
+    if(bg_mode==6 ||bg_mode==7){
+      //Palette 0 is taken as the background
+    }else if (bg_mode<=5){     
+      for(int bg = 3; bg>=0;--bg){
+        uint32_t col =0;         
+        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
+        bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
+        if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
+
+        bool rot_scale = bg_mode>=1&&bg>=2;
+        uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2);
+        int priority = SB_BFE(bgcnt,0,2);
+        int character_base = SB_BFE(bgcnt,2,2);
+        bool mosaic = SB_BFE(bgcnt,6,1);
+        bool colors = SB_BFE(bgcnt,7,1);
+        int screen_base = SB_BFE(bgcnt,8,5);
+        bool display_overflow =SB_BFE(bgcnt,13,1);
+        int screen_size = SB_BFE(bgcnt,14,2);
+
+        int screen_size_x = (screen_size&1)?512:256;
+        int screen_size_y = (screen_size>=2)?512:256;
+      
+        int bg_x = 0;
+        int bg_y = 0;
+      
+        if(rot_scale){
+          screen_size_x = screen_size_y = (16*8)<<screen_size;
+          if(bg_mode==3||bg_mode==4){
+            screen_size_x=240;
+            screen_size_y=160;
+          }else if(bg_mode==5){
+            screen_size_x=160;
+            screen_size_y=128;
+          }
+          colors = true;
+
+          int32_t bgx = ppu->aff[bg-2].internal_bgx;
+          int32_t bgy = ppu->aff[bg-2].internal_bgy;
+
+          int32_t a = (int16_t)nds9_io_read16(nds,GBA_BG2PA+(bg-2)*0x10);
+          int32_t c = (int16_t)nds9_io_read16(nds,GBA_BG2PC+(bg-2)*0x10);
+
+          // Shift lcd_coords into fixed point
+          int64_t x2 = a*lcd_x + (((int64_t)bgx));
+          int64_t y2 = c*lcd_x + (((int64_t)bgy));
+          if(mosaic){
+            int16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+            int mos_x = SB_BFE(mos_reg,0,4)+1;
+            x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
+            y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
+          }
+
+
+          bg_x = (x2>>8);
+          bg_y = (y2>>8);
+
+          if(display_overflow==0){
+            if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
+          }else{
+            bg_x%=screen_size_x;
+            bg_y%=screen_size_y;
+          }
+        }else{
+          int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4);
+          int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4);
+          hoff=(hoff<<7)>>7;
+          voff=(voff<<7)>>7;
+          bg_x = (hoff+lcd_x);
+          bg_y = (voff+lcd_y);
+          if(mosaic){
+            uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+            int mos_x = SB_BFE(mos_reg,0,4)+1;
+            int mos_y = SB_BFE(mos_reg,4,4)+1;
+            bg_x = hoff+(lcd_x/mos_x)*mos_x;
+            bg_y = voff+(lcd_y/mos_y)*mos_y;
+          }
+        }
+        if(bg_mode==3){
+          int p = bg_x+bg_y*240;
+          int addr = p*2; 
+          col  = *(uint16_t*)(nds->mem.vram+addr);
+        }else if(bg_mode==4){
+          int p = bg_x+bg_y*240;
+          int frame_sel = SB_BFE(dispcnt,4,1);
+          int addr = p*1+0xA000*frame_sel; 
+          uint8_t pallete_id = nds->mem.vram[addr];
+          if(pallete_id==0)continue;
+          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
+        }else if(bg_mode==5){
+          int p = bg_x+bg_y*160;
+          int frame_sel = SB_BFE(dispcnt,4,1);
+          int addr = p*2+0xA000*frame_sel; 
+          col  = *(uint16_t*)(nds->mem.vram+addr);
+        }else{
+          bg_x = bg_x&(screen_size_x-1);
+          bg_y = bg_y&(screen_size_y-1);
+          int bg_tile_x = bg_x/8;
+          int bg_tile_y = bg_y/8;
+
+          int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
+
+          int screen_base_addr =    screen_base*2048;
+          int character_base_addr = character_base*16*1024;
+
+          uint16_t tile_data =0;
+
+          int px = bg_x%8;
+          int py = bg_y%8;
+
+          if(rot_scale)tile_data=nds->mem.vram[screen_base_addr+tile_off];
+          else{
+            int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
+            if(bg_tile_x>=32)tile_off+=32*32;
+            if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
+            tile_data=*(uint16_t*)(nds->mem.vram+screen_base_addr+tile_off*2);
+
+            int h_flip = SB_BFE(tile_data,10,1);
+            int v_flip = SB_BFE(tile_data,11,1);
+            if(h_flip)px=7-px;
+            if(v_flip)py=7-py;
+          }
+          int tile_id = SB_BFE(tile_data,0,10);
+          int palette = SB_BFE(tile_data,12,4);
+
+          uint8_t tile_d=tile_id;
+          if(colors==false){
+            tile_d=nds->mem.vram[character_base_addr+tile_id*8*4+px/2+py*4];
+            tile_d= (tile_d>>((px&1)*4))&0xf;
+            if(tile_d==0)continue;
+            tile_d+=palette*16;
+          }else{
+            tile_d=nds->mem.vram[character_base_addr+tile_id*8*8+px+py*8];
+            if(tile_d==0)continue;
+          }
+          uint8_t pallete_id = tile_d;
+          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
+        }
+        col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
+        if(col>ppu->first_target_buffer[lcd_x]){
+          uint32_t t = ppu->first_target_buffer[lcd_x];
+          ppu->first_target_buffer[lcd_x]=col;
+          col = t;
+        }
+        if(col>ppu->second_target_buffer[lcd_x])ppu->second_target_buffer[lcd_x]=col;          
+      }
+    }
+    uint32_t col = ppu->first_target_buffer[lcd_x];
+    int r = SB_BFE(col,0,5);
+    int g = SB_BFE(col,5,5);
+    int b = SB_BFE(col,10,5);
+    uint32_t type = SB_BFE(col,17,3);
+
+    bool effect_enable = SB_BFE(window_control,5,1);
+    uint16_t bldcnt = nds9_io_read16(nds,GBA_BLDCNT);
+    int mode = SB_BFE(bldcnt,6,2);
+
+    //Semitransparent objects are always selected for blending
+    if(SB_BFE(col,16,1)){
+      uint32_t col2 = ppu->second_target_buffer[lcd_x];
+      uint32_t type2 = SB_BFE(col2,17,3);
+      bool blend = SB_BFE(bldcnt,8+type2,1);
+      if(blend){mode=1;effect_enable=true;}
+      else effect_enable &= SB_BFE(bldcnt,type,1);
+    }else effect_enable &= SB_BFE(bldcnt,type,1);
+    if(effect_enable){
+      uint16_t bldy = nds9_io_read16(nds,GBA_BLDY);
+      float evy = SB_BFE(bldy,0,5)/16.;
+      if(evy>1.0)evy=1;
+      switch(mode){
+        case 0: break; //None
+        case 1: {
+          uint32_t col2 = ppu->second_target_buffer[lcd_x];
+          uint32_t type2 = SB_BFE(col2,17,3);
+          bool blend = SB_BFE(bldcnt,8+type2,1);
+          if(blend){
+            uint16_t bldalpha= nds9_io_read16(nds,GBA_BLDALPHA);
+            int r2 = SB_BFE(col2,0,5);
+            int g2 = SB_BFE(col2,5,5);
+            int b2 = SB_BFE(col2,10,5);
+            int eva = SB_BFE(bldalpha,0,5);
+            int evb = SB_BFE(bldalpha,8,5);
+            if(eva>16)eva=16;
+            if(evb>16)evb=16;
+            r = (r*eva+r2*evb)/16;
+            g = (g*eva+g2*evb)/16;
+            b = (b*eva+b2*evb)/16;
+            if(r>31)r = 31;
+            if(g>31)g = 31;
+            if(b>31)b = 31;
+          }
+        }break; //Alpha Blend
+        case 2: //Lighten
+          r = r+(31-r)*evy;
+          g = g+(31-g)*evy;
+          b = b+(31-b)*evy;  
+          break; 
+        case 3: //Darken
+          r = r-(r)*evy;
+          g = g-(g)*evy;
+          b = b-(b)*evy;         
+          break; 
+      }
+    }
+    int p = (lcd_x+lcd_y*240)*3;
+    float screen_blend_factor = 0.7;
+    uint8_t *framebuffer = ppu_id==0?nds->framebuffer_top: nds->framebuffer_bottom;
+    framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
+    framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
+    framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor);  
+    int backdrop_type = 5;
+    uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+    ppu->first_target_buffer[lcd_x] = backdrop_col;
+    ppu->second_target_buffer[lcd_x] = backdrop_col;
+  }
 }
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
 //  uint16_t reg_value = 0;
@@ -3013,7 +3000,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
 }                                              
 static FORCE_INLINE void nds_tick_sio(nds_t* nds){
   //Just a stub for now;
-  uint16_t siocnt = nds_io_read16(nds,GBA_SIOCNT);
+  uint16_t siocnt = nds9_io_read16(nds,GBA_SIOCNT);
   bool active = SB_BFE(siocnt,7,1);
   bool irq_enabled = SB_BFE(siocnt,14,1);
   if(active){
@@ -3023,7 +3010,7 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
       nds_send_interrupt(nds,4,if_bit);
     }
     siocnt&= ~(1<<7);
-    nds_io_store16(nds,GBA_SIOCNT,siocnt);
+    nds9_io_store16(nds,GBA_SIOCNT,siocnt);
   }
 }
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
@@ -3139,9 +3126,9 @@ static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
   if(nds->active_if_pipe_stages){
     uint16_t if_bit = nds->pipelined_if[0];
     if(if_bit){
-      uint16_t if_val = nds_io_read16(nds,GBA_IF);
+      uint16_t if_val = nds9_io_read16(nds,GBA_IF);
       if_val |= if_bit;
-      nds_io_store16(nds,GBA_IF,if_val);
+      nds9_io_store16(nds,GBA_IF,if_val);
     }
     nds->pipelined_if[0]=nds->pipelined_if[1];
     nds->pipelined_if[1]=nds->pipelined_if[2];
@@ -3176,50 +3163,66 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
     nds_tick_keypad(&emu->joy,nds);
     //bool prev_vblank = nds->ppu.last_vblank; 
     //Skip emulation of a frame if we get too far ahead the audio playback
-//    static int last_tick =0;
-//    while(true){
-//      int ticks = nds->activate_dmas? nds_tick_dma(nds,last_tick) :0;
-//      if(!ticks){
-//        uint16_t int_if = nds_io_read16(nds,GBA_IF);
-//        if(nds->halt){
-//          ticks=2;
-//          if(int_if){nds->halt = false;}
-//        }else{
-//          nds->mem.requests=0;
-//          if(int_if){
-//            int_if &= nds_io_read16(nds,GBA_IE);
-//            uint32_t ime = nds_io_read32(nds,GBA_IME);
-//            if(SB_BFE(ime,0,1)==1){
-//              nds->cpu.i_cycles=0;
-//              arm7_process_interrupts(&nds->cpu, int_if);
-//              ticks=nds->cpu.i_cycles;
-//            }
-//          }
-//          if(nds->cpu.registers[PC]== emu->pc_breakpoint)nds->cpu.trigger_breakpoint=true;
-//          else if(!ticks){
-//            arm7_exec_instruction(&nds->cpu);
-//            ticks = nds->mem.requests; 
-//          }
-//        }
-//        if(nds->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->cpu.trigger_breakpoint=false; break;}
-//      }
-//      last_tick=ticks;
-//      nds_tick_sio(nds);
-//
-//      double delta_t = ((double)ticks)/(16*1024*1024);
-//
-//      for(int t = 0;t<ticks;++t){
-//        nds_tick_interrupts(nds);
-//        nds_tick_timers(nds);
-//        nds_tick_ppu(nds,emu->render_frame);
-//      }
-//
-//      if(nds->ppu.last_vblank && !prev_vblank){
-//        prev_vblank = nds->ppu.last_vblank;
-//        break;
-//      }
-//      prev_vblank = nds->ppu.last_vblank;
-//    }
+    static int last_tick =0;
+    int loops=1000000;
+    while(--loops){
+      int ticks = nds->activate_dmas? nds_tick_dma(nds,last_tick) :0;
+      if(!ticks){
+        uint16_t int_if = nds9_io_read16(nds,GBA_IF);
+        if(nds->halt){
+          ticks=2;
+          if(int_if){nds->halt = false;}
+        }else{
+          nds->mem.requests=0;
+          if(int_if){
+            int_if &= nds9_io_read16(nds,GBA_IE);
+            uint32_t ime = nds9_io_read32(nds,GBA_IME);
+            if(SB_BFE(ime,0,1)==1){
+              arm7_process_interrupts(&nds->arm7, int_if);
+            }
+          }
+          if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
+          else if(!ticks){
+            arm7_exec_instruction(&nds->arm7);
+            ticks = nds->mem.requests; 
+          }
+
+          if(int_if){
+            int_if &= nds9_io_read16(nds,GBA_IE);
+            uint32_t ime = nds9_io_read32(nds,GBA_IME);
+            if(SB_BFE(ime,0,1)==1){
+              arm7_process_interrupts(&nds->arm9, int_if);
+            }
+          }
+          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+          else if(!ticks){
+            arm7_exec_instruction(&nds->arm9);
+            ticks = nds->mem.requests; 
+          }
+        }
+        if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
+        if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
+      }
+      ticks=1;
+      last_tick=ticks;
+      nds_tick_sio(nds);
+
+      double delta_t = ((double)ticks)/(16*1024*1024);
+
+      for(int t = 0;t<ticks;++t){
+        nds_tick_interrupts(nds);
+        nds_tick_timers(nds);
+        nds_tick_ppu(nds,0,emu->render_frame);
+        nds_tick_ppu(nds,1,emu->render_frame);
+      }
+      /*
+      if(nds->ppu.last_vblank && !prev_vblank){
+        prev_vblank = nds->ppu.last_vblank;
+        break;
+      }
+      prev_vblank = nds->ppu.last_vblank;
+      */
+    }
   }                  
   
   if(emu->run_mode == SB_MODE_STEP) emu->run_mode = SB_MODE_PAUSE; 
@@ -3227,13 +3230,13 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
 void nds9_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t rom_offset, uint32_t ram_offset, uint32_t size){
   printf("Copy %s: Card[%d]-> RAM[%d] Size: %d\n",region_name,rom_offset,ram_offset,size);
   for(int i=0;i<size;++i){
-    if(rom_offset+i<nds->mem.card_size) nds9_store8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
+    if(rom_offset+i<nds->mem.card_size) nds9_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
 void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t rom_offset, uint32_t ram_offset, uint32_t size){
   printf("Copy %s: Card[%d]-> RAM[%d] Size: %d\n",region_name,rom_offset,ram_offset,size);
   for(int i=0;i<size;++i){
-    if(rom_offset+i<nds->mem.card_size) nds7_store8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
+    if(rom_offset+i<nds->mem.card_size) nds7_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
 void nds_reset(nds_t*nds){
@@ -3248,17 +3251,33 @@ void nds_reset(nds_t*nds){
     nds->framebuffer_bottom[i*3+2]= 255;
   }
   nds->arm7 = arm7_init(nds);
+  nds->arm7.read8      = nds7_arm_read8;
+  nds->arm7.read16     = nds7_arm_read16;
+  nds->arm7.read32     = nds7_arm_read32;
+  nds->arm7.read16_seq = nds7_arm_read16_seq;
+  nds->arm7.read32_seq = nds7_arm_read32_seq;
+  nds->arm7.write8     = nds7_arm_write8;
+  nds->arm7.write16    = nds7_arm_write16;
+  nds->arm7.write32    = nds7_arm_write32;
   nds->arm9 = arm7_init(nds);
+  nds->arm9.read8      = nds9_arm_read8;
+  nds->arm9.read16     = nds9_arm_read16;
+  nds->arm9.read32     = nds9_arm_read32;
+  nds->arm9.read16_seq = nds9_arm_read16_seq;
+  nds->arm9.read32_seq = nds9_arm_read32_seq;
+  nds->arm9.write8     = nds9_arm_write8;
+  nds->arm9.write16    = nds9_arm_write16;
+  nds->arm9.write32    = nds9_arm_write32;
   
   for(int bg = 2;bg<4;++bg){
-    nds_io_store16(nds,GBA_BG2PA+(bg-2)*0x10,1<<8);
-    nds_io_store16(nds,GBA_BG2PB+(bg-2)*0x10,0<<8);
-    nds_io_store16(nds,GBA_BG2PC+(bg-2)*0x10,0<<8);
-    nds_io_store16(nds,GBA_BG2PD+(bg-2)*0x10,1<<8);
+    nds9_io_store16(nds,GBA_BG2PA+(bg-2)*0x10,1<<8);
+    nds9_io_store16(nds,GBA_BG2PB+(bg-2)*0x10,0<<8);
+    nds9_io_store16(nds,GBA_BG2PC+(bg-2)*0x10,0<<8);
+    nds9_io_store16(nds,GBA_BG2PD+(bg-2)*0x10,1<<8);
   }
   //nds_store32(nds,GBA_DISPCNT,0xe92d0000);
-  nds9_store16(nds,0x04000088,512);
-  nds9_store32(nds,0x040000DC,0x84000000);
+  nds9_write16(nds,0x04000088,512);
+  nds9_write32(nds,0x040000DC,0x84000000);
   nds_recompute_waitstate_table(nds,0);
   nds_recompute_mmio_mask_table(nds);
   nds->halt =false;
@@ -3303,8 +3322,8 @@ void nds_reset(nds_t*nds){
     uint32_t data=initial_mmio_writes[i+1];
     arm7_write32(nds, addr,data);
   }
-  nds9_store32(nds,GBA_IE,0x1);
-  nds9_store16(nds,GBA_DISPCNT,0x9140);
+  nds9_write32(nds,GBA_IE,0x1);
+  nds9_write16(nds,GBA_DISPCNT,0x9140);
 
   printf("Game Name: %s\n",nds->card.title);
   nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);

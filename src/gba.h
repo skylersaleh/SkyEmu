@@ -2748,6 +2748,15 @@ void gba_reset(gba_t*gba){
   memset(&gba->dma,0,sizeof(gba->dma)*4);
 
   gba->cpu = arm7_init(gba);
+  gba->cpu.read8 = arm7_read8;
+  gba->cpu.read16 = arm7_read16;
+  gba->cpu.read32 = arm7_read32;
+  gba->cpu.read16_seq = arm7_read16_seq;
+  gba->cpu.read32_seq = arm7_read32_seq;
+  gba->cpu.write8 = arm7_write8;
+  gba->cpu.write16 = arm7_write16;
+  gba->cpu.write32 = arm7_write32;
+
   gba->mem.openbus_word = gba->mem.cart_rom[0];
   
   for(int bg = 2;bg<4;++bg){

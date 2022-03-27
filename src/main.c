@@ -492,9 +492,9 @@ static uint8_t gb_byte_read(uint64_t address){return sb_read8(&gb_state,address)
 static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&gb_state,address,data);}
 
 static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&nds,address);}
-static void nds9_byte_write(uint64_t address, uint8_t data){nds9_store8(&nds,address,data);}
+static void nds9_byte_write(uint64_t address, uint8_t data){nds9_write8(&nds,address,data);}
 static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&nds,address);}
-static void nds7_byte_write(uint64_t address, uint8_t data){nds7_store8(&nds,address,data);}
+static void nds7_byte_write(uint64_t address, uint8_t data){nds7_write8(&nds,address,data);}
 
 static void se_draw_debug(){
   if(emu_state.system ==SYSTEM_GBA){
