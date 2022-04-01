@@ -103,7 +103,7 @@ typedef struct{
     uint8_t start;
     uint8_t size;
     const char* name; 
-  } bits[16]; 
+  } bits[32]; 
 }mmio_reg_t; 
 typedef struct {
   // Registers

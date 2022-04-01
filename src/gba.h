@@ -1129,12 +1129,12 @@ static FORCE_INLINE void gba_process_mmio_read(gba_t *gba, uint32_t address);
 static FORCE_INLINE uint32_t arm7_read32(void* user_data, uint32_t address){
   gba_compute_access_cycles((gba_t*)user_data,address,3);
   uint32_t value = gba_read32((gba_t*)user_data,address);
-  return arm7_rotr(value,(address&0x3)*8);
+  return value;
 }
 static FORCE_INLINE uint32_t arm7_read16(void* user_data, uint32_t address){
   gba_compute_access_cycles((gba_t*)user_data,address,1);
   uint16_t value = gba_read16((gba_t*)user_data,address);
-  return arm7_rotr(value,(address&0x1)*8);
+  return value;
 }
 static FORCE_INLINE uint32_t arm7_read32_seq(void* user_data, uint32_t address, bool seq){
   gba_compute_access_cycles((gba_t*)user_data,address,seq?2:3);

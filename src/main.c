@@ -304,7 +304,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
   igBegin(label, 0,0);
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
-    uint16_t data = se_read16(read, addr);
+    uint32_t data = se_read32(read, addr);
     bool has_fields = false;
     igPushIDInt(i);
     if (igTreeNodeStrStr("%s(%08x): %04x",mmios[i].name,addr,data)){
@@ -331,7 +331,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
             igPopItemWidth();
           }
           if(edit){
-            se_write16(write,addr,data);
+            se_write32(write,addr,data);
           }
           igSameLine(0,2);
           if(size>1)igText("%s (Bits [%d:%d])",mmios[i].bits[f].name,start, start+size-1);
@@ -344,7 +344,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
         igPushIDInt(0);
         igPushItemWidth(150);
         if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
-          se_write16(write,addr,v);
+          se_write32(write,addr,v);
         }
         igSameLine(0,2);
         igText("Data");

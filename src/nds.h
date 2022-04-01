@@ -395,9 +395,9 @@ typedef enum{
 mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DISPCNT , "DISPCNT ", { 
     { 0, 3, "BG Mode (0-5=Video Mode 0-5, 6-7=Prohibited)"},
-    { 3 ,1, "Reserved / CGB Mode (0=GBA, 1=CGB)"},
-    { 4 ,1, "Display Frame Select (0-1=Frame 0-1)"},
-    { 5 ,1, "H-Blank Interval Free (1=Allow access to OAM during H-Blank)"},
+    { 3 ,1, "BG0 2D/3D Selection"},
+    { 4 ,1, "Tile OBJ Mapping        (0=2D; max 32KB, 1=1D; max 32KB..256KB)"},
+    { 5 ,1, "Bitmap OBJ 2D-Dimension (0=128x512 dots, 1=256x256 dots)"},
     { 6 ,1, "OBJ Character VRAM Mapping (0=2D, 1=1D"},
     { 7 ,1, "Forced Blank (1=Allow FAST VRAM,Palette,OAM)"},
     { 8 ,1, "Screen Display BG0 (0=Off, 1=On)"},
@@ -408,6 +408,15 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 13,1, "Window 0 Display Flag (0=Off, 1=On)"},
     { 14,1, "Window 1 Display Flag (0=Off, 1=On)"},
     { 15,1, "OBJ Window Display Flag (0=Off, 1=On)"},
+    { 16,2, "Display Mode (0..3)"},
+    { 18,2, "VRAM block (0..3=VRAM A..D) (For Capture & above Display Mode=2)"},
+    { 20,2, "Tile OBJ 1D-Boundary   (see Bit4)"},
+    { 22,1, "Bitmap OBJ 1D-Boundary (see Bit5-6)"},
+    { 23,1, "OBJ Processing during H-Blank (was located in Bit5 on GBA)"},
+    { 24,3, "Character Base (in 64K steps) (merged with 16K step in BGxCNT)"},
+    { 27,3, "Screen Base (in 64K steps) (merged with 2K step in BGxCNT)"},
+    { 30,1, "BG Extended Palettes   (0=Disable, 1=Enable)"},
+    { 31,1, "OBJ Extended Palettes  (0=Disable, 1=Enable)"}
   } },
   { GBA_GREENSWP, "GREENSWP", { {0, 1, "Green Swap  (0=Normal, 1=Swap)" }} }, /* R/W Undocumented - Green Swap */
   { GBA_DISPSTAT, "DISPSTAT", { 
@@ -702,13 +711,48 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_IME      , "IME",       { 0 } }, /* Interrupt Master Enable (R/W) */
   { NDS9_IE       , "IE",        { 0 } }, /* Interrupt Enable (R/W) */
   { NDS9_IF       , "IF",        { 0 } }, /* Interrupt Request Flags (R/W) */
-  { NDS9_VRAMCNT_A, "VRAMCNT_A", { 0 } }, /* VRAM-A (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_B, "VRAMCNT_B", { 0 } }, /* VRAM-B (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_C, "VRAMCNT_C", { 0 } }, /* VRAM-C (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_D, "VRAMCNT_D", { 0 } }, /* VRAM-D (128K) Bank Control (W) */
-  { NDS9_VRAMCNT_E, "VRAMCNT_E", { 0 } }, /* VRAM-E (64K) Bank Control (W) */
-  { NDS9_VRAMCNT_F, "VRAMCNT_F", { 0 } }, /* VRAM-F (16K) Bank Control (W) */
-  { NDS9_VRAMCNT_G, "VRAMCNT_G", { 0 } }, /* VRAM-G (16K) Bank Control (W) */
+  { NDS9_VRAMCNT_A, "VRAMCNT_A", { 
+     { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-A (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_B, "VRAMCNT_B", { 
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-B (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_C, "VRAMCNT_C", {  
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-C (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_D, "VRAMCNT_D", {  
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-D (128K) Bank Control (W) */
+  { NDS9_VRAMCNT_E, "VRAMCNT_E", {  
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-E (64K) Bank Control (W) */
+  { NDS9_VRAMCNT_F, "VRAMCNT_F", {  
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-F (16K) Bank Control (W) */
+  { NDS9_VRAMCNT_G, "VRAMCNT_G", {  
+    { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-G (16K) Bank Control (W) */
   { NDS9_WRAMCNT  , "WRAMCNT",   { 0 } }, /* WRAM Bank Control (W) */
   { NDS9_VRAMCNT_H, "VRAMCNT_H", { 0 } }, /* VRAM-H (32K) Bank Control (W) */
   { NDS9_VRAMCNT_I, "VRAMCNT_I", { 0 } }, /* VRAM-I (16K) Bank Control (W) */
@@ -781,7 +825,29 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_VEC_RESULT,      "VEC_RESULT",      { 0 } }, /* Vector Test Results (R) */
   { NDS9_CLIPMTX_RESULT,  "CLIPMTX_RESULT",  { 0 } }, /* Read Current Clip Coordinates Matrix (R) */
   { NDS9_VECMTX_RESULT,   "VECMTX_RESULT",   { 0 } }, /* Read Current Directional Vector Matrix (R) */
-
+  { NDS9_B_DISPCNT , "(2D-B)DISPCNT ", { 
+    { 0, 3, "BG Mode (0-5=Video Mode 0-5, 6-7=Prohibited)"},
+    { 3 ,1, "Reserved / CGB Mode (0=GBA, 1=CGB)"},
+    { 4 ,1, "Display Frame Select (0-1=Frame 0-1)"},
+    { 5 ,1, "Bitmap OBJ 2D-Dimension (0=128x512 dots, 1=256x256 dots)"},
+    { 6 ,1, "OBJ Character VRAM Mapping (0=2D, 1=1D"},
+    { 7 ,1, "Forced Blank (1=Allow FAST VRAM,Palette,OAM)"},
+    { 8 ,1, "Screen Display BG0 (0=Off, 1=On)"},
+    { 9 ,1, "Screen Display BG1 (0=Off, 1=On)"},
+    { 10,1, "Screen Display BG2 (0=Off, 1=On)"},
+    { 11,1, "Screen Display BG3 (0=Off, 1=On)"},
+    { 12,1, "Screen Display OBJ (0=Off, 1=On)"},
+    { 13,1, "Window 0 Display Flag (0=Off, 1=On)"},
+    { 14,1, "Window 1 Display Flag (0=Off, 1=On)"},
+    { 15,1, "OBJ Window Display Flag (0=Off, 1=On)"},
+    { 16,2, "Display Mode (0..1)"},
+    { 18,2, "VRAM block (0..3=VRAM A..D) (For Capture & above Display Mode=2)"},
+    { 20,2, "Tile OBJ 1D-Boundary   (see Bit4)"},
+    { 23,1, "OBJ Processing during H-Blank (was located in Bit5 on GBA)"},
+    { 24,3, "Character Base (in 64K steps) (merged with 16K step in BGxCNT)"},
+    { 30,1,  "BG Extended Palettes   (0=Disable, 1=Enable)"},
+    { 31,1,  "OBJ Extended Palettes  (0=Disable, 1=Enable)"}
+  } },
   // ARM9 Display Engine B
   { NDS9_B_BG0CNT  , "(2D-B) BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
@@ -1232,7 +1298,10 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS7_IME,         "IME",         { 0 }}, /* IME - Interrupt Master Enable (R/W) */
   { NDS7_IE,          "IE",          { 0 }}, /* IE  - Interrupt Enable (R/W) */
   { NDS7_IF,          "IF",          { 0 }}, /* IF  - Interrupt Request Flags (R/W) */
-  { NDS7_VRAMSTAT,    "VRAMSTAT",    { 0 }}, /* VRAMSTAT - VRAM-C,D Bank Status (R) */
+  { NDS7_VRAMSTAT,    "VRAMSTAT",    { 
+    { 0, 1, "VRAM C enabled and allocated to NDS7  (0=No, 1=Yes)"},
+    { 1, 1, "VRAM D enabled and allocated to NDS7  (0=No, 1=Yes)"},
+  }}, /* VRAMSTAT - VRAM-C,D Bank Status (R) */
   { NDS7_WRAMSTAT,    "WRAMSTAT",    { 0 }}, /* WRAMSTAT - WRAM Bank Status (R) */
   { NDS7_POSTFLG,     "POSTFLG",     { 0 }}, /* POSTFLG */
   { NDS7_HALTCNT,     "HALTCNT",     { 0 }}, /* HALTCNT (different bits than on GBA) (plus NOP delay) */
@@ -1408,7 +1477,7 @@ typedef struct {
   uint8_t nds9_bios[4*1024];
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[256*1024];
-  uint8_t io[1024];
+  uint8_t io[64*1024];
 
   uint8_t *card_data;
   size_t card_size;
@@ -1556,20 +1625,7 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds);
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static void nds_compute_timers(nds_t* nds); 
 static void FORCE_INLINE nds_send_interrupt(nds_t*nds,int delay,int if_bit);
-// Returns a pointer to the data backing the baddr (when not DWORD aligned, it
-// ignores the lowest 2 bits. 
-static FORCE_INLINE uint32_t * nds_dword_lookup(nds_t* nds,unsigned baddr, int req_type);
-static FORCE_INLINE uint32_t nds_read32(nds_t*nds, unsigned baddr){return *nds_dword_lookup(nds,baddr,GBA_REQ_READ|GBA_REQ_4B);}
-static FORCE_INLINE uint16_t nds_read16(nds_t*nds, unsigned baddr){
-  uint32_t* val = nds_dword_lookup(nds,baddr,GBA_REQ_READ|GBA_REQ_2B);
-  int offset = SB_BFE(baddr,1,1);
-  return ((uint16_t*)val)[offset];
-}
-static FORCE_INLINE uint8_t nds_read8(nds_t*nds, unsigned baddr){
-  uint32_t* val = nds_dword_lookup(nds,baddr,GBA_REQ_READ|GBA_REQ_1B);
-  int offset = SB_BFE(baddr,0,2);
-  return ((uint8_t*)val)[offset];
-}            
+       
 static uint64_t nds_rev_bits(uint64_t data, int bits){
   uint64_t out = 0;
   for(int i=0;i<bits;++i){
@@ -1632,11 +1688,11 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
       break;
     case 0x3: //Shared WRAM 
       addr&=64*1024-1;
-      *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
+      *ret = nds_apply_mem_op(nds->mem.wram, addr, data, transaction_type); 
       nds->mem.openbus_word=*ret;
       break;
     case 0x4: 
-      if(addr<=0x40003FF ){
+      if(addr<=0x0400FFFF ){
         addr&=64*1024-1;
         *ret = nds_apply_mem_op(nds->mem.io, addr, data, transaction_type); 
         nds->mem.openbus_word=*ret;
@@ -1974,85 +2030,6 @@ static FORCE_INLINE void nds_process_mmio_read(nds_t *nds, uint32_t address);
 bool nds_load_rom(nds_t* nds, const char * filename, const char* save_file);
 void nds_reset(nds_t*nds);
  
-static FORCE_INLINE uint32_t * nds_dword_lookup(nds_t* nds,unsigned addr, int req_type){
-  uint32_t *ret = &nds->mem.openbus_word;
-//  switch(addr>>24){
-//    case 0x0: if(addr<0x4000){
-//      if(nds->cpu.registers[15]<0x4000)nds->mem.bios_word = *(uint32_t*)(nds->mem.bios+(addr&~3));
-//      //else nds->mem.bios_word=0;
-//      nds->mem.openbus_word=nds->mem.bios_word;
-//     } break;
-//    case 0x1: break;
-//    case 0x2: 
-//      ret = (uint32_t*)(nds->mem.wram0+(addr&0x3fffc)); 
-//      nds->mem.openbus_word=*ret;
-//      break;
-//    case 0x3: 
-//      ret = (uint32_t*)(nds->mem.wram1+(addr&0x7ffc)); 
-//      nds->mem.openbus_word=*ret;
-//      break;
-//    case 0x4: 
-//      if(addr<=0x40003FF ){
-//        if(req_type&GBA_REQ_READ){
-//          int io_reg = (addr>>2)&0xff;
-//          if(nds->mem.mmio_reg_valid_lookup[io_reg]){
-//            nds_process_mmio_read(nds,addr);
-//            nds->mem.mmio_word = (*(uint32_t*)(nds->mem.io+(addr&0x3fc)))&nds->mem.mmio_data_mask_lookup[io_reg];
-//            ret = &nds->mem.mmio_word;
-//          }
-//        }else ret = (uint32_t*)(nds->mem.io+(addr&0x3fc));
-//      }
-//      break;
-//    case 0x5: 
-//      ret = (uint32_t*)(nds->mem.palette+(addr&0x3fc)); 
-//      nds->mem.openbus_word=*ret;
-//      break;
-//    case 0x6: 
-//      if(addr&0x10000)ret = (uint32_t*)(nds->mem.vram+(addr&0x07ffc)+0x10000);
-//      else ret = (uint32_t*)(nds->mem.vram+(addr&0x1fffc));
-//      nds->mem.openbus_word=*ret;
-//      break;
-//    case 0x7: 
-//      ret = (uint32_t*)(nds->mem.oam+(addr&0x3fc));
-//      nds->mem.openbus_word=*ret;
-//      break;
-//    case 0x8:
-//    case 0x9:
-//    case 0xA:
-//    case 0xB:
-//    case 0xC:
-//    case 0xD:{
-//        int maddr = addr&0x1fffffc;
-//        if(maddr>=nds->cart.rom_size){
-//          nds->mem.openbus_word = ((maddr/2)&0xffff)|(((maddr/2+1)&0xffff)<<16);
-//          // Return ready when done writting EEPROM (required by Minish Cap)
-//          if(nds->cart.backup_type==GBA_BACKUP_EEPROM) nds->mem.openbus_word = 1; 
-//        }else{
-//          nds->mem.openbus_word = *(uint32_t*)(nds->mem.cart_rom+maddr);
-//          if(req_type&0x3){
-//            uint16_t res16 = nds->mem.openbus_word >> (addr&2)*8;
-//            nds->mem.openbus_word = res16*0x10001;
-//          }
-//        }
-//      }
-//      break;
-//    case 0xE:
-//    case 0xF:
-//      if(nds->cart.backup_type==GBA_BACKUP_SRAM){
-//        nds->mem.sram_word= nds->mem.cart_backup[(addr&0x7fff)]*0x01010101;
-//        ret = &nds->mem.sram_word;
-//     }else if(nds->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&nds->mem.eeprom_word;
-//      else{
-//        //Flash
-//        if(nds->cart.in_chip_id_mode&&addr<=0xE000001) ret = (uint32_t*)(nds->mem.flash_chip_id);
-//        else ret = (uint32_t*)(nds->mem.cart_backup+(addr&0xfffc)+nds->cart.flash_bank*64*1024);
-//      }
-//      nds->mem.openbus_word=(*ret&0xffff)*0x10001;
-//      break;
-//  }
-  return ret;
-}
-
 static void nds_recompute_mmio_mask_table(nds_t* nds){
 //  for(int io_reg = 0; io_reg<256;io_reg++){
 //    uint32_t dword_address = 0x04000000+io_reg*4;
@@ -2231,15 +2208,17 @@ static void nds_unload(nds_t* nds){
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   nds_ppu_t * ppu = nds->ppu+ppu_id;
   ppu->scan_clock+=1;
-  if(ppu->scan_clock%4)return;
-  int clocks_per_frame = 355*263*23*6;
+  if(ppu->scan_clock%6)return;
+  int clocks_per_frame = 355*263*6;
   if(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
+
+  int reg_offset = ppu_id==0? 0: 0x00001000;
 
   int clocks_per_line = 355*6;
   int lcd_y = (ppu->scan_clock+44)/clocks_per_line;
   int lcd_x = ((ppu->scan_clock)%clocks_per_line)/6;
-  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==296){
-    uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
+  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==296||true){
+    uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT|reg_offset)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<227;
     bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< 296;
@@ -2257,7 +2236,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       if(!hblank){
         ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
         ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
-        ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT);
+        ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT+reg_offset);
       }else{
         uint16_t dispcnt = ppu->dispcnt_pipeline[0];
 
@@ -2269,12 +2248,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           for(int aff=0;aff<2;++aff){
             bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
             if(!bg_en)continue;
-            int32_t b = (int16_t)nds9_io_read16(nds,GBA_BG2PB+(aff)*0x10);
-            int32_t d = (int16_t)nds9_io_read16(nds,GBA_BG2PD+(aff)*0x10);
-            uint16_t bgcnt = nds9_io_read16(nds, GBA_BG2CNT+aff*2);
+            int32_t b = (int16_t)nds9_io_read16(nds,GBA_BG2PB+(aff)*0x10+reg_offset);
+            int32_t d = (int16_t)nds9_io_read16(nds,GBA_BG2PD+(aff)*0x10+reg_offset);
+            uint16_t bgcnt = nds9_io_read16(nds, GBA_BG2CNT+aff*2+reg_offset);
             bool mosaic = SB_BFE(bgcnt,6,1);
             if(mosaic){
-              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
               int mos_y = SB_BFE(mos_reg,4,4)+1;
               if((lcd_y%mos_y)==0){
                 ppu->aff[aff].internal_bgx+=b*mos_y;
@@ -2303,8 +2282,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       //Latch BGX and BGY registers
       if(lcd_y==0){
         for(int aff=0;aff<2;++aff){
-          ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10);
-          ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10);
+          ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
+          ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10+reg_offset);
 
           ppu->aff[aff].internal_bgx = SB_BFE(ppu->aff[aff].internal_bgx,0,28);
           ppu->aff[aff].internal_bgy = SB_BFE(ppu->aff[aff].internal_bgy,0,28);
@@ -2318,8 +2297,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   }
 
   if(!render)return; 
-
-  uint16_t dispcnt = nds9_io_read16(nds, GBA_DISPCNT);
+  
+  uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
   int forced_blank = SB_BFE(dispcnt,7,1);
@@ -2331,7 +2310,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     //Render sprites over scanline when it completes
     uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
     bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
-    uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT);
+    uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT+reg_offset);
     if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
 
     for(int x=0;x<240;++x){ppu->window[x] = default_window_control;}
@@ -2398,7 +2377,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             int sx = (x-x_coord);
             int sy = (lcd_y-y_coord)&0xff;
             if(mosaic){
-              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
               int mos_x = SB_BFE(mos_reg,8,4)+1;
               int mos_y = SB_BFE(mos_reg,12,4)+1;
               sx = ((x/mos_x)*mos_x-x_coord);
@@ -2463,8 +2442,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       for(int win=1;win>=0;--win){
         bool win_enable = SB_BFE(dispcnt,13+win,1);
         if(!win_enable)continue;
-        uint16_t WINH = nds9_io_read16(nds, GBA_WIN0H+2*win);
-        uint16_t WINV = nds9_io_read16(nds, GBA_WIN0V+2*win);
+        uint16_t WINH = nds9_io_read16(nds, GBA_WIN0H+2*win+reg_offset);
+        uint16_t WINV = nds9_io_read16(nds, GBA_WIN0V+2*win+reg_offset);
         int win_xmin = SB_BFE(WINH,8,8);
         int win_xmax = SB_BFE(WINH,0,8);
         int win_ymin = SB_BFE(WINV,8,8);
@@ -2475,7 +2454,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         if(win_ymin>win_ymax)win_ymax=161;
         if(win_xmax>240)win_xmax=240;
         if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
-        uint16_t winin = nds9_io_read16(nds,GBA_WININ);
+        uint16_t winin = nds9_io_read16(nds,GBA_WININ+reg_offset);
         uint8_t win_value = SB_BFE(winin,win*8,6);
         for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
       }
@@ -2490,7 +2469,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
   if(visible){
     uint8_t window_control =ppu->window[lcd_x];
-    if(bg_mode==6 ||bg_mode==7){
+    int display_mode = SB_BFE(dispcnt,16,2);
+    if(ppu_id==0&&display_mode==2){
+      int vram_block = SB_BFE(dispcnt,18,2);
+      ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*128*1024];
+    }else if(bg_mode==6 ||bg_mode==7){
       //Palette 0 is taken as the background
     }else if (bg_mode<=5){     
       for(int bg = 3; bg>=0;--bg){
@@ -2529,14 +2512,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           int32_t bgx = ppu->aff[bg-2].internal_bgx;
           int32_t bgy = ppu->aff[bg-2].internal_bgy;
 
-          int32_t a = (int16_t)nds9_io_read16(nds,GBA_BG2PA+(bg-2)*0x10);
-          int32_t c = (int16_t)nds9_io_read16(nds,GBA_BG2PC+(bg-2)*0x10);
+          int32_t a = (int16_t)nds9_io_read16(nds,GBA_BG2PA+(bg-2)*0x10+reg_offset);
+          int32_t c = (int16_t)nds9_io_read16(nds,GBA_BG2PC+(bg-2)*0x10+reg_offset);
 
           // Shift lcd_coords into fixed point
           int64_t x2 = a*lcd_x + (((int64_t)bgx));
           int64_t y2 = c*lcd_x + (((int64_t)bgy));
           if(mosaic){
-            int16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+            int16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
             int mos_x = SB_BFE(mos_reg,0,4)+1;
             x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
             y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
@@ -2553,14 +2536,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             bg_y%=screen_size_y;
           }
         }else{
-          int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4);
-          int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4);
+          int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset);
+          int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4+reg_offset);
           hoff=(hoff<<7)>>7;
           voff=(voff<<7)>>7;
           bg_x = (hoff+lcd_x);
           bg_y = (voff+lcd_y);
           if(mosaic){
-            uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC);
+            uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
             int mos_x = SB_BFE(mos_reg,0,4)+1;
             int mos_y = SB_BFE(mos_reg,4,4)+1;
             bg_x = hoff+(lcd_x/mos_x)*mos_x;
@@ -2576,6 +2559,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           int frame_sel = SB_BFE(dispcnt,4,1);
           int addr = p*1+0xA000*frame_sel; 
           uint8_t pallete_id = nds->mem.vram[addr];
+          printf("%d\n",pallete_id);
           if(pallete_id==0)continue;
           col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
         }else if(bg_mode==5){
@@ -2643,7 +2627,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     uint32_t type = SB_BFE(col,17,3);
 
     bool effect_enable = SB_BFE(window_control,5,1);
-    uint16_t bldcnt = nds9_io_read16(nds,GBA_BLDCNT);
+    uint16_t bldcnt = nds9_io_read16(nds,GBA_BLDCNT+reg_offset);
     int mode = SB_BFE(bldcnt,6,2);
 
     //Semitransparent objects are always selected for blending
@@ -2655,7 +2639,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       else effect_enable &= SB_BFE(bldcnt,type,1);
     }else effect_enable &= SB_BFE(bldcnt,type,1);
     if(effect_enable){
-      uint16_t bldy = nds9_io_read16(nds,GBA_BLDY);
+      uint16_t bldy = nds9_io_read16(nds,GBA_BLDY+reg_offset);
       float evy = SB_BFE(bldy,0,5)/16.;
       if(evy>1.0)evy=1;
       switch(mode){
@@ -2693,7 +2677,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           break; 
       }
     }
-    int p = (lcd_x+lcd_y*240)*3;
+    int p = (lcd_x+lcd_y*NDS_LCD_W)*3;
     float screen_blend_factor = 0.7;
     uint8_t *framebuffer = ppu_id==0?nds->framebuffer_top: nds->framebuffer_bottom;
     framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
@@ -2706,39 +2690,39 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   }
 }
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
-//  uint16_t reg_value = 0;
-//  //Null joy updates are used to tick the joypad when mmios are set
-//  if(joy){
-//    reg_value|= !(joy->a)     <<0;
-//    reg_value|= !(joy->b)     <<1;
-//    reg_value|= !(joy->select)<<2;
-//    reg_value|= !(joy->start) <<3;
-//    reg_value|= !(joy->right) <<4;
-//    reg_value|= !(joy->left)  <<5;
-//    reg_value|= !(joy->up)    <<6;
-//    reg_value|= !(joy->down)  <<7;
-//    reg_value|= !(joy->r)     <<8;
-//    reg_value|= !(joy->l)     <<9;
-//    nds_io_store16(nds, GBA_KEYINPUT, reg_value);
-//  }else reg_value = nds_io_read16(nds, GBA_KEYINPUT);
-//
-//  uint16_t keycnt = nds_io_read16(nds,GBA_KEYCNT);
-//  bool irq_enable = SB_BFE(keycnt,14,1);
-//  bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
-//  int if_bit = 0;
-//  if(irq_enable){
-//    uint16_t pressed = SB_BFE(reg_value,0,10)^0x3ff;
-//    uint16_t mask = SB_BFE(keycnt,0,10);
-//
-//    if(irq_condition&&((pressed&mask)==mask))if_bit|= 1<<GBA_INT_KEYPAD;
-//    if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
-//
-//    if(if_bit&&!nds->prev_key_interrupt){
-//      nds_send_interrupt(nds,4,if_bit);
-//      nds->prev_key_interrupt = true;
-//    }else nds->prev_key_interrupt = false;
-//
-//  }
+  uint16_t reg_value = 0;
+  //Null joy updates are used to tick the joypad when mmios are set
+  if(joy){
+    reg_value|= !(joy->a)     <<0;
+    reg_value|= !(joy->b)     <<1;
+    reg_value|= !(joy->select)<<2;
+    reg_value|= !(joy->start) <<3;
+    reg_value|= !(joy->right) <<4;
+    reg_value|= !(joy->left)  <<5;
+    reg_value|= !(joy->up)    <<6;
+    reg_value|= !(joy->down)  <<7;
+    reg_value|= !(joy->r)     <<8;
+    reg_value|= !(joy->l)     <<9;
+    nds9_io_store16(nds, GBA_KEYINPUT, reg_value);
+  }else reg_value = nds9_io_read16(nds, GBA_KEYINPUT);
+
+  uint16_t keycnt = nds9_io_read16(nds,GBA_KEYCNT);
+  bool irq_enable = SB_BFE(keycnt,14,1);
+  bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
+  int if_bit = 0;
+  if(irq_enable){
+    uint16_t pressed = SB_BFE(reg_value,0,10)^0x3ff;
+    uint16_t mask = SB_BFE(keycnt,0,10);
+
+    if(irq_condition&&((pressed&mask)==mask))if_bit|= 1<<GBA_INT_KEYPAD;
+    if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
+
+    if(if_bit&&!nds->prev_key_interrupt){
+      nds_send_interrupt(nds,4,if_bit);
+      nds->prev_key_interrupt = true;
+    }else nds->prev_key_interrupt = false;
+
+  }
 
 }
 /*uint64_t nds_read_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset, int size, int elem_size, int dir){
@@ -3164,8 +3148,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
     //bool prev_vblank = nds->ppu.last_vblank; 
     //Skip emulation of a frame if we get too far ahead the audio playback
     static int last_tick =0;
-    int loops=1000000;
-    while(--loops){
+    static bool prev_vblank=false;
+    while(true){
       int ticks = nds->activate_dmas? nds_tick_dma(nds,last_tick) :0;
       if(!ticks){
         uint16_t int_if = nds9_io_read16(nds,GBA_IF);
@@ -3203,7 +3187,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
         if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
         if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
       }
-      ticks=1;
+      ticks=2;
       last_tick=ticks;
       nds_tick_sio(nds);
 
@@ -3215,32 +3199,36 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
         nds_tick_ppu(nds,0,emu->render_frame);
         nds_tick_ppu(nds,1,emu->render_frame);
       }
-      /*
-      if(nds->ppu.last_vblank && !prev_vblank){
-        prev_vblank = nds->ppu.last_vblank;
+      
+      if(nds->ppu[0].last_vblank && !prev_vblank){
+        prev_vblank = nds->ppu[0].last_vblank;
         break;
       }
-      prev_vblank = nds->ppu.last_vblank;
-      */
+      prev_vblank = nds->ppu[0].last_vblank;
+      
     }
   }                  
   
   if(emu->run_mode == SB_MODE_STEP) emu->run_mode = SB_MODE_PAUSE; 
 }
 void nds9_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t rom_offset, uint32_t ram_offset, uint32_t size){
-  printf("Copy %s: Card[%d]-> RAM[%d] Size: %d\n",region_name,rom_offset,ram_offset,size);
+  printf("Copy %s: Card[0x%x]-> RAM[0x%x] Size: %d Card Size:%zu\n",region_name,rom_offset,ram_offset,size,nds->mem.card_size);
   for(int i=0;i<size;++i){
     if(rom_offset+i<nds->mem.card_size) nds9_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
 void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t rom_offset, uint32_t ram_offset, uint32_t size){
-  printf("Copy %s: Card[%d]-> RAM[%d] Size: %d\n",region_name,rom_offset,ram_offset,size);
+  printf("Copy %s: Card[0x%x]-> RAM[0x%x] Size: %d Card Size:%zu\n",region_name,rom_offset,ram_offset,size,nds->mem.card_size);
   for(int i=0;i<size;++i){
     if(rom_offset+i<nds->mem.card_size) nds7_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
 void nds_reset(nds_t*nds){
+  uint8_t* card_data = nds->mem.card_data;
+  size_t card_size = nds->mem.card_size;
   memset(&nds->mem,0,sizeof(nds->mem));
+  nds->mem.card_data=card_data;
+  nds->mem.card_size=card_size;
   for(int i=0;i<NDS_LCD_H*NDS_LCD_W;++i){
     nds->framebuffer_top[i*3]= 0;
     nds->framebuffer_top[i*3+1]= 255;
@@ -3284,6 +3272,7 @@ void nds_reset(nds_t*nds){
   nds->activate_dmas=false;
   nds->deferred_timer_ticks=0;
   bool loaded_bios= true;
+  if(nds->mem.card_data)memcpy(&nds->card,nds->mem.card_data,sizeof(nds->card));
   loaded_bios&= se_load_bios_file("NDS7 BIOS", nds->save_file_path, "nds7.bin", nds->mem.nds7_bios,sizeof(nds->mem.nds7_bios));
   loaded_bios&= se_load_bios_file("NDS9 BIOS", nds->save_file_path, "nds9.bin", nds->mem.nds9_bios,sizeof(nds->mem.nds9_bios));
   loaded_bios&= se_load_bios_file("NDS Firmware", nds->save_file_path, "firmware.bin", nds->mem.firmware,sizeof(nds->mem.firmware));
@@ -3329,7 +3318,9 @@ void nds_reset(nds_t*nds){
   nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);
   nds7_copy_card_region_to_ram(nds,"ARM7 Executable",nds->card.arm7_rom_offset,nds->card.arm7_ram_address,nds->card.arm7_size);
   nds->arm9.registers[PC] = nds->card.arm9_entrypoint;
+  nds->arm9.irq_table_address = 0xFFFF0000;
   nds->arm7.registers[PC] = nds->card.arm7_entrypoint;
+  printf("ARM9 Entry:0x%x ARM7 Entry:0x%x\n",nds->card.arm9_entrypoint,nds->card.arm7_entrypoint);
 
 }
 
