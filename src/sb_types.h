@@ -32,7 +32,7 @@
 
 // Extract bits from a bitfield
 #define SB_BFE(VALUE, BITOFFSET, SIZE)                                         \
-  (((VALUE) >> (BITOFFSET)) & ((1u << (SIZE)) - 1))
+  (((VALUE) >> (BITOFFSET)) & ((1llu << (SIZE)) - 1))
 #define SB_BIT_TEST(VALUE,BITOFFSET) ((VALUE)&(1u<<(BITOFFSET)))
 #define SB_MODE_RESET 0
 #define SB_MODE_PAUSE 1

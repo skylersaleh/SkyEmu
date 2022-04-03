@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+    <foreignObject x="10" y="10" width="800" height="800">
+      <body xmlns="http://www.w3.org/1999/xhtml">
+        <iframe src="http://skylersaleh.github.io/SkyEmu/" style="width:700px;height:700px"></iframe>
+      </body>
+    </foreignObject>
+</svg>

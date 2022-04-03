@@ -12,6 +12,11 @@ typedef enum{
 // MMIO Register listing from GBATEK (https://problemkaputt.de/gbatek.htm#dsiomaps)     //
 //////////////////////////////////////////////////////////////////////////////////////////
 
+// There is a bit of a remapping here:
+/*
+- ARM7 registers > #define NDS_IO_MAP_SPLIT_ADDRESS  are or'd by NDS_IO_MAP_SPLIT_OFFSET 
+- 0x04100000-0x041ffffff > are or'd by NDS_IO_MAP_041_OFFSET
+*/
 //////////////////
 // GBA I/O Map //
 //////////////////
@@ -259,8 +264,12 @@ typedef enum{
 
 // ARM9 IPC/ROM
 
-#define NDS_IPCFIFORECV  0x04100000 /* IPC Receive Fifo (R)*/
-#define NDS_GC_BUS       0x04100010 /* Gamecard bus 4-byte data in, for manual or dma read (R) (or W) */
+//Note: These are remapped to 
+#define NDS_IPCFIFORECV  (0x04100000|NDS_IO_MAP_041_OFFSET) /* IPC Receive Fifo (R)*/
+#define NDS_GC_BUS       (0x04100010|NDS_IO_MAP_041_OFFSET) /* Gamecard bus 4-byte data in, for manual or dma read (R) (or W) */
+#define NDS_IPCSYNC      0x04000180 /* IPC Synchronize Register (R/W) */
+#define NDS_IPCFIFOCNT   0x04000184 /* IPC Fifo Control Register (R/W) */
+#define NDS_IPCFIFOSEND  0x04000188 /* IPC Send Fifo (W) */
 
 //Main Memory Control
 
@@ -273,9 +282,6 @@ typedef enum{
 #define NDS7_DEBUG_RCNT     0x04000134 /* Debug RCNT */
 #define NDS7_EXTKEYIN       0x04000136 /* EXTKEYIN */
 #define NDS7_RTC_BUS        0x04000138 /* RTC Realtime Clock Bus */
-#define NDS7_IPCSYNC        0x04000180 /* IPC Synchronize Register (R/W) */
-#define NDS7_IPCFIFOCNT     0x04000184 /* IPC Fifo Control Register (R/W) */
-#define NDS7_IPCFIFOSEND    0x04000188 /* IPC Send Fifo (W) */
 #define NDS7_AUXSPICNT      0x040001A0 /* Gamecard ROM and SPI Control */
 #define NDS7_AUXSPIDATA     0x040001A2 /* Gamecard SPI Bus Data/Strobe */
 #define NDS7_GCBUS_CTL      0x040001A4 /* Gamecard bus timing/control */
@@ -694,9 +700,9 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 
-  { NDS9_IPCSYNC     , "IPCSYNC",     { 0 } }, /*IPC Synchronize Register (R/W)*/
-  { NDS9_IPCFIFOCNT  , "IPCFIFOCNT",  { 0 } }, /*IPC Fifo Control Register (R/W)*/
-  { NDS9_IPCFIFOSEND , "IPCFIFOSEND", { 0 } }, /*IPC Send Fifo (W)*/
+  { NDS_IPCSYNC     , "IPCSYNC",     { 0 } }, /*IPC Synchronize Register (R/W)*/
+  { NDS_IPCFIFOCNT  , "IPCFIFOCNT",  { 0 } }, /*IPC Fifo Control Register (R/W)*/
+  { NDS_IPCFIFOSEND , "IPCFIFOSEND", { 0 } }, /*IPC Send Fifo (W)*/
   { NDS9_AUXSPICNT   , "AUXSPICNT",   { 0 } }, /*Gamecard ROM and SPI Control*/
   { NDS9_AUXSPIDATA  , "AUXSPIDATA",  { 0 } }, /*Gamecard SPI Bus Data/Strobe*/
   { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  { 0 } }, /*Gamecard bus timing/control*/
@@ -1279,9 +1285,9 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS7_DEBUG_RCNT,      "DEBUG_RCNT",     { 0 } }, /* Debug RCNT */
   { NDS7_EXTKEYIN,        "EXTKEYIN",       { 0 } }, /* EXTKEYIN */
   { NDS7_RTC_BUS,         "RTC_BUS",        { 0 } }, /* RTC Realtime Clock Bus */
-  { NDS7_IPCSYNC,         "IPCSYNC",        { 0 } }, /* IPC Synchronize Register (R/W) */
-  { NDS7_IPCFIFOCNT,      "IPCFIFOCNT",     { 0 } }, /* IPC Fifo Control Register (R/W) */
-  { NDS7_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
+  { NDS_IPCSYNC,         "IPCSYNC",        { 0 } }, /* IPC Synchronize Register (R/W) */
+  { NDS_IPCFIFOCNT,      "IPCFIFOCNT",     { 0 } }, /* IPC Fifo Control Register (R/W) */
+  { NDS_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
   { NDS7_AUXSPICNT,       "AUXSPICNT",      { 0 } }, /* Gamecard ROM and SPI Control */
   { NDS7_AUXSPIDATA,      "AUXSPIDATA",     { 0 } }, /* Gamecard SPI Bus Data/Strobe */
   { NDS7_GCBUS_CTL,       "GCBUS_CTL",      { 0 } }, /* Gamecard bus timing/control */
@@ -1459,6 +1465,12 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_LCD_W 256
 #define NDS_LCD_H 192
 
+#define NDS_IO_MAP_SPLIT_ADDRESS 0x04000134
+#define NDS_IO_MAP_SPLIT_OFFSET  0x2000
+#define NDS_IO_MAP_041_OFFSET    0x4000
+
+#define NDS_ARM9 1
+#define NDS_ARM7 0
 
 typedef struct {     
   uint8_t ram[4*1024*1024]; /*4096KB Main RAM (8192KB in debug version)*/
@@ -1593,6 +1605,22 @@ typedef struct{
   uint8_t minute;
   uint8_t second;
 }nds_rtc_t;
+typedef struct{
+  uint32_t fifo[16];
+  uint32_t read_ptr;
+  uint32_t write_ptr;
+  uint32_t sync_data;
+  bool error; 
+}nds_ipc_t;
+typedef struct{
+  //[Cn][Cm][Cp]
+  uint32_t reg[16][16][8]; 
+}nds_system_control_processor;
+typedef struct{
+  uint64_t div_last_update_clock;
+  uint64_t sqrt_last_update_clock;
+}nds_math_t;
+
 typedef struct nds_t{
   nds_mem_t mem;
   arm7_t arm7;
@@ -1603,6 +1631,9 @@ typedef struct nds_t{
   nds_ppu_t ppu[2];
   nds_rtc_t rtc;
   nds_dma_t dma[4]; 
+  nds_ipc_t ipc[2];
+  nds_system_control_processor cp15;
+  nds_math_t math; 
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -1613,18 +1644,32 @@ typedef struct nds_t{
   bool prev_key_interrupt;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
   // This array acts as a FIFO to keep track of that. 
-  uint16_t pipelined_if[5];
+  uint32_t nds9_pipelined_if[5];
+  uint32_t nds7_pipelined_if[5];
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
 
   uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*3];
   uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*3];
+  uint64_t current_clock;;
 } nds_t; 
 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static void nds_compute_timers(nds_t* nds); 
-static void FORCE_INLINE nds_send_interrupt(nds_t*nds,int delay,int if_bit);
+static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
+  nds->active_if_pipe_stages|=1<<delay;
+  nds->nds9_pipelined_if[delay]|= if_bit;
+}
+static void FORCE_INLINE nds7_send_interrupt(nds_t*nds,int delay,int if_bit){
+  nds->active_if_pipe_stages|=1<<delay;
+  nds->nds7_pipelined_if[delay]|= if_bit;
+}
+static void FORCE_INLINE nds_send_interrupt(nds_t*nds,int delay,int if_bit){
+  nds->active_if_pipe_stages|=1<<delay;
+  nds->nds7_pipelined_if[delay]|= if_bit;
+  nds->nds9_pipelined_if[delay]|= if_bit;
+}
        
 static uint64_t nds_rev_bits(uint64_t data, int bits){
   uint64_t out = 0;
@@ -1635,6 +1680,64 @@ static uint64_t nds_rev_bits(uint64_t data, int bits){
   }
   return out;
 }
+static FORCE_INLINE void nds9_io_store8(nds_t*nds, unsigned baddr, uint8_t data){nds->mem.io[baddr&0xffff]=data;}
+static FORCE_INLINE void nds9_io_store16(nds_t*nds, unsigned baddr, uint16_t data){*(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;}
+static FORCE_INLINE void nds9_io_store32(nds_t*nds, unsigned baddr, uint32_t data){*(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;}
+
+static FORCE_INLINE uint8_t  nds9_io_read8(nds_t*nds, unsigned baddr) {return nds->mem.io[baddr&0xffff];}
+static FORCE_INLINE uint16_t nds9_io_read16(nds_t*nds, unsigned baddr){return *(uint16_t*)(nds->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint32_t nds9_io_read32(nds_t*nds, unsigned baddr){return *(uint32_t*)(nds->mem.io+(baddr&0xffff));}
+
+static FORCE_INLINE void nds7_io_store8(nds_t*nds, unsigned baddr, uint8_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  nds->mem.io[baddr&0xffff]=data;
+}
+static FORCE_INLINE void nds7_io_store16(nds_t*nds, unsigned baddr, uint16_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  *(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;
+}
+static FORCE_INLINE void nds7_io_store32(nds_t*nds, unsigned baddr, uint32_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  *(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;
+}
+
+static FORCE_INLINE uint8_t  nds7_io_read8(nds_t*nds, unsigned baddr) {
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return nds->mem.io[baddr&0xffff];
+}
+static FORCE_INLINE uint16_t nds7_io_read16(nds_t*nds, unsigned baddr){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return *(uint16_t*)(nds->mem.io+(baddr&0xffff));
+}
+static FORCE_INLINE uint32_t nds7_io_read32(nds_t*nds, unsigned baddr){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return *(uint32_t*)(nds->mem.io+(baddr&0xffff));
+}
+static FORCE_INLINE void nds_io_store8(nds_t*nds,int cpu_id, unsigned baddr, uint8_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  nds->mem.io[baddr&0xffff]=data;
+}
+static FORCE_INLINE void nds_io_store16(nds_t*nds,int cpu_id, unsigned baddr, uint16_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  *(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;
+}
+static FORCE_INLINE void nds_io_store32(nds_t*nds,int cpu_id, unsigned baddr, uint32_t data){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  *(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;
+}
+static FORCE_INLINE uint8_t  nds_io_read8(nds_t*nds,int cpu_id, unsigned baddr) {
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return nds->mem.io[baddr&0xffff];
+}
+static FORCE_INLINE uint16_t nds_io_read16(nds_t*nds,int cpu_id, unsigned baddr){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return *(uint16_t*)(nds->mem.io+(baddr&0xffff));
+}
+static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr){
+  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  return *(uint32_t*)(nds->mem.io+(baddr&0xffff));
+}
+
 #define NDS_MEM_1B 0x0
 #define NDS_MEM_2B 0x1
 #define NDS_MEM_4B 0x2
@@ -1658,6 +1761,8 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   }
   return data; 
 }
+static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type);
+static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
@@ -1687,16 +1792,34 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
       nds->mem.openbus_word=*ret;
       break;
     case 0x3: //Shared WRAM 
-      addr&=64*1024-1;
-      *ret = nds_apply_mem_op(nds->mem.wram, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
-      break;
-    case 0x4: 
-      if(addr<=0x0400FFFF ){
-        addr&=64*1024-1;
-        *ret = nds_apply_mem_op(nds->mem.io, addr, data, transaction_type); 
+      {
+        uint32_t orig_addr = addr;
+        uint8_t cnt = nds9_io_read8(nds,NDS9_WRAMCNT)&0x3;
+        if(transaction_type&NDS_MEM_ARM9){
+          const int offset[4]={0,16*1024,0,0};
+          const int mask[4]={32*1024-1,16*1024-1,16*1024-1,0};
+          addr=(addr&mask[cnt])+offset[cnt];
+        }else {
+          if(addr<0x037FFFFF){
+            const int offset[4]={0,0,16*1024,0};
+            const int mask[4]={0,16*1024-1,16*1024-1,32*1024-1};
+            if(mask[cnt]==0)addr= 32*1024+((addr-0x03800000)&(64*1024-1));
+            else            addr=(addr&mask[cnt])+offset[cnt];
+          }else addr= 32*1024+((addr-0x03800000)&(64*1024-1));
+        }
+        *ret = nds_apply_mem_op(nds->mem.wram, addr, data, transaction_type); 
         nds->mem.openbus_word=*ret;
       }
+      break;
+    case 0x4: 
+        if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
+        nds_preprocess_mmio_read(nds,addr,transaction_type);
+        int baddr =addr;
+        if(transaction_type&NDS_MEM_ARM7&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
+        baddr&=0xffff;
+        *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
+        nds->mem.openbus_word=*ret;
+        if(transaction_type&NDS_MEM_WRITE)nds_postprocess_mmio_write(nds,addr,data,transaction_type);
       break;
     case 0x5: //Palette 
       addr&=2*1024-1;
@@ -1722,10 +1845,9 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
     case 0xE: 
     case 0xF: break;
     case 0xFF: 
-      if(addr>0xFFFF0000&& transaction_type& NDS_MEM_ARM9){
+      if(addr>=0xFFFF0000&& (transaction_type& NDS_MEM_ARM9)){
         addr&=32*1024-1;
         *ret = nds_apply_mem_op(nds->mem.nds9_bios, addr, data, transaction_type&~NDS_MEM_WRITE); 
-        nds->mem.openbus_word=*ret;
       }
       break;
   }
@@ -1898,13 +2020,6 @@ void nds7_arm_write32(void* user_data, uint32_t address, uint32_t data){nds7_wri
 void nds7_arm_write16(void* user_data, uint32_t address, uint16_t data){nds7_write16((nds_t*)user_data,address,data);}
 void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write8((nds_t*)user_data,address,data);}
 
-static FORCE_INLINE void nds9_io_store8(nds_t*nds, unsigned baddr, uint8_t data){nds->mem.io[baddr&0xffff]=data;}
-static FORCE_INLINE void nds9_io_store16(nds_t*nds, unsigned baddr, uint16_t data){*(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;}
-static FORCE_INLINE void nds9_io_store32(nds_t*nds, unsigned baddr, uint32_t data){*(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;}
-
-static FORCE_INLINE uint8_t  nds9_io_read8(nds_t*nds, unsigned baddr) {return nds->mem.io[baddr&0xffff];}
-static FORCE_INLINE uint16_t nds9_io_read16(nds_t*nds, unsigned baddr){return *(uint16_t*)(nds->mem.io+(baddr&0xffff));}
-static FORCE_INLINE uint32_t nds9_io_read32(nds_t*nds, unsigned baddr){return *(uint32_t*)(nds->mem.io+(baddr&0xffff));}
 static FORCE_INLINE void nds_recompute_waitstate_table(nds_t* nds,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*4]={
@@ -2023,7 +2138,6 @@ static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t 
   uint32_t wait = nds->mem.wait_state_table[bank*4+request_size];
   return wait;
 }
-static FORCE_INLINE void nds_process_mmio_read(nds_t *nds, uint32_t address);
 
 
 // Try to load a GBA rom, return false on invalid rom
@@ -2068,77 +2182,7 @@ static FORCE_INLINE void nds_process_mmio_read(nds_t *nds, uint32_t address){
   // Force recomputing timers on timer read
   if(address>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)nds_compute_timers(nds);
 }
-static bool nds_process_mmio_write(nds_t *nds, uint32_t address, uint32_t data, int req_size_bytes){
-//  uint32_t address_u32 = address&~3; 
-//  uint32_t word_mask = 0xffffffff;
-//  uint32_t word_data = data; 
-//  if(req_size_bytes==2){
-//    word_data<<= (address&2)*8;
-//    word_mask =0x0000ffff<< ((address&2)*8);
-//  }else if(req_size_bytes==1){
-//    word_data<<= (address&3)*8;
-//    word_mask =0x000000ff<< ((address&3)*8);
-//  }
-//  word_data&=word_mask;
-//
-//  if(address_u32== GBA_IE){
-//    uint16_t IE = nds_io_read16(nds,GBA_IE);
-//    uint16_t IF = nds_io_read16(nds,GBA_IF);
-  //
-//    IE = ((IE&~word_mask)|(word_data&word_mask))>>0;
-//    IF &= ~((word_data)>>16);
-//    nds_io_store16(nds,GBA_IE,IE);
-//    nds_io_store16(nds,GBA_IF,IF);
-//
-//    return true; 
-//  }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
-//    nds_compute_timers(nds);
-//    int timer_off = (address_u32-GBA_TM0CNT_L)/4;
-//    if(word_mask&0xffff){
-//      nds->timers[timer_off+0].pending_reload_value = word_data&(word_mask&0xffff);
-//    }
-//    if(word_mask&0xffff0000){
-//      nds_store16(nds,address_u32+2,(word_data>>16)&0xffff);
-//      nds->timers[timer_off+0].reload_value =nds->timers[timer_off+0].pending_reload_value;
-//    }
-//    nds->timer_ticks_before_event=0;
-//    return true;
-//  }else if(address_u32==GBA_POSTFLG){
-//    //Only BIOS can update Post Flag and haltcnt
-//    if(nds->cpu.registers[15]<0x4000){
-//      //Writes to haltcnt halt the CPU
-//      if(word_mask&0xff00)nds->halt = true;
-//      uint32_t data = nds_io_read32(nds,address_u32);
-//      //POST can only be initialized once, then other writes are dropped. 
-//      if((word_mask&0xff)&&(data&0xff))word_mask&=~0xff;
-//      data&=~word_mask;
-//      data|=word_data&word_mask;
-//      nds_io_store32(nds,address_u32,data);
-//    }
-//    return true; 
-//  }else if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
-//    int aff_bg = (address_u32-GBA_BG2X)/32;
-//    nds->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
-//    nds->ppu.aff[aff_bg].internal_bgx|= word_data;
-//  }else if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
-//    int aff_bg = (address_u32-GBA_BG2X)/32;
-//    nds->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
-//    nds->ppu.aff[aff_bg].internal_bgy|= word_data;
-//  }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
-//           address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
-//    nds->activate_dmas=true;
-//  }else if (address_u32==GBA_WAITCNT){
-//     uint16_t waitcnt = nds_io_read16(nds,GBA_WAITCNT);
-//     waitcnt = ((waitcnt&~word_mask)|(word_data&word_mask));
-//     nds_recompute_waitstate_table(nds,waitcnt);
-//  }else if(address_u32==GBA_KEYINPUT){
-//    if(word_mask&0xffff0000){
-//      nds_store16(nds,GBA_KEYINPUT,(word_data>>16)&0xffff);
-//    }
-//    nds_tick_keypad(NULL,nds);
-//  }
-  return false;
-}
+
 int nds_search_rom_for_backup_string(nds_t* nds){
 //  for(int b = 0; b< nds->cart.rom_size;++b){
 //    const char* strings[]={"EEPROM_", "SRAM_", "FLASH_","FLASH512_","FLASH1M_"};
@@ -2204,7 +2248,211 @@ static void nds_unload(nds_t* nds){
   printf("Unloading DS data\n");
   sb_free_file_data(nds->mem.card_data);
 }
+uint32_t nds_sqrt_u64(uint64_t value){
+  uint32_t res = 0;
+  for(uint64_t b=0;b<32;++b){
+    uint64_t test = res | (1ull<<(31-b));
+    if(test*test<=value)res = test;
+  }
+  return res; 
+}
     
+static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
+  if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
+  int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
+  switch(addr){
+    case NDS_IPCSYNC:{
+      uint32_t sync =nds_io_read16(nds,cpu,NDS_IPCSYNC);
+      sync&=0x4f00;
+      sync|=nds->ipc[cpu].sync_data;
+      nds_io_store16(nds,cpu,NDS_IPCSYNC,sync);
+    }break;
+    case NDS_IPCFIFOCNT:{
+      uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
+      int send_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
+      int recv_size = (nds->ipc[ cpu].write_ptr-nds->ipc[ cpu].read_ptr)&0x1f;
+
+      bool send_fifo_empty = send_size ==0;
+      bool send_fifo_full  = send_size ==16;
+      bool recv_fifo_empty = recv_size ==0;
+      bool recv_fifo_full  = recv_size ==16;
+      cnt &=0xbc0c;
+      cnt |= nds->ipc[cpu].sync_data;
+      cnt |= (send_fifo_empty<<0)|(send_fifo_full<<1)|(recv_fifo_empty<<8)|(recv_fifo_full<<9);
+      cnt |= (nds->ipc[cpu].error<<14);
+      nds_io_store16(nds,cpu,NDS_IPCFIFOCNT,cnt);
+    }break;
+    case NDS_IPCFIFORECV:{
+      uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
+      bool enabled = SB_BFE(cnt,15,1);
+      if(!enabled)return; 
+
+      int size = (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f;
+      // Read empty error
+      if(size==0){
+        nds->ipc[cpu].error=true;
+        return; 
+      }
+      uint32_t data = nds->ipc[cpu].fifo[(nds->ipc[cpu].read_ptr++)&0xf];
+      nds_io_store32(nds,cpu,NDS_IPCFIFORECV,data);
+      if(size==1){
+        int other_cnt = nds_io_read16(nds,!cpu,NDS9_IPCFIFOCNT);
+        bool fifo_empty_irq = SB_BFE(other_cnt,2,1);
+        if(fifo_empty_irq){
+          if(cpu==NDS_ARM7)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+          else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+        }
+      }
+    }break;
+    case NDS9_DIVCNT:case NDS9_DIV_RESULT: case NDS9_DIVREM_RESULT:case NDS9_DIV_RESULT+4: case NDS9_DIVREM_RESULT+4:{
+      uint32_t cnt = nds9_io_read32(nds,NDS9_DIVCNT);
+      int mode = SB_BFE(cnt,0,2);
+      int64_t numer = nds9_io_read32(nds,NDS9_DIV_NUMER+4);
+      numer<<=32ll;
+      numer|= nds9_io_read32(nds,NDS9_DIV_NUMER);
+      bool busy= true; 
+
+      int64_t denom = nds9_io_read32(nds,NDS9_DIV_DENOM+4);
+      denom<<=32ll;
+      denom|= nds9_io_read32(nds,NDS9_DIV_DENOM);
+      bool div_zero = denom==0; 
+      int64_t result = 0; 
+      int64_t mod_result = 0;
+      switch(mode){
+        case 0:{
+          busy = nds->current_clock-nds->math.div_last_update_clock <= 18; 
+          numer = (int32_t)numer;
+          denom = (int32_t)denom;
+          break; 
+        }
+        case 1: case 3:{
+          busy = nds->current_clock-nds->math.div_last_update_clock <= 34; 
+          numer = (int64_t)numer;
+          denom = (int32_t)denom;
+          break; 
+        }
+        case 2: {
+          busy = nds->current_clock-nds->math.div_last_update_clock <= 34; 
+          numer = (int64_t)numer;
+          denom = (int64_t)denom;
+          break; 
+        }
+      }
+      result = (numer)/(denom);
+      mod_result = (numer)%(denom);
+      if(denom==0){
+        mod_result = numer;
+        result = numer>-1?-1:1;
+        if(mode==0)result^=0xffffffff00000000ull;
+      }
+      cnt&=3;
+      cnt|= (busy<<15)|(div_zero<<14);
+      nds9_io_store32(nds,NDS9_DIVCNT,cnt);
+      if(!busy){
+        nds9_io_store32(nds,NDS9_DIV_RESULT,SB_BFE(result,0,32));
+        nds9_io_store32(nds,NDS9_DIV_RESULT+4,SB_BFE(result,32,32));
+        nds9_io_store32(nds,NDS9_DIVREM_RESULT,SB_BFE(mod_result,0,32));
+        nds9_io_store32(nds,NDS9_DIVREM_RESULT+4,SB_BFE(mod_result,32,32));
+      }
+    }break;
+    case NDS9_SQRTCNT:case NDS9_SQRT_RESULT:case NDS9_SQRT_RESULT+4:{
+      uint32_t cnt = nds9_io_read32(nds,NDS9_SQRTCNT);
+      int mode = SB_BFE(cnt,0,1);
+      int64_t numer = nds9_io_read32(nds,NDS9_SQRT_PARAM+4);
+      numer<<=32ll;
+      numer|= nds9_io_read32(nds,NDS9_SQRT_PARAM);
+      bool busy= nds->current_clock-nds->math.sqrt_last_update_clock<=13; 
+      uint64_t result = 0; 
+      switch(mode){
+        case 0:result = nds_sqrt_u64((uint32_t)numer);break;
+        case 1:result = nds_sqrt_u64(numer);break;
+      }
+      cnt&=1;
+      cnt|= (busy<<15);
+      nds9_io_store32(nds,NDS9_SQRTCNT,cnt);
+      if(!busy){
+        nds9_io_store32(nds,NDS9_SQRT_RESULT,SB_BFE(result,0,32));
+      }
+    }break;
+  }
+}
+static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
+  if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
+  if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
+  return data; 
+}
+static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
+  uint32_t addr=baddr&~3;
+  uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
+  int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
+  switch(addr){
+    case NDS9_IF: /*case NDS7_IF: <- duplicate address*/ 
+      data = nds_align_data(baddr,data,transaction_type);
+      mmio&=~data;
+      nds_io_store32(nds,cpu,addr,mmio);
+      break;
+    case NDS_IPCSYNC:{
+      int data_out = SB_BFE(mmio,8,4);
+      bool send_irq = SB_BFE(mmio,13,1);
+      nds->ipc[!cpu].sync_data = data_out;
+      uint32_t sync =nds_io_read16(nds,!cpu,NDS_IPCSYNC);
+      bool recv_interrupt = SB_BFE(sync,14,1);
+      if(send_irq && recv_interrupt){
+        if(cpu==NDS_ARM7)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_SYNC);
+        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_SYNC);
+      }
+      mmio&=0x4f0f;
+      nds_io_store32(nds,cpu,addr,mmio);
+    }break;
+    case NDS_IPCFIFOSEND:{
+      uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
+      bool enabled = SB_BFE(cnt,15,1);
+      if(!enabled)return; 
+
+      int size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
+      // Send full error
+      if(size>=16){
+        nds->ipc[cpu].error=true;
+        return; 
+      }
+      nds->ipc[!cpu].fifo[(nds->ipc[!cpu].write_ptr++)&0xf] = mmio; 
+      if(size==0){
+        int other_cnt = nds_io_read16(nds,!cpu,NDS9_IPCFIFOCNT);
+        bool fifo_not_empty_irq = SB_BFE(other_cnt,10,1);
+        if(fifo_not_empty_irq){
+          if(cpu==NDS_ARM7)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+          else         nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+        }
+      }
+    }break;
+    case NDS_IPCFIFOCNT:{
+      uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
+      bool clear = SB_BFE(cnt,3,1);
+      if(clear){
+        nds->ipc[!cpu].write_ptr=nds->ipc[!cpu].read_ptr=0;
+        nds->ipc[cpu].error=false;
+        cnt&=~(1<<3);
+      }
+      bool error = SB_BFE(cnt,14,1);
+      //Storing a 1 in the error bit clears it(rockwrestler) 
+      if(error)nds->ipc[cpu].error=false;
+      nds_io_store16(nds,cpu,NDS_IPCFIFOCNT,cnt);
+    }break;
+    case NDS9_VRAMCNT_E:{
+      if(cpu==NDS_ARM9){
+        nds7_io_store8(nds,NDS7_WRAMSTAT,SB_BFE(mmio,24,8));
+      }
+    }break;
+    case NDS9_DIVCNT:case NDS9_DIV_DENOM:case NDS9_DIV_DENOM+4:case NDS9_DIV_NUMER:case NDS9_DIV_NUMER+4:
+      nds->math.div_last_update_clock= nds->current_clock;
+      break;
+
+    case NDS9_SQRTCNT:case NDS9_SQRT_PARAM:case NDS9_SQRT_PARAM+4:
+      nds->math.sqrt_last_update_clock= nds->current_clock;
+      break;
+  }
+}
+
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   nds_ppu_t * ppu = nds->ppu+ppu_id;
   ppu->scan_clock+=1;
@@ -3100,25 +3348,36 @@ static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float
   y += nds_polyblep(t2,dt);
   return y;
 }
-static FORCE_INLINE void nds_send_interrupt(nds_t*nds,int delay,int if_bit){
-  if(if_bit){
-    nds->active_if_pipe_stages|=1<<delay;
-    nds->pipelined_if[delay]|= if_bit;
-  }
-}
 static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
   if(nds->active_if_pipe_stages){
-    uint16_t if_bit = nds->pipelined_if[0];
+    uint32_t if_bit = nds->nds9_pipelined_if[0];
     if(if_bit){
-      uint16_t if_val = nds9_io_read16(nds,GBA_IF);
+      uint32_t if_val = nds9_io_read32(nds,NDS9_IF);
       if_val |= if_bit;
-      nds9_io_store16(nds,GBA_IF,if_val);
+      uint32_t ie_val = nds9_io_read32(nds,NDS9_IE);
+      uint16_t ime = nds9_io_read16(nds,NDS9_IME); 
+      nds9_io_store32(nds,NDS9_IF,if_val);
     }
-    nds->pipelined_if[0]=nds->pipelined_if[1];
-    nds->pipelined_if[1]=nds->pipelined_if[2];
-    nds->pipelined_if[2]=nds->pipelined_if[3];
-    nds->pipelined_if[3]=nds->pipelined_if[4];
-    nds->pipelined_if[4]=0;
+    if_bit = nds->nds7_pipelined_if[0];
+    if(if_bit){
+      uint32_t if_val = nds7_io_read32(nds,NDS7_IF);
+      uint32_t ie_val = nds7_io_read32(nds,NDS7_IE);
+      uint16_t ime = nds7_io_read16(nds,NDS7_IME); 
+      if_val |= if_bit;
+      nds7_io_store32(nds,NDS7_IF,if_val);
+    }
+    nds->nds9_pipelined_if[0]=nds->nds9_pipelined_if[1];
+    nds->nds9_pipelined_if[1]=nds->nds9_pipelined_if[2];
+    nds->nds9_pipelined_if[2]=nds->nds9_pipelined_if[3];
+    nds->nds9_pipelined_if[3]=nds->nds9_pipelined_if[4];
+    nds->nds9_pipelined_if[4]=0;
+
+    nds->nds7_pipelined_if[0]=nds->nds7_pipelined_if[1];
+    nds->nds7_pipelined_if[1]=nds->nds7_pipelined_if[2];
+    nds->nds7_pipelined_if[2]=nds->nds7_pipelined_if[3];
+    nds->nds7_pipelined_if[3]=nds->nds7_pipelined_if[4];
+    nds->nds7_pipelined_if[4]=0;
+
     nds->active_if_pipe_stages>>=1;
   }
 }
@@ -3152,18 +3411,17 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
     while(true){
       int ticks = nds->activate_dmas? nds_tick_dma(nds,last_tick) :0;
       if(!ticks){
-        uint16_t int_if = nds9_io_read16(nds,GBA_IF);
+        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+        uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
         if(nds->halt){
           ticks=2;
-          if(int_if){nds->halt = false;}
+          if(int7_if|int9_if){nds->halt = false;}
         }else{
           nds->mem.requests=0;
-          if(int_if){
-            int_if &= nds9_io_read16(nds,GBA_IE);
-            uint32_t ime = nds9_io_read32(nds,GBA_IME);
-            if(SB_BFE(ime,0,1)==1){
-              arm7_process_interrupts(&nds->arm7, int_if);
-            }
+          if(int7_if){
+            uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+            uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+            if(SB_BFE(ime,0,1)==1) arm7_process_interrupts(&nds->arm7, int7_if&ie);
           }
           if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
           else if(!ticks){
@@ -3171,12 +3429,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
             ticks = nds->mem.requests; 
           }
 
-          if(int_if){
-            int_if &= nds9_io_read16(nds,GBA_IE);
-            uint32_t ime = nds9_io_read32(nds,GBA_IME);
-            if(SB_BFE(ime,0,1)==1){
-              arm7_process_interrupts(&nds->arm9, int_if);
-            }
+          if(int9_if){
+            int9_if &= nds9_io_read32(nds,NDS9_IE);
+            uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+            if(SB_BFE(ime,0,1)==1&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
           }
           if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
           else if(!ticks){
@@ -3198,6 +3454,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
         nds_tick_timers(nds);
         nds_tick_ppu(nds,0,emu->render_frame);
         nds_tick_ppu(nds,1,emu->render_frame);
+        nds->current_clock++;
       }
       
       if(nds->ppu[0].last_vblank && !prev_vblank){
@@ -3223,6 +3480,26 @@ void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t 
     if(rom_offset+i<nds->mem.card_size) nds7_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
+// See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
+uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp){
+  if(coproc!=15){
+    printf("Coprocessor read from unsupported coprocessor:%d\n",coproc);
+    return 0; 
+  }
+  if(opcode!=0)printf("Unsupported opcode(%x) for coproc %d\n",opcode,coproc);
+  nds_t * nds = (nds_t*)(user_data);
+  return nds->cp15.reg[Cn][Cm][Cp]; 
+}
+void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data){
+  if(coproc!=15){
+    printf("Coprocessor write to unsupported coprocessor:%d\n",coproc);
+    return; 
+  }
+  if(opcode!=0)printf("Unsupported opcode(%x) for coproc %d\n",opcode,coproc);
+  nds_t * nds = (nds_t*)(user_data);
+  nds->cp15.reg[Cn][Cm][Cp]=data;
+}
+
 void nds_reset(nds_t*nds){
   uint8_t* card_data = nds->mem.card_data;
   size_t card_size = nds->mem.card_size;
@@ -3320,6 +3597,8 @@ void nds_reset(nds_t*nds){
   nds->arm9.registers[PC] = nds->card.arm9_entrypoint;
   nds->arm9.irq_table_address = 0xFFFF0000;
   nds->arm7.registers[PC] = nds->card.arm7_entrypoint;
+  nds->arm9.coprocessor_read =  nds->arm7.coprocessor_read =nds_coprocessor_read;
+  nds->arm9.coprocessor_write=  nds->arm7.coprocessor_write=nds_coprocessor_write;
   printf("ARM9 Entry:0x%x ARM7 Entry:0x%x\n",nds->card.arm9_entrypoint,nds->card.arm7_entrypoint);
 
 }

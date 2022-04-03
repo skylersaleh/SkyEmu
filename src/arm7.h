@@ -42,6 +42,8 @@ typedef uint8_t (*arm_read8_fn_t)(void* user_data, uint32_t address);
 typedef void (*arm_write32_fn_t)(void* user_data, uint32_t address, uint32_t data);
 typedef void (*arm_write16_fn_t)(void* user_data, uint32_t address, uint16_t data);
 typedef void (*arm_write8_fn_t)(void* user_data, uint32_t address, uint8_t data);
+typedef uint32_t (*arm_coproc_read_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
+typedef void (*arm_coproc_write_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp, uint32_t data);
 
 
 typedef struct {
@@ -78,6 +80,8 @@ typedef struct {
   arm_write32_fn_t    write32;
   arm_write16_fn_t    write16;
   arm_write8_fn_t     write8;
+  arm_coproc_read_fn_t coprocessor_read;
+  arm_coproc_write_fn_t coprocessor_write;
   uint32_t irq_table_address; 
 } arm7_t;     
 
@@ -1322,8 +1326,28 @@ static FORCE_INLINE void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode){
   cpu->trigger_breakpoint = true;
 }
 static FORCE_INLINE void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode){
-  printf("Unhandled Instruction Class (arm7_coproc_reg_transfer) Opcode: %x\n",opcode);
-  //cpu->trigger_breakpoint = true;
+  int coprocessor_opcode = SB_BFE(opcode,21,3);
+  bool coprocessor_read = SB_BFE(opcode,20,1);
+  int Cn = SB_BFE(opcode,16,4);
+  int Rd = SB_BFE(opcode,12,4);
+  int Pn = SB_BFE(opcode,8,4);
+  int Cp = SB_BFE(opcode,5,3);
+  int Cm = SB_BFE(opcode,0,4);
+  if(coprocessor_read){
+    if(!cpu->coprocessor_read){
+      printf("Coprocessor Read Issued without bound coprocessor_read handler: %x\n",opcode);
+      return;
+    } 
+    uint32_t data = cpu->coprocessor_read(cpu->user_data,Pn,coprocessor_opcode,Cn,Cm,Cp);
+    arm7_reg_write(cpu,Rd,data);
+  }else{
+    if(!cpu->coprocessor_write){
+      printf("Coprocessor Write Issued without bound coprocessor_write handler: %x\n",opcode);
+      return;
+    } 
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
+    cpu->coprocessor_write(cpu->user_data,Pn,coprocessor_opcode,Cn,Cm,Cp,data);
+  }
 }
 static FORCE_INLINE void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
   bool thumb = arm7_get_thumb_bit(cpu);
