@@ -2449,7 +2449,6 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       bool recv_fifo_empty = recv_size ==0;
       bool recv_fifo_full  = recv_size ==16;
       cnt &=0xbc0c;
-      cnt |= nds->ipc[cpu].sync_data;
       cnt |= (send_fifo_empty<<0)|(send_fifo_full<<1)|(recv_fifo_empty<<8)|(recv_fifo_full<<9);
       cnt |= (nds->ipc[cpu].error<<14);
       nds_io_store16(nds,cpu,NDS_IPCFIFOCNT,cnt);
