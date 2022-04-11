@@ -3797,6 +3797,7 @@ void nds_reset(nds_t*nds){
   nds_coprocessor_write(nds, 15,0,9,1,0,init_dtcm);
   nds_coprocessor_write(nds, 15,0,9,1,1,init_itcm);
   nds_coprocessor_write(nds, 15,0,1,0,0,init_C1C00);
+  nds_coprocessor_write(nds, 15,0,0,0,1, 0x0F0D2112);
 
   printf("Game Name: %s\n",nds->card.title);
   nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);

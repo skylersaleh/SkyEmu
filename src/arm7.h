@@ -132,6 +132,7 @@ static void arm9_clz(arm7_t* cpu, uint32_t opcode);
 static FORCE_INLINE void arm9_qadd_qsub(arm7_t* cpu, uint32_t opcode);
 static FORCE_INLINE void arm9_signed_halfword_multiply(arm7_t* cpu, uint32_t opcode);
 static FORCE_INLINE void arm9_single_word_transfer(arm7_t* cpu, uint32_t opcode);
+static void arm9_double_word_transfer(arm7_t* cpu, uint32_t opcode);
 static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode);
 // Thumb Instruction Implementations
 static void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode);
@@ -197,11 +198,13 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    {arm7_single_data_swap,     "SDS",     "cccc00010B00nnnndddd00001001mmmm"},
    {arm7_branch_exchange,      "BX",      "cccc000100101111111111110001nnnn"},
 
+   {arm9_double_word_transfer,"LDRD/STRD","cccc000PUIW0nnnnddddoooo11S1oooo"},
    {arm7_half_word_transfer,   "HDT(h)",  "cccc000PUIWLnnnndddd00001011mmmm"},
-   {arm7_half_word_transfer,   "HDT(sb)", "cccc000PUIWLnnnnddddOOOO1101OOOO"},
-   {arm7_half_word_transfer,   "HDT(sh)", "cccc000PUIWLnnnnddddOOOO1111OOOO"},
+   {arm7_half_word_transfer,   "HDT(sb)", "cccc000PUIW1nnnnddddOOOO1101OOOO"},
+   {arm7_half_word_transfer,   "HDT(sh)", "cccc000PUIW1nnnnddddOOOO1111OOOO"},
    {arm9_single_word_transfer, "SDT",     "cccc010PUBWLnnnnddddOOOOOOOOOOOO"},
    {arm9_single_word_transfer, "SDT",     "cccc011PUBWLnnnnddddOOOOOOO0mmmm"},
+
    {arm7_undefined,            "UDEF",    "cccc011--------------------1----"},
    {arm9_block_transfer,       "BDT",     "cccc100PUSWLnnnnllllllllllllllll"},
    {arm7_branch,               "B",       "cccc1010OOOOOOOOOOOOOOOOOOOOOOOO"},
@@ -1073,6 +1076,46 @@ static FORCE_INLINE void arm9_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   if(L==1){ // Load
     uint32_t data = B ? cpu->read8(cpu->user_data,addr): arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
     arm9_reg_write_r15_thumb(cpu,Rd,data); 
+    cpu->i_cycles=1; 
+  }
+}
+static FORCE_INLINE void arm9_double_word_transfer(arm7_t* cpu, uint32_t opcode){
+  // cccc 000P UIW0 nnnn dddd oooo 11S1 oooo
+  bool P = ARM7_BFE(opcode,24,1);
+  bool U = ARM7_BFE(opcode,23,1);
+  bool I = ARM7_BFE(opcode,22,1);
+  bool W = ARM7_BFE(opcode,21,1);
+  bool S = ARM7_BFE(opcode,5,1);
+  int Rn = ARM7_BFE(opcode,16,4);
+  int carry; 
+  int offset = I == 0 ? 
+               arm7_reg_read(cpu,ARM7_BFE(opcode,0,4)) : 
+               ((opcode>>4)&0xf0)|(opcode&0xf);
+
+  uint64_t Rd = ARM7_BFE(opcode,12,4);
+  uint32_t addr = arm7_reg_read_r15_adj(cpu, Rn,4);
+  int increment = U? offset: -offset;
+
+  if(P) addr += increment;
+
+  // Store before write back
+  if(S){ 
+    uint32_t data0 = arm7_reg_read_r15_adj(cpu,Rd,8);
+    uint32_t data1 = arm7_reg_read_r15_adj(cpu,Rd+1,8);
+    cpu->write32(cpu->user_data,addr,data0);
+    cpu->write32(cpu->user_data,addr+4,data1);
+  }
+
+  //Write back address before load
+  uint32_t write_back_addr = addr; 
+  if(!P) {write_back_addr+=increment;W=true;}
+  if(W)arm7_reg_write(cpu,Rn,write_back_addr); 
+
+  if(S==0){ // Load
+    uint32_t data0 = cpu->read32(cpu->user_data,addr);
+    uint32_t data1 = cpu->read32(cpu->user_data,addr+4);
+    arm9_reg_write_r15_thumb(cpu,Rd,data0);   
+    arm9_reg_write_r15_thumb(cpu,Rd+1,data1); 
     cpu->i_cycles=1; 
   }
 }
