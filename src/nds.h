@@ -1630,7 +1630,7 @@ typedef struct{
   uint64_t sqrt_last_update_clock;
 }nds_math_t;
 
-typedef struct nds_t{
+typedef struct{
   nds_mem_t mem;
   arm7_t arm7;
   arm7_t arm9;
@@ -1660,7 +1660,7 @@ typedef struct nds_t{
 
   uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*3];
   uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*3];
-  uint64_t current_clock;;
+  uint64_t current_clock;
 } nds_t; 
 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 

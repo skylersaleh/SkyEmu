@@ -1292,7 +1292,10 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
       last_bank=bank;
       if(PC==reg_index)arm7_set_thumb_bit(cpu,cpu->registers[PC]&1);
    }
-
+    //Writeback happens on second cycle
+    if(++cycle==1 && w){
+      arm7_reg_write(cpu,Rn,base_addr); 
+    }
     addr+=4;
     
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
@@ -1302,8 +1305,6 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
 
     }
   }
-  //Writeback happens at the end in arm9
-  if(w)arm7_reg_write(cpu,Rn,base_addr);
   if(L)cpu->i_cycles=1;
 }
 static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode){
