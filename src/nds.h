@@ -1469,6 +1469,7 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
+#define NDS_VRAM_SLOT0 0x06900000
 #define NDS_ARM9 1
 #define NDS_ARM7 0
 
@@ -1500,6 +1501,14 @@ typedef struct {
   uint32_t requests;
   uint32_t openbus_word;
   uint32_t arm7_bios_word;
+  uint32_t dtcm_start_address;
+  uint32_t dtcm_end_address;
+  uint32_t itcm_start_address;
+  uint32_t itcm_end_address;
+  bool dtcm_load_mode;
+  bool itcm_load_mode;
+  bool dtcm_enable;
+  bool itcm_enable;
 } nds_mem_t;
 
 typedef struct {
@@ -1761,12 +1770,172 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   }
   return data; 
 }
+static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+  const static int bank_size[9]={
+    128*1024, //A
+    128*1024, //B
+    128*1024, //C
+    128*1024, //D
+    64*1024,  //E
+    16*1024,  //F
+    16*1024,  //G
+    32*1024,  //H
+    16*1024,  //I
+  };
+  uint32_t offset_table[6][5]={
+    {0,0,0,0}, //Offset ignored
+    {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
+    {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
+    {0x20000*0, 0x20000*0, 0x20000*0,0x20000*0}, // Slot 0-3 (mirrored)
+    {0x20000*0, 0x20000*2, 0x20000*0,0x20000*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+    {0x20000*0, 0x20000*1, 0x20000*4,0x20000*5}, // Slot (OFS.0*1)+(OFS.1*4)
+  };
+  typedef struct vram_bank_info_t{
+    int transaction_mask; // Block transactions of these types
+    int offset_table;
+    uint32_t mem_address_start;
+  }vram_bank_info_t;
+
+  const static vram_bank_info_t bank_info[9][8]={
+    { //Bank A 
+      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 7
+    },{ //Bank B
+      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 7
+    },{ //Bank C
+      {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank D
+      {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank E
+      {NDS_MEM_ARM7, 0, 0x06880000}, //MST 0 6880000h-688FFFFh
+      {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
+      {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank F
+      {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank G
+      {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank H
+      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 0 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 1 6200000h
+      {NDS_MEM_ARM7, 3, NDS_VRAM_SLOT0}, //MST 2 Slot 0-3
+      {0xffffffff, 0, 0x0}, // MST 3 INVALID
+      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 4 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 5 6200000h
+      {NDS_MEM_ARM7, 3, NDS_VRAM_SLOT0}, //MST 6 Slot 0-3
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank I
+      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
+      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
+      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
+    }
+  };
+  if(!(transaction_type&NDS_MEM_WRITE))data=0;
+  int total_banks = 9;
+  int vram_offset = 0; 
+  for(int b = 0; b<total_banks;++b){
+    int vram_off = vram_offset;
+    vram_offset +=bank_size[b];
+    uint8_t vramcnt = nds9_io_read8(nds,NDS9_VRAMCNT_A+b);
+    bool enable = SB_BFE(vramcnt,7,1);
+    if(!enable)continue;
+    int mst = SB_BFE(vramcnt,0,3);
+    int off = SB_BFE(vramcnt,3,2);
+
+    vram_bank_info_t bank = bank_info[b][mst];
+    if(transaction_type& bank.transaction_mask)continue;
+    int base = bank.mem_address_start;
+    base += offset_table[bank.offset_table][off];
+    if(address<base)continue;
+
+    int bank_offset = address-base; 
+    if(bank_offset>=bank_size[b])continue;
+    int vram_addr = bank_offset+vram_off;
+    if(transaction_type&NDS_MEM_4B){
+      vram_addr&=~3;
+      if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
+      else data |= *(uint32_t*)(nds->mem.vram+vram_addr);
+    }else if(transaction_type&NDS_MEM_2B){
+      vram_addr&=~1;
+      if(transaction_type&NDS_MEM_WRITE)*(uint16_t*)(nds->mem.vram+vram_addr)=data;
+      else data |= *(uint16_t*)(nds->mem.vram+vram_addr);
+    }else{
+      if(transaction_type&NDS_MEM_WRITE)nds->mem.vram[vram_addr]=data;
+      else data |= nds->mem.vram[vram_addr];
+    }
+  }
+  return data; 
+}
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type);
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
+  if(transaction_type&NDS_MEM_ARM9){
+    if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
+      if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+        nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
+        return *ret; 
+      }
+    }
+    if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
+      if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+        nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
+        return *ret; 
+      }
+    }
+  }
   switch(addr>>24){
-    case 0x0: //BIOS(NDS7), TCM(NDS9)
+      case 0x0: //BIOS(NDS7), TCM(NDS9)
       if(transaction_type&NDS_MEM_ARM7){
         if(addr<0x4000){
           if(nds->arm7.registers[PC]<0x4000)
@@ -1774,16 +1943,6 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
           //else nds->mem.bios_word=0;
           nds->mem.openbus_word=nds->mem.arm7_bios_word;
         } 
-       }else{
-        if(addr<32*1024) nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,addr&(32*1024-1),data,transaction_type);
-        else nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,addr&(16*1024-1),data,transaction_type);
-       }
-       break;
-    case 0x1: // TCM(NDS9)
-      if(transaction_type&NDS_MEM_ARM9){
-        addr&=0x00ffffff;
-        if(addr<32*1024) nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,addr&(32*1024-1),data,transaction_type);
-        else nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,addr&(16*1024-1),data,transaction_type);
        }
        break;
     case 0x2: //Main RAM
@@ -1827,8 +1986,7 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
       nds->mem.openbus_word=*ret;
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
-      addr&=512*1024-1;
-      *ret = nds_apply_mem_op(nds->mem.vram, addr, data, transaction_type); 
+      *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
       nds->mem.openbus_word=*ret;
       break;
     case 0x7: 
@@ -2261,6 +2419,20 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
   switch(addr){
+    case NDS7_VRAMSTAT:{
+      if(cpu==NDS_ARM9)return;
+      uint8_t vramcntc = nds9_io_read8(nds,NDS9_VRAMCNT_C);
+      uint8_t vramcntd = nds9_io_read8(nds,NDS9_VRAMCNT_D);
+      bool en_c = SB_BFE(vramcntc,7,1);
+      bool en_d = SB_BFE(vramcntd,7,1);
+      int mst_c = SB_BFE(vramcntc,0,3);
+      int mst_d = SB_BFE(vramcntd,0,3);
+      bool mapped_c = en_c&& mst_c==2;
+      bool mapped_d = en_d&& mst_d==2;
+      uint8_t vramstat = mapped_c|(mapped_d<<1);
+      nds7_io_store8(nds,NDS7_VRAMSTAT,vramstat);
+
+    }break;
     case NDS_IPCSYNC:{
       uint32_t sync =nds_io_read16(nds,cpu,NDS_IPCSYNC);
       sync&=0x4f00;
@@ -3498,6 +3670,32 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
   if(opcode!=0)printf("Unsupported opcode(%x) for coproc %d\n",opcode,coproc);
   nds_t * nds = (nds_t*)(user_data);
   nds->cp15.reg[Cn][Cm][Cp]=data;
+  //C9,C1,0 - Data TCM Size/Base (R/W)
+  //C9,C1,1 - Instruction TCM Size/Base (R/W)
+  if(Cn==1&&Cm==0){
+    //C1,C0,0 - Control Register (R/W, or R=Fixed)
+    nds->mem.dtcm_enable   = SB_BFE(data, 16,1); 
+    nds->mem.dtcm_load_mode= SB_BFE(data, 17,1); 
+    nds->mem.itcm_enable   = SB_BFE(data, 18,1); 
+    nds->mem.itcm_load_mode= SB_BFE(data, 19,1); 
+  }else if(Cn==9&&Cm==1){
+    int size = SB_BFE(data,1,5);
+    int base = SB_BFE(data,12,20);
+    if(Cp==0){
+      nds->mem.dtcm_start_address = base<<12; 
+      nds->mem.dtcm_end_address = nds->mem.dtcm_start_address+ (512<<size); 
+    }else if(Cp==1){
+      base = 0; 
+      //ITCM base is read only on the NDS
+      nds->cp15.reg[Cn][Cm][Cp]=data&(0x1f);
+
+      nds->mem.itcm_start_address = base<<12; 
+      nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
+      printf("ITCM Start:0x%08x End: 0x%08x\n",nds->mem.itcm_start_address,nds->mem.itcm_end_address);
+    }
+  }else{
+    printf("Unhandled: Cn:%d Cm:%d Cp:%d\n",Cn,Cm,Cp);
+  }
 }
 
 void nds_reset(nds_t*nds){
@@ -3590,6 +3788,15 @@ void nds_reset(nds_t*nds){
   }
   nds9_write32(nds,GBA_IE,0x1);
   nds9_write16(nds,GBA_DISPCNT,0x9140);
+  //C9,C1,0 - Data TCM Size/Base (R/W) (32KB)
+  //C9,C1,1 - Instruction TCM Size/Base (R/W)
+
+  uint32_t init_itcm = 0x00000000|(16<<1);
+  uint32_t init_dtcm = 0x027C0000|(3<<1);
+  uint32_t init_C1C00 = (1<<16)|(1<<18); //Enable ITCM and DTCM
+  nds_coprocessor_write(nds, 15,0,9,1,0,init_dtcm);
+  nds_coprocessor_write(nds, 15,0,9,1,1,init_itcm);
+  nds_coprocessor_write(nds, 15,0,1,0,0,init_C1C00);
 
   printf("Game Name: %s\n",nds->card.title);
   nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);
