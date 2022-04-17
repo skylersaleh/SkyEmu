@@ -280,4 +280,15 @@ static bool se_load_bios_file(const char* name, const char* base_path, const cha
   free(bios_data);
   return loaded_bios;
 }
+static FILE * se_load_log_file(const char* rom_path, const char* log_name){
+  bool loaded_bios=false;
+  const char* base, *file, *ext; 
+  sb_breakup_path(rom_path, &base,&file, &ext);
+  static char log_path[SB_FILE_PATH_SIZE];
+  snprintf(log_path,SB_FILE_PATH_SIZE,"%s/%s.%s",base, file,log_name);
+  log_path[SB_FILE_PATH_SIZE-1]=0;
+  FILE * f = fopen(log_path, "rb");
+  if(f)printf("Loaded log file:%s\n",log_path);
+  return f; 
+}
 #endif

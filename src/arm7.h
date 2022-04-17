@@ -82,6 +82,7 @@ typedef struct {
   arm_write8_fn_t     write8;
   arm_coproc_read_fn_t coprocessor_read;
   arm_coproc_write_fn_t coprocessor_write;
+  bool wait_for_interrupt; 
   uint32_t irq_table_address; 
 } arm7_t;     
 
@@ -343,6 +344,12 @@ static FORCE_INLINE uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int
   }
   return v; 
 }
+static void arm7_print_binary(int number, int bits){
+  for(int i=0;i<bits;++i){
+    bool v = (number>>(bits-i-1))&1;
+    printf("%d",v);
+  }
+}
 
 static int arm7_lookup_arm_instruction_class(uint32_t opcode_key){
   int key_bits[] = {4,5,6,7, 20,21,22,23,24,25,26,27};
@@ -448,6 +455,7 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
 static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+  cpu->wait_for_interrupt=false;
   if(cpu->log_cmp_file||interrupts==0)return; //Log drives interrupts when enabled
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
@@ -524,6 +532,10 @@ static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
   return false; 
 }
 static void arm7_exec_instruction(arm7_t* cpu){
+  if(cpu->wait_for_interrupt){
+    cpu->i_cycles=4; 
+    return;
+  }
   bool thumb = arm7_get_thumb_bit(cpu);
   if(cpu->prefetch_pc!=cpu->registers[PC]){
     if(thumb){
@@ -539,7 +551,7 @@ static void arm7_exec_instruction(arm7_t* cpu){
     }
   }
   if(cpu->log_cmp_file){
-    fseek(cpu->log_cmp_file,(cpu->executed_instructions+2)*18*4,SEEK_SET);
+    fseek(cpu->log_cmp_file,(cpu->executed_instructions)*18*4,SEEK_SET);
     uint32_t cmp_regs[18];
     fread(cmp_regs,18*4,1,cpu->log_cmp_file);
     uint32_t regs[18];
@@ -551,7 +563,11 @@ static void arm7_exec_instruction(arm7_t* cpu){
       unsigned oldpc = cpu->registers[PC]; 
       cmp_regs[15]-=4;
     }
-
+    uint32_t cpsr = cmp_regs[16];
+    bool has_spsr = arm7_reg_index(cpu,SPSR)!=CPSR;
+    if(!has_spsr){
+      cmp_regs[SPSR]=arm7_reg_read(cpu,SPSR);
+    }
     bool matches = true;
     for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
     if(!matches){
@@ -568,15 +584,19 @@ static void arm7_exec_instruction(arm7_t* cpu){
         "R8","R9","R10","R11","R12","R13","R14","R15",
         "CPSR","SPSR"
       };
-      fseek(cpu->log_cmp_file,(cpu->executed_instructions+1)*18*4,SEEK_SET);
+      int last_instruction = cpu->executed_instructions-1;
+      if(last_instruction<0)last_instruction=0;
+      fseek(cpu->log_cmp_file,(last_instruction)*18*4,SEEK_SET);
       uint32_t prev_regs[18];
       fread(prev_regs,18*4,1,cpu->log_cmp_file);
-      for(int i=0;i<18;++i)
-        printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
+      
+      for(int i=0;i<18;++i){
+        if(regs[i]!=cmp_regs[i])printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
+        else printf("Matches %s %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],prev_regs[i],prev_regs[i]);
+      }
       uint32_t log_cpsr = cmp_regs[16];
       uint32_t prev_cpsr = prev_regs[16];
 
-      uint32_t cpsr = regs[16];
       printf("N:%d LogN:%d PrevN:%d Z:%d LogZ:%d PrevZ:%d C:%d LogC:%d PrevC:%d V:%d LogV:%d PrevV:%d\n",
         ARM7_BFE(cpsr,31,1), ARM7_BFE(log_cpsr,31,1), ARM7_BFE(prev_cpsr,31,1),
         ARM7_BFE(cpsr,30,1), ARM7_BFE(log_cpsr,30,1), ARM7_BFE(prev_cpsr,30,1),
@@ -586,11 +606,20 @@ static void arm7_exec_instruction(arm7_t* cpu){
       if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
       // Set CPSR first
       arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
-      for(int i=0;i<18;++i)arm7_reg_write(cpu,i,cmp_regs[i]);
+      for(int i=0;i<18;++i){
+        arm7_reg_write(cpu,i,cmp_regs[i]);
+      }
     }
     uint32_t opcode = cpu->prefetch_opcode[0];
-    if(thumb==false)printf("ARM OP: %08x PC: %08x\n",opcode,cpu->registers[PC]);
-    else printf("THUMB OP: %04x PC: %08x\n",opcode,cpu->registers[PC]);
+    if(thumb==false){
+      printf("ARM OP: %08x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+      arm7_print_binary(opcode,32);
+      printf("\n");
+    }else{
+      printf("THUMB OP: %04x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+      arm7_print_binary(opcode,16);
+      printf("\n");
+    }
     cpu->executed_instructions++;
   }
   cpu->next_fetch_sequential=true;
@@ -614,7 +643,6 @@ static void arm7_exec_instruction(arm7_t* cpu){
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
-
 }
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
   return ((uint64_t)value >> (rotate &31)) | ((uint64_t)value << (32-(rotate&31)));

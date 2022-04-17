@@ -1639,7 +1639,7 @@ typedef struct{
   nds_input_t joy;       
   nds_ppu_t ppu[2];
   nds_rtc_t rtc;
-  nds_dma_t dma[4]; 
+  nds_dma_t dma[2][4]; 
   nds_ipc_t ipc[2];
   nds_system_control_processor cp15;
   nds_math_t math; 
@@ -2403,6 +2403,8 @@ bool nds_load_rom(nds_t* nds, const char* filename, const char* save_file){
   return true; 
 }  
 static void nds_unload(nds_t* nds){
+  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
+  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
   printf("Unloading DS data\n");
   sb_free_file_data(nds->mem.card_data);
 }
@@ -2417,7 +2419,8 @@ uint32_t nds_sqrt_u64(uint64_t value){
     
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
-  int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
+  int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7;
+ 
   switch(addr){
     case NDS7_VRAMSTAT:{
       if(cpu==NDS_ARM9)return;
@@ -2645,7 +2648,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
     nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
-    nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
+    nds9_io_store16(nds,GBA_DISPSTAT|reg_offset,disp_stat);
     uint32_t new_if = 0;
     if(hblank!=ppu->last_hblank){
       ppu->last_hblank = hblank;
@@ -2889,9 +2892,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   if(visible){
     uint8_t window_control =ppu->window[lcd_x];
     int display_mode = SB_BFE(dispcnt,16,2);
-    if(ppu_id==0&&display_mode==2){
+    if(display_mode==2){
       int vram_block = SB_BFE(dispcnt,18,2);
       ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*128*1024];
+    }else if(display_mode==0){
+      ppu->first_target_buffer[lcd_x] = 0xffffffff;
     }else if(bg_mode==6 ||bg_mode==7){
       //Palette 0 is taken as the background
     }else if (bg_mode<=5){     
@@ -3157,249 +3162,179 @@ void nds_store_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset,
   }
 }*/
 static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
-  return 0; 
-//  int ticks =0;
-//  nds->activate_dmas=false;
-//  for(int i=0;i<4;++i){
-//    uint16_t cnt_h=nds_io_read16(nds, GBA_DMA0CNT_H+12*i);
-//    bool enable = SB_BFE(cnt_h,15,1);
-//    if(enable){
-//      bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
-//
-//      if(!nds->dma[i].last_enable){
-//        nds->dma[i].last_enable = enable;
-//        nds->dma[i].source_addr=nds_io_read32(nds,GBA_DMA0SAD+12*i);
-//        nds->dma[i].dest_addr=nds_io_read32(nds,GBA_DMA0DAD+12*i);
-//        //GBA Suite says that these need to be force aligned
-//        if(type){
-//          nds->dma[i].dest_addr&=~3;
-//          nds->dma[i].source_addr&=~3;
-//        }else{
-//          nds->dma[i].dest_addr&=~1;
-//          nds->dma[i].source_addr&=~1;
-//        }
-//        nds->dma[i].current_transaction=0;
-//        nds->dma[i].startup_delay=2;
-//      }
-  //
-//      int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
-//      int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
-//      bool dma_repeat = SB_BFE(cnt_h,9,1); 
-//      int  mode = SB_BFE(cnt_h,12,2);
-//      bool irq_enable = SB_BFE(cnt_h,14,1);
-//      bool force_first_write_sequential = false;
-//      int transfer_bytes = type? 4:2; 
-//      bool skip_dma = false;
-//      if(nds->dma[i].current_transaction==0){
-//        if(mode==3 && i ==0)continue;
-//        if(nds->dma[i].startup_delay>=0){
-//          nds->dma[i].startup_delay-=last_tick; 
-//          if(nds->dma[i].startup_delay>=0){
-//            nds->activate_dmas=true;
-//            continue;
-//          }
-//          nds->dma[i].startup_delay=-1;
-//        }
-//        if(dst_addr_ctl==3){        
-//          nds->dma[i].dest_addr=nds_io_read32(nds,GBA_DMA0DAD+12*i);
-//        }
-//        bool last_vblank = nds->dma[i].last_vblank;
-//        bool last_hblank = nds->dma[i].last_hblank;
-//        nds->dma[i].last_vblank = nds->ppu.last_vblank;
-//        nds->dma[i].last_hblank = nds->ppu.last_hblank;
-//        if(mode ==1 && (!nds->ppu.last_vblank||last_vblank)) continue; 
-//        if(mode==2){
-//          uint16_t vcount = nds_io_read16(nds,GBA_VCOUNT);
-//          if(vcount>=160||!nds->ppu.last_hblank||last_hblank)continue;
-//        }
-//        //Video dma
-//        if(mode==3 && i ==3){
-//          uint16_t vcount = nds_io_read16(nds,GBA_VCOUNT);
-//          if(!nds->ppu.last_hblank||last_hblank)continue;
-//          //Video dma starts at scanline 2
-//          if(vcount<2)continue;
-//          if(vcount==161)dma_repeat=false;
-//        }
-//        if(dst_addr_ctl==3){
-//          nds->dma[i].dest_addr=nds_io_read32(nds,GBA_DMA0DAD+12*i);
-//          //GBA Suite says that these need to be force aligned
-//          if(type) nds->dma[i].dest_addr&=~3;
-//          else nds->dma[i].dest_addr&=~1;
-//        }
-//        if(nds->dma[i].source_addr>=0x08000000&&nds->dma[i].dest_addr>=0x08000000){
-//          force_first_write_sequential=true;
-//        }else{
-//          if(nds->dma[i].dest_addr>=0x08000000){
-//            // Allow the in process prefetech to finish before starting DMA
-//            if(!nds->mem.prefetch_size&&nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[i].dest_addr,2)>4;
-//          }
-//        }
-//        if(nds->dma[i].source_addr>=0x08000000){
-//            if(nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[i].source_addr,2)<=4;
-//        }
-//        nds->last_transaction_dma=true;
-//        uint32_t cnt = nds_io_read16(nds,GBA_DMA0CNT_L+12*i);
-//
-//        if(i!=3)cnt&=0x3fff;
-//        if(cnt==0)cnt = i==3? 0x10000: 0x4000;
-//
-//        static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
-//        static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
-//        nds->dma[i].source_addr&=src_mask[i];
-//        nds->dma[i].dest_addr  &=dst_mask[i];
-//        nds_io_store16(nds,GBA_DMA0CNT_L+12*i,cnt);
-        //
-//        if(src_addr_ctl==0&&(dst_addr_ctl==0||dst_addr_ctl==3)&&cnt>2){
-//          int fast_dma_count = cnt-2;
-//          int bytes = fast_dma_count*transfer_bytes;
-//          int src_addr = nds->dma[i].source_addr; 
-//          int dst_addr = nds->dma[i].dest_addr; 
-//
-//          uint8_t *source_start = (uint8_t*)nds_dword_lookup(nds,src_addr,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
-//          uint8_t *dest_start   = (uint8_t*)nds_dword_lookup(nds,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
-//          uint8_t *source_end = (uint8_t*)nds_dword_lookup(nds,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
-//          uint8_t *dest_end   = (uint8_t*)nds_dword_lookup(nds,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
-//          if(source_end-source_start==bytes&&dest_end-dest_start==bytes&&mode!=3){
-//            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
-//              bytes = fast_dma_count*transfer_bytes;
-//              memcpy(dest_start,source_start, bytes);
-//              nds->dma[i].current_transaction=fast_dma_count;
-//              int trans_type = type?2:0;
-//              // First non-sequential fetch
-//              ticks+=nds_compute_access_cycles_dma(nds, nds->dma[i].dest_addr,trans_type+(force_first_write_sequential?0:1));
-//              ticks+=nds_compute_access_cycles_dma(nds, src_addr, trans_type+1);
-//              // Remaining sequential fetches
-//              ticks+=nds_compute_access_cycles_dma(nds, nds->dma[i].dest_addr, trans_type)*(fast_dma_count-1);
-//              ticks+=nds_compute_access_cycles_dma(nds, src_addr, trans_type)*(fast_dma_count-1);
-//            }
-//          }
-//        }
-        //
-//      }
-//      const static int dir_lookup[4]={1,-1,0,1};
-//      int src_dir = dir_lookup[src_addr_ctl];
-//      int dst_dir = dir_lookup[dst_addr_ctl];
-//
-//      uint32_t src = nds->dma[i].source_addr;
-//      uint32_t dst = nds->dma[i].dest_addr;
-//      uint32_t cnt = nds_io_read16(nds,GBA_DMA0CNT_L+12*i);
-//
-//      // ROM ignores direction and always increments
-//      if(src>=0x08000000&&src<0x0e000000) src_dir=1;
-//      if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
-//
-//      // EEPROM DMA transfers
-//      if(i==3 && nds->cart.backup_type==GBA_BACKUP_EEPROM){
-//        int src_in_eeprom = (src&0x1ffffff)>=nds->cart.rom_size||(src&0x1ffffff)>=0x01ffff00;
-//        int dst_in_eeprom = (dst&0x1ffffff)>=nds->cart.rom_size||(dst&0x1ffffff)>=0x01ffff00;
-//        src_in_eeprom &= src>=0x8000000 && src<=0xDFFFFFF;
-//        dst_in_eeprom &= dst>=0x8000000 && dst<=0xDFFFFFF;
-//        skip_dma = src_in_eeprom || dst_in_eeprom;
-//        if(dst_in_eeprom){
-//          if(cnt==73){
-//            // Write data 6 bit address
-//            uint32_t addr = nds_read_eeprom_bitstream(nds, src, 2, 6, type?4:2, src_dir);
-//            uint64_t data = nds_read_eeprom_bitstream(nds, src, 2+6, 64, type?4:2, src_dir); 
-//            ((uint64_t*)nds->mem.cart_backup)[addr]=data;
-//            nds->cart.backup_is_dirty=true;
-//          }else if(cnt==81){
-//            // Write data 14 bit address
-//            uint32_t addr = nds_read_eeprom_bitstream(nds, src, 2, 14, type?4:2, src_dir)&0x3ff;
-//            uint64_t data = nds_read_eeprom_bitstream(nds, src, 2+14, 64, type?4:2, src_dir); 
-//            ((uint64_t*)nds->mem.cart_backup)[addr]=data;
-//            nds->cart.backup_is_dirty=true;
-//          }else if(cnt==9){
-//            // 2 bits "11" (Read Request)
-//            // 6 bits eeprom address (MSB first)
-//            // 1 bit "0"
-//            // Write data 6 bit address
-//            nds->mem.eeprom_addr = nds_read_eeprom_bitstream(nds, src, 2, 6, type?4:2, src_dir);
-//          }else if(cnt==17){
-//            // 2 bits "11" (Read Request)
-//            // 14 bits eeprom address (MSB first)
-//            // 1 bit "0"
-//            // Write data 6 bit address
-//            nds->mem.eeprom_addr = nds_read_eeprom_bitstream(nds, src, 2, 14, type?4:2, src_dir)&0x3ff;
-//          }else{
-//            printf("Bad cnt: %d for eeprom write\n",cnt);
-//          }
-//          nds->dma[i].current_transaction=cnt;
-//        }
-//        if(src_in_eeprom){
-//          if(cnt==68){
-//            uint64_t data = ((uint64_t*)nds->mem.cart_backup)[nds->mem.eeprom_addr];
-//            nds_store_eeprom_bitstream(nds, dst, 4, 64, type?4:2, dst_dir,data);
-//          }else{
-//            printf("Bad cnt: %d for eeprom read\n",cnt);
-//          }
-//          nds->dma[i].current_transaction=cnt;
-//        }
-//      }
-//      bool audio_dma = (mode==3) && (i==1||i==2);
-//      if(!skip_dma){
-//        // This code is complicated to handle the per channel DMA latches that are present
-//        // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
-//        // and the text in Lufia
-//        // TODO: There in theory should be separate latches per DMA, but that breaks Hello Kitty
-//        // and Tomb Raider
-//        if(nds->dma[i].current_transaction<cnt){
-//          int x = nds->dma[i].current_transaction++;
-//          int dst_addr = dst+x*transfer_bytes*dst_dir;
-//          int src_addr = src+x*transfer_bytes*src_dir;
-//          if(type){
-//            if(src_addr>=0x02000000){
-//              nds->dma[i].latched_transfer = nds_read32(nds,src_addr);
-//              ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 2:3);
-//            }
-//            nds_dma_write32(nds,dst_addr,nds->dma[i].latched_transfer);
-//            ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 2:3);
-//          }else{
-//            int v = 0;
-//            if(src_addr>=0x02000000){
-//              v= nds->dma[i].latched_transfer = (nds_read16(nds,src_addr))&0xffff;
-//              nds->dma[i].latched_transfer |= nds->dma[i].latched_transfer<<16;
-//              ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 0:1);
-//            }else v = nds->dma[i].latched_transfer>>(((dst_addr)&0x3)*8);
-//            nds_dma_write16(nds,dst_addr,v&0xffff);
-//            ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 0:1);
-//          }
-//        }
-//      }
+  int ticks =0;
+  nds->activate_dmas=false;
+  for(int cpu = 1;cpu<2;++cpu){
+    for(int i=0;i<4;++i){
+      uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
+      bool enable = SB_BFE(cnt_h,15,1);
+      if(enable){
+        bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
+
+        if(!nds->dma[cpu][i].last_enable){
+          nds->dma[cpu][i].last_enable = enable;
+          nds->dma[cpu][i].source_addr=nds_io_read32(nds,cpu,GBA_DMA0SAD+12*i);
+          nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
+          //GBA Suite says that these need to be force aligned
+          if(type){
+            nds->dma[cpu][i].dest_addr&=~3;
+            nds->dma[cpu][i].source_addr&=~3;
+          }else{
+            nds->dma[cpu][i].dest_addr&=~1;
+            nds->dma[cpu][i].source_addr&=~1;
+          }
+          nds->dma[cpu][i].current_transaction=0;
+          nds->dma[cpu][i].startup_delay=0;
+        }
+        int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
+        int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
+        bool dma_repeat = SB_BFE(cnt_h,9,1); 
+        int  mode = SB_BFE(cnt_h,12,2);
+        bool irq_enable = SB_BFE(cnt_h,14,1);
+        bool force_first_write_sequential = false;
+        int transfer_bytes = type? 4:2; 
+        bool skip_dma = false;
+        if(nds->dma[cpu][i].current_transaction==0){
+          if(mode==3 && i ==0)continue;
+          if(nds->dma[cpu][i].startup_delay>=0){
+            nds->dma[cpu][i].startup_delay-=last_tick; 
+            if(nds->dma[cpu][i].startup_delay>=0){
+              nds->activate_dmas=true;
+              continue;
+            }
+            nds->dma[cpu][i].startup_delay=-1;
+          }
+          if(dst_addr_ctl==3){        
+            nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
+          }
+          bool last_vblank = nds->dma[cpu][i].last_vblank;
+          bool last_hblank = nds->dma[cpu][i].last_hblank;
+          nds->dma[cpu][i].last_vblank = nds->ppu[0].last_vblank;
+          nds->dma[cpu][i].last_hblank = nds->ppu[0].last_hblank;
+          if(mode ==1 && (!nds->ppu[0].last_vblank||last_vblank)) continue; 
+          if(mode==2){
+            uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
+            if(vcount>=160||!nds->ppu[0].last_hblank||last_hblank)continue;
+          }
+          //Video dma
+          if(mode==3 && i ==3){
+            uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
+            if(!nds->ppu[0].last_hblank||last_hblank)continue;
+            //Video dma starts at scanline 2
+            if(vcount<2)continue;
+            if(vcount==161)dma_repeat=false;
+          }
+          if(dst_addr_ctl==3){
+            nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
+            //GBA Suite says that these need to be force aligned
+            if(type) nds->dma[cpu][i].dest_addr&=~3;
+            else nds->dma[cpu][i].dest_addr&=~1;
+          }
+          if(nds->dma[cpu][i].source_addr>=0x08000000&&nds->dma[cpu][i].dest_addr>=0x08000000){
+            force_first_write_sequential=true;
+          }else{
+            if(nds->dma[cpu][i].dest_addr>=0x08000000){
+              // Allow the in process prefetech to finish before starting DMA
+              if(!nds->mem.prefetch_size&&nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[cpu][i].dest_addr,2)>4;
+            }
+          }
+          if(nds->dma[cpu][i].source_addr>=0x08000000){
+              if(nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[cpu][i].source_addr,2)<=4;
+          }
+          nds->last_transaction_dma=true;
+          uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
+
+          if(i!=3)cnt&=0x3fff;
+          if(cnt==0)cnt = i==3? 0x10000: 0x4000;
+
+          static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+          static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
+          //nds->dma[cpu][i].source_addr&=src_mask[i];
+          //nds->dma[cpu][i].dest_addr  &=dst_mask[i];
+          nds_io_store16(nds,cpu,GBA_DMA0CNT_L+12*i,cnt);
+          printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt);
+        }
+        const static int dir_lookup[4]={1,-1,0,1};
+        int src_dir = dir_lookup[src_addr_ctl];
+        int dst_dir = dir_lookup[dst_addr_ctl];
+
+        uint32_t src = nds->dma[cpu][i].source_addr;
+        uint32_t dst = nds->dma[cpu][i].dest_addr;
+        uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
+
+        // ROM ignores direction and always increments
+        if(src>=0x08000000&&src<0x0e000000) src_dir=1;
+        if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
+
+        if(!skip_dma){
+          // This code is complicated to handle the per channel DMA latches that are present
+          // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
+          // and the text in Lufia
+          // TODO: There in theory should be separate latches per DMA, but that breaks Hello Kitty
+          // and Tomb Raider
+          if(nds->dma[cpu][i].current_transaction<cnt){
+            int x = nds->dma[cpu][i].current_transaction++;
+            int dst_addr = dst+x*transfer_bytes*dst_dir;
+            int src_addr = src+x*transfer_bytes*src_dir;
+            if(type){
+              if(src_addr>=0x02000000){
+                if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr);
+                else nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr);
+                ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 2:3);
+              }
+              if(cpu==NDS_ARM7)nds7_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              else nds9_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 2:3);
+            }else{
+              int v = 0;
+              if(src_addr>=0x02000000){
+                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr)&0xffff;
+                else v=nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr)&0xffff;
+                nds->dma[cpu][i].latched_transfer |= nds->dma[cpu][i].latched_transfer<<16;
+                ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 0:1);
+              }else v = nds->dma[cpu][i].latched_transfer>>(((dst_addr)&0x3)*8);
+              if(cpu==NDS_ARM7)nds7_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              else nds9_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 0:1);
+            }
+          }
+        }
       //
-//      if(nds->dma[i].current_transaction>=cnt){
-//        if(dst_addr_ctl==0||dst_addr_ctl==3)     dst+=cnt*transfer_bytes;
-//        else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
-//        if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
-//        else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
+        if(nds->dma[cpu][i].current_transaction>=cnt){
+          if(dst_addr_ctl==0||dst_addr_ctl==3)     dst+=cnt*transfer_bytes;
+          else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
+          if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
+          else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
         //
-//        nds->dma[i].source_addr=src;
-//        nds->dma[i].dest_addr=dst;
-//
-//        if(irq_enable){
-//          uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
-//          nds_send_interrupt(nds,4,if_bit);
-//        }
-//        if(!dma_repeat||mode==0){
-//          cnt_h&=0x7fff;
-//          //Reload on incr reload     
-//          enable =false;
-//          nds_io_store16(nds, GBA_DMA0CNT_H+12*i,cnt_h);
-//        }else{
-//          nds->dma[i].current_transaction=0;
-//        }
-//      }
-//    }
-//    nds->dma[i].last_enable = enable;
-//    if(ticks)break;
-//  }
-//  nds->activate_dmas|=ticks!=0;
- //
-//  if(nds->last_transaction_dma&&ticks==0){
-//    ticks+=2; 
-//    nds->last_transaction_dma=false;
-//  }
-//
-//  return ticks; 
+          nds->dma[cpu][i].source_addr=src;
+          nds->dma[cpu][i].dest_addr=dst;
+
+          if(irq_enable){
+            uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
+            if(cpu==NDS_ARM7)nds7_send_interrupt(nds,4,if_bit);
+            else if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,if_bit);
+          }
+          if(!dma_repeat||mode==0){
+            cnt_h&=0x7fff;
+            //Reload on incr reload     
+            enable =false;
+            nds_io_store16(nds, cpu, GBA_DMA0CNT_H+12*i,cnt_h);
+          }else{
+            nds->dma[cpu][i].current_transaction=0;
+          }
+        }
+      }
+      nds->dma[cpu][i].last_enable = enable;
+      if(ticks)break;
+    }
+    nds->activate_dmas|=ticks!=0;
+
+    if(nds->last_transaction_dma&&ticks==0){
+      ticks+=2; 
+      nds->last_transaction_dma=false;
+    }
+  }
+  return ticks; 
 }                                              
 static FORCE_INLINE void nds_tick_sio(nds_t* nds){
   //Just a stub for now;
@@ -3580,7 +3515,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
     static int last_tick =0;
     static bool prev_vblank=false;
     while(true){
-      int ticks = nds->activate_dmas? nds_tick_dma(nds,last_tick) :0;
+      int ticks = nds_tick_dma(nds,last_tick);
       if(!ticks){
         uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
         uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
@@ -3686,11 +3621,17 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     }else if(Cp==1){
       base = 0; 
       //ITCM base is read only on the NDS
-      nds->cp15.reg[Cn][Cm][Cp]=data&(0x1f);
+      nds->cp15.reg[Cn][Cm][Cp]=data&(0x3f);
 
       nds->mem.itcm_start_address = base<<12; 
       nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
       printf("ITCM Start:0x%08x End: 0x%08x\n",nds->mem.itcm_start_address,nds->mem.itcm_end_address);
+    }
+  }else if(Cn==7&&Cm==0){
+    int size = SB_BFE(data,1,5);
+    int base = SB_BFE(data,12,20);
+    if(Cp==4){
+      nds->arm9.wait_for_interrupt = true; 
     }
   }else{
     printf("Unhandled: Cn:%d Cm:%d Cp:%d\n",Cn,Cm,Cp);
@@ -3757,14 +3698,22 @@ void nds_reset(nds_t*nds){
 
   //memcpy(nds->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
   const uint32_t initial_regs[37]={
-    0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x3007f00,0x0000000,0x8000000,
+    0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+    0x0,0x0,0x0,0x0,0x0,0x0380fd80,0x0000000,0x8000000,
     0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x3007fa0,0x0,0x3007fe0,0x0,0x0,0x0,0x0,0x0,
+    0x0380ff80,0x0,0x0380ffc0,0x0,0x0,0x0,0x0,0x0,
+    0x0,0x0,0x0,0x0,0x0,
+  };
+
+  const uint32_t initial_regs_arm9[37]={
+    0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+    0x0,0x0,0x0,0x0,0x0,0x03002f7c,0x0000000,0x8000000,
+    0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+    0x03003f80,0x0,0x03003fc0,0x0,0x0,0x0,0x0,0x0,
     0x0,0x0,0x0,0x0,0x0,
   };
   for(int i=0;i<37;++i)nds->arm7.registers[i]=initial_regs[i];
-  for(int i=0;i<37;++i)nds->arm9.registers[i]=initial_regs[i];
+  for(int i=0;i<37;++i)nds->arm9.registers[i]=initial_regs_arm9[i];
   const uint32_t initial_mmio_writes[]={
     0x4000000,0x80,
     0x4000004,0x7e0000,
@@ -3791,10 +3740,10 @@ void nds_reset(nds_t*nds){
   //C9,C1,1 - Instruction TCM Size/Base (R/W)
 
   uint32_t init_itcm = 0x00000000|(16<<1);
-  uint32_t init_dtcm = 0x027C0000|(3<<1);
-  uint32_t init_C1C00 = (1<<16)|(1<<18); //Enable ITCM and DTCM
+  uint32_t init_dtcm = 0x0300000a;
+  uint32_t init_C1C00 =0x0005707d; //Enable ITCM and DTCM
   nds_coprocessor_write(nds, 15,0,9,1,0,init_dtcm);
-  nds_coprocessor_write(nds, 15,0,9,1,1,init_itcm);
+  nds_coprocessor_write(nds, 15,0,9,1,1,0x00000020);
   nds_coprocessor_write(nds, 15,0,1,0,0,init_C1C00);
   nds_coprocessor_write(nds, 15,0,0,0,1, 0x0F0D2112);
 
@@ -3808,6 +3757,10 @@ void nds_reset(nds_t*nds){
   nds->arm9.coprocessor_write=  nds->arm7.coprocessor_write=nds_coprocessor_write;
   printf("ARM9 Entry:0x%x ARM7 Entry:0x%x\n",nds->card.arm9_entrypoint,nds->card.arm7_entrypoint);
 
+  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
+  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
+  nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
+  nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
 }
 
 #endif
