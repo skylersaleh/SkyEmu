@@ -440,43 +440,39 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_VCOUNT  , "VCOUNT  ", { 0 } }, /* R   Vertical Counter (LY) */
   { GBA_BG0CNT  , "BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG0 Control */
   { GBA_BG1CNT  , "BG1CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG1 Control */
   { GBA_BG2CNT  , "BG2CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG2 Control */
   { GBA_BG3CNT  , "BG3CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG3 Control */
   { GBA_BG0HOFS , "BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
   { GBA_BG0VOFS , "BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
@@ -857,43 +853,39 @@ mmio_reg_t nds9_io_reg_desc[]={
   // ARM9 Display Engine B
   { NDS9_B_BG0CNT  , "(2D-B) BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG0 Control */
   { NDS9_B_BG1CNT  , "(2D-B) BG1CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG1 Control */
   { NDS9_B_BG2CNT  , "(2D-B) BG2CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG2 Control */
   { NDS9_B_BG3CNT  , "(2D-B) BG3CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG3 Control */
   { NDS9_B_BG0HOFS , "(2D-B) BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
   { NDS9_B_BG0VOFS , "(2D-B) BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
@@ -1022,43 +1014,39 @@ mmio_reg_t nds7_io_reg_desc[]={
   { GBA_VCOUNT  , "VCOUNT  ", { 0 } }, /* R   Vertical Counter (LY) */
   { GBA_BG0CNT  , "BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG0 Control */
   { GBA_BG1CNT  , "BG1CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG1 Control */
   { GBA_BG2CNT  , "BG2CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG2 Control */
   { GBA_BG3CNT  , "BG3CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,2 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 4,2 , "NDS: MSBs of char base"},
+    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
     { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG3 Control */
   { GBA_BG0HOFS , "BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
   { GBA_BG0VOFS , "BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
@@ -1465,7 +1453,7 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_LCD_W 256
 #define NDS_LCD_H 192
 
-#define NDS_IO_MAP_SPLIT_ADDRESS 0x04000134
+#define NDS_IO_MAP_SPLIT_ADDRESS 0x0400006C
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
@@ -1590,6 +1578,8 @@ typedef struct{
   uint32_t first_target_buffer[NDS_LCD_W];
   uint32_t second_target_buffer[NDS_LCD_W];
   uint8_t window[NDS_LCD_W];
+  uint32_t bg_vram_base;
+  uint32_t obj_vram_base; 
 }nds_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1883,6 +1873,9 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
   if(!(transaction_type&NDS_MEM_WRITE))data=0;
   int total_banks = 9;
   int vram_offset = 0; 
+
+  //1Byte writes are ignored from the ARM9
+  if((transaction_type&NDS_MEM_WRITE)&&(transaction_type&NDS_MEM_1B)&&(transaction_type&NDS_MEM_ARM9))return 0;
   for(int b = 0; b<total_banks;++b){
     int vram_off = vram_offset;
     vram_offset +=bank_size[b];
@@ -1920,6 +1913,7 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
+  *ret=0;
   if(transaction_type&NDS_MEM_ARM9){
     if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
       if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
@@ -2004,7 +1998,7 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
     case 0xF: break;
     case 0xFF: 
       if(addr>=0xFFFF0000&& (transaction_type& NDS_MEM_ARM9)){
-        addr&=32*1024-1;
+        addr&=4*1024-1;
         *ret = nds_apply_mem_op(nds->mem.nds9_bios, addr, data, transaction_type&~NDS_MEM_WRITE); 
       }
       break;
@@ -2735,7 +2729,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT+reg_offset);
     if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
 
-    for(int x=0;x<240;++x){ppu->window[x] = default_window_control;}
+    for(int x=0;x<NDS_LCD_W;++x){ppu->window[x] = default_window_control;}
     uint8_t obj_window_control = default_window_control;
     bool obj_window_enable = SB_BFE(dispcnt,15,1);
     if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
@@ -2902,14 +2896,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     }else if (bg_mode<=5){     
       for(int bg = 3; bg>=0;--bg){
         uint32_t col =0;         
-        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=2&&bg_mode>=3))continue;
+        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=3&&bg_mode>=3))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
         if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
 
         bool rot_scale = bg_mode>=1&&bg>=2;
-        uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2);
+        uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
         int priority = SB_BFE(bgcnt,0,2);
-        int character_base = SB_BFE(bgcnt,2,2);
+        int character_base = SB_BFE(bgcnt,2,4);
         bool mosaic = SB_BFE(bgcnt,6,1);
         bool colors = SB_BFE(bgcnt,7,1);
         int screen_base = SB_BFE(bgcnt,8,5);
@@ -2921,6 +2915,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       
         int bg_x = 0;
         int bg_y = 0;
+        uint32_t pallete_offset = ppu_id?0x400:0; 
       
         if(rot_scale){
           screen_size_x = screen_size_y = (16*8)<<screen_size;
@@ -2928,8 +2923,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             screen_size_x=240;
             screen_size_y=160;
           }else if(bg_mode==5){
-            screen_size_x=160;
-            screen_size_y=128;
+            screen_size_x=256;
+            screen_size_y=256;
           }
           colors = true;
 
@@ -2974,23 +2969,26 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             bg_y = voff+(lcd_y/mos_y)*mos_y;
           }
         }
+        int screen_base_addr    = screen_base*2*1024;
+
+        int32_t bg_base = ppu_id? 0x06200000:0x06000000;
         if(bg_mode==3){
           int p = bg_x+bg_y*240;
           int addr = p*2; 
-          col  = *(uint16_t*)(nds->mem.vram+addr);
+          col  = nds9_read16(nds,bg_base+screen_base_addr+addr);
         }else if(bg_mode==4){
           int p = bg_x+bg_y*240;
           int frame_sel = SB_BFE(dispcnt,4,1);
           int addr = p*1+0xA000*frame_sel; 
           uint8_t pallete_id = nds->mem.vram[addr];
-          printf("%d\n",pallete_id);
           if(pallete_id==0)continue;
-          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
+          col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
         }else if(bg_mode==5){
-          int p = bg_x+bg_y*160;
+          int screen_base_addr = screen_base*16*1024;
+          int p = bg_x+bg_y*256;
           int frame_sel = SB_BFE(dispcnt,4,1);
-          int addr = p*2+0xA000*frame_sel; 
-          col  = *(uint16_t*)(nds->mem.vram+addr);
+          int addr = p*2+screen_base_addr; 
+          col  = nds9_read16(nds,bg_base+addr);
         }else{
           bg_x = bg_x&(screen_size_x-1);
           bg_y = bg_y&(screen_size_y-1);
@@ -2999,21 +2997,28 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
           int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-          int screen_base_addr =    screen_base*2048;
           int character_base_addr = character_base*16*1024;
+
+          //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
+          //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
+          if(ppu_id==0){
+            character_base+=SB_BFE(dispcnt,24,3)*64*1024;
+            screen_base+=SB_BFE(dispcnt,27,3)*64*1024;
+          }
 
           uint16_t tile_data =0;
 
           int px = bg_x%8;
           int py = bg_y%8;
 
-          if(rot_scale)tile_data=nds->mem.vram[screen_base_addr+tile_off];
+
+          if(rot_scale)tile_data=nds9_read8(nds,bg_base+screen_base_addr+tile_off);
           else{
             int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
             if(bg_tile_x>=32)tile_off+=32*32;
             if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
-            tile_data=*(uint16_t*)(nds->mem.vram+screen_base_addr+tile_off*2);
-
+            tile_data=nds9_read16(nds,bg_base+screen_base_addr+tile_off*2);
+            //printf("tx:%d ty:%d tile_off:%08x data:%08x\n",bg_tile_x,bg_tile_y,bg_base+screen_base_addr+tile_off,tile_data);
             int h_flip = SB_BFE(tile_data,10,1);
             int v_flip = SB_BFE(tile_data,11,1);
             if(h_flip)px=7-px;
@@ -3024,16 +3029,16 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
           uint8_t tile_d=tile_id;
           if(colors==false){
-            tile_d=nds->mem.vram[character_base_addr+tile_id*8*4+px/2+py*4];
+            tile_d=nds9_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
             tile_d= (tile_d>>((px&1)*4))&0xf;
             if(tile_d==0)continue;
             tile_d+=palette*16;
           }else{
-            tile_d=nds->mem.vram[character_base_addr+tile_id*8*8+px+py*8];
+            tile_d=nds9_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
             if(tile_d==0)continue;
           }
           uint8_t pallete_id = tile_d;
-          col = *(uint16_t*)(nds->mem.palette+GBA_BG_PALETTE+pallete_id*2);
+          col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
         }
         col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
         if(col>ppu->first_target_buffer[lcd_x]){
@@ -3106,7 +3111,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     uint8_t *framebuffer = ppu_id==0?nds->framebuffer_top: nds->framebuffer_bottom;
     framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
     framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
-    framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor);  
+    framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
     int backdrop_type = 5;
     uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
     ppu->first_target_buffer[lcd_x] = backdrop_col;
@@ -3164,7 +3169,7 @@ void nds_store_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset,
 static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
   int ticks =0;
   nds->activate_dmas=false;
-  for(int cpu = 1;cpu<2;++cpu){
+  for(int cpu = 0;cpu<2;++cpu){
     for(int i=0;i<4;++i){
       uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
       bool enable = SB_BFE(cnt_h,15,1);
@@ -3189,7 +3194,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
         int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
         bool dma_repeat = SB_BFE(cnt_h,9,1); 
-        int  mode = SB_BFE(cnt_h,12,2);
+        int  mode = SB_BFE(cnt_h,11,3);
         bool irq_enable = SB_BFE(cnt_h,14,1);
         bool force_first_write_sequential = false;
         int transfer_bytes = type? 4:2; 
@@ -3244,15 +3249,15 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           nds->last_transaction_dma=true;
           uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
 
-          if(i!=3)cnt&=0x3fff;
-          if(cnt==0)cnt = i==3? 0x10000: 0x4000;
+          cnt&=0x1FFFFF;
+          if(cnt==0)cnt =0x200000;
 
-          static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
-          static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
+          static const uint32_t src_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+          static const uint32_t dst_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
           //nds->dma[cpu][i].source_addr&=src_mask[i];
           //nds->dma[cpu][i].dest_addr  &=dst_mask[i];
           nds_io_store16(nds,cpu,GBA_DMA0CNT_L+12*i,cnt);
-          printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt);
+          printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
         }
         const static int dir_lookup[4]={1,-1,0,1};
         int src_dir = dir_lookup[src_addr_ctl];
@@ -3288,8 +3293,8 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
             }else{
               int v = 0;
               if(src_addr>=0x02000000){
-                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr)&0xffff;
-                else v=nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr)&0xffff;
+                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read16(nds,src_addr)&0xffff;
+                else v=nds->dma[cpu][i].latched_transfer = nds9_read16(nds,src_addr)&0xffff;
                 nds->dma[cpu][i].latched_transfer |= nds->dma[cpu][i].latched_transfer<<16;
                 ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 0:1);
               }else v = nds->dma[cpu][i].latched_transfer>>(((dst_addr)&0x3)*8);
@@ -3542,7 +3547,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
           }
           if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
           else if(!ticks){
-            arm7_exec_instruction(&nds->arm9);
+            arm9_exec_instruction(&nds->arm9);
             ticks = nds->mem.requests; 
           }
         }
@@ -3627,10 +3632,10 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
       nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
       printf("ITCM Start:0x%08x End: 0x%08x\n",nds->mem.itcm_start_address,nds->mem.itcm_end_address);
     }
-  }else if(Cn==7&&Cm==0){
+  }else if(Cn==7){
     int size = SB_BFE(data,1,5);
     int base = SB_BFE(data,12,20);
-    if(Cp==4){
+    if((Cm==0&&Cp==4)||(Cm==8&&Cp==2)){
       nds->arm9.wait_for_interrupt = true; 
     }
   }else{
@@ -3759,7 +3764,7 @@ void nds_reset(nds_t*nds){
 
   if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
   if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
-  nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
+  //nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
   nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
 }
 

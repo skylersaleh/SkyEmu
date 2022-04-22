@@ -121,6 +121,8 @@ static void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode);
 static void arm7_undefined(arm7_t* cpu, uint32_t opcode);
 static void arm7_block_transfer(arm7_t* cpu, uint32_t opcode);
 static void arm7_branch(arm7_t* cpu, uint32_t opcode);
+static void arm9_branch(arm7_t* cpu, uint32_t opcode);
+
 static void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode);
 static void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode);
 static void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode);
@@ -170,7 +172,7 @@ static FORCE_INLINE uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg);
 static FORCE_INLINE uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int r15_off);
 static FORCE_INLINE void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value);
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg);
-static int arm7_lookup_arm_instruction_class(uint32_t opcode_key);
+static int arm_lookup_arm_instruction_class(const arm7_instruction_t*instruction_table, uint32_t opcode_key);
 static int arm7_lookup_thumb_instruction_class(uint32_t opcode_key);
 static FORCE_INLINE uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t value, uint32_t shift_value, int* carry);
 static FORCE_INLINE uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* carry);
@@ -199,6 +201,72 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    {arm7_single_data_swap,     "SDS",     "cccc00010B00nnnndddd00001001mmmm"},
    {arm7_branch_exchange,      "BX",      "cccc000100101111111111110001nnnn"},
 
+   {arm7_undefined,     "LDRD/STRD",      "cccc000PUIW0nnnnddddoooo11S1oooo"},
+   {arm7_half_word_transfer,   "HDT(h)",  "cccc000PUIWLnnnndddd00001011mmmm"},
+   {arm7_half_word_transfer,   "HDT(sb)", "cccc000PUIW1nnnnddddOOOO1101OOOO"},
+   {arm7_half_word_transfer,   "HDT(sh)", "cccc000PUIW1nnnnddddOOOO1111OOOO"},
+   {arm7_single_word_transfer, "SDT",     "cccc010PUBWLnnnnddddOOOOOOOOOOOO"},
+   {arm7_single_word_transfer, "SDT",     "cccc011PUBWLnnnnddddOOOOOOO0mmmm"},
+
+   {arm7_undefined,            "UDEF",    "cccc011--------------------1----"},
+   {arm7_block_transfer,       "BDT",     "cccc100PUSWLnnnnllllllllllllllll"},
+   {arm7_branch,               "B",       "cccc1010OOOOOOOOOOOOOOOOOOOOOOOO"},
+   {arm7_branch,               "BL",      "cccc1011OOOOOOOOOOOOOOOOOOOOOOOO"},
+   {arm7_coproc_data_transfer, "CDT",     "cccc110PUNWLnnnndddd####OOOOOOOO"},
+   {arm7_coproc_data_op,       "CDO",     "cccc1110oooonnnndddd####ppp0mmmm"},
+   {arm7_coproc_reg_transfer,  "CRT",     "cccc1110oooLnnnndddd####ppp1mmmm"},
+   {arm7_software_interrupt,   "SWI",     "cccc1111------------------------"},
+   {arm7_mrs,                  "MRS",     "cccc00010P001111dddd000000000000"},
+   {arm7_msr,                  "MSR",     "cccc00010P10100F111100000000mmmm"},
+   {arm7_msr,                  "MSR",     "cccc00110P10100F1111oooooooooooo"},
+   {arm7_undefined,            "UNKNOWN1","cccc000001--------------1001----"}, 
+   {arm7_undefined,            "UNKNOWN2","cccc00011---------------1001----"},
+   {arm7_undefined,            "UNKNOWN3","cccc00010-1-------------1001----"}, 
+   {arm7_undefined,            "UNKNOWN4","cccc00010-01------------1001----"}, 
+   // Handle invalid opcode space in DP
+   {arm7_undefined,            "UNKNOWN6","cccc00010-00------------01-0----"},
+   {arm7_undefined,            "UNKNOWN7","cccc00010-00------------0010----"},
+
+   {arm7_undefined,            "QADD/QSUB","cccc00010oo0nnnndddd00000101mmmm"},
+   {arm7_undefined,            "UNKNOWN8","cccc00010-00------------00-1----"},
+   {arm7_undefined,            "UNKNOWNN","cccc00010-00------------0111----"},
+   {arm7_undefined,            "SMLA" ,"cccc00010oo0ddddnnnnssss1yx0mmmm"},
+   {arm7_undefined,            "UNKNOWNA","cccc00010110------------01-0----"},
+   {arm7_undefined,            "UNKNOWNB","cccc00010110------------0010----"},
+   {arm7_undefined,            "CLZ",     "cccc000101101111DDDD11110001MMMM"},
+   {arm7_undefined,            "UNKNOWNC","cccc00010110------------0111----"},
+   {arm7_undefined,            "UNKNOWND","cccc00010110------------0011----"},
+   {arm7_undefined,            "UNKNOWNE","cccc00010010------------0111----"},
+   {arm7_undefined,            "BLX",     "cccc000100101111111111110011nnnn"},
+   {arm7_undefined,            "UNKNOWNG","cccc00010010------------01-0----"},
+   {arm7_undefined,            "UNKNOWNH","cccc00010010------------0010----"},
+   {arm7_undefined,            "UNKNOWNI","cccc00110-000000000000001-------"},
+   {arm7_undefined,            "UNKNOWNJ","cccc00110-0000000000000001------"},
+   {arm7_undefined,            "UNKNOWNK","cccc00110-00000000000000001-----"},
+   {arm7_undefined,            "UNKNOWNL","cccc00110-000000000000000001----"},
+   {arm7_undefined,            "UNKNOWNM","----00110-00------------0000----"},
+   {NULL},
+
+};  
+// ARM7 ARM Classes
+const static arm7_instruction_t arm9_instruction_classes[]={
+   {arm7_data_processing,      "DP",      "cccc0010oooSnnnnddddrrrrOOOOOOOO"},
+   {arm7_data_processing,      "DP",      "cccc00111ooSnnnnddddrrrrOOOOOOOO"},
+   {arm7_data_processing,      "DP",      "cccc00110oo1nnnnddddrrrrOOOOOOOO"},
+   //These duplications are to handle disambiguating bit 5 and 7 set to ones for DP 
+   {arm7_data_processing,      "DP",      "cccc0000oooSnnnnddddsssssss0mmmm"},
+   {arm7_data_processing,      "DP",      "cccc0000oooSnnnnddddssss0tt1mmmm"},
+   //Handle TST, TEQ, CMP, CMN must set S case
+   {arm7_data_processing,      "DP",      "cccc00011ooSnnnnddddsssssss0mmmm"},
+   {arm7_data_processing,      "DP",      "cccc00011ooSnnnnddddssss0tt1mmmm"},
+   {arm7_data_processing,      "DP",      "cccc00010oo1nnnnddddssss0tt1mmmm"},
+   {arm7_data_processing,      "DP",      "cccc00010oo1nnnnddddsssssss0mmmm"},
+
+   {arm7_multiply,             "MUL",     "cccc000000ASddddnnnnssss1001mmmm"},
+   {arm7_multiply_long,        "MLONG",   "cccc00001UASddddnnnnssss1001mmmm"},
+   {arm7_single_data_swap,     "SDS",     "cccc00010B00nnnndddd00001001mmmm"},
+   {arm7_branch_exchange,      "BX",      "cccc000100101111111111110001nnnn"},
+
    {arm9_double_word_transfer,"LDRD/STRD","cccc000PUIW0nnnnddddoooo11S1oooo"},
    {arm7_half_word_transfer,   "HDT(h)",  "cccc000PUIWLnnnndddd00001011mmmm"},
    {arm7_half_word_transfer,   "HDT(sb)", "cccc000PUIW1nnnnddddOOOO1101OOOO"},
@@ -208,8 +276,8 @@ const static arm7_instruction_t arm7_instruction_classes[]={
 
    {arm7_undefined,            "UDEF",    "cccc011--------------------1----"},
    {arm9_block_transfer,       "BDT",     "cccc100PUSWLnnnnllllllllllllllll"},
-   {arm7_branch,               "B",       "cccc1010OOOOOOOOOOOOOOOOOOOOOOOO"},
-   {arm7_branch,               "BL",      "cccc1011OOOOOOOOOOOOOOOOOOOOOOOO"},
+   {arm9_branch,               "B",       "cccc1010OOOOOOOOOOOOOOOOOOOOOOOO"},
+   {arm9_branch,               "BL",      "cccc1011OOOOOOOOOOOOOOOOOOOOOOOO"},
    {arm7_coproc_data_transfer, "CDT",     "cccc110PUNWLnnnndddd####OOOOOOOO"},
    {arm7_coproc_data_op,       "CDO",     "cccc1110oooonnnndddd####ppp0mmmm"},
    {arm7_coproc_reg_transfer,  "CRT",     "cccc1110oooLnnnndddd####ppp1mmmm"},
@@ -236,7 +304,6 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    {arm7_undefined,            "UNKNOWNC","cccc00010110------------0111----"},
    {arm7_undefined,            "UNKNOWND","cccc00010110------------0011----"},
    {arm7_undefined,            "UNKNOWNE","cccc00010010------------0111----"},
-
    {arm9_branch_link_exchange, "BLX",     "cccc000100101111111111110011nnnn"},
    {arm7_undefined,            "UNKNOWNG","cccc00010010------------01-0----"},
    {arm7_undefined,            "UNKNOWNH","cccc00010010------------0010----"},
@@ -245,6 +312,7 @@ const static arm7_instruction_t arm7_instruction_classes[]={
    {arm7_undefined,            "UNKNOWNK","cccc00110-00000000000000001-----"},
    {arm7_undefined,            "UNKNOWNL","cccc00110-000000000000000001----"},
    {arm7_undefined,            "UNKNOWNM","----00110-00------------0000----"},
+   {NULL},
 
 };  
 // ARM7 Thumb Classes
@@ -295,7 +363,8 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
 };  
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
-static arm7_handler_t arm7t_lookup_table[4096] = { 0 };
+static arm7_handler_t arm9_lookup_table[4096] = { 0 };
+static arm7_handler_t arm7t_lookup_table[256] = { 0 };
 
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
@@ -351,16 +420,16 @@ static void arm7_print_binary(int number, int bits){
   }
 }
 
-static int arm7_lookup_arm_instruction_class(uint32_t opcode_key){
+static int arm_lookup_arm_instruction_class(const arm7_instruction_t*instruction_table, uint32_t opcode_key){
   int key_bits[] = {4,5,6,7, 20,21,22,23,24,25,26,27};
   int matched_class = -1; 
-  for(int c = 0; c<sizeof(arm7_instruction_classes)/sizeof(arm7_instruction_t);++c){
+  for(int c = 0; instruction_table[c].handler;++c){
     bool matches = true; 
     for(int bit = 0; bit< sizeof(key_bits)/sizeof(key_bits[0]); ++bit){
       bool bit_value = (opcode_key>>bit)&1; 
       int b_off = key_bits[bit]; 
-      matches &= arm7_instruction_classes[c].bitfield[31-b_off] != '1' || bit_value == true; 
-      matches &= arm7_instruction_classes[c].bitfield[31-b_off] != '0' || bit_value == false;
+      matches &= instruction_table[c].bitfield[31-b_off] != '1' || bit_value == true; 
+      matches &= instruction_table[c].bitfield[31-b_off] != '0' || bit_value == false;
       if(!matches)break; 
     }
     if(matches){
@@ -375,8 +444,8 @@ static int arm7_lookup_arm_instruction_class(uint32_t opcode_key){
           }
         }
         printf("ARM7: Class %s and %s have ambiguous encodings for: %s %08x %d\n", 
-          arm7_instruction_classes[c].name,
-          arm7_instruction_classes[matched_class].name,
+          instruction_table[c].name,
+          instruction_table[matched_class].name,
           opcode, op_value,opcode_key);
       }
       matched_class = c; 
@@ -392,7 +461,7 @@ static int arm7_lookup_arm_instruction_class(uint32_t opcode_key){
         op_value|= 1<<key_bits[bit];
       }
     }
-    printf("ARM7: No matching instruction class for key: %s %08x\n", opcode,op_value); 
+    printf("ARM: No matching instruction class for key: %s %08x\n", opcode,op_value); 
   } 
   return matched_class; 
 }
@@ -430,21 +499,24 @@ static int arm7_lookup_thumb_instruction_class(uint32_t opcode_key){
     }
     printf("ARM7T: No matching instruction class for key: %s %04x\n", opcode,op_value); 
   } 
-  return matched_class;
+  return matched_class; 
 }
 static arm7_t arm7_init(void* user_data){
   // Generate ARM lookup table
 	for(int i=0;i<4096;++i){
-		 int inst_class = arm7_lookup_arm_instruction_class(i);
+     int inst_class = arm_lookup_arm_instruction_class(arm7_instruction_classes,i);
      arm7_lookup_table[i]=inst_class==-1? NULL: arm7_instruction_classes[inst_class].handler;
 	}
+  for(int i=0;i<4096;++i){
+     int inst_class = arm_lookup_arm_instruction_class(arm9_instruction_classes,i);
+     arm9_lookup_table[i]=inst_class==-1? NULL: arm9_instruction_classes[inst_class].handler;
+  }
   // Generate Thumb Lookup Table
   for(int i=0;i<256;++i){
     int inst_class = arm7_lookup_thumb_instruction_class(i);
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
   }
   arm7_t arm = {.user_data = user_data};
-  //arm.log_cmp_file = fopen("/Users/skylersaleh/GBA-Logs/logs/arm-log.bin","rb");
   arm.prefetch_pc=-1;
   return arm;
 
@@ -485,7 +557,7 @@ static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
     cond_code= cond_code_table[ARM7_BFE(opcode,28,4)];
 
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    int instr_class = arm7_lookup_arm_instruction_class(key);
+    int instr_class = arm_lookup_arm_instruction_class(arm7_instruction_classes,key);
     name = instr_class==-1? "INVALID" : arm7_instruction_classes[instr_class].name;
     // Get more information for the DP class instruction
     if(strcmp(name,"DP")==0){
@@ -528,8 +600,125 @@ static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
     case 0xB: return N!=V;         //LT: Signed <  
     case 0xC: return !Z&&(N==V);   //GT: Signed >  
     case 0xD: return Z||(N!=V);    //LE: Signed <= 
+    case 0xE: return true;
+    case 0xF: return true;
   };
   return false; 
+}
+static void arm_check_log_file(arm7_t*cpu){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  fseek(cpu->log_cmp_file,(cpu->executed_instructions)*18*4,SEEK_SET);
+  uint32_t cmp_regs[18];
+  fread(cmp_regs,18*4,1,cpu->log_cmp_file);
+  uint32_t regs[18];
+  for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
+  if(arm7_get_thumb_bit(cpu)==false){
+    unsigned oldpc = cpu->registers[PC]; 
+    cmp_regs[15]-=8;
+  }else{
+    unsigned oldpc = cpu->registers[PC]; 
+    cmp_regs[15]-=4;
+  }
+  uint32_t cpsr = cmp_regs[16];
+  bool has_spsr = arm7_reg_index(cpu,SPSR)!=CPSR;
+  if(!has_spsr){
+    cmp_regs[SPSR]=arm7_reg_read(cpu,SPSR);
+  }
+  bool matches = true;
+  for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
+  if(!matches){
+    static int last_pc_break =0;
+    if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
+    last_pc_break = cpu->registers[PC];
+    printf("Log mismatch detected\n");
+    printf("=====================\n");
+
+    printf("After %llu executed_instructions\n",cpu->executed_instructions);
+
+    char * rnames[18]={
+      "R0","R1","R2","R3","R4","R5","R6","R7",
+      "R8","R9","R10","R11","R12","R13","R14","R15",
+      "CPSR","SPSR"
+    };
+    int last_instruction = cpu->executed_instructions-1;
+    if(last_instruction<0)last_instruction=0;
+    fseek(cpu->log_cmp_file,(last_instruction)*18*4,SEEK_SET);
+    uint32_t prev_regs[18];
+    fread(prev_regs,18*4,1,cpu->log_cmp_file);
+    
+    for(int i=0;i<18;++i){
+      if(regs[i]!=cmp_regs[i])printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
+      else printf("Matches %s %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],prev_regs[i],prev_regs[i]);
+    }
+    uint32_t log_cpsr = cmp_regs[16];
+    uint32_t prev_cpsr = prev_regs[16];
+
+    printf("N:%d LogN:%d PrevN:%d Z:%d LogZ:%d PrevZ:%d C:%d LogC:%d PrevC:%d V:%d LogV:%d PrevV:%d\n",
+      ARM7_BFE(cpsr,31,1), ARM7_BFE(log_cpsr,31,1), ARM7_BFE(prev_cpsr,31,1),
+      ARM7_BFE(cpsr,30,1), ARM7_BFE(log_cpsr,30,1), ARM7_BFE(prev_cpsr,30,1),
+      ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
+      ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
+    ); 
+    if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
+    // Set CPSR first
+    arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
+    for(int i=0;i<18;++i){
+      arm7_reg_write(cpu,i,cmp_regs[i]);
+    }
+  }
+  uint32_t opcode = cpu->prefetch_opcode[0];
+  if(thumb==false){
+    printf("ARM OP: %08x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+    arm7_print_binary(opcode,32);
+    printf("\n");
+  }else{
+    printf("THUMB OP: %04x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+    arm7_print_binary(opcode,16);
+    printf("\n");
+  }
+  cpu->executed_instructions++;
+}
+static void arm9_exec_instruction(arm7_t* cpu){
+  if(cpu->wait_for_interrupt){
+    cpu->i_cycles=4; 
+    return;
+  }
+  bool thumb = arm7_get_thumb_bit(cpu);
+  if(cpu->prefetch_pc!=cpu->registers[PC]){
+    if(thumb){
+      cpu->registers[PC]&=~1;
+      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
+      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+    }else{
+      cpu->registers[PC]&=~3;
+      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC],false);
+      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+    }
+  }
+  if(cpu->log_cmp_file)arm_check_log_file(cpu);
+  cpu->next_fetch_sequential=true;
+  uint32_t opcode = cpu->prefetch_opcode[0];
+  cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
+  cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
+  if(thumb==false){
+    cpu->registers[PC] += 4;
+    cpu->prefetch_pc = cpu->registers[PC];
+    if(arm7_check_cond_code(cpu,opcode)){
+      uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
+      arm9_lookup_table[key](cpu,opcode);
+    }
+    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+  }else{
+    cpu->registers[PC] += 2;
+    cpu->prefetch_pc = cpu->registers[PC];
+    uint32_t key = ((opcode>>8)&0xff);
+    arm7t_lookup_table[key](cpu,opcode);
+    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+  }
 }
 static void arm7_exec_instruction(arm7_t* cpu){
   if(cpu->wait_for_interrupt){
@@ -550,78 +739,7 @@ static void arm7_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
   }
-  if(cpu->log_cmp_file){
-    fseek(cpu->log_cmp_file,(cpu->executed_instructions)*18*4,SEEK_SET);
-    uint32_t cmp_regs[18];
-    fread(cmp_regs,18*4,1,cpu->log_cmp_file);
-    uint32_t regs[18];
-    for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
-    if(arm7_get_thumb_bit(cpu)==false){
-      unsigned oldpc = cpu->registers[PC]; 
-      cmp_regs[15]-=8;
-    }else{
-      unsigned oldpc = cpu->registers[PC]; 
-      cmp_regs[15]-=4;
-    }
-    uint32_t cpsr = cmp_regs[16];
-    bool has_spsr = arm7_reg_index(cpu,SPSR)!=CPSR;
-    if(!has_spsr){
-      cmp_regs[SPSR]=arm7_reg_read(cpu,SPSR);
-    }
-    bool matches = true;
-    for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
-    if(!matches){
-      static int last_pc_break =0;
-      if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
-      last_pc_break = cpu->registers[PC];
-      printf("Log mismatch detected\n");
-      printf("=====================\n");
-
-      printf("After %llu executed_instructions\n",cpu->executed_instructions);
-
-      char * rnames[18]={
-        "R0","R1","R2","R3","R4","R5","R6","R7",
-        "R8","R9","R10","R11","R12","R13","R14","R15",
-        "CPSR","SPSR"
-      };
-      int last_instruction = cpu->executed_instructions-1;
-      if(last_instruction<0)last_instruction=0;
-      fseek(cpu->log_cmp_file,(last_instruction)*18*4,SEEK_SET);
-      uint32_t prev_regs[18];
-      fread(prev_regs,18*4,1,cpu->log_cmp_file);
-      
-      for(int i=0;i<18;++i){
-        if(regs[i]!=cmp_regs[i])printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
-        else printf("Matches %s %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],prev_regs[i],prev_regs[i]);
-      }
-      uint32_t log_cpsr = cmp_regs[16];
-      uint32_t prev_cpsr = prev_regs[16];
-
-      printf("N:%d LogN:%d PrevN:%d Z:%d LogZ:%d PrevZ:%d C:%d LogC:%d PrevC:%d V:%d LogV:%d PrevV:%d\n",
-        ARM7_BFE(cpsr,31,1), ARM7_BFE(log_cpsr,31,1), ARM7_BFE(prev_cpsr,31,1),
-        ARM7_BFE(cpsr,30,1), ARM7_BFE(log_cpsr,30,1), ARM7_BFE(prev_cpsr,30,1),
-        ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
-        ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
-      ); 
-      if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
-      // Set CPSR first
-      arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
-      for(int i=0;i<18;++i){
-        arm7_reg_write(cpu,i,cmp_regs[i]);
-      }
-    }
-    uint32_t opcode = cpu->prefetch_opcode[0];
-    if(thumb==false){
-      printf("ARM OP: %08x PC: %08x Binary: ",opcode,cpu->registers[PC]);
-      arm7_print_binary(opcode,32);
-      printf("\n");
-    }else{
-      printf("THUMB OP: %04x PC: %08x Binary: ",opcode,cpu->registers[PC]);
-      arm7_print_binary(opcode,16);
-      printf("\n");
-    }
-    cpu->executed_instructions++;
-  }
+  if(cpu->log_cmp_file)arm_check_log_file(cpu);
   cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
@@ -718,7 +836,6 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   int S = ARM7_BFE(opcode,20,1);
   int op = ARM7_BFE(opcode,21,4);
   int r15_off = 4; 
-
   // Load Second Operand
   uint64_t Rm = 0;
   int barrel_shifter_carry = -1; 
@@ -766,7 +883,6 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
     /*BIC*/ case 14: arm7_reg_write(cpu,Rd, result = Rn&~Rm);    break;
     /*MVN*/ case 15: arm7_reg_write(cpu,Rd, result = ~Rm);       break;
   }
-
   //Update flags
   if(S){
     //Rd is not valid for TST, TEQ, CMP, or CMN
@@ -1327,7 +1443,6 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
   int base_addr = addr;
   if(reglist==0){
     // Handle Empty Rlist case: R15 loaded/stored (ARMv4 only), and Rb=Rb+/-40h (ARMv4-v5).
-    reglist = 1<<15;
     num_regs = 16;
   }
   if(!U)base_addr+=(num_regs)*increment;
@@ -1364,7 +1479,7 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
       if(PC==reg_index)arm7_set_thumb_bit(cpu,cpu->registers[PC]&1);
    }
     //Writeback happens on second cycle
-    if(++cycle==1 && w){
+    if(++cycle==2 && w){
       arm7_reg_write(cpu,Rn,base_addr); 
     }
     addr+=4;
@@ -1376,6 +1491,10 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
 
     }
   }
+  //Writeback happens on second cycle
+  if(cycle<2 && w){
+    arm7_reg_write(cpu,Rn,base_addr); 
+  }
   if(L)cpu->i_cycles=1;
 }
 static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode){
@@ -1386,6 +1505,26 @@ static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode){
   if(ARM7_BFE(v,23,1))v|=0xff000000;
   //Shift left and take into account prefetch
   int32_t pc_off = (v<<2)+4; 
+  cpu->registers[PC]+=pc_off;
+  cpu->prefetch_pc=-1;
+}
+static FORCE_INLINE void arm9_branch(arm7_t* cpu, uint32_t opcode){
+  int cond = ARM7_BFE(opcode,28,4);
+  //Decode V and sign extend
+  int v = ARM7_BFE(opcode,0,24);
+  if(ARM7_BFE(v,23,1))v|=0xff000000;
+  //Shift left and take into account prefetch
+  int32_t pc_off = (v<<2)+4; 
+  //printf("BLX? cond: %x\n",cond);
+  if(cond==0xf){
+    bool H = ARM7_BFE(opcode,24,1);
+    pc_off+=H*2;
+    arm7_reg_write(cpu, LR, cpu->registers[PC]);
+    arm7_set_thumb_bit(cpu,true);
+  }else{
+    //Write Link Register if L=1
+    if(ARM7_BFE(opcode,24,1)) arm7_reg_write(cpu, LR, cpu->registers[PC]);
+  }
   cpu->registers[PC]+=pc_off;
   cpu->prefetch_pc=-1;
 }
