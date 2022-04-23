@@ -1479,7 +1479,7 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
       if(PC==reg_index)arm7_set_thumb_bit(cpu,cpu->registers[PC]&1);
    }
     //Writeback happens on second cycle
-    if(++cycle==2 && w){
+    if(++cycle==1&& w){
       arm7_reg_write(cpu,Rn,base_addr); 
     }
     addr+=4;
@@ -1492,7 +1492,7 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
     }
   }
   //Writeback happens on second cycle
-  if(cycle<2 && w){
+  if((reglist>= (1<<(Rn+1))||num_regs<=1||reglist==0)&& w){
     arm7_reg_write(cpu,Rn,base_addr); 
   }
   if(L)cpu->i_cycles=1;

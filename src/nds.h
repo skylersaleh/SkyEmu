@@ -1953,10 +1953,10 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
           const int mask[4]={32*1024-1,16*1024-1,16*1024-1,0};
           addr=(addr&mask[cnt])+offset[cnt];
         }else {
-          if(addr<0x037FFFFF){
+          if(addr<=0x037FFFFF){
             const int offset[4]={0,0,16*1024,0};
             const int mask[4]={0,16*1024-1,16*1024-1,32*1024-1};
-            if(mask[cnt]==0)addr= 32*1024+((addr-0x03800000)&(64*1024-1));
+            if(mask[cnt]==0)addr= 32*1024+((addr)&(64*1024-1));
             else            addr=(addr&mask[cnt])+offset[cnt];
           }else addr= 32*1024+((addr-0x03800000)&(64*1024-1));
         }
@@ -2618,6 +2618,10 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS9_SQRTCNT:case NDS9_SQRT_PARAM:case NDS9_SQRT_PARAM+4:
       nds->math.sqrt_last_update_clock= nds->current_clock;
       break;
+    case NDS9_GC_BUS_CTL:/* NDS7_GCBUS_CTL:*/{
+      printf("NDS GCBUS\n");
+    }
+      break;
   }
 }
 
@@ -3119,38 +3123,41 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   }
 }
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
-  uint16_t reg_value = 0;
-  //Null joy updates are used to tick the joypad when mmios are set
-  if(joy){
-    reg_value|= !(joy->a)     <<0;
-    reg_value|= !(joy->b)     <<1;
-    reg_value|= !(joy->select)<<2;
-    reg_value|= !(joy->start) <<3;
-    reg_value|= !(joy->right) <<4;
-    reg_value|= !(joy->left)  <<5;
-    reg_value|= !(joy->up)    <<6;
-    reg_value|= !(joy->down)  <<7;
-    reg_value|= !(joy->r)     <<8;
-    reg_value|= !(joy->l)     <<9;
-    nds9_io_store16(nds, GBA_KEYINPUT, reg_value);
-  }else reg_value = nds9_io_read16(nds, GBA_KEYINPUT);
+  for(int cpu=0;cpu<2;++cpu){
+    uint16_t reg_value = 0;
+    //Null joy updates are used to tick the joypad when mmios are set
+    if(joy){
+      reg_value|= !(joy->a)     <<0;
+      reg_value|= !(joy->b)     <<1;
+      reg_value|= !(joy->select)<<2;
+      reg_value|= !(joy->start) <<3;
+      reg_value|= !(joy->right) <<4;
+      reg_value|= !(joy->left)  <<5;
+      reg_value|= !(joy->up)    <<6;
+      reg_value|= !(joy->down)  <<7;
+      reg_value|= !(joy->r)     <<8;
+      reg_value|= !(joy->l)     <<9;
+      nds_io_store16(nds, cpu,GBA_KEYINPUT, reg_value);
+    }else reg_value = nds_io_read16(nds, cpu,GBA_KEYINPUT);
 
-  uint16_t keycnt = nds9_io_read16(nds,GBA_KEYCNT);
-  bool irq_enable = SB_BFE(keycnt,14,1);
-  bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
-  int if_bit = 0;
-  if(irq_enable){
-    uint16_t pressed = SB_BFE(reg_value,0,10)^0x3ff;
-    uint16_t mask = SB_BFE(keycnt,0,10);
+    uint16_t keycnt = nds_io_read16(nds,cpu,GBA_KEYCNT);
+    bool irq_enable = SB_BFE(keycnt,14,1);
+    bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
+    int if_bit = 0;
+    if(irq_enable){
+      uint16_t pressed = SB_BFE(reg_value,0,10)^0x3ff;
+      uint16_t mask = SB_BFE(keycnt,0,10);
 
-    if(irq_condition&&((pressed&mask)==mask))if_bit|= 1<<GBA_INT_KEYPAD;
-    if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
+      if(irq_condition&&((pressed&mask)==mask))if_bit|= 1<<GBA_INT_KEYPAD;
+      if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
 
-    if(if_bit&&!nds->prev_key_interrupt){
-      nds_send_interrupt(nds,4,if_bit);
-      nds->prev_key_interrupt = true;
-    }else nds->prev_key_interrupt = false;
+      if(if_bit&&!nds->prev_key_interrupt){
+        if(cpu)nds9_send_interrupt(nds,4,if_bit);
+        else nds7_send_interrupt(nds,4,if_bit);
+        nds->prev_key_interrupt = true;
+      }else nds->prev_key_interrupt = false;
 
+    }
   }
 
 }
@@ -3764,7 +3771,7 @@ void nds_reset(nds_t*nds){
 
   if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
   if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
-  //nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
+  nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
   nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
 }
 
