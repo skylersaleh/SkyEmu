@@ -755,10 +755,20 @@ mmio_reg_t nds9_io_reg_desc[]={
      { 5, 2, "Not used" },
      { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
   } }, /* VRAM-G (16K) Bank Control (W) */
+  { NDS9_VRAMCNT_H, "VRAMCNT_H", { 
+     { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-H (32K) Bank Control (W) */
+  { NDS9_VRAMCNT_I, "VRAMCNT_I", { 
+     { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
+     { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
+     { 5, 2, "Not used" },
+     { 7, 1, "VRAM Enable (0=Disable, 1=Enable)" },
+  } }, /* VRAM-I (16K) Bank Control (W) */
   { NDS9_WRAMCNT  , "WRAMCNT",   { 0 } }, /* WRAM Bank Control (W) */
-  { NDS9_VRAMCNT_H, "VRAMCNT_H", { 0 } }, /* VRAM-H (32K) Bank Control (W) */
-  { NDS9_VRAMCNT_I, "VRAMCNT_I", { 0 } }, /* VRAM-I (16K) Bank Control (W) */
-  
+
   // ARM9 Maths
   { NDS9_DIVCNT,        "DIVCNT",        { 0 } }, /* Division Control (R/W) */
   { NDS9_DIV_NUMER,     "DIV_NUMER",     { 0 } }, /* Division Numerator (R/W) */
@@ -1457,7 +1467,15 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
-#define NDS_VRAM_SLOT0 0x06900000
+#define NDS_VRAM_BGA_SLOT0 0x06900000
+#define NDS_VRAM_BGB_SLOT0 0x06A00000
+#define NDS_VRAM_OBJA_SLOT0 0x06B00000
+#define NDS_VRAM_OBJB_SLOT0 0x06C00000
+#define NDS_VRAM_TEX_SLOT0  0x06D00000
+#define NDS_VRAM_TEX_PAL_SLOT0  0x06E00000
+
+#define NDS_VRAM_SLOT_OFF    0x2000
+#define NDS_VRAM_ENG_OFF     0x00100000
 #define NDS_ARM9 1
 #define NDS_ARM7 0
 
@@ -1745,6 +1763,7 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 #define NDS_MEM_SEQ   0x20
 #define NDS_MEM_ARM7  0x40
 #define NDS_MEM_ARM9  0x80
+#define NDS_MEM_PPU   0x100
 static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_4B){
     address&=~3;
@@ -1776,9 +1795,9 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     {0,0,0,0}, //Offset ignored
     {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
     {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
-    {0x20000*0, 0x20000*0, 0x20000*0,0x20000*0}, // Slot 0-3 (mirrored)
-    {0x20000*0, 0x20000*2, 0x20000*0,0x20000*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-    {0x20000*0, 0x20000*1, 0x20000*4,0x20000*5}, // Slot (OFS.0*1)+(OFS.1*4)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*0}, // Slot 0-3 (mirrored)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*2, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*4,NDS_VRAM_SLOT_OFF*5}, // Slot (OFS.0*1)+(OFS.1*4)
   };
   typedef struct vram_bank_info_t{
     int transaction_mask; // Block transactions of these types
@@ -1791,25 +1810,25 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
       {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 7
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank B
       {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
       {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 7
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank C
       {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -1818,7 +1837,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -1827,8 +1846,8 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06880000}, //MST 0 6880000h-688FFFFh
       {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
       {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
@@ -1836,38 +1855,38 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
       {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank G
       {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
       {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank H
       {NDS_MEM_ARM7, 0, 0x06898000}, //MST 0 6898000h-689FFFFh
       {NDS_MEM_ARM7, 0, 0x06200000}, //MST 1 6200000h
-      {NDS_MEM_ARM7, 3, NDS_VRAM_SLOT0}, //MST 2 Slot 0-3
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 2 Slot 0-3
       {0xffffffff, 0, 0x0}, // MST 3 INVALID
       {NDS_MEM_ARM7, 0, 0x06898000}, //MST 4 6898000h-689FFFFh
       {NDS_MEM_ARM7, 0, 0x06200000}, //MST 5 6200000h
-      {NDS_MEM_ARM7, 3, NDS_VRAM_SLOT0}, //MST 6 Slot 0-3
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 6 Slot 0-3
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank I
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
-      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
-      {NDS_MEM_ARM7, 0, NDS_VRAM_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
     }
   };
   if(!(transaction_type&NDS_MEM_WRITE))data=0;
@@ -1877,9 +1896,21 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
   //1Byte writes are ignored from the ARM9
   if((transaction_type&NDS_MEM_WRITE)&&(transaction_type&NDS_MEM_1B)&&(transaction_type&NDS_MEM_ARM9))return 0;
   for(int b = 0; b<total_banks;++b){
+
     int vram_off = vram_offset;
     vram_offset +=bank_size[b];
-    uint8_t vramcnt = nds9_io_read8(nds,NDS9_VRAMCNT_A+b);
+    const static int vram_cnt_array[]={
+      NDS9_VRAMCNT_A,
+      NDS9_VRAMCNT_B,
+      NDS9_VRAMCNT_C,
+      NDS9_VRAMCNT_D,
+      NDS9_VRAMCNT_E,
+      NDS9_VRAMCNT_F,
+      NDS9_VRAMCNT_G,
+      NDS9_VRAMCNT_H, //These are not contiguous
+      NDS9_VRAMCNT_I, //These are not contiguous
+    };
+    uint8_t vramcnt = nds9_io_read8(nds,vram_cnt_array[b]);
     bool enable = SB_BFE(vramcnt,7,1);
     if(!enable)continue;
     int mst = SB_BFE(vramcnt,0,3);
@@ -1887,6 +1918,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
 
     vram_bank_info_t bank = bank_info[b][mst];
     if(transaction_type& bank.transaction_mask)continue;
+
     int base = bank.mem_address_start;
     base += offset_table[bank.offset_table][off];
     if(address<base)continue;
@@ -1894,6 +1926,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     int bank_offset = address-base; 
     if(bank_offset>=bank_size[b])continue;
     int vram_addr = bank_offset+vram_off;
+    
     if(transaction_type&NDS_MEM_4B){
       vram_addr&=~3;
       if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
@@ -2154,6 +2187,15 @@ static FORCE_INLINE uint8_t nds7_read8(nds_t*nds, unsigned baddr){
   return nds_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7);
 }
 
+static FORCE_INLINE uint8_t nds_ppu_read8(nds_t*nds, unsigned baddr){
+  return nds_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_PPU);
+}
+static FORCE_INLINE uint16_t nds_ppu_read16(nds_t*nds, unsigned baddr){
+  return nds_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_PPU);
+}
+static FORCE_INLINE uint32_t nds_ppu_read32(nds_t*nds, unsigned baddr){
+  return nds_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_PPU);
+}
 uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_read32((nds_t*)user_data,address);}
 uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_read16((nds_t*)user_data,address);}
 uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_read32((nds_t*)user_data,address);}
@@ -2608,7 +2650,8 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     }break;
     case NDS9_VRAMCNT_E:{
       if(cpu==NDS_ARM9){
-        nds7_io_store8(nds,NDS7_WRAMSTAT,SB_BFE(mmio,24,8));
+        nds7_io_store8(nds,NDS7_WRAMSTAT,nds9_io_read8(nds,NDS9_WRAMCNT));
+        printf("WRAMCNT: 0x%02x\n",nds9_io_read8(nds,NDS9_WRAMCNT));
       }
     }break;
     case NDS9_DIVCNT:case NDS9_DIV_DENOM:case NDS9_DIV_DENOM+4:case NDS9_DIV_NUMER:case NDS9_DIV_NUMER+4:
@@ -2621,7 +2664,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS9_GC_BUS_CTL:/* NDS7_GCBUS_CTL:*/{
       printf("NDS GCBUS\n");
     }
-      break;
+
   }
 }
 
@@ -2880,13 +2923,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       }
       int backdrop_type = 5;
       uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
-      for(int x=0;x<240;++x){
+      for(int x=0;x<NDS_LCD_W;++x){
         uint8_t window_control = ppu->window[x];
         if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
       }
     }
   }
-
   if(visible){
     uint8_t window_control =ppu->window[lcd_x];
     int display_mode = SB_BFE(dispcnt,16,2);
@@ -2895,16 +2937,53 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*128*1024];
     }else if(display_mode==0){
       ppu->first_target_buffer[lcd_x] = 0xffffffff;
-    }else if(bg_mode==6 ||bg_mode==7){
-      //Palette 0 is taken as the background
-    }else if (bg_mode<=5){     
+    }else{
       for(int bg = 3; bg>=0;--bg){
+        #define NDS_BG_TEXT 0
+        #define NDS_BG_AFFINE 1
+        #define NDS_BG_BITMAP 2
+        #define NDS_BG_LARGE_BITMAP 3
+        #define NDS_BG_INVALID 4
+
+        const int bg_mode_table[8*4]={
+          /* mode 0: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,
+          /* mode 1: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,
+          /* mode 2: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_AFFINE,
+          /* mode 3: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,
+          /* mode 4: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_BITMAP,
+          /* mode 5: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,NDS_BG_BITMAP,
+          /* mode 6: */NDS_BG_TEXT,NDS_BG_INVALID,NDS_BG_LARGE_BITMAP,NDS_BG_INVALID,
+          /* mode 7: */NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,
+        };
+        const int bg_size_table[4*4*2]={
+          /* TEXT: */        
+          256,256,
+          512,256,
+          256,512,
+          512,512,
+          /* AFFINE: */ 
+          128,128,
+          256,256,
+          512,512,
+          1024,1024,
+          /* BITMAP: */ 
+          128,128,
+          256,256,
+          512,256,
+          512,512,
+          /* LARGE BITMAP: */
+          512,1024,
+          1024,512,
+          0,0, //INVALID
+          0,0, //INVALID
+        };
+        int bg_type = bg_mode_table[bg_mode*4+bg];
+        if(bg_type==NDS_BG_INVALID)continue;
         uint32_t col =0;         
-        if((bg<2&&bg_mode==2)||(bg==3&&bg_mode==1)||(bg!=3&&bg_mode>=3))continue;
         bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
         if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
 
-        bool rot_scale = bg_mode>=1&&bg>=2;
+        bool rot_scale = bg_type!=NDS_BG_TEXT;
         uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
         int priority = SB_BFE(bgcnt,0,2);
         int character_base = SB_BFE(bgcnt,2,4);
@@ -2914,22 +2993,16 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         bool display_overflow =SB_BFE(bgcnt,13,1);
         int screen_size = SB_BFE(bgcnt,14,2);
 
-        int screen_size_x = (screen_size&1)?512:256;
-        int screen_size_y = (screen_size>=2)?512:256;
+        int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
+        int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
       
         int bg_x = 0;
         int bg_y = 0;
         uint32_t pallete_offset = ppu_id?0x400:0; 
-      
+
+        bool use_ext_palettes = SB_BFE(dispcnt,30,1);
+
         if(rot_scale){
-          screen_size_x = screen_size_y = (16*8)<<screen_size;
-          if(bg_mode==3||bg_mode==4){
-            screen_size_x=240;
-            screen_size_y=160;
-          }else if(bg_mode==5){
-            screen_size_x=256;
-            screen_size_y=256;
-          }
           colors = true;
 
           int32_t bgx = ppu->aff[bg-2].internal_bgx;
@@ -2947,13 +3020,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
             y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
           }
-
-
           bg_x = (x2>>8);
           bg_y = (y2>>8);
 
           if(display_overflow==0){
-            if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
+            //if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
           }else{
             bg_x%=screen_size_x;
             bg_y%=screen_size_y;
@@ -2974,25 +3045,25 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           }
         }
         int screen_base_addr    = screen_base*2*1024;
-
+        //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
+        //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
+        int character_base_addr = character_base*16*1024;
+       
         int32_t bg_base = ppu_id? 0x06200000:0x06000000;
-        if(bg_mode==3){
-          int p = bg_x+bg_y*240;
-          int addr = p*2; 
-          col  = nds9_read16(nds,bg_base+screen_base_addr+addr);
-        }else if(bg_mode==4){
-          int p = bg_x+bg_y*240;
-          int frame_sel = SB_BFE(dispcnt,4,1);
-          int addr = p*1+0xA000*frame_sel; 
-          uint8_t pallete_id = nds->mem.vram[addr];
-          if(pallete_id==0)continue;
-          col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
-        }else if(bg_mode==5){
-          int screen_base_addr = screen_base*16*1024;
-          int p = bg_x+bg_y*256;
-          int frame_sel = SB_BFE(dispcnt,4,1);
-          int addr = p*2+screen_base_addr; 
-          col  = nds9_read16(nds,bg_base+addr);
+        if(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP){
+          screen_base_addr=screen_base*16*1024;
+          int p = bg_x+(bg_y)*screen_size_x;
+          bool bitmap_mode = SB_BFE(bgcnt,7,1);
+          if(bitmap_mode){
+            bool direct_color = SB_BFE(bgcnt,2,1);
+            if(direct_color)col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+            else{
+              int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
+              col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
+            }
+          }else{
+            col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+          }
         }else{
           bg_x = bg_x&(screen_size_x-1);
           bg_y = bg_y&(screen_size_y-1);
@@ -3001,27 +3072,25 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
           int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-          int character_base_addr = character_base*16*1024;
 
           //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
           //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
           if(ppu_id==0){
-            character_base+=SB_BFE(dispcnt,24,3)*64*1024;
+            character_base_addr+=SB_BFE(dispcnt,24,3)*64*1024;
             screen_base+=SB_BFE(dispcnt,27,3)*64*1024;
           }
-
           uint16_t tile_data =0;
 
           int px = bg_x%8;
           int py = bg_y%8;
 
 
-          if(rot_scale)tile_data=nds9_read8(nds,bg_base+screen_base_addr+tile_off);
+          if(rot_scale)tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
           else{
             int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
             if(bg_tile_x>=32)tile_off+=32*32;
             if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
-            tile_data=nds9_read16(nds,bg_base+screen_base_addr+tile_off*2);
+            tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
             //printf("tx:%d ty:%d tile_off:%08x data:%08x\n",bg_tile_x,bg_tile_y,bg_base+screen_base_addr+tile_off,tile_data);
             int h_flip = SB_BFE(tile_data,10,1);
             int v_flip = SB_BFE(tile_data,11,1);
@@ -3033,16 +3102,21 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
           uint8_t tile_d=tile_id;
           if(colors==false){
-            tile_d=nds9_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
+            tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
             tile_d= (tile_d>>((px&1)*4))&0xf;
             if(tile_d==0)continue;
             tile_d+=palette*16;
           }else{
-            tile_d=nds9_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
+
+            tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
             if(tile_d==0)continue;
           }
-          uint8_t pallete_id = tile_d;
-          col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
+          uint32_t palette_id = tile_d;
+          if(use_ext_palettes){
+            palette_id=(palette)*256+tile_d;
+            uint32_t read_addr = NDS_VRAM_BGA_SLOT0+palette_id*2+NDS_VRAM_SLOT_OFF*(bg)+ppu_id*NDS_VRAM_ENG_OFF;
+            col = nds_ppu_read16(nds, read_addr);
+          }else col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
         }
         col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
         if(col>ppu->first_target_buffer[lcd_x]){
@@ -3112,7 +3186,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     }
     int p = (lcd_x+lcd_y*NDS_LCD_W)*3;
     float screen_blend_factor = 0.7;
-    uint8_t *framebuffer = ppu_id==0?nds->framebuffer_top: nds->framebuffer_bottom;
+    uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
+    bool display_flip = SB_BFE(powcnt1,15,1);
+    uint8_t *framebuffer = (ppu_id==0)^display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
     framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
     framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
     framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
@@ -3692,7 +3768,6 @@ void nds_reset(nds_t*nds){
   }
   //nds_store32(nds,GBA_DISPCNT,0xe92d0000);
   nds9_write16(nds,0x04000088,512);
-  nds9_write32(nds,0x040000DC,0x84000000);
   nds_recompute_waitstate_table(nds,0);
   nds_recompute_mmio_mask_table(nds);
   nds->halt =false;
@@ -3744,10 +3819,11 @@ void nds_reset(nds_t*nds){
   for(int i=0;i<sizeof(initial_mmio_writes)/sizeof(uint32_t);i+=2){
     uint32_t addr=initial_mmio_writes[i+0];
     uint32_t data=initial_mmio_writes[i+1];
-    arm7_write32(nds, addr,data);
+    nds9_write32(nds, addr,data);
   }
   nds9_write32(nds,GBA_IE,0x1);
   nds9_write16(nds,GBA_DISPCNT,0x9140);
+  nds9_write8(nds,NDS9_WRAMCNT,0x3);
   //C9,C1,0 - Data TCM Size/Base (R/W) (32KB)
   //C9,C1,1 - Instruction TCM Size/Base (R/W)
 
