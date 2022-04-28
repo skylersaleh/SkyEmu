@@ -264,7 +264,6 @@ typedef enum{
 
 // ARM9 IPC/ROM
 
-//Note: These are remapped to 
 #define NDS_IPCFIFORECV  (0x04100000|NDS_IO_MAP_041_OFFSET) /* IPC Receive Fifo (R)*/
 #define NDS_GC_BUS       (0x04100010|NDS_IO_MAP_041_OFFSET) /* Gamecard bus 4-byte data in, for manual or dma read (R) (or W) */
 #define NDS_IPCSYNC      0x04000180 /* IPC Synchronize Register (R/W) */
@@ -284,12 +283,12 @@ typedef enum{
 #define NDS7_RTC_BUS        0x04000138 /* RTC Realtime Clock Bus */
 #define NDS7_AUXSPICNT      0x040001A0 /* Gamecard ROM and SPI Control */
 #define NDS7_AUXSPIDATA     0x040001A2 /* Gamecard SPI Bus Data/Strobe */
-#define NDS7_GCBUS_CTL      0x040001A4 /* Gamecard bus timing/control */
-#define NDS7_GCBUS_CMD      0x040001A8 /* Gamecard bus 8-byte command out */
-#define NDS7_GCBUS_SEED0_LO 0x040001B0 /* Gamecard Encryption Seed 0 Lower 32bit */
-#define NDS7_GCBUS_SEED1_LO 0x040001B4 /* Gamecard Encryption Seed 1 Lower 32bit */
-#define NDS7_GCBUS_SEED0_HI 0x040001B8 /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
-#define NDS7_GCBUS_SEED1_HI 0x040001BA /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
+#define NDS_GCBUS_CTL      0x040001A4 /* Gamecard bus timing/control */
+#define NDS_GCBUS_CMD      0x040001A8 /* Gamecard bus 8-byte command out */
+#define NDS_GCBUS_SEED0_LO 0x040001B0 /* Gamecard Encryption Seed 0 Lower 32bit */
+#define NDS_GCBUS_SEED1_LO 0x040001B4 /* Gamecard Encryption Seed 1 Lower 32bit */
+#define NDS_GCBUS_SEED0_HI 0x040001B8 /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
+#define NDS_GCBUS_SEED1_HI 0x040001BA /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
 #define NDS7_SPI_BUS_CTL    0x040001C0 /* SPI bus Control (Firmware, Touchscreen, Powerman) */
 #define NDS7_SPI_BUS_DATA   0x040001C2 /* SPI bus Data */
 
@@ -711,8 +710,68 @@ mmio_reg_t nds9_io_reg_desc[]={
   // ARM9 Memory and IRQ Control
   { NDS9_EXMEMCNT , "EXMEMCNT",  { 0 } }, /* External Memory Control (R/W) */
   { NDS9_IME      , "IME",       { 0 } }, /* Interrupt Master Enable (R/W) */
-  { NDS9_IE       , "IE",        { 0 } }, /* Interrupt Enable (R/W) */
-  { NDS9_IF       , "IF",        { 0 } }, /* Interrupt Request Flags (R/W) */
+  { NDS9_IE       , "IE",        { 
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "GBA-Slot (external IRQ source) / DSi: None such" },
+    { 16, 1, "IPC Sync" },
+    { 17, 1, "IPC Send FIFO Empty" },
+    { 18, 1, "IPC Recv FIFO Not Empty" },
+    { 19, 1, "NDS-Slot Game Card Data Transfer Completion" },
+    { 20, 1, "NDS-Slot Game Card IREQ_MC" },
+    { 21, 1, "NDS9 only: Geometry Command FIFO" },
+    { 22, 1, "NDS7 only: Screens unfolding" },
+    { 23, 1, "NDS7 only: SPI bus" },
+    { 24, 1, "NDS7 only: Wifi DSi9: XpertTeak DSP" },
+    { 25, 1, "DSi9: Camera" },
+    { 26, 1, "DSi9: Undoc, IF.26 set on FFh-filling 40021Axh" },
+    { 27, 1, "DSi:  Maybe IREQ_MC for 2nd gamecard?" },
+    { 28, 1, "DSi: NewDMA0" },
+    { 29, 1, "DSi: NewDMA1" },
+    { 30, 1, "DSi: NewDMA2" },
+    { 31, 1, "DSi: NewDMA3" },
+  } }, /* Interrupt Enable (R/W) */
+  { NDS9_IF       , "IF",        { 
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "GBA-Slot (external IRQ source) / DSi: None such" },
+    { 16, 1, "IPC Sync" },
+    { 17, 1, "IPC Send FIFO Empty" },
+    { 18, 1, "IPC Recv FIFO Not Empty" },
+    { 19, 1, "NDS-Slot Game Card Data Transfer Completion" },
+    { 20, 1, "NDS-Slot Game Card IREQ_MC" },
+    { 21, 1, "NDS9 only: Geometry Command FIFO" },
+    { 22, 1, "NDS7 only: Screens unfolding" },
+    { 23, 1, "NDS7 only: SPI bus" },
+    { 24, 1, "NDS7 only: Wifi DSi9: XpertTeak DSP" },
+    { 25, 1, "DSi9: Camera" },
+    { 26, 1, "DSi9: Undoc, IF.26 set on FFh-filling 40021Axh" },
+    { 27, 1, "DSi:  Maybe IREQ_MC for 2nd gamecard?" },
+    { 28, 1, "DSi: NewDMA0" },
+    { 29, 1, "DSi: NewDMA1" },
+    { 30, 1, "DSi: NewDMA2" },
+    { 31, 1, "DSi: NewDMA3" },
+  } }, /* Interrupt Request Flags (R/W) */
   { NDS9_VRAMCNT_A, "VRAMCNT_A", { 
      { 0, 3, "VRAM MST              ;Bit2 not used by VRAM-A,B,H,I" },
      { 3, 2, "VRAM Offset (0-3)     ;Offset not used by VRAM-E,H,I" },
@@ -1288,20 +1347,83 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
   { NDS7_AUXSPICNT,       "AUXSPICNT",      { 0 } }, /* Gamecard ROM and SPI Control */
   { NDS7_AUXSPIDATA,      "AUXSPIDATA",     { 0 } }, /* Gamecard SPI Bus Data/Strobe */
-  { NDS7_GCBUS_CTL,       "GCBUS_CTL",      { 0 } }, /* Gamecard bus timing/control */
-  { NDS7_GCBUS_CMD,       "GCBUS_CMD",      { 0 } }, /* Gamecard bus 8-byte command out */
-  { NDS7_GCBUS_SEED0_LO,  "GCBUS_SEED0_LO", { 0 } }, /* Gamecard Encryption Seed 0 Lower 32bit */
-  { NDS7_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", { 0 } }, /* Gamecard Encryption Seed 1 Lower 32bit */
-  { NDS7_GCBUS_SEED0_HI,  "GCBUS_SEED0_HI", { 0 } }, /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
-  { NDS7_GCBUS_SEED1_HI,  "GCBUS_SEED1_HI", { 0 } }, /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
+  { NDS_GCBUS_CTL,       "GCBUS_CTL",      { 0 } }, /* Gamecard bus timing/control */
+  { NDS_GCBUS_CMD,       "GCBUS_CMD",      { 0 } }, /* Gamecard bus 8-byte command out */
+  { NDS_GCBUS_SEED0_LO,  "GCBUS_SEED0_LO", { 0 } }, /* Gamecard Encryption Seed 0 Lower 32bit */
+  { NDS_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", { 0 } }, /* Gamecard Encryption Seed 1 Lower 32bit */
+  { NDS_GCBUS_SEED0_HI,  "GCBUS_SEED0_HI", { 0 } }, /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
+  { NDS_GCBUS_SEED1_HI,  "GCBUS_SEED1_HI", { 0 } }, /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
   { NDS7_SPI_BUS_CTL,     "SPI_BUS_CTL",    { 0 } }, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
   { NDS7_SPI_BUS_DATA,    "SPI_BUS_DATA",   { 0 } }, /* SPI bus Data */
   // ARM7 Memory and IRQ Control
   { NDS7_EXMEMSTAT,   "EXMEMSTAT",   { 0 }}, /* EXMEMSTAT - External Memory Status */
   { NDS7_WIFIWAITCNT, "WIFIWAITCNT", { 0 }}, /* WIFIWAITCNT */
   { NDS7_IME,         "IME",         { 0 }}, /* IME - Interrupt Master Enable (R/W) */
-  { NDS7_IE,          "IE",          { 0 }}, /* IE  - Interrupt Enable (R/W) */
-  { NDS7_IF,          "IF",          { 0 }}, /* IF  - Interrupt Request Flags (R/W) */
+  { NDS7_IE,          "IE",          { 
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 7 , 1, "SIO/RCNT/RTC (Real Time Clock)" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "GBA-Slot (external IRQ source) / DSi: None such" },
+    { 16, 1, "IPC Sync" },
+    { 17, 1, "IPC Send FIFO Empty" },
+    { 18, 1, "IPC Recv FIFO Not Empty" },
+    { 19, 1, "NDS-Slot Game Card Data Transfer Completion" },
+    { 20, 1, "NDS-Slot Game Card IREQ_MC" },
+    { 21, 1, "NDS9 only: Geometry Command FIFO" },
+    { 22, 1, "NDS7 only: Screens unfolding" },
+    { 23, 1, "NDS7 only: SPI bus" },
+    { 24, 1, "NDS7 only: Wifi DSi9: XpertTeak DSP" },
+    { 25, 1, "DSi9: Camera" },
+    { 26, 1, "DSi9: Undoc, IF.26 set on FFh-filling 40021Axh" },
+    { 27, 1, "DSi:  Maybe IREQ_MC for 2nd gamecard?" },
+    { 28, 1, "DSi: NewDMA0" },
+    { 29, 1, "DSi: NewDMA1" },
+    { 30, 1, "DSi: NewDMA2" },
+    { 31, 1, "DSi: NewDMA3" },
+  }}, /* IE  - Interrupt Enable (R/W) */
+  { NDS7_IF,          "IF",          { 
+    { 0 , 1, "LCD V-Blank" },
+    { 1 , 1, "LCD H-Blank" },
+    { 2 , 1, "LCD V-Counter Match" },
+    { 3 , 1, "Timer 0 Overflow" },
+    { 4 , 1, "Timer 1 Overflow" },
+    { 5 , 1, "Timer 2 Overflow" },
+    { 6 , 1, "Timer 3 Overflow" },
+    { 7 , 1, "SIO/RCNT/RTC (Real Time Clock)" },
+    { 8 , 1, "DMA 0" },
+    { 9 , 1, "DMA 1" },
+    { 10, 1, "DMA 2" },
+    { 11, 1, "DMA 3" },
+    { 12, 1, "Keypad" },
+    { 13, 1, "GBA-Slot (external IRQ source) / DSi: None such" },
+    { 16, 1, "IPC Sync" },
+    { 17, 1, "IPC Send FIFO Empty" },
+    { 18, 1, "IPC Recv FIFO Not Empty" },
+    { 19, 1, "NDS-Slot Game Card Data Transfer Completion" },
+    { 20, 1, "NDS-Slot Game Card IREQ_MC" },
+    { 21, 1, "NDS9 only: Geometry Command FIFO" },
+    { 22, 1, "NDS7 only: Screens unfolding" },
+    { 23, 1, "NDS7 only: SPI bus" },
+    { 24, 1, "NDS7 only: Wifi DSi9: XpertTeak DSP" },
+    { 25, 1, "DSi9: Camera" },
+    { 26, 1, "DSi9: Undoc, IF.26 set on FFh-filling 40021Axh" },
+    { 27, 1, "DSi:  Maybe IREQ_MC for 2nd gamecard?" },
+    { 28, 1, "DSi: NewDMA0" },
+    { 29, 1, "DSi: NewDMA1" },
+    { 30, 1, "DSi: NewDMA2" },
+    { 31, 1, "DSi: NewDMA3" },
+
+  }}, /* IF  - Interrupt Request Flags (R/W) */
   { NDS7_VRAMSTAT,    "VRAMSTAT",    { 
     { 0, 1, "VRAM C enabled and allocated to NDS7  (0=No, 1=Yes)"},
     { 1, 1, "VRAM D enabled and allocated to NDS7  (0=No, 1=Yes)"},
@@ -1313,82 +1435,274 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS7_BIOSPROT,    "BIOSPROT",    { 0 }}, /* BIOSPROT - Bios-data-read-protection address */
 
   // ARM7 Sound Registers (Sound Channel 0..15 (10h bytes each)) 
-  { NDS7_SOUND0_CNT, "SOUND0_CNT", { 0 }}, /* Sound Channel 0 Control Register (R/W) */
+  { NDS7_SOUND0_CNT, "SOUND0_CNT", { 
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 0 Control Register (R/W) */
   { NDS7_SOUND0_SAD, "SOUND0_SAD", { 0 }}, /* Sound Channel 0 Data Source Register (W) */
   { NDS7_SOUND0_TMR, "SOUND0_TMR", { 0 }}, /* Sound Channel 0 Timer Register (W) */
   { NDS7_SOUND0_PNT, "SOUND0_PNT", { 0 }}, /* Sound Channel 0 Loopstart Register (W) */
   { NDS7_SOUND0_LEN, "SOUND0_LEN", { 0 }}, /* Sound Channel 0 Length Register (W) */
-  { NDS7_SOUND1_CNT, "SOUND1_CNT", { 0 }}, /* Sound Channel 1 Control Register (R/W) */
+  { NDS7_SOUND1_CNT, "SOUND1_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 1 Control Register (R/W) */
   { NDS7_SOUND1_SAD, "SOUND1_SAD", { 0 }}, /* Sound Channel 1 Data Source Register (W) */
   { NDS7_SOUND1_TMR, "SOUND1_TMR", { 0 }}, /* Sound Channel 1 Timer Register (W) */
   { NDS7_SOUND1_PNT, "SOUND1_PNT", { 0 }}, /* Sound Channel 1 Loopstart Register (W) */
   { NDS7_SOUND1_LEN, "SOUND1_LEN", { 0 }}, /* Sound Channel 1 Length Register (W) */
-  { NDS7_SOUND2_CNT, "SOUND2_CNT", { 0 }}, /* Sound Channel 2 Control Register (R/W) */
+  { NDS7_SOUND2_CNT, "SOUND2_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 2 Control Register (R/W) */
   { NDS7_SOUND2_SAD, "SOUND2_SAD", { 0 }}, /* Sound Channel 2 Data Source Register (W) */
   { NDS7_SOUND2_TMR, "SOUND2_TMR", { 0 }}, /* Sound Channel 2 Timer Register (W) */
   { NDS7_SOUND2_PNT, "SOUND2_PNT", { 0 }}, /* Sound Channel 2 Loopstart Register (W) */
   { NDS7_SOUND2_LEN, "SOUND2_LEN", { 0 }}, /* Sound Channel 2 Length Register (W) */
-  { NDS7_SOUND3_CNT, "SOUND3_CNT", { 0 }}, /* Sound Channel 3 Control Register (R/W) */
+  { NDS7_SOUND3_CNT, "SOUND3_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 3 Control Register (R/W) */
   { NDS7_SOUND3_SAD, "SOUND3_SAD", { 0 }}, /* Sound Channel 3 Data Source Register (W) */
   { NDS7_SOUND3_TMR, "SOUND3_TMR", { 0 }}, /* Sound Channel 3 Timer Register (W) */
   { NDS7_SOUND3_PNT, "SOUND3_PNT", { 0 }}, /* Sound Channel 3 Loopstart Register (W) */
   { NDS7_SOUND3_LEN, "SOUND3_LEN", { 0 }}, /* Sound Channel 3 Length Register (W) */
-  { NDS7_SOUND4_CNT, "SOUND4_CNT", { 0 }}, /* Sound Channel 4 Control Register (R/W) */
+  { NDS7_SOUND4_CNT, "SOUND4_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 4 Control Register (R/W) */
   { NDS7_SOUND4_SAD, "SOUND4_SAD", { 0 }}, /* Sound Channel 4 Data Source Register (W) */
   { NDS7_SOUND4_TMR, "SOUND4_TMR", { 0 }}, /* Sound Channel 4 Timer Register (W) */
   { NDS7_SOUND4_PNT, "SOUND4_PNT", { 0 }}, /* Sound Channel 4 Loopstart Register (W) */
   { NDS7_SOUND4_LEN, "SOUND4_LEN", { 0 }}, /* Sound Channel 4 Length Register (W) */
-  { NDS7_SOUND5_CNT, "SOUND5_CNT", { 0 }}, /* Sound Channel 5 Control Register (R/W) */
+  { NDS7_SOUND5_CNT, "SOUND5_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 5 Control Register (R/W) */
   { NDS7_SOUND5_SAD, "SOUND5_SAD", { 0 }}, /* Sound Channel 5 Data Source Register (W) */
   { NDS7_SOUND5_TMR, "SOUND5_TMR", { 0 }}, /* Sound Channel 5 Timer Register (W) */
   { NDS7_SOUND5_PNT, "SOUND5_PNT", { 0 }}, /* Sound Channel 5 Loopstart Register (W) */
   { NDS7_SOUND5_LEN, "SOUND5_LEN", { 0 }}, /* Sound Channel 5 Length Register (W) */
-  { NDS7_SOUND6_CNT, "SOUND6_CNT", { 0 }}, /* Sound Channel 6 Control Register (R/W) */
+  { NDS7_SOUND6_CNT, "SOUND6_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 6 Control Register (R/W) */
   { NDS7_SOUND6_SAD, "SOUND6_SAD", { 0 }}, /* Sound Channel 6 Data Source Register (W) */
   { NDS7_SOUND6_TMR, "SOUND6_TMR", { 0 }}, /* Sound Channel 6 Timer Register (W) */
   { NDS7_SOUND6_PNT, "SOUND6_PNT", { 0 }}, /* Sound Channel 6 Loopstart Register (W) */
   { NDS7_SOUND6_LEN, "SOUND6_LEN", { 0 }}, /* Sound Channel 6 Length Register (W) */
-  { NDS7_SOUND7_CNT, "SOUND7_CNT", { 0 }}, /* Sound Channel 7 Control Register (R/W) */
+  { NDS7_SOUND7_CNT, "SOUND7_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 7 Control Register (R/W) */
   { NDS7_SOUND7_SAD, "SOUND7_SAD", { 0 }}, /* Sound Channel 7 Data Source Register (W) */
   { NDS7_SOUND7_TMR, "SOUND7_TMR", { 0 }}, /* Sound Channel 7 Timer Register (W) */
   { NDS7_SOUND7_PNT, "SOUND7_PNT", { 0 }}, /* Sound Channel 7 Loopstart Register (W) */
   { NDS7_SOUND7_LEN, "SOUND7_LEN", { 0 }}, /* Sound Channel 7 Length Register (W) */
-  { NDS7_SOUND8_CNT, "SOUND8_CNT", { 0 }}, /* Sound Channel 8 Control Register (R/W) */
+  { NDS7_SOUND8_CNT, "SOUND8_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 8 Control Register (R/W) */
   { NDS7_SOUND8_SAD, "SOUND8_SAD", { 0 }}, /* Sound Channel 8 Data Source Register (W) */
   { NDS7_SOUND8_TMR, "SOUND8_TMR", { 0 }}, /* Sound Channel 8 Timer Register (W) */
   { NDS7_SOUND8_PNT, "SOUND8_PNT", { 0 }}, /* Sound Channel 8 Loopstart Register (W) */
   { NDS7_SOUND8_LEN, "SOUND8_LEN", { 0 }}, /* Sound Channel 8 Length Register (W) */
-  { NDS7_SOUND9_CNT, "SOUND9_CNT", { 0 }}, /* Sound Channel 9 Control Register (R/W) */
+  { NDS7_SOUND9_CNT, "SOUND9_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 9 Control Register (R/W) */
   { NDS7_SOUND9_SAD, "SOUND9_SAD", { 0 }}, /* Sound Channel 9 Data Source Register (W) */
   { NDS7_SOUND9_TMR, "SOUND9_TMR", { 0 }}, /* Sound Channel 9 Timer Register (W) */
   { NDS7_SOUND9_PNT, "SOUND9_PNT", { 0 }}, /* Sound Channel 9 Loopstart Register (W) */
   { NDS7_SOUND9_LEN, "SOUND9_LEN", { 0 }}, /* Sound Channel 9 Length Register (W) */
-  { NDS7_SOUNDA_CNT, "SOUNDA_CNT", { 0 }}, /* Sound Channel 10 Control Register (R/W) */
+  { NDS7_SOUNDA_CNT, "SOUNDA_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 10 Control Register (R/W) */
   { NDS7_SOUNDA_SAD, "SOUNDA_SAD", { 0 }}, /* Sound Channel 10 Data Source Register (W) */
   { NDS7_SOUNDA_TMR, "SOUNDA_TMR", { 0 }}, /* Sound Channel 10 Timer Register (W) */
   { NDS7_SOUNDA_PNT, "SOUNDA_PNT", { 0 }}, /* Sound Channel 10 Loopstart Register (W) */
   { NDS7_SOUNDA_LEN, "SOUNDA_LEN", { 0 }}, /* Sound Channel 10 Length Register (W) */
-  { NDS7_SOUNDB_CNT, "SOUNDB_CNT", { 0 }}, /* Sound Channel 11 Control Register (R/W) */
+  { NDS7_SOUNDB_CNT, "SOUNDB_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 11 Control Register (R/W) */
   { NDS7_SOUNDB_SAD, "SOUNDB_SAD", { 0 }}, /* Sound Channel 11 Data Source Register (W) */
   { NDS7_SOUNDB_TMR, "SOUNDB_TMR", { 0 }}, /* Sound Channel 11 Timer Register (W) */
   { NDS7_SOUNDB_PNT, "SOUNDB_PNT", { 0 }}, /* Sound Channel 11 Loopstart Register (W) */
   { NDS7_SOUNDB_LEN, "SOUNDB_LEN", { 0 }}, /* Sound Channel 11 Length Register (W) */
-  { NDS7_SOUNDC_CNT, "SOUNDC_CNT", { 0 }}, /* Sound Channel 12 Control Register (R/W) */
+  { NDS7_SOUNDC_CNT, "SOUNDC_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 12 Control Register (R/W) */
   { NDS7_SOUNDC_SAD, "SOUNDC_SAD", { 0 }}, /* Sound Channel 12 Data Source Register (W) */
   { NDS7_SOUNDC_TMR, "SOUNDC_TMR", { 0 }}, /* Sound Channel 12 Timer Register (W) */
   { NDS7_SOUNDC_PNT, "SOUNDC_PNT", { 0 }}, /* Sound Channel 12 Loopstart Register (W) */
   { NDS7_SOUNDC_LEN, "SOUNDC_LEN", { 0 }}, /* Sound Channel 12 Length Register (W) */
-  { NDS7_SOUNDD_CNT, "SOUNDD_CNT", { 0 }}, /* Sound Channel 13 Control Register (R/W) */
+  { NDS7_SOUNDD_CNT, "SOUNDD_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 13 Control Register (R/W) */
   { NDS7_SOUNDD_SAD, "SOUNDD_SAD", { 0 }}, /* Sound Channel 13 Data Source Register (W) */
   { NDS7_SOUNDD_TMR, "SOUNDD_TMR", { 0 }}, /* Sound Channel 13 Timer Register (W) */
   { NDS7_SOUNDD_PNT, "SOUNDD_PNT", { 0 }}, /* Sound Channel 13 Loopstart Register (W) */
   { NDS7_SOUNDD_LEN, "SOUNDD_LEN", { 0 }}, /* Sound Channel 13 Length Register (W) */
-  { NDS7_SOUNDE_CNT, "SOUNDE_CNT", { 0 }}, /* Sound Channel 14 Control Register (R/W) */
+  { NDS7_SOUNDE_CNT, "SOUNDE_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 14 Control Register (R/W) */
   { NDS7_SOUNDE_SAD, "SOUNDE_SAD", { 0 }}, /* Sound Channel 14 Data Source Register (W) */
   { NDS7_SOUNDE_TMR, "SOUNDE_TMR", { 0 }}, /* Sound Channel 14 Timer Register (W) */
   { NDS7_SOUNDE_PNT, "SOUNDE_PNT", { 0 }}, /* Sound Channel 14 Loopstart Register (W) */
   { NDS7_SOUNDE_LEN, "SOUNDE_LEN", { 0 }}, /* Sound Channel 14 Length Register (W) */
-  { NDS7_SOUNDF_CNT, "SOUNDF_CNT", { 0 }}, /* Sound Channel 15 Control Register (R/W) */
+  { NDS7_SOUNDF_CNT, "SOUNDF_CNT", {  
+    { 0, 7, "Volume Mul (0..127=silent..loud)" },
+    { 7, 1, "Not used (always zero)" },
+    { 8, 2, "Volume Div (0=Normal, 1=Div2, 2=Div4, 3=Div16)" },
+    { 10,5, "Not used (always zero)" },
+    { 15,1, "Hold (0=Normal, 1=Hold last sample after one-shot sound)" },
+    { 16,7, "Panning (0..127=left..right) (64=half volume on both speakers)" },
+    { 23,1, "Not used (always zero)" },
+    { 24,3, "Wave Duty (0..7) ;HIGH=(N+1)*12.5%, LOW=(7-N)*12.5% (PSG only)" },
+    { 27,2, "Repeat Mode (0=Manual, 1=Loop Infinite, 2=One-Shot, 3=Prohibited)" },
+    { 29,2, "Format (0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise)" },
+    { 31,1, "Start/Status (0=Stop, 1=Start/Busy)" },
+  }}, /* Sound Channel 15 Control Register (R/W) */
   { NDS7_SOUNDF_SAD, "SOUNDF_SAD", { 0 }}, /* Sound Channel 15 Data Source Register (W) */
   { NDS7_SOUNDF_TMR, "SOUNDF_TMR", { 0 }}, /* Sound Channel 15 Timer Register (W) */
   { NDS7_SOUNDF_PNT, "SOUNDF_PNT", { 0 }}, /* Sound Channel 15 Loopstart Register (W) */
@@ -1654,7 +1968,7 @@ typedef struct{
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
-  nds_timer_t timers[4];
+  nds_timer_t timers[2][4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
   bool halt; 
@@ -2001,6 +2315,7 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         nds_preprocess_mmio_read(nds,addr,transaction_type);
         int baddr =addr;
+        if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
         if(transaction_type&NDS_MEM_ARM7&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
         baddr&=0xffff;
         *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
@@ -2591,6 +2906,19 @@ static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int tr
   if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
   return data; 
 }
+static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
+  uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
+  bool start_transfer = SB_BFE(gcbus_ctl,31,1);
+  if(start_transfer){
+    printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
+    //Mask out start bit;
+    uint32_t commands[2];
+    for(int i=0;i<2;++i)commands[i]=nds9_io_read32(nds,NDS_GCBUS_CMD+i*4);
+    printf("CMD: 0x%08x 0x%08x\n",commands[0],commands[1]);
+  }
+  gcbus_ctl&=~(1<<31);
+  nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
+}
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
@@ -2651,7 +2979,6 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS9_VRAMCNT_E:{
       if(cpu==NDS_ARM9){
         nds7_io_store8(nds,NDS7_WRAMSTAT,nds9_io_read8(nds,NDS9_WRAMCNT));
-        printf("WRAMCNT: 0x%02x\n",nds9_io_read8(nds,NDS9_WRAMCNT));
       }
     }break;
     case NDS9_DIVCNT:case NDS9_DIV_DENOM:case NDS9_DIV_DENOM+4:case NDS9_DIV_NUMER:case NDS9_DIV_NUMER+4:
@@ -2661,9 +2988,8 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS9_SQRTCNT:case NDS9_SQRT_PARAM:case NDS9_SQRT_PARAM+4:
       nds->math.sqrt_last_update_clock= nds->current_clock;
       break;
-    case NDS9_GC_BUS_CTL:/* NDS7_GCBUS_CTL:*/{
-      printf("NDS GCBUS\n");
-    }
+    
+    case NDS_GCBUS_CTL:nds_process_gc_bus_ctl(nds,cpu); break;
 
   }
 }
@@ -2782,8 +3108,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
     bool display_obj = SB_BFE(dispcnt,12,1);
     if(display_obj){
+      int oam_offset = ppu_id*1024;
+      int obj_vram_base = ppu_id ==0? 0x06400000: 0x06600000;
       for(int o=0;o<128;++o){
-        uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0);
+        uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0+oam_offset);
         //Attr0
         uint8_t y_coord = SB_BFE(attr0,0,8);
         bool rot_scale =  SB_BFE(attr0,8,1);
@@ -2795,7 +3123,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         bool mosaic  = SB_BFE(attr0,12,1);
         bool colors_or_palettes = SB_BFE(attr0,13,1);
         int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
-        uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2);
+        uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2+oam_offset);
 
         int rotscale_param = SB_BFE(attr1,9,5);
         bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
@@ -2822,6 +3150,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         int y_size = ysize_lookup[obj_size*4+obj_shape];
 
         if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
+
           int16_t x_coord = SB_BFE(attr1,0,9);
           if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
 
@@ -2831,7 +3160,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           if(x_end>=NDS_LCD_W)x_end=NDS_LCD_W;
           //Attr2
           //Skip objects disabled by window
-          uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4);
+          uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4 +oam_offset);
           int tile_base = SB_BFE(attr2,0,10);
           // Always place sprites as the highest priority
           int priority = SB_BFE(attr2,10,2);
@@ -2847,7 +3176,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
               sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
             }
             if(rot_scale){
-              uint32_t param_base = rotscale_param*0x20; 
+              uint32_t param_base = rotscale_param*0x20+oam_offset; 
               int32_t a = *(int16_t*)(nds->mem.oam+param_base+0x6);
               int32_t b = *(int16_t*)(nds->mem.oam+param_base+0xe);
               int32_t c = *(int16_t*)(nds->mem.oam+param_base+0x16);
@@ -2872,22 +3201,35 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             int ty = sy%8;
                     
             int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
-            int tile = tile_base + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
-            //Tiles >511 are not rendered in bg_mode3-5 since that memory is used to store the bitmap graphics. 
-            if(tile<512&&bg_mode>=3&&bg_mode<=5)continue;
+            int tile_boundry = 32;
+            if(obj_vram_map_2d ==false){
+              int tile_obj_1d_boundry = SB_BFE(dispcnt,20,2);
+              tile_boundry = 32<<tile_obj_1d_boundry;
+            }
+            int tile = tile_base*tile_boundry/32 + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
+            
             uint8_t palette_id;
-            int obj_tile_base = GBA_OBJ_TILES0_2;
             if(colors_or_palettes==false){
-              palette_id= nds->mem.vram[obj_tile_base+tile*8*4+tx/2+ty*4];
+              palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
               palette_id= (palette_id>>((tx&1)*4))&0xf;
               if(palette_id==0)continue;
               palette_id+=palette*16;
             }else{
-              palette_id=nds->mem.vram[obj_tile_base+tile*8*4+tx+ty*8];
+              palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
               if(palette_id==0)continue;
             }
+            bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
+            uint32_t col =0;
+            if(use_obj_ext_palettes){
+              palette_id=(palette)*256+palette_id;
+              uint32_t read_addr = NDS_VRAM_OBJA_SLOT0+palette_id*2+ppu_id*NDS_VRAM_ENG_OFF;
+              col = nds_ppu_read16(nds, read_addr);
+            }else{
+              uint32_t pallete_offset = ppu_id?0x600:0x200; 
+              col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
+            }
 
-            uint32_t col = *(uint16_t*)(nds->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
+
             //Handle window objects(not displayed but control the windowing of other things)
             if(obj_mode==2){ppu->window[x]=obj_window_control; 
             }else if(obj_mode!=3){
@@ -3441,82 +3783,87 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
 }
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
   nds->deferred_timer_ticks+=1;
-  if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)nds_compute_timers(nds); 
+  //if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)
+  nds_compute_timers(nds); 
 }
 static void nds_compute_timers(nds_t* nds){
 
-//  int ticks = nds->deferred_timer_ticks; 
-//  nds->deferred_timer_ticks=0;
-//  int last_timer_overflow = 0; 
-//  int timer_ticks_before_event = 32768; 
-//  for(int t=0;t<4;++t){ 
-//    uint16_t tm_cnt_h = nds_io_read16(nds,GBA_TM0CNT_H+t*4);
-//    bool enable = SB_BFE(tm_cnt_h,7,1);
-//    if(enable){
-//      int compensated_ticks = ticks;
-//      uint16_t prescale = SB_BFE(tm_cnt_h,0,2);
-//      bool count_up     = SB_BFE(tm_cnt_h,2,1)&&t!=0;
-//      bool irq_en       = SB_BFE(tm_cnt_h,6,1);
-//      uint16_t value = nds_io_read16(nds,GBA_TM0CNT_L+t*4);
-//      if(enable!=nds->timers[t].last_enable&&enable){
-//        nds->timers[t].startup_delay=2;
-//        value = nds->timers[t].reload_value;
-//        nds_io_store16(nds,GBA_TM0CNT_L+t*4,value);
-//      }
-//      if(nds->timers[t].startup_delay>=0){
-//        nds->timers[t].startup_delay-=ticks; 
-//        nds->timers[t].last_enable = enable;
-//        if(nds->timers[t].startup_delay>=0){
-//          if(nds->timers[t].startup_delay<timer_ticks_before_event)timer_ticks_before_event=nds->timers[t].startup_delay;
-//          continue;
-//        }
-//        compensated_ticks=-nds->timers[t].startup_delay;
-//        nds->timers[t].startup_delay=-1;
-//        nds->timers[t].prescaler_timer=0;
-//      }
-//
-//      if(count_up){
-//        if(last_timer_overflow){
-//          uint32_t v= value;
-//          v+=last_timer_overflow;
-//          last_timer_overflow=0;
-//          while(v>0xffff){
-//            v=(v+nds->timers[t].reload_value)-0x10000;
-//            last_timer_overflow++;
-//            nds->timers[t].elapsed_audio_samples++;
-//          }
-//          value=v;
-//        }
-//      }else{
-//        last_timer_overflow=0;
-//        int prescale_time = nds->timers[t].prescaler_timer;
-//        prescale_time+=compensated_ticks;
-//        const int prescaler_lookup[]={0,6,8,10};
-//        int prescale_duty = prescaler_lookup[prescale];
-//
-//        int increment = prescale_time>>prescale_duty;
-//        prescale_time = prescale_time&((1<<prescale_duty)-1);
-//        int v = value+increment;
-//        while(v>0xffff){
-//          v=(v+nds->timers[t].reload_value)-0x10000;
-//          last_timer_overflow++;
-//          nds->timers[t].elapsed_audio_samples++;
-//        }
-//        value = v; 
-//        nds->timers[t].prescaler_timer=prescale_time;
-//        int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
-//        if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
-//      }
-//      nds->timers[t].reload_value=nds->timers[t].pending_reload_value;
-//      if(last_timer_overflow && irq_en){
-//        uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
-//        nds_send_interrupt(nds,4,if_bit);        
-//      }
-//      nds_io_store16(nds,GBA_TM0CNT_L+t*4,value);
-//    }else last_timer_overflow=0;
-//    nds->timers[t].last_enable = enable;
-//  }
-//  nds->timer_ticks_before_event=timer_ticks_before_event;
+  int ticks = nds->deferred_timer_ticks; 
+  nds->deferred_timer_ticks=0;
+  int last_timer_overflow = 0; 
+  int timer_ticks_before_event = 32768; 
+  for(int cpu=0;cpu<2;++cpu){
+    for(int t=0;t<4;++t){ 
+      uint16_t tm_cnt_h = nds_io_read16(nds,cpu,GBA_TM0CNT_H+t*4);
+      bool enable = SB_BFE(tm_cnt_h,7,1);
+      nds_timer_t* timer = &(nds->timers[cpu][t]);
+      if(enable){
+        int compensated_ticks = ticks;
+        uint16_t prescale = SB_BFE(tm_cnt_h,0,2);
+        bool count_up     = SB_BFE(tm_cnt_h,2,1)&&t!=0;
+        bool irq_en       = SB_BFE(tm_cnt_h,6,1);
+        uint16_t value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
+        if(enable!=timer->last_enable&&enable){
+          timer->startup_delay=2;
+          value = timer->reload_value;
+          nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
+        }
+        if(timer->startup_delay>=0){
+          timer->startup_delay-=ticks; 
+          timer->last_enable = enable;
+          if(timer->startup_delay>=0){
+            if(timer->startup_delay<timer_ticks_before_event)timer_ticks_before_event=timer->startup_delay;
+            continue;
+          }
+          compensated_ticks=-timer->startup_delay;
+          timer->startup_delay=-1;
+          timer->prescaler_timer=0;
+        }
+
+        if(count_up){
+          if(last_timer_overflow){
+            uint32_t v= value;
+            v+=last_timer_overflow;
+            last_timer_overflow=0;
+            while(v>0xffff){
+              v=(v+timer->reload_value)-0x10000;
+              last_timer_overflow++;
+              timer->elapsed_audio_samples++;
+            }
+            value=v;
+          }
+        }else{
+          last_timer_overflow=0;
+          int prescale_time = timer->prescaler_timer;
+          prescale_time+=compensated_ticks;
+          const int prescaler_lookup[]={0,6,8,10};
+          int prescale_duty = prescaler_lookup[prescale];
+
+          int increment = prescale_time>>prescale_duty;
+          prescale_time = prescale_time&((1<<prescale_duty)-1);
+          int v = value+increment;
+          while(v>0xffff){
+            v=(v+timer->reload_value)-0x10000;
+            last_timer_overflow++;
+            timer->elapsed_audio_samples++;
+          }
+          value = v; 
+          timer->prescaler_timer=prescale_time;
+          int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
+          if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
+        }
+        timer->reload_value=timer->pending_reload_value;
+        if(last_timer_overflow && irq_en){
+          uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
+          if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,if_bit); 
+          else nds7_send_interrupt(nds,4,if_bit);       
+        }
+        nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
+      }else last_timer_overflow=0;
+      timer->last_enable = enable;
+    }
+    nds->timer_ticks_before_event=timer_ticks_before_event;
+  }
 }
 static FORCE_INLINE float nds_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;

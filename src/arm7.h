@@ -355,16 +355,20 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_soft_interrupt,     "SWI",       "11011111OOOOOOOO"},
    {arm7t_branch,             "B",         "11100OOOOOOOOOOO"},
    {arm7t_long_branch_link,   "BL",        "1111HOOOOOOOOOOO"},
+   {arm7t_long_branch_link,   "BLX",       "11101OOOOOOOOOOO"},
    //Empty Opcode Space
    {arm7t_unknown,   "UNKNOWN1",           "1011--1---------"},
    {arm7t_unknown,   "UNKNOWN2",           "10110001--------"},
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
-   {arm7t_unknown,   "UNKNOWN4",           "11101-----------"},
 };  
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
 static arm7_handler_t arm9_lookup_table[4096] = { 0 };
 static arm7_handler_t arm7t_lookup_table[256] = { 0 };
+
+static const char* arm7_disasm_lookup_table[4096] = { 0 };
+static const char* arm9_disasm_lookup_table[4096] = { 0 };
+static const char* arm7t_disasm_lookup_table[256] = { 0 };
 
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(reg<8)return reg;
@@ -506,15 +510,18 @@ static arm7_t arm7_init(void* user_data){
 	for(int i=0;i<4096;++i){
      int inst_class = arm_lookup_arm_instruction_class(arm7_instruction_classes,i);
      arm7_lookup_table[i]=inst_class==-1? NULL: arm7_instruction_classes[inst_class].handler;
+     arm7_disasm_lookup_table[i]=inst_class==-1? NULL: arm7_instruction_classes[inst_class].name;
 	}
   for(int i=0;i<4096;++i){
      int inst_class = arm_lookup_arm_instruction_class(arm9_instruction_classes,i);
      arm9_lookup_table[i]=inst_class==-1? NULL: arm9_instruction_classes[inst_class].handler;
+     arm9_disasm_lookup_table[i]=inst_class==-1? NULL: arm9_instruction_classes[inst_class].name;
   }
   // Generate Thumb Lookup Table
   for(int i=0;i<256;++i){
     int inst_class = arm7_lookup_thumb_instruction_class(i);
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
+    arm7t_disasm_lookup_table[i]=inst_class==-1? NULL: arm7t_instruction_classes[inst_class].name;
   }
   arm7_t arm = {.user_data = user_data};
   arm.prefetch_pc=-1;
@@ -659,20 +666,45 @@ static void arm_check_log_file(arm7_t*cpu){
       ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
       ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
     ); 
-    if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
+   // if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
     // Set CPSR first
     arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
     for(int i=0;i<18;++i){
       arm7_reg_write(cpu,i,cmp_regs[i]);
     }
+    int log_mode = log_cpsr&0x1f;
+    int prev_mode = prev_cpsr&0x1f;
+    if(log_mode==0x12&&prev_mode!=0x12){
+      printf("Interrupt!\n");
+      cpu->trigger_breakpoint=false;
+      cpu->registers[PC]=0xffff0018;
+     
+    }
+  
+    thumb = arm7_get_thumb_bit(cpu);
+    if(thumb){
+      cpu->registers[PC]&=~1;
+      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+0,false);
+      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
+      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+    }else{
+      cpu->registers[PC]&=~3;
+      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+0,false);
+      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+    }
+
   }
+
   uint32_t opcode = cpu->prefetch_opcode[0];
   if(thumb==false){
-    printf("ARM OP: %08x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+    uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
+    printf("ARM OP: %08x PC: %08x %s Binary: ",opcode,cpu->registers[PC],arm9_disasm_lookup_table[key]);
     arm7_print_binary(opcode,32);
     printf("\n");
   }else{
-    printf("THUMB OP: %04x PC: %08x Binary: ",opcode,cpu->registers[PC]);
+    uint32_t key = ((opcode>>8)&0xff);
+    printf("THUMB OP: %04x PC: %08x %s Binary: ",opcode,cpu->registers[PC],arm7t_disasm_lookup_table[key]);
     arm7_print_binary(opcode,16);
     printf("\n");
   }
@@ -697,7 +729,11 @@ static void arm9_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
   }
-  if(cpu->log_cmp_file)arm_check_log_file(cpu);
+  if(cpu->log_cmp_file){
+    arm_check_log_file(cpu);
+    thumb = arm7_get_thumb_bit(cpu);
+  }
+
   cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
@@ -739,8 +775,10 @@ static void arm7_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
   }
-  if(cpu->log_cmp_file)arm_check_log_file(cpu);
-  cpu->next_fetch_sequential=true;
+  if(cpu->log_cmp_file){
+    arm_check_log_file(cpu);
+    thumb = arm7_get_thumb_bit(cpu);
+  }  cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
   cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
@@ -1101,7 +1139,8 @@ static FORCE_INLINE void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
 }
 static FORCE_INLINE void arm9_branch_link_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read_r15_adj(cpu,ARM7_BFE(opcode,0,4),4);
-  arm7_reg_write(cpu, LR, cpu->registers[PC]);
+  bool prev_thumb = arm7_get_thumb_bit(cpu);
+  arm7_reg_write(cpu, LR, cpu->registers[PC]|prev_thumb);
   bool thumb = (v&1)==1;
   if(thumb)cpu->registers[PC] = (v&~1);
   else cpu->registers[PC] = (v&~3);
@@ -1266,7 +1305,7 @@ static FORCE_INLINE void arm9_double_word_transfer(arm7_t* cpu, uint32_t opcode)
 static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   bool thumb = arm7_get_thumb_bit(cpu);
   cpu->registers[R14_und] = cpu->registers[PC]-(thumb?0:4);
-  cpu->registers[PC] = 0x4; 
+  cpu->registers[PC] = cpu->irq_table_address+0x4; 
   uint32_t cpsr = cpu->registers[CPSR];
   cpu->registers[SPSR_und] = cpsr;
   //Update mode to supervisor and block irqs
@@ -2050,7 +2089,8 @@ static FORCE_INLINE void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
     link_reg += (offset<<1);
     uint32_t pc = cpu->registers[PC];
     cpu->registers[PC]= link_reg;
-    arm7_reg_write(cpu,LR,(pc|thumb_branch));
+    arm7_set_thumb_bit(cpu,thumb_branch);
+    arm7_reg_write(cpu,LR,(pc|1));
     cpu->prefetch_pc=-1;
     if(!thumb_branch)arm7_set_thumb_bit(cpu,false);
   }
@@ -2058,7 +2098,7 @@ static FORCE_INLINE void arm7t_long_branch_link(arm7_t* cpu, uint32_t opcode){
 static FORCE_INLINE void arm7t_unknown(arm7_t* cpu, uint32_t opcode){
   bool thumb = arm7_get_thumb_bit(cpu);
   cpu->registers[R14_und] = cpu->registers[PC]-(thumb?0:4);
-  cpu->registers[PC] = 0x4; 
+  cpu->registers[PC] = cpu->irq_table_address+0x4; 
   uint32_t cpsr = cpu->registers[CPSR];
   cpu->registers[SPSR_und] = cpsr;
   //Update mode to supervisor and block irqs
