@@ -33,6 +33,8 @@ if (MSVC)
 
 endif()
 
+
+
 if (NOT EMSCRIPTEN)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3")
   set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -g -O3") 
@@ -115,6 +117,10 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=1 --closure 1 ")
 endif ()
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
+
+add_subdirectory(src/capstone)
+set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
+
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 

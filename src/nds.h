@@ -695,12 +695,48 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 
-  { NDS_IPCSYNC     , "IPCSYNC",     { 0 } }, /*IPC Synchronize Register (R/W)*/
-  { NDS_IPCFIFOCNT  , "IPCFIFOCNT",  { 0 } }, /*IPC Fifo Control Register (R/W)*/
+  { NDS_IPCSYNC     , "IPCSYNC",     { 
+    { 0 ,4,"Data input from IPCSYNC Bit8-11 of remote CPU (00h..0Fh)"},
+    { 8  ,4,"Data output to IPCSYNC Bit0-3 of remote CPU   (00h..0Fh)"},
+    { 13 ,1,"Send IRQ to remote CPU      (0=None, 1=Send IRQ)"},
+    { 14 ,1,"Enable IRQ from remote CPU  (0=Disable, 1=Enable)"},
+  } }, /*IPC Synchronize Register (R/W)*/
+  { NDS_IPCFIFOCNT  , "IPCFIFOCNT",  { 
+    { 0    ,1, "Send Fifo Empty Status      (0=Not Empty, 1=Empty)"},
+    { 1    ,1, "Send Fifo Full Status       (0=Not Full, 1=Full)"},
+    { 2    ,1, "Send Fifo Empty IRQ         (0=Disable, 1=Enable)"},
+    { 3    ,1, "Send Fifo Clear             (0=Nothing, 1=Flush Send Fifo)"},
+    { 8    ,1, "Receive Fifo Empty          (0=Not Empty, 1=Empty)"},
+    { 9    ,1, "Receive Fifo Full           (0=Not Full, 1=Full)"},
+    { 10   ,1, "Receive Fifo Not Empty IRQ  (0=Disable, 1=Enable)"},
+    { 14   ,1, "Error, Read Empty/Send Full (0=No Error, 1=Error/Acknowledge)"},
+    { 15   ,1, "Enable Send/Receive Fifo    (0=Disable, 1=Enable)"},
+  } }, /*IPC Fifo Control Register (R/W)*/
   { NDS_IPCFIFOSEND , "IPCFIFOSEND", { 0 } }, /*IPC Send Fifo (W)*/
-  { NDS9_AUXSPICNT   , "AUXSPICNT",   { 0 } }, /*Gamecard ROM and SPI Control*/
+  { NDS9_AUXSPICNT   , "AUXSPICNT",   { 
+    { 0    ,2,"SPI Baudrate        (0=4MHz/Default, 1=2MHz, 2=1MHz, 3=512KHz)" },
+    { 6    ,1,"SPI Hold Chipselect (0=Deselect after transfer, 1=Keep selected)" },
+    { 7    ,1,"SPI Busy            (0=Ready, 1=Busy) (presumably Read-only)" },
+    { 13   ,1,"NDS Slot Mode       (0=Parallel/ROM, 1=Serial/SPI-Backup)" },
+    { 14   ,1,"Transfer Ready IRQ  (0=Disable, 1=Enable) (for ROM, not for AUXSPI)" },
+    { 15   ,1,"NDS Slot Enable     (0=Disable, 1=Enable) (for both ROM and AUXSPI)" },
+  } }, /*Gamecard ROM and SPI Control*/
   { NDS9_AUXSPIDATA  , "AUXSPIDATA",  { 0 } }, /*Gamecard SPI Bus Data/Strobe*/
-  { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  { 0 } }, /*Gamecard bus timing/control*/
+  { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  { 
+    { 0    ,13,"KEY1 gap1 length  (0-1FFFh) (forced min 08F8h by BIOS) (leading gap)" },
+    { 13   ,1, "KEY2 encrypt data (0=Disable, 1=Enable KEY2 Encryption for Data)" },
+    { 14   ,1, "Unknown (SE)" },
+    { 15   ,1, "KEY2 Apply Seed   (0=No change, 1=Apply Encryption Seed) (Write only)" },
+    { 16   ,6, "KEY1 gap2 length  (0-3Fh)   (forced min 18h by BIOS) (200h-byte gap)" },
+    { 22   ,1, "KEY2 encrypt cmd  (0=Disable, 1=Enable KEY2 Encryption for Commands)" },
+    { 23   ,1, "Data-Word Status  (0=Busy, 1=Ready/DRQ) (Read-only)" },
+    { 24   ,3, "Data Block size   (0=None, 1..6=100h SHL (1..6) bytes, 7=4 bytes)" },
+    { 27   ,1, "Transfer CLK rate (0=6.7MHz=33.51MHz/5, 1=4.2MHz=33.51MHz/8)" },
+    { 28   ,1, "KEY1 Gap CLKs (0=Hold CLK High during gaps, 1=Output Dummy CLK Pulses)" },
+    { 29   ,1, "RESB Release Reset  (0=Reset, 1=Release) (cannot be cleared once set)" },
+    { 30   ,1, "Data Direction 'WR' (0=Normal/read, 1=Write, for FLASH/NAND carts)" },
+    { 31   ,1, "Block Start/Status  (0=Ready, 1=Start/Busy) (IRQ See 40001A0h/Bit14)" },
+  } }, /*Gamecard bus timing/control*/
   { NDS9_GC_BUS_DAT  , "GC_BUS_DAT",  { 0 } }, /*Gamecard bus 8-byte command out*/
   { NDS9_GC_ENC0_LO  , "GC_ENC0_LO",  { 0 } }, /*Gamecard Encryption Seed 0 Lower 32bit*/
   { NDS9_GC_ENC1_LO  , "GC_ENC1_LO",  { 0 } }, /*Gamecard Encryption Seed 1 Lower 32bit*/
@@ -1340,14 +1376,56 @@ mmio_reg_t nds7_io_reg_desc[]={
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 
   { NDS7_DEBUG_RCNT,      "DEBUG_RCNT",     { 0 } }, /* Debug RCNT */
-  { NDS7_EXTKEYIN,        "EXTKEYIN",       { 0 } }, /* EXTKEYIN */
+  { NDS7_EXTKEYIN,        "EXTKEYIN",       { 
+    { 0,1, "Button X     (0=Pressed, 1=Released)"},
+    { 1,1, "Button Y     (0=Pressed, 1=Released)"},
+    { 3,1, "DEBUG button (0=Pressed, 1=Released/None such)"},
+    { 6,1, "Pen down     (0=Pressed, 1=Released/Disabled) (always 0 in DSi mode)"},
+    { 7,1, "Hinge/folded (0=Open, 1=Closed)"},
+  } }, /* EXTKEYIN */
   { NDS7_RTC_BUS,         "RTC_BUS",        { 0 } }, /* RTC Realtime Clock Bus */
-  { NDS_IPCSYNC,         "IPCSYNC",        { 0 } }, /* IPC Synchronize Register (R/W) */
-  { NDS_IPCFIFOCNT,      "IPCFIFOCNT",     { 0 } }, /* IPC Fifo Control Register (R/W) */
+  { NDS_IPCSYNC,         "IPCSYNC",        { 
+    { 0 ,4,"Data input from IPCSYNC Bit8-11 of remote CPU (00h..0Fh)"},
+    { 8  ,4,"Data output to IPCSYNC Bit0-3 of remote CPU   (00h..0Fh)"},
+    { 13 ,1,"Send IRQ to remote CPU      (0=None, 1=Send IRQ)"},
+    { 14 ,1,"Enable IRQ from remote CPU  (0=Disable, 1=Enable)"},
+  } }, /* IPC Synchronize Register (R/W) */
+  { NDS_IPCFIFOCNT,      "IPCFIFOCNT",     { 
+    { 0    ,1, "Send Fifo Empty Status      (0=Not Empty, 1=Empty)"},
+    { 1    ,1, "Send Fifo Full Status       (0=Not Full, 1=Full)"},
+    { 2    ,1, "Send Fifo Empty IRQ         (0=Disable, 1=Enable)"},
+    { 3    ,1, "Send Fifo Clear             (0=Nothing, 1=Flush Send Fifo)"},
+    { 8    ,1, "Receive Fifo Empty          (0=Not Empty, 1=Empty)"},
+    { 9    ,1, "Receive Fifo Full           (0=Not Full, 1=Full)"},
+    { 10   ,1, "Receive Fifo Not Empty IRQ  (0=Disable, 1=Enable)"},
+    { 14   ,1, "Error, Read Empty/Send Full (0=No Error, 1=Error/Acknowledge)"},
+    { 15   ,1, "Enable Send/Receive Fifo    (0=Disable, 1=Enable)"},
+  } }, /* IPC Fifo Control Register (R/W) */
   { NDS_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
-  { NDS7_AUXSPICNT,       "AUXSPICNT",      { 0 } }, /* Gamecard ROM and SPI Control */
+  { NDS7_AUXSPICNT,       "AUXSPICNT",      { 
+    { 0    ,2,"SPI Baudrate        (0=4MHz/Default, 1=2MHz, 2=1MHz, 3=512KHz)" },
+    { 6    ,1,"SPI Hold Chipselect (0=Deselect after transfer, 1=Keep selected)" },
+    { 7    ,1,"SPI Busy            (0=Ready, 1=Busy) (presumably Read-only)" },
+    { 13   ,1,"NDS Slot Mode       (0=Parallel/ROM, 1=Serial/SPI-Backup)" },
+    { 14   ,1,"Transfer Ready IRQ  (0=Disable, 1=Enable) (for ROM, not for AUXSPI)" },
+    { 15   ,1,"NDS Slot Enable     (0=Disable, 1=Enable) (for both ROM and AUXSPI)" },
+  } }, /* Gamecard ROM and SPI Control */
   { NDS7_AUXSPIDATA,      "AUXSPIDATA",     { 0 } }, /* Gamecard SPI Bus Data/Strobe */
-  { NDS_GCBUS_CTL,       "GCBUS_CTL",      { 0 } }, /* Gamecard bus timing/control */
+  { NDS_GCBUS_CTL,       "GCBUS_CTL",      { 
+    { 0    ,13,"KEY1 gap1 length  (0-1FFFh) (forced min 08F8h by BIOS) (leading gap)" },
+    { 13   ,1, "KEY2 encrypt data (0=Disable, 1=Enable KEY2 Encryption for Data)" },
+    { 14   ,1, "Unknown (SE)" },
+    { 15   ,1, "KEY2 Apply Seed   (0=No change, 1=Apply Encryption Seed) (Write only)" },
+    { 16   ,6, "KEY1 gap2 length  (0-3Fh)   (forced min 18h by BIOS) (200h-byte gap)" },
+    { 22   ,1, "KEY2 encrypt cmd  (0=Disable, 1=Enable KEY2 Encryption for Commands)" },
+    { 23   ,1, "Data-Word Status  (0=Busy, 1=Ready/DRQ) (Read-only)" },
+    { 24   ,3, "Data Block size   (0=None, 1..6=100h SHL (1..6) bytes, 7=4 bytes)" },
+    { 27   ,1, "Transfer CLK rate (0=6.7MHz=33.51MHz/5, 1=4.2MHz=33.51MHz/8)" },
+    { 28   ,1, "KEY1 Gap CLKs (0=Hold CLK High during gaps, 1=Output Dummy CLK Pulses)" },
+    { 29   ,1, "RESB Release Reset  (0=Reset, 1=Release) (cannot be cleared once set)" },
+    { 30   ,1, "Data Direction 'WR' (0=Normal/read, 1=Write, for FLASH/NAND carts)" },
+    { 31   ,1, "Block Start/Status  (0=Ready, 1=Start/Busy) (IRQ See 40001A0h/Bit14)" },
+  } }, /* Gamecard bus timing/control */
   { NDS_GCBUS_CMD,       "GCBUS_CMD",      { 0 } }, /* Gamecard bus 8-byte command out */
   { NDS_GCBUS_SEED0_LO,  "GCBUS_SEED0_LO", { 0 } }, /* Gamecard Encryption Seed 0 Lower 32bit */
   { NDS_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", { 0 } }, /* Gamecard Encryption Seed 1 Lower 32bit */
@@ -1814,7 +1892,11 @@ typedef struct {
 
   uint8_t *card_data;
   size_t card_size;
-
+  uint8_t card_transfer_data[0xfff];
+  uint32_t card_chip_id;
+  int card_read_offset;
+  int card_transfer_bytes;
+  int transfer_id;
   uint8_t wait_state_table[16*4];
   bool prefetch_en;
   int prefetch_size;
@@ -2171,7 +2253,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank G
@@ -2180,7 +2262,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank H
@@ -2196,11 +2278,11 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
     }
   };
   if(!(transaction_type&NDS_MEM_WRITE))data=0;
@@ -2239,6 +2321,9 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
 
     int bank_offset = address-base; 
     if(bank_offset>=bank_size[b])continue;
+    if( vram_cnt_array[b]==NDS9_VRAMCNT_G){
+      if(transaction_type&NDS_MEM_WRITE)printf("VRAM %c Transfer: %08x, data: %08x\n",'A'+b,address,data);
+    }
     int vram_addr = bank_offset+vram_off;
     
     if(transaction_type&NDS_MEM_4B){
@@ -2312,10 +2397,10 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
       }
       break;
     case 0x4: 
+        if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         nds_preprocess_mmio_read(nds,addr,transaction_type);
         int baddr =addr;
-        if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
         if(transaction_type&NDS_MEM_ARM7&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
         baddr&=0xffff;
         *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
@@ -2767,11 +2852,82 @@ uint32_t nds_sqrt_u64(uint64_t value){
   }
   return res; 
 }
+#define NDS_CARD_MAIN_DATA_READ 0xB7
+#define NDS_CARD_CHIP_ID_READ 0xB8
+static FILE* card_xfer = NULL;
+static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
+  if(nds->mem.card_transfer_bytes<=0)return;
+  
+  uint8_t data[4]; 
+  int bank = nds->mem.card_read_offset&~0xfff;
+  int bank_off = nds->mem.card_read_offset&0xfff;
+  data[0]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
+  data[1]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
+  data[2]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
+  data[3]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
+  uint32_t data_out = *(uint32_t*)(data);
+  fprintf(card_xfer,"Data: %08x\n",data_out);
+  //printf("data[%08x]: %08x\n",nds->mem.card_read_offset,data_out);
+  nds_io_store32(nds,cpu_id,NDS_GC_BUS,data_out);
+  nds->mem.card_read_offset = bank|(bank_off&0xfff);
     
+  nds->mem.card_transfer_bytes-=4;
+  if(nds->mem.card_transfer_bytes<=0){
+    uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
+    gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and busy bit 
+    nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
+  }
+}
+
+static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
+  if(card_xfer==NULL)card_xfer=fopen("card_xfer.txt","wb");
+  uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
+  bool start_transfer = SB_BFE(gcbus_ctl,31,1);
+  //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
+  gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and start bit 
+  if(start_transfer){
+    //Mask out start bit;
+    uint8_t commands[8];
+    for(int i=0;i<7;++i)commands[i]=nds9_io_read8(nds,NDS_GCBUS_CMD+i);
+    fprintf(card_xfer,"GCBUS CMD: %02x %02x %02x%02x %02x%02x %02x%02x\n",commands[0],commands[1],commands[2],commands[3]
+      ,commands[4],commands[5],commands[6],commands[7]);
+    switch(commands[0]){
+      case NDS_CARD_MAIN_DATA_READ:{
+        //Encrypted data read;
+        int read_off = (((int)commands[1])<<24)|(((int)commands[2])<<16)|(((int)commands[3])<<8)|(((int)commands[4])<<0);
+        if(read_off<=0x7FFF)read_off=0x8000+(read_off &0x1FF);
+        nds->mem.card_read_offset=read_off;
+        int data_block_size = SB_BFE(gcbus_ctl,24,3);
+        const int transfer_size_map[8]={0, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 4};
+        for(int i=0;i<0x1000;++i){
+          nds->mem.card_transfer_data[i]=nds->mem.card_data[(i+(read_off&~0xfff))%nds->mem.card_size];
+        }
+        nds->mem.card_transfer_bytes=transfer_size_map[data_block_size];
+        fprintf(card_xfer,"Encrypted Read: 0x%08x transfer_size: %08x transfer:%d\n",read_off,nds->mem.card_transfer_bytes,nds->mem.transfer_id++);
+        gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
+      }break; 
+      case NDS_CARD_CHIP_ID_READ:{
+        //Encrypted data read;
+        nds->mem.card_read_offset=0;
+        nds->mem.card_transfer_data[0]=SB_BFE(nds->mem.card_chip_id,0,8);
+        nds->mem.card_transfer_data[1]=SB_BFE(nds->mem.card_chip_id,8,8);
+        nds->mem.card_transfer_data[2]=SB_BFE(nds->mem.card_chip_id,16,8);
+        nds->mem.card_transfer_data[3]=SB_BFE(nds->mem.card_chip_id,24,8);
+        nds->mem.card_transfer_bytes=4;
+        fprintf(card_xfer,"CHIPID Read transfer:%d\n",nds->mem.transfer_id++);
+        gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
+      }break; 
+    }
+    
+
+  }
+  nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
+}    
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7;
- 
+  /*if(addr!=0x04000208&&addr!=0x04000301&&addr!=0x04000138
+    &&addr!= 0x040001c0 && addr!=0x040001c2)printf("MMIO Read: %08x\n",addr);*/
   switch(addr){
     case NDS7_VRAMSTAT:{
       if(cpu==NDS_ARM9)return;
@@ -2829,6 +2985,7 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
         }
       }
     }break;
+    case NDS_GC_BUS:nds_process_gc_bus_read(nds,cpu);break;
     case NDS9_DIVCNT:case NDS9_DIV_RESULT: case NDS9_DIVREM_RESULT:case NDS9_DIV_RESULT+4: case NDS9_DIVREM_RESULT+4:{
       uint32_t cnt = nds9_io_read32(nds,NDS9_DIVCNT);
       int mode = SB_BFE(cnt,0,2);
@@ -2906,23 +3063,12 @@ static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int tr
   if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
   return data; 
 }
-static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
-  uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
-  bool start_transfer = SB_BFE(gcbus_ctl,31,1);
-  if(start_transfer){
-    printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
-    //Mask out start bit;
-    uint32_t commands[2];
-    for(int i=0;i<2;++i)commands[i]=nds9_io_read32(nds,NDS_GCBUS_CMD+i*4);
-    printf("CMD: 0x%08x 0x%08x\n",commands[0],commands[1]);
-  }
-  gcbus_ctl&=~(1<<31);
-  nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
-}
+
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
+
   switch(addr){
     case NDS9_IF: /*case NDS7_IF: <- duplicate address*/ 
       data = nds_align_data(baddr,data,transaction_type);
@@ -2988,8 +3134,9 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS9_SQRTCNT:case NDS9_SQRT_PARAM:case NDS9_SQRT_PARAM+4:
       nds->math.sqrt_last_update_clock= nds->current_clock;
       break;
-    
-    case NDS_GCBUS_CTL:nds_process_gc_bus_ctl(nds,cpu); break;
+    case NDS_GCBUS_CTL|NDS_IO_MAP_SPLIT_OFFSET:
+    case NDS_GCBUS_CTL:
+    nds_process_gc_bus_ctl(nds,cpu); break;
 
   }
 }
@@ -3119,7 +3266,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
         if(obj_disable) continue; 
 
-        int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=Prohibited)
+        int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=bitmap)
         bool mosaic  = SB_BFE(attr0,12,1);
         bool colors_or_palettes = SB_BFE(attr0,13,1);
         int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
@@ -3197,36 +3344,43 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
               if(h_flip)sx=x_size-sx-1;
               if(v_flip)sy=y_size-sy-1;
             }
-            int tx = sx%8;
-            int ty = sy%8;
-                    
-            int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
-            int tile_boundry = 32;
-            if(obj_vram_map_2d ==false){
-              int tile_obj_1d_boundry = SB_BFE(dispcnt,20,2);
-              tile_boundry = 32<<tile_obj_1d_boundry;
-            }
-            int tile = tile_base*tile_boundry/32 + ((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride;
-            
-            uint8_t palette_id;
-            if(colors_or_palettes==false){
-              palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
-              palette_id= (palette_id>>((tx&1)*4))&0xf;
-              if(palette_id==0)continue;
-              palette_id+=palette*16;
-            }else{
-              palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
-              if(palette_id==0)continue;
-            }
-            bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
             uint32_t col =0;
-            if(use_obj_ext_palettes){
-              palette_id=(palette)*256+palette_id;
-              uint32_t read_addr = NDS_VRAM_OBJA_SLOT0+palette_id*2+ppu_id*NDS_VRAM_ENG_OFF;
-              col = nds_ppu_read16(nds, read_addr);
+            if(obj_mode==3){
+              col = 0xff;
             }else{
-              uint32_t pallete_offset = ppu_id?0x600:0x200; 
-              col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
+              int tx = sx%8;
+              int ty = sy%8;
+              bool tile_obj_mapping = SB_BFE(dispcnt,4,1);
+                      
+              int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
+
+              int tile_boundry = 32;
+              if(tile_obj_mapping ==true){
+                int tile_obj_1d_boundry = SB_BFE(dispcnt,20,2);
+                tile_boundry = 32<<tile_obj_1d_boundry;
+                y_tile_stride=x_size/8*(colors_or_palettes? 2:1);
+              }
+              int tile = tile_base*tile_boundry/32 + (((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride);
+              //tile*=tile_boundry/32;
+              uint8_t palette_id;
+              if(colors_or_palettes==false){
+                palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
+                palette_id= (palette_id>>((tx&1)*4))&0xf;
+                if(palette_id==0)continue;
+                palette_id+=palette*16;
+              }else{
+                palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
+                if(palette_id==0)continue;
+              }
+              bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
+              if(use_obj_ext_palettes){
+                palette_id=(palette)*256+palette_id;
+                uint32_t read_addr = NDS_VRAM_OBJA_SLOT0+palette_id*2+ppu_id*NDS_VRAM_ENG_OFF+(ppu_id?0x600:0x200);
+                col = nds_ppu_read16(nds, read_addr);
+              }else{
+                uint32_t pallete_offset = ppu_id?0x600:0x200; 
+                col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
+              }
             }
 
 
@@ -3577,7 +3731,15 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
 
     }
   }
-
+  uint16_t ext_key = 0; 
+  if(joy){
+    ext_key|= !(joy->x) <<0;
+    ext_key|= !(joy->y) <<1;
+    ext_key|= !(joy->pen_down)<<6;
+    ext_key|= !(joy->screen_folded) <<7;
+    ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
+    nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
+  }
 }
 /*uint64_t nds_read_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset, int size, int elem_size, int dir){
   uint64_t data = 0; 
@@ -3654,6 +3816,13 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
             if(vcount<2)continue;
             if(vcount==161)dma_repeat=false;
           }
+          //GC Card DMA
+          if(mode==5){
+            uint32_t ctl= nds_io_read32(nds,cpu,NDS9_GC_BUS_CTL);
+            uint32_t ready_mask = (1<<31)|(1<<23); //Block Status = Word Status = 1; 
+            if((ctl&ready_mask)!=ready_mask)continue;
+
+          }
           if(dst_addr_ctl==3){
             nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
             //GBA Suite says that these need to be force aligned
@@ -3682,7 +3851,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           //nds->dma[cpu][i].source_addr&=src_mask[i];
           //nds->dma[cpu][i].dest_addr  &=dst_mask[i];
           nds_io_store16(nds,cpu,GBA_DMA0CNT_L+12*i,cnt);
-          printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
+          //printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
         }
         const static int dir_lookup[4]={1,-1,0,1};
         int src_dir = dir_lookup[src_addr_ctl];
@@ -3981,6 +4150,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds){
             ticks = nds->mem.requests; 
           }
         }
+        //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
         if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
         if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
       }
@@ -4079,15 +4249,7 @@ void nds_reset(nds_t*nds){
   memset(&nds->mem,0,sizeof(nds->mem));
   nds->mem.card_data=card_data;
   nds->mem.card_size=card_size;
-  for(int i=0;i<NDS_LCD_H*NDS_LCD_W;++i){
-    nds->framebuffer_top[i*3]= 0;
-    nds->framebuffer_top[i*3+1]= 255;
-    nds->framebuffer_top[i*3+2]= 0;
 
-    nds->framebuffer_bottom[i*3]= 0;
-    nds->framebuffer_bottom[i*3+1]= 0;
-    nds->framebuffer_bottom[i*3+2]= 255;
-  }
   nds->arm7 = arm7_init(nds);
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -4196,6 +4358,32 @@ void nds_reset(nds_t*nds){
   if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
   nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
   nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
+
+  //Copy NDS Header into 27FFE00h..27FFF6F
+  int header_size = 0x27FFF70-0x27FFE00;
+  for(int i=0;i<header_size;i+=4){
+    nds9_write32(nds,0x027FFE00+i, *(uint32_t*)(((uint8_t*)&nds->card)+i));
+  }
+  //Default initialize these values for a direct boot to a cartridge
+  const uint32_t arm9_init[]={
+    0x027FF800, 0x1FC2, // Chip ID 1
+    0x027FF804, 0x1FC2, // Chip ID 2
+    0x027FF850, 0x5835, // ARM7 BIOS CRC
+    0x027FF880, 0x0007, // Message from ARM9 to ARM7
+    0x027FF884, 0x0006, // ARM7 boot task
+    0x027FFC00, 0x1FC2, // Copy of chip ID 1
+    0x027FFC04, 0x1FC2, // Copy of chip ID 2
+    0x027FFC10, 0x5835, // Copy of ARM7 BIOS CRC
+    0x027FFC40, 0x0001, // Boot indicator
+  };
+  nds->mem.card_chip_id= 0x1FC2;
+  for(int i=0;i<sizeof(arm9_init)/sizeof(uint32_t);i+=2){
+    uint32_t addr=arm9_init[i+0];
+    uint32_t data=arm9_init[i+1];
+    nds9_write32(nds, addr,data);
+  }
+  nds9_io_store16(nds,NDS9_POSTFLG,1);
+  nds7_io_store16(nds,NDS7_POSTFLG,1);
 }
 
 #endif

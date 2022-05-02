@@ -69,7 +69,8 @@
 typedef struct{
   bool up,down,left,right;
   bool a, b, start, select;
-  bool l, r; 
+  bool l, r,x,y; 
+  bool pen_down, screen_folded;
 } sb_joy_t;
   
 typedef struct{

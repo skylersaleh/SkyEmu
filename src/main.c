@@ -12,6 +12,7 @@
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
+#include "capstone/include/capstone/capstone.h"
 #define SB_NUM_SAVE_STATES 5
 
 #if defined(EMSCRIPTEN)
@@ -283,6 +284,59 @@ static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
   write(address+2,SB_BFE(data,16,8));
   write(address+3,SB_BFE(data,24,8));
 }
+void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
+  igBegin(label, 0,0);
+  const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (PC)","CPSR","SPSR",NULL};
+  int r = 0; 
+  while(reg_names[r]){
+    int value = arm7_reg_read(arm,r);
+    if(igInputInt(reg_names[r],&value, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+      arm7_reg_write(arm,r,value);
+    }
+    ++r;
+  }
+  unsigned pc = arm7_reg_read(arm,PC);
+  bool thumb = arm7_get_thumb_bit(arm);
+  pc-=thumb? 4: 8;
+  uint8_t buffer[64];
+  int buffer_size = sizeof(buffer);
+  if(thumb)buffer_size/=2;
+  int off = buffer_size/2;
+  if(pc<off)off=pc;
+  for(int i=0;i<buffer_size;++i)buffer[i]=read(pc-off+i);
+  csh handle;
+  if (cs_open(CS_ARCH_ARM, thumb? CS_MODE_THUMB: CS_MODE_ARM, &handle) == CS_ERR_OK){
+    cs_insn *insn;
+    int count = cs_disasm(handle, buffer, buffer_size, pc-off, 0, &insn);
+    size_t j;
+    for (j = 0; j < count; j++) {
+      char instr_str[80];
+      
+      if(insn[j].address==pc){
+        igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
+        snprintf(instr_str,80,"PC ->0x%08x:", (int)insn[j].address);
+        instr_str[79]=0;
+        igText(instr_str);
+        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
+        instr_str[79]=0;
+        igSameLine(0,2);
+        igText(instr_str);
+        igPopStyleColor(1);
+      }else{
+        snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
+        instr_str[79]=0;
+        igText(instr_str);
+        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
+        instr_str[79]=0;
+        igSameLine(0,2);
+        igText(instr_str);
+      }
+  
+    }  
+  }
+
+  igEnd();
+}
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
   igBegin(label, 0,0);
   igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
@@ -307,7 +361,9 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     uint32_t data = se_read32(read, addr);
     bool has_fields = false;
     igPushIDInt(i);
-    if (igTreeNodeStrStr("%s(%08x): %04x",mmios[i].name,addr,data)){
+    char lab[80];
+    snprintf(lab,80,"0x%08x: %s",addr,mmios[i].name);
+    if (igTreeNodeStr(lab)){
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
         igPushIDInt(f);
         uint32_t start = mmios[i].bits[f].start; 
@@ -500,6 +556,7 @@ static void se_draw_debug(){
   if(emu_state.system ==SYSTEM_GBA){
     se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write); 
     se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); 
+    se_draw_arm_state("CPU",&gba.cpu,&gba_byte_read); 
   }else if(emu_state.system ==SYSTEM_GB){
     se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write); 
     se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write); 
@@ -507,7 +564,9 @@ static void se_draw_debug(){
     se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write); 
     se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); 
     se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); 
-    se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write); 
+    se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);
+    se_draw_arm_state("ARM7",&nds.arm7,&nds7_byte_read); 
+    se_draw_arm_state("ARM9",&nds.arm9,&nds9_byte_read); 
   }
 }
 ///////////////////////////////
@@ -525,6 +584,11 @@ void sb_poll_controller_input(sb_joy_t* joy){
   joy->select = gui_state.button_state[SAPP_KEYCODE_APOSTROPHE];
   joy->l = gui_state.button_state[SAPP_KEYCODE_U];
   joy->r = gui_state.button_state[SAPP_KEYCODE_I];
+  joy->x = gui_state.button_state[SAPP_KEYCODE_N];
+  joy->y = gui_state.button_state[SAPP_KEYCODE_M];
+  joy->screen_folded = !gui_state.button_state[SAPP_KEYCODE_B];
+  joy->pen_down =  gui_state.button_state[SAPP_KEYCODE_V];
+
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){

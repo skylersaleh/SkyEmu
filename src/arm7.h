@@ -362,6 +362,7 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
 };  
 
+
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
 static arm7_handler_t arm9_lookup_table[4096] = { 0 };
 static arm7_handler_t arm7t_lookup_table[256] = { 0 };
@@ -552,20 +553,23 @@ static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupt
     arm7_set_thumb_bit(cpu,false); 
   }
 }
-static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size){
+static void arm9_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size){
   out_disasm[0]='\0';
   const char * cond_code = "";
   const char * name = "INVALID";
+  const char * key_str = NULL;
+  uint32_t opcode=0;
   if(arm7_get_thumb_bit(cpu)==false){
-    uint32_t opcode = cpu->read32(cpu->user_data,mem_address);
+    opcode = cpu->read32(cpu->user_data,mem_address);
 
     const char* cond_code_table[16]=
       {"EQ","NE","CS","CC","MI","PL","VS","VC","HI","LS","GE","LT","GT","LE","","INV"};
     cond_code= cond_code_table[ARM7_BFE(opcode,28,4)];
 
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    int instr_class = arm_lookup_arm_instruction_class(arm7_instruction_classes,key);
-    name = instr_class==-1? "INVALID" : arm7_instruction_classes[instr_class].name;
+    int instr_class = arm_lookup_arm_instruction_class(arm9_instruction_classes,key);
+    name = instr_class==-1? "INVALID" : arm9_instruction_classes[instr_class].name;
+    key_str  = instr_class==-1? "" : arm9_instruction_classes[instr_class].bitfield;
     // Get more information for the DP class instruction
     if(strcmp(name,"DP")==0){
         const char* op_name[]={"AND", "EOR", "SUB", "RSB", 
@@ -575,13 +579,38 @@ static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
         name = op_name[ARM7_BFE(opcode,21,4)];
     }
   }else{
-    uint16_t opcode = cpu->read16(cpu->user_data,mem_address);
+    opcode = cpu->read16(cpu->user_data,mem_address);
     uint32_t key = ((opcode>>8)&0xff);
     int instr_class = arm7_lookup_thumb_instruction_class(key);
     name = instr_class==-1? "INVALID" : arm7t_instruction_classes[instr_class].name;
+    key_str = instr_class==-1?  "" : arm7t_instruction_classes[instr_class].bitfield;
   }
-  int offset = sprintf(out_disasm,"%s%s",name,cond_code);
-
+  int offset = snprintf(out_disasm,out_size,"%s%s ",name,cond_code);
+  bool letter_handled[256];
+  for(int i=0;i<256;++i)letter_handled[i]=false;
+  letter_handled['1']=true;
+  letter_handled['0']=true;
+  letter_handled['c']=true;
+  int key_len = strlen(key_str); 
+  int key_off=0;
+  while(key_str[key_off]){
+    char letter = key_str[key_off];
+    int value =0;
+    int key_off2 = key_off;
+    if(letter_handled[letter]==false){
+      while(key_str[key_off2]){
+        if(key_str[key_off2]==letter){
+          value<<=1;
+          value|= SB_BFE(opcode,key_len-1-key_off2,1);
+        }
+        ++key_off2;
+      }
+      letter_handled[letter]=true;
+      offset+=snprintf(out_disasm+offset,out_size-offset,"%c:%d ",letter,value);
+    }
+    ++key_off;
+  }
+  out_disasm[out_size-1]=0;
   return; 
 }
 static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
@@ -616,95 +645,98 @@ static void arm_check_log_file(arm7_t*cpu){
   bool thumb = arm7_get_thumb_bit(cpu);
   fseek(cpu->log_cmp_file,(cpu->executed_instructions)*18*4,SEEK_SET);
   uint32_t cmp_regs[18];
-  fread(cmp_regs,18*4,1,cpu->log_cmp_file);
-  uint32_t regs[18];
-  for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
-  if(arm7_get_thumb_bit(cpu)==false){
-    unsigned oldpc = cpu->registers[PC]; 
-    cmp_regs[15]-=8;
-  }else{
-    unsigned oldpc = cpu->registers[PC]; 
-    cmp_regs[15]-=4;
-  }
-  uint32_t cpsr = cmp_regs[16];
-  bool has_spsr = arm7_reg_index(cpu,SPSR)!=CPSR;
-  if(!has_spsr){
-    cmp_regs[SPSR]=arm7_reg_read(cpu,SPSR);
-  }
-  bool matches = true;
-  for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
-  if(!matches){
-    static int last_pc_break =0;
-    if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
-    last_pc_break = cpu->registers[PC];
-    printf("Log mismatch detected\n");
-    printf("=====================\n");
-
-    printf("After %llu executed_instructions\n",cpu->executed_instructions);
-
-    char * rnames[18]={
-      "R0","R1","R2","R3","R4","R5","R6","R7",
-      "R8","R9","R10","R11","R12","R13","R14","R15",
-      "CPSR","SPSR"
-    };
-    int last_instruction = cpu->executed_instructions-1;
-    if(last_instruction<0)last_instruction=0;
-    fseek(cpu->log_cmp_file,(last_instruction)*18*4,SEEK_SET);
-    uint32_t prev_regs[18];
-    fread(prev_regs,18*4,1,cpu->log_cmp_file);
-    
-    for(int i=0;i<18;++i){
-      if(regs[i]!=cmp_regs[i])printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
-      else printf("Matches %s %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],prev_regs[i],prev_regs[i]);
-    }
-    uint32_t log_cpsr = cmp_regs[16];
-    uint32_t prev_cpsr = prev_regs[16];
-
-    printf("N:%d LogN:%d PrevN:%d Z:%d LogZ:%d PrevZ:%d C:%d LogC:%d PrevC:%d V:%d LogV:%d PrevV:%d\n",
-      ARM7_BFE(cpsr,31,1), ARM7_BFE(log_cpsr,31,1), ARM7_BFE(prev_cpsr,31,1),
-      ARM7_BFE(cpsr,30,1), ARM7_BFE(log_cpsr,30,1), ARM7_BFE(prev_cpsr,30,1),
-      ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
-      ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
-    ); 
-   // if(cmp_regs[15]!=cpu->registers[15] && ((cmp_regs[CPSR]^cpu->registers[CPSR])&0x1f))cmp_regs[15]-=4;
-    // Set CPSR first
-    arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
-    for(int i=0;i<18;++i){
-      arm7_reg_write(cpu,i,cmp_regs[i]);
-    }
-    int log_mode = log_cpsr&0x1f;
-    int prev_mode = prev_cpsr&0x1f;
-    if(log_mode==0x12&&prev_mode!=0x12){
-      printf("Interrupt!\n");
-      cpu->trigger_breakpoint=false;
-      cpu->registers[PC]=0xffff0018;
-     
-    }
-  
-    thumb = arm7_get_thumb_bit(cpu);
-    if(thumb){
-      cpu->registers[PC]&=~1;
-      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+0,false);
-      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
-      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+  if(fread(cmp_regs,18*4,1,cpu->log_cmp_file)==1){
+    uint32_t regs[18];
+    for(int i=0;i<18;++i)regs[i]=arm7_reg_read(cpu,i);
+    if(arm7_get_thumb_bit(cpu)==false){
+      unsigned oldpc = cpu->registers[PC]; 
+      cmp_regs[15]-=8;
     }else{
-      cpu->registers[PC]&=~3;
-      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+0,false);
-      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+      unsigned oldpc = cpu->registers[PC]; 
+      cmp_regs[15]-=4;
     }
+    uint32_t cpsr = cmp_regs[16];
+    bool has_spsr = arm7_reg_index(cpu,SPSR)!=CPSR;
+    if(!has_spsr){
+      cmp_regs[SPSR]=arm7_reg_read(cpu,SPSR);
+    }
+    bool matches = true;
+    for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
+    if(!matches){
+      static int last_pc_break =0;
+      if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
+      last_pc_break = cpu->registers[PC];
+      printf("Log mismatch detected\n");
+      printf("=====================\n");
 
+      printf("After %llu executed_instructions\n",cpu->executed_instructions);
+
+      char * rnames[18]={
+        "R0","R1","R2","R3","R4","R5","R6","R7",
+        "R8","R9","R10","R11","R12","R13","R14","R15",
+        "CPSR","SPSR"
+      };
+      int last_instruction = cpu->executed_instructions-1;
+      if(last_instruction<0)last_instruction=0;
+      fseek(cpu->log_cmp_file,(last_instruction)*18*4,SEEK_SET);
+      uint32_t prev_regs[18];
+      fread(prev_regs,18*4,1,cpu->log_cmp_file);
+      
+      for(int i=0;i<18;++i){
+        if(regs[i]!=cmp_regs[i])printf("%s %d (%08x) Log Value = %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],cmp_regs[i],cmp_regs[i],prev_regs[i],prev_regs[i]);
+        else printf("Matches %s %d (%08x) Prev Value =%d (%08x)\n", rnames[i],regs[i],regs[i],prev_regs[i],prev_regs[i]);
+      }
+      uint32_t log_cpsr = cmp_regs[16];
+      uint32_t prev_cpsr = prev_regs[16];
+
+      printf("N:%d LogN:%d PrevN:%d Z:%d LogZ:%d PrevZ:%d C:%d LogC:%d PrevC:%d V:%d LogV:%d PrevV:%d\n",
+        ARM7_BFE(cpsr,31,1), ARM7_BFE(log_cpsr,31,1), ARM7_BFE(prev_cpsr,31,1),
+        ARM7_BFE(cpsr,30,1), ARM7_BFE(log_cpsr,30,1), ARM7_BFE(prev_cpsr,30,1),
+        ARM7_BFE(cpsr,29,1), ARM7_BFE(log_cpsr,29,1), ARM7_BFE(prev_cpsr,29,1),
+        ARM7_BFE(cpsr,28,1), ARM7_BFE(log_cpsr,28,1), ARM7_BFE(prev_cpsr,28,1)
+      ); 
+      // Set CPSR first
+      arm7_reg_write(cpu,CPSR,cmp_regs[CPSR]);
+      for(int i=0;i<18;++i){
+        arm7_reg_write(cpu,i,cmp_regs[i]);
+      }
+      int log_mode = log_cpsr&0x1f;
+      int prev_mode = prev_cpsr&0x1f;
+      if(log_mode==0x12&&prev_mode!=0x12){
+        printf("Interrupt!\n");
+        cpu->trigger_breakpoint=false;
+        cpu->registers[PC]=0xffff0018;
+       
+      }
+      thumb = arm7_get_thumb_bit(cpu);
+      if(thumb){
+        cpu->registers[PC]&=~1;
+        cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+0,false);
+        cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
+        cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      }else{
+        cpu->registers[PC]&=~3;
+        cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+0,false);
+        cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
+        cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+      }
+    }
+  }else{
+    printf("Log finished!\n");
+    fclose(cpu->log_cmp_file);
+    cpu->log_cmp_file=NULL;
   }
-
   uint32_t opcode = cpu->prefetch_opcode[0];
+  char disasm[128];
+  arm9_get_disasm(cpu,cpu->registers[PC],disasm,128);
   if(thumb==false){
     uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    printf("ARM OP: %08x PC: %08x %s Binary: ",opcode,cpu->registers[PC],arm9_disasm_lookup_table[key]);
+    printf("ARM OP: %08x PC: %08x %s Binary: ",opcode,cpu->registers[PC],disasm);
     arm7_print_binary(opcode,32);
     printf("\n");
   }else{
     uint32_t key = ((opcode>>8)&0xff);
-    printf("THUMB OP: %04x PC: %08x %s Binary: ",opcode,cpu->registers[PC],arm7t_disasm_lookup_table[key]);
+    printf("THUMB OP: %04x PC: %08x %s Binary: ",opcode,cpu->registers[PC],disasm);
     arm7_print_binary(opcode,16);
     printf("\n");
   }
