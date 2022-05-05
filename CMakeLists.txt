@@ -118,6 +118,11 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
 endif ()
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
 
+set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
+set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
+set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
+set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
+set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
 add_subdirectory(src/capstone)
 set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
 
