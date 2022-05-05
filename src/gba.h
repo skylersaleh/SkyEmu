@@ -1479,7 +1479,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
-    gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
     gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
     uint32_t new_if = 0;
     if(hblank!=gba->ppu.last_hblank){
@@ -1491,7 +1490,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
         gba->ppu.dispcnt_pipeline[1]=gba->ppu.dispcnt_pipeline[2];
         gba->ppu.dispcnt_pipeline[2]=gba_io_read16(gba, GBA_DISPCNT);
-      }else{
+      }else if(render){
         uint16_t dispcnt = gba->ppu.dispcnt_pipeline[0];
 
         int bg_mode = SB_BFE(dispcnt,0,3);
@@ -1522,6 +1521,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       }
     }
     if(lcd_y != gba->ppu.last_lcd_y){
+      gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       if(vblank!=gba->ppu.last_vblank){
         gba->ppu.last_vblank = vblank;
         bool vblank_irq_en = SB_BFE(disp_stat,3,1);
@@ -1534,7 +1534,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
       //Latch BGX and BGY registers
-      if(lcd_y==0){
+      if(lcd_y==0&&render){
         for(int aff=0;aff<2;++aff){
           gba->ppu.aff[aff].internal_bgx=gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
           gba->ppu.aff[aff].internal_bgy=gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
