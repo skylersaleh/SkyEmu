@@ -698,7 +698,6 @@ typedef struct{
   uint16_t reload_value; 
   uint16_t pending_reload_value; 
   uint16_t prescaler_timer;
-  uint16_t elapsed_audio_samples;
   int startup_delay;
 }gba_timer_t;
 typedef struct{
@@ -708,6 +707,8 @@ typedef struct{
     int write_ptr; 
     bool request_dma_fill;
   }fifo[2];
+  double current_sim_time;
+  double current_sample_generated_time;
 }gba_audio_t; 
 typedef struct{
   uint32_t serial_state;
@@ -1332,6 +1333,18 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     gba_io_store16(gba,GBA_IF,IF);
 
     return true; 
+  }else if(address_u32==GBA_SOUNDCNT_L){
+    uint16_t soundcnt_h = SB_BFE(data,16,16);
+    // Channel volume for each FIFO
+    for(int i=0;i<2;++i){
+      int timer = SB_BFE(soundcnt_h,10+i*4,1);
+      bool reset = SB_BFE(soundcnt_h,11+i*4,1);
+      if(reset){
+        gba->audio.fifo[i].read_ptr=0;
+        gba->audio.fifo[i].write_ptr=0;  
+        for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
+      }
+    }
   }else if(address_u32 == GBA_TM0CNT_L||address_u32==GBA_TM1CNT_L||address_u32==GBA_TM2CNT_L||address_u32==GBA_TM3CNT_L){
     gba_compute_timers(gba);
     int timer_off = (address_u32-GBA_TM0CNT_L)/4;
@@ -2298,7 +2311,6 @@ static void gba_compute_timers(gba_t* gba){
         gba->timers[t].startup_delay=-1;
         gba->timers[t].prescaler_timer=0;
       }
-      
       if(count_up){
         if(last_timer_overflow){
           uint32_t v= value;
@@ -2307,7 +2319,6 @@ static void gba_compute_timers(gba_t* gba){
           while(v>0xffff){
             v=(v+gba->timers[t].reload_value)-0x10000;
             last_timer_overflow++;
-            gba->timers[t].elapsed_audio_samples++;
           }
           value=v;
         }
@@ -2324,18 +2335,30 @@ static void gba_compute_timers(gba_t* gba){
         while(v>0xffff){
           v=(v+gba->timers[t].reload_value)-0x10000;
           last_timer_overflow++;
-          gba->timers[t].elapsed_audio_samples++;
         }
         value = v; 
         gba->timers[t].prescaler_timer=prescale_time;
         int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
         if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
-      gba->timers[t].reload_value=gba->timers[t].pending_reload_value;
-      if(last_timer_overflow && irq_en){
-        uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
-        gba_send_interrupt(gba,4,if_bit);        
+      if(last_timer_overflow){
+        uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
+        for(int i=0;i<2;++i){
+          int timer = SB_BFE(soundcnt_h,10+i*4,1);
+          if(timer!=t)continue;
+          gba->dma[i+1].activate_audio_dma=gba->activate_dmas=true;
+          int samples_to_pop=last_timer_overflow;
+          while(samples_to_pop--&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
+            gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
+          }
+        }
+        if(irq_en){
+          uint16_t if_bit = 1<<(GBA_INT_TIMER0+t);
+          gba_send_interrupt(gba,4,if_bit);        
+        }
       }
+      gba->timers[t].reload_value=gba->timers[t].pending_reload_value;
+      
       gba_io_store16(gba,GBA_TM0CNT_L+t*4,value);
     }else last_timer_overflow=0;
     gba->timers[t].last_enable = enable;
@@ -2388,33 +2411,9 @@ static FORCE_INLINE void gba_tick_interrupts(gba_t*gba){
     gba->active_if_pipe_stages>>=1;
   }
 }
-static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){
-  
-  static double current_sim_time = 0;
-  static double current_sample_generated_time = 0;
-  uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
-  // Channel volume for each FIFO
-  for(int i=0;i<2;++i){
-    int timer = SB_BFE(soundcnt_h,10+i*4,1);
-    bool reset = SB_BFE(soundcnt_h,11+i*4,1);
-    if(reset){
-      gba->audio.fifo[i].read_ptr=0;
-      gba->audio.fifo[i].write_ptr=0;  
-      for(int d=0;d<32;++d)gba->audio.fifo[i].data[d]=0;
-    }
-    int samples_to_pop = gba->timers[timer].elapsed_audio_samples;
-    if(samples_to_pop){ gba->dma[i+1].activate_audio_dma=true;gba->activate_dmas=true;}
-    //if(chan_r[i+4]||chan_l[i+4])printf("Chan %d: audio_samples: %d \n", i, samples_to_pop);
-    while(samples_to_pop>0&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
-      gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
-      samples_to_pop--;
-    }
-  }
-  gba->timers[0].elapsed_audio_samples= 0;
-  gba->timers[1].elapsed_audio_samples= 0;
-   
-  current_sim_time +=delta_time;
-  if(current_sample_generated_time >current_sim_time)return; 
+static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){ 
+  gba->audio.current_sim_time +=delta_time;
+  if(gba->audio.current_sample_generated_time >gba->audio.current_sim_time)return; 
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0};
   static float length_t[4]={1e6,1e6,1e6,1e6};
@@ -2422,8 +2421,8 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   float volume_env[4]={0,0,0,0};
   static float last_noise_value = 0;
 
-  current_sample_generated_time -= (int)(current_sim_time);
-  current_sim_time -= (int)(current_sim_time);
+  gba->audio.current_sample_generated_time -= (int)(gba->audio.current_sim_time);
+  gba->audio.current_sim_time -= (int)(gba->audio.current_sim_time);
 
   static float capacitor_r = 0.0;
   static float capacitor_l = 0.0;
@@ -2440,6 +2439,7 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
 
   float duty[2] = {0,0};
+  uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
 
   for(int i=0;i<2;++i){
     uint16_t soundcnt_h = gba_io_read16(gba, i==0? GBA_SOUND1CNT_H : GBA_SOUND2CNT_L);
@@ -2577,9 +2577,9 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     for(int i=0;i<6;++i)chan_l[i]=chan_r[i]=0;
   }
 
-  while(current_sample_generated_time < current_sim_time){
+  while(gba->audio.current_sample_generated_time < gba->audio.current_sim_time){
 
-    current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
+    gba->audio.current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
     
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
@@ -2695,7 +2695,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
         if(gba->halt){
           ticks=2;
-          if(int_if){gba->halt = false;}
+          gba->halt &= int_if==0;
         }else{
           gba->mem.requests=0;
           if(int_if){
@@ -2707,13 +2707,10 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
               ticks=gba->cpu.i_cycles;
             }
           }
-          if(gba->cpu.registers[PC]== emu->pc_breakpoint)gba->cpu.trigger_breakpoint=true;
-          else if(!ticks){
-            arm7_exec_instruction(&gba->cpu);
-            ticks = gba->mem.requests; 
-          }
+          arm7_exec_instruction(&gba->cpu);
+          ticks = gba->mem.requests; 
+          if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
         }
-        if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       last_tick=ticks;
       gba_tick_sio(gba);
