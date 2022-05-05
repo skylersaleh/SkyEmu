@@ -1464,6 +1464,21 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
+#define GBA_LCD_HBLANK_END   (296*4)
+#define GBA_LCD_HBLANK_START (GBA_LCD_W*4)
+#define GBA_LCD_VBLANK_START (GBA_LCD_H*1232)
+#define GBA_LCD_VBLANK_END   (227*1232-44)
+
+//Returns true if the fast forward failed to be more efficient in main emu loop
+static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render){
+  int scanline_clock = (gba->ppu.scan_clock)%1232;
+  //If inside hblank, can fastforward to outside of hblank
+  if(scanline_clock>=GBA_LCD_HBLANK_START) return GBA_LCD_HBLANK_END-scanline_clock;
+  //If inside hrender, can fastforward to hblank if not the first pixel and not visible
+  bool not_visible = !render||gba->ppu.scan_clock>GBA_LCD_VBLANK_START; 
+  if(not_visible&& (scanline_clock>=4 && scanline_clock<GBA_LCD_HBLANK_START))return GBA_LCD_HBLANK_START-scanline_clock; 
+  return 3-((gba->ppu.scan_clock)%4);
+}
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.scan_clock+=1;
   if(gba->ppu.scan_clock%4)return;
@@ -1471,11 +1486,11 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
 
   int lcd_y = (gba->ppu.scan_clock+44)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
-  if(lcd_x==0||lcd_x==240||lcd_x==296){
+  if(lcd_x==0||lcd_x==240||lcd_x==GBA_LCD_HBLANK_END){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=240&&lcd_x< 296;
+    bool hblank = lcd_x>=240&&lcd_x< GBA_LCD_HBLANK_END;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
@@ -2705,8 +2720,17 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       gba_tick_sio(gba);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
+      if(gba->active_if_pipe_stages==0){
+        int ppu_fast_forward = gba_ppu_compute_max_fast_forward(gba, emu->render_frame);
+        int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
+        int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+        if(fast_forward_ticks>ticks&&!gba->cpu.wait_for_interrupt)fast_forward_ticks= ticks; 
+        gba->deferred_timer_ticks+=fast_forward_ticks;
+        gba->ppu.scan_clock+=fast_forward_ticks;
+        ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
+        delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
+      }
       gba_tick_audio(gba, emu,delta_t);
-
       for(int t = 0;t<ticks;++t){
         gba_tick_interrupts(gba);
         gba_tick_timers(gba);
