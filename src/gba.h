@@ -1464,8 +1464,8 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-#define GBA_LCD_HBLANK_END   (296*4)
-#define GBA_LCD_HBLANK_START (GBA_LCD_W*4)
+#define GBA_LCD_HBLANK_END   (296)
+#define GBA_LCD_HBLANK_START (GBA_LCD_W)
 #define GBA_LCD_VBLANK_START (GBA_LCD_H*1232)
 #define GBA_LCD_VBLANK_END   (227*1232-44)
 
@@ -1473,10 +1473,10 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render){
   int scanline_clock = (gba->ppu.scan_clock)%1232;
   //If inside hblank, can fastforward to outside of hblank
-  if(scanline_clock>=GBA_LCD_HBLANK_START) return GBA_LCD_HBLANK_END-scanline_clock;
+  if(scanline_clock>GBA_LCD_HBLANK_START*4&&scanline_clock<GBA_LCD_HBLANK_END*4) return GBA_LCD_HBLANK_END*4-scanline_clock-1;
   //If inside hrender, can fastforward to hblank if not the first pixel and not visible
   bool not_visible = !render||gba->ppu.scan_clock>GBA_LCD_VBLANK_START; 
-  if(not_visible&& (scanline_clock>=4 && scanline_clock<GBA_LCD_HBLANK_START))return GBA_LCD_HBLANK_START-scanline_clock; 
+  if(not_visible&& (scanline_clock>=1 && scanline_clock<GBA_LCD_HBLANK_START*4))return GBA_LCD_HBLANK_START*4-scanline_clock-1; 
   return 3-((gba->ppu.scan_clock)%4);
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
