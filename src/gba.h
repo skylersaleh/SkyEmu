@@ -740,7 +740,6 @@ typedef struct gba_t{
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
   gba_audio_t audio;
-  bool halt; 
   bool prev_key_interrupt;
   uint32_t first_target_buffer[GBA_LCD_W];
   uint32_t second_target_buffer[GBA_LCD_W];
@@ -1115,8 +1114,6 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
       gba->mem.prefetch_size+=wait; 
     }
   }
-  wait+=gba->cpu.i_cycles;
-  gba->cpu.i_cycles=0;
   gba->mem.requests+=wait;
 }
 static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(gba_t *gba, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
@@ -1153,13 +1150,13 @@ static FORCE_INLINE uint8_t arm7_read8(void* user_data, uint32_t address){
   return gba_read8((gba_t*)user_data,address);
 }
 static FORCE_INLINE void gba_dma_write32(gba_t* gba, uint32_t address, uint32_t data){
-  if((address&0x04fffC00)==0x04000000){
+  if((address&0xfffffC00)==0x04000000){
     if(gba_process_mmio_write(gba,address,data,4))return;
   }
   gba_store32(gba,address,data);
 }
 static FORCE_INLINE void gba_dma_write16(gba_t* gba, uint32_t address, uint16_t data){
-  if((address&0x04fffC00)==0x04000000){
+  if((address&0xfffffC00)==0x04000000){
     if(gba_process_mmio_write(gba,address,data,2))return; 
   }
   gba_store16(gba,address,data);
@@ -1174,7 +1171,7 @@ static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   gba_compute_access_cycles((gba_t*)user_data,address,1); 
-  if((address&0x04fffC00)==0x04000000){
+  if((address&0xfffffC00)==0x04000000){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
   gba_store8((gba_t*)user_data,address,data);
@@ -1361,7 +1358,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     //Only BIOS can update Post Flag and haltcnt
     if(gba->cpu.registers[15]<0x4000){
       //Writes to haltcnt halt the CPU
-      if(word_mask&0xff00)gba->halt = true;
+      if(word_mask&0xff00)gba->cpu.wait_for_interrupt = true;
       uint32_t data = gba_io_read32(gba,address_u32);
       //POST can only be initialized once, then other writes are dropped. 
       if((word_mask&0xff)&&(data&0xff))word_mask&=~0xff;
@@ -2693,26 +2690,18 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
       if(!ticks){
         uint16_t int_if = gba_io_read16(gba,GBA_IF);
-        if(gba->halt){
-          ticks=2;
-          gba->halt &= int_if==0;
-        }else{
-          gba->mem.requests=0;
-          if(int_if){
-            int_if &= gba_io_read16(gba,GBA_IE);
-            uint32_t ime = gba_io_read32(gba,GBA_IME);
-            if(SB_BFE(ime,0,1)==1){
-              gba->cpu.i_cycles=0;
-              arm7_process_interrupts(&gba->cpu, int_if);
-              ticks=gba->cpu.i_cycles;
-            }
-          }
-          arm7_exec_instruction(&gba->cpu);
-          ticks = gba->mem.requests; 
-          if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
+        gba->cpu.i_cycles=0;
+        gba->mem.requests=0;
+        if(int_if){
+          int_if &= gba_io_read16(gba,GBA_IE);
+          uint32_t ime = gba_io_read32(gba,GBA_IME);
+          int_if *= SB_BFE(ime,0,1);
+          arm7_process_interrupts(&gba->cpu, int_if);
         }
+        arm7_exec_instruction(&gba->cpu);
+        last_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
+        if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
-      last_tick=ticks;
       gba_tick_sio(gba);
 
       double delta_t = ((double)ticks)/(16*1024*1024);
@@ -2767,7 +2756,6 @@ void gba_reset(gba_t*gba){
   gba_store32(gba,0x040000DC,0x84000000);
   gba_recompute_waitstate_table(gba,0);
   gba_recompute_mmio_mask_table(gba);
-  gba->halt =false;
   gba->activate_dmas=false;
   gba->deferred_timer_ticks=0;
   gba->cart.in_chip_id_mode=false; 

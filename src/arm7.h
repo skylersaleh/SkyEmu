@@ -549,7 +549,7 @@ static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupt
     cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x12;
     //Disable interrupts(set I bit)
     cpu->registers[CPSR] |= 1<<7;
-    cpu->i_cycles=2;
+    cpu->i_cycles=1;
     arm7_set_thumb_bit(cpu,false); 
   }
 }
@@ -744,7 +744,7 @@ static void arm_check_log_file(arm7_t*cpu){
 }
 static void arm9_exec_instruction(arm7_t* cpu){
   if(cpu->wait_for_interrupt){
-    cpu->i_cycles=4; 
+    cpu->i_cycles=1; 
     return;
   }
   bool thumb = arm7_get_thumb_bit(cpu);
@@ -790,7 +790,7 @@ static void arm9_exec_instruction(arm7_t* cpu){
 }
 static void arm7_exec_instruction(arm7_t* cpu){
   if(cpu->wait_for_interrupt){
-    cpu->i_cycles=4; 
+    cpu->i_cycles=1; 
     return;
   }
   bool thumb = arm7_get_thumb_bit(cpu);
