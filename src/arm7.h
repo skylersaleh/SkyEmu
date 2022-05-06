@@ -563,27 +563,27 @@ static FORCE_INLINE void arm7t_dispatch_opcode(arm7_t* cpu, int opcode, int key)
     case 24 ... 31: arm7t_add_sub(cpu,opcode);break;
     case 32 ... 63: arm7t_mov_cmp_add_sub_imm(cpu,opcode);break;
     case 64 ... 67: arm7t_alu_op(cpu,opcode);break;
-    case 68 ... 71: arm9t_hi_reg_op(cpu,opcode);break;
-    case 72 ... 79: arm9t_pc_rel_ldst(cpu,opcode);break;
-    case 80 ... 81: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 68 ... 71: arm7t_hi_reg_op(cpu,opcode);break;
+    case 72 ... 79: arm7t_pc_rel_ldst(cpu,opcode);break;
+    case 80 ... 81: arm7t_reg_off_ldst(cpu,opcode);break;
     case 82 ... 83: arm7t_ldst_bh(cpu,opcode);break;
-    case 84 ... 85: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 84 ... 85: arm7t_reg_off_ldst(cpu,opcode);break;
     case 86 ... 87: arm7t_ldst_bh(cpu,opcode);break;
-    case 88 ... 89: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 88 ... 89: arm7t_reg_off_ldst(cpu,opcode);break;
     case 90 ... 91: arm7t_ldst_bh(cpu,opcode);break;
-    case 92 ... 93: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 92 ... 93: arm7t_reg_off_ldst(cpu,opcode);break;
     case 94 ... 95: arm7t_ldst_bh(cpu,opcode);break;
-    case 96 ... 127: arm9t_imm_off_ldst(cpu,opcode);break;
+    case 96 ... 127: arm7t_imm_off_ldst(cpu,opcode);break;
     case 128 ... 143: arm7t_imm_off_ldst_bh(cpu,opcode);break;
-    case 144 ... 159: arm9t_stack_off_ldst(cpu,opcode);break;
+    case 144 ... 159: arm7t_stack_off_ldst(cpu,opcode);break;
     case 160 ... 175: arm7t_load_addr(cpu,opcode);break;
     case 176: arm7t_add_off_sp(cpu,opcode);break;
     case 177 ... 179: arm7t_unknown(cpu,opcode);break;
-    case 180 ... 181: arm9t_push_pop_reg(cpu,opcode);break;
+    case 180 ... 181: arm7t_push_pop_reg(cpu,opcode);break;
     case 182 ... 187: arm7t_unknown(cpu,opcode);break;
-    case 188 ... 189: arm9t_push_pop_reg(cpu,opcode);break;
+    case 188 ... 189: arm7t_push_pop_reg(cpu,opcode);break;
     case 190 ... 191: arm7t_unknown(cpu,opcode);break;
-    case 192 ... 207: arm9t_mult_ldst(cpu,opcode);break;
+    case 192 ... 207: arm7t_mult_ldst(cpu,opcode);break;
     case 208 ... 222: arm7t_cond_branch(cpu,opcode);break;
     case 223: arm7t_soft_interrupt(cpu,opcode);break;
     case 224 ... 231: arm7t_branch(cpu,opcode);break;
@@ -1213,7 +1213,7 @@ static FORCE_INLINE void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   uint32_t Rd = ARM7_BFE(opcode,12,4);
   uint32_t Rm = ARM7_BFE(opcode,0,4);
   // Load
-  uint32_t read_data = B ? cpu->read8(cpu->user_data,addr): cpu->read32(cpu->user_data,addr);
+  uint32_t read_data = B ? cpu->read8(cpu->user_data,addr): arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
 
   uint32_t store_data = arm7_reg_read_r15_adj(cpu,Rm,8);
   if(B==1)cpu->write8(cpu->user_data,addr,store_data);

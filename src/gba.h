@@ -2825,6 +2825,9 @@ void gba_reset(gba_t*gba){
     gba->cpu.registers[PC]  = 0x0000000; 
     gba->cpu.registers[CPSR]= 0x000000d3; 
   }
+  if(gba->cpu.log_cmp_file){fclose(gba->cpu.log_cmp_file);gba->cpu.log_cmp_file=NULL;};
+  gba->cpu.log_cmp_file =se_load_log_file(gba->cart.save_file_path, "log.bin");
+  gba->cpu.executed_instructions+=2;
 }
 
 #endif
