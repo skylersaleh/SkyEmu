@@ -336,21 +336,7 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm9t_push_pop_reg,       "PUSHPOPREG","1011L10Rllllllll"},
    {arm9t_mult_ldst,          "MLDST",     "1100Lbbbllllllll"},
    // Conditional branches cant branch on condition 1111
-   {arm7t_cond_branch,        "BEQ",       "11010000OOOOOOOO"},
-   {arm7t_cond_branch,        "BNE",       "11010001OOOOOOOO"},
-   {arm7t_cond_branch,        "BCS",       "11010010OOOOOOOO"},
-   {arm7t_cond_branch,        "BCC",       "11010011OOOOOOOO"},
-   {arm7t_cond_branch,        "BMI",       "11010100OOOOOOOO"},
-   {arm7t_cond_branch,        "BPL",       "11010101OOOOOOOO"},
-   {arm7t_cond_branch,        "BVS",       "11010110OOOOOOOO"},
-   {arm7t_cond_branch,        "BVC",       "11010111OOOOOOOO"},
-   {arm7t_cond_branch,        "BHI",       "11011000OOOOOOOO"},
-   {arm7t_cond_branch,        "BLS",       "11011001OOOOOOOO"},
-   {arm7t_cond_branch,        "BGE",       "11011010OOOOOOOO"},
-   {arm7t_cond_branch,        "BLT",       "11011011OOOOOOOO"},
-   {arm7t_cond_branch,        "BGT",       "11011100OOOOOOOO"},
-   {arm7t_cond_branch,        "BLE",       "11011101OOOOOOOO"},
-   {arm7t_cond_branch,        "COND B",    "11011110OOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "1101ccccOOOOOOOO"},
 
    {arm7t_soft_interrupt,     "SWI",       "11011111OOOOOOOO"},
    {arm7t_branch,             "B",         "11100OOOOOOOOOOO"},
@@ -361,7 +347,49 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_unknown,   "UNKNOWN2",           "10110001--------"},
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
 };  
-
+// ARM7 Thumb Classes
+const static const char* arm7t_instruction_namess[]={
+   "arm7t_mov_shift_reg",
+   "arm7t_mov_shift_reg",
+   "arm7t_mov_shift_reg",
+   "arm7t_add_sub",
+   "arm7t_add_sub",
+   "arm7t_mov_cmp_add_sub_imm",
+   "arm7t_alu_op",
+   "arm9t_hi_reg_op",
+   "arm9t_pc_rel_ldst",
+   "arm9t_reg_off_ldst",
+   "arm7t_ldst_bh",
+   "arm9t_imm_off_ldst",
+   "arm7t_imm_off_ldst_bh",
+   "arm9t_stack_off_ldst",
+   "arm7t_load_addr",
+   "arm7t_add_off_sp",
+   "arm9t_push_pop_reg",
+   "arm9t_mult_ldst",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_cond_branch",
+   "arm7t_soft_interrupt",
+   "arm7t_branch",
+   "arm7t_long_branch_link",
+   "arm7t_long_branch_link",
+   "arm7t_unknown",
+   "arm7t_unknown",
+   "arm7t_unknown",
+};  
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
 static arm7_handler_t arm9_lookup_table[4096] = { 0 };
@@ -528,6 +556,39 @@ static arm7_t arm7_init(void* user_data){
   arm.prefetch_pc=-1;
   return arm;
 
+}
+static FORCE_INLINE void arm7t_dispatch_opcode(arm7_t* cpu, int opcode, int key){
+  switch(key){
+    case 0 ... 23: arm7t_mov_shift_reg(cpu,opcode);break;
+    case 24 ... 31: arm7t_add_sub(cpu,opcode);break;
+    case 32 ... 63: arm7t_mov_cmp_add_sub_imm(cpu,opcode);break;
+    case 64 ... 67: arm7t_alu_op(cpu,opcode);break;
+    case 68 ... 71: arm9t_hi_reg_op(cpu,opcode);break;
+    case 72 ... 79: arm9t_pc_rel_ldst(cpu,opcode);break;
+    case 80 ... 81: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 82 ... 83: arm7t_ldst_bh(cpu,opcode);break;
+    case 84 ... 85: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 86 ... 87: arm7t_ldst_bh(cpu,opcode);break;
+    case 88 ... 89: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 90 ... 91: arm7t_ldst_bh(cpu,opcode);break;
+    case 92 ... 93: arm9t_reg_off_ldst(cpu,opcode);break;
+    case 94 ... 95: arm7t_ldst_bh(cpu,opcode);break;
+    case 96 ... 127: arm9t_imm_off_ldst(cpu,opcode);break;
+    case 128 ... 143: arm7t_imm_off_ldst_bh(cpu,opcode);break;
+    case 144 ... 159: arm9t_stack_off_ldst(cpu,opcode);break;
+    case 160 ... 175: arm7t_load_addr(cpu,opcode);break;
+    case 176: arm7t_add_off_sp(cpu,opcode);break;
+    case 177 ... 179: arm7t_unknown(cpu,opcode);break;
+    case 180 ... 181: arm9t_push_pop_reg(cpu,opcode);break;
+    case 182 ... 187: arm7t_unknown(cpu,opcode);break;
+    case 188 ... 189: arm9t_push_pop_reg(cpu,opcode);break;
+    case 190 ... 191: arm7t_unknown(cpu,opcode);break;
+    case 192 ... 207: arm9t_mult_ldst(cpu,opcode);break;
+    case 208 ... 222: arm7t_cond_branch(cpu,opcode);break;
+    case 223: arm7t_soft_interrupt(cpu,opcode);break;
+    case 224 ... 231: arm7t_branch(cpu,opcode);break;
+    case 232 ... 255: arm7t_long_branch_link(cpu,opcode);break;
+  }
 }
 static FORCE_INLINE bool arm7_get_thumb_bit(arm7_t* cpu){return ARM7_BFE(cpu->registers[CPSR],5,1);}
 static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
@@ -827,7 +888,8 @@ static void arm7_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
-    arm7t_lookup_table[key](cpu,opcode);
+    arm7t_dispatch_opcode(cpu,opcode,key);
+    //arm7t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
@@ -899,7 +961,6 @@ static FORCE_INLINE uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t v
   return value;
 }
 static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
-
   // If it's used as anything but the shift amount in an operation with a register-specified shift, r15 will be PC + 12
   // I.e. add r0, r15, r15, lsl r15 would set r0 to PC + 12 + ((PC + 12) << (PC + 8))
   uint64_t Rd = ARM7_BFE(opcode,12,4);
@@ -909,7 +970,7 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
   // Load Second Operand
   uint64_t Rm = 0;
   int barrel_shifter_carry = -1; 
-  if(opcode&((1<<25)|(1<<4)|(0x7f<<5))){
+  if(opcode&((1<<25)|(0xff0))){
     int I = ARM7_BFE(opcode,25,1);
     if(I){
       uint32_t imm = ARM7_BFE(opcode,0,8);
@@ -1690,8 +1751,8 @@ static FORCE_INLINE void arm7t_mov_shift_reg(arm7_t* cpu, uint32_t opcode){
   uint32_t Rs = ARM7_BFE(opcode,3,3);
   uint32_t Rd = ARM7_BFE(opcode,0,3);
 
-  uint32_t arm_op = (0xD<<21)|(1<<20)|(Rd<<12)|(offset<<7)|(op<<5)|(Rs);
-  arm7_data_processing(cpu,arm_op);
+  opcode = (0xD<<21)|(1<<20)|(Rd<<12)|(offset<<7)|(op<<5)|(Rs);
+  arm7_data_processing(cpu,opcode);
 }
 static FORCE_INLINE void arm7t_add_sub(arm7_t* cpu, uint32_t opcode){
   bool I = ARM7_BFE(opcode,10,1);
@@ -1706,13 +1767,7 @@ static FORCE_INLINE void arm7t_mov_cmp_add_sub_imm(arm7_t* cpu, uint32_t opcode)
   int op = ARM7_BFE(opcode,11,2);
   int Rd = ARM7_BFE(opcode,8,3);
   int imm = ARM7_BFE(opcode,0,8);
-
-  switch(op){ 
-    /*MOV*/ case 0: op = 0xD; break;
-    /*CMP*/ case 1: op = 0xA; break;
-    /*ADD*/ case 2: op = 0x4; break;
-    /*SUB*/ case 3: op = 0x2; break;
-  }
+  op = (0x24AD>>(op*4))&0xf;/*MOV*//*CMP*//*ADD*//*SUB*/
   uint32_t arm_op = (1<<25)|(op<<21)|(1<<20)|(Rd<<16)|(Rd<<12)|(imm);
   arm7_data_processing(cpu, arm_op);
 }
@@ -1720,6 +1775,12 @@ static FORCE_INLINE void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   int op = ARM7_BFE(opcode,6,4);
   int Rs = ARM7_BFE(opcode,3,3);
   int Rd = ARM7_BFE(opcode,0,3);
+  if(op==13){
+    uint32_t arm_op = (0xE<<28)|(1<<20)|(Rd<<16)|(Rd<<8)|(9<<4)|(Rs);
+    arm7_multiply(cpu, arm_op);
+    cpu->registers[CPSR]&=~(1<<29);
+    return; 
+  }
 
   int op_mapping[16]={
     /*AND{S}*/ 0,
@@ -1735,10 +1796,11 @@ static FORCE_INLINE void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
     /*CMP   */ 10, 
     /*CMN   */ 11,
     /*ORR{S}*/ 12, 
-    /*MUL{S}*/ 16,
+    /*MUL{S}*/ 0,
     /*BIC{S}*/ 14,      
     /*MVN{S}*/ 15
   };
+
   int shift_mapping[16]={
     /*AND{S}*/ 0,
     /*EOR{S}*/ 0, 
@@ -1757,21 +1819,14 @@ static FORCE_INLINE void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
     /*BIC{S}*/ 0,      
     /*MVN{S}*/ 0
   };
-
-  int alu_op = op_mapping[op];
-  int shift_op = shift_mapping[op];
+  int alu_op = (0xfe0cba38d65ddd10ULL>>(op*4))&0xf;
+  int shift_op = (0x0000000030021000ULL>>(op*4))&0xf;
   int Rn = (op==9)?Rs:Rd;
-  if(alu_op==16){
-    uint32_t arm_op = (0xE<<28)|(1<<20)|(Rd<<16)|(Rn<<8)|(9<<4)|(Rs);
-    arm7_multiply(cpu, arm_op);
-    cpu->registers[CPSR]&=~(1<<29);
-    return; 
-  }
 
   uint32_t arm_op = (0xE<<28)|(alu_op<<21)|(1<<20)|(Rn<<16)|(Rd<<12)|(shift_op<<5);
   
   if(alu_op==13)arm_op |= (Rs<<8)|(1<<4)|Rd; // Special case shifts
-  else if(op==9)arm_op |= 1<<25;          // Special case MVN
+  else if(op==9)arm_op |= 1<<25;          // Special case NEG
   else arm_op|=Rs;
   arm7_data_processing(cpu, arm_op);
 }
@@ -1863,7 +1918,6 @@ static FORCE_INLINE void arm7t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
     arm7_reg_write(cpu,Rd,data);  
     cpu->i_cycles++;
   }
-
 }
 
 static FORCE_INLINE void arm9t_reg_off_ldst(arm7_t* cpu, uint32_t opcode){
