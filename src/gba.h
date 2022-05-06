@@ -2064,11 +2064,23 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           if(vcount<2)continue;
           if(vcount==161)dma_repeat=false;
         }
+        
         if(dst_addr_ctl==3){
           gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
           //GBA Suite says that these need to be force aligned
           if(type) gba->dma[i].dest_addr&=~3;
           else gba->dma[i].dest_addr&=~1;
+        }
+        bool audio_dma = (mode==3) && (i==1||i==2);
+        if(audio_dma){
+          if(gba->dma[i].activate_audio_dma==false)continue;
+          int fifo = -1;
+          uint32_t dst = gba->dma[i].dest_addr;
+          if(dst == GBA_FIFO_A)fifo =0; 
+          if(dst == GBA_FIFO_B)fifo =1; 
+          if(fifo == -1)continue;
+          int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
+          if(size>=16)continue;
         }
         if(gba->dma[i].source_addr>=0x08000000&&gba->dma[i].dest_addr>=0x08000000){
           force_first_write_sequential=true;
@@ -2188,10 +2200,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         src&=~3;
         if(dst == GBA_FIFO_A)fifo =0; 
         if(dst == GBA_FIFO_B)fifo =1; 
-        if(fifo == -1)continue;
         int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
         if(size>=16)continue;
-        //printf("Fill DMA %d (size:%d w:%d r:%d) :%08x\n",fifo,size,gba->audio.fifo[fifo].write_ptr,gba->audio.fifo[fifo].read_ptr,src);
         for(int x=0;x<4;++x){
           uint32_t src_addr=src+x*4*src_dir;
           uint32_t data = gba_read32(gba,src_addr);
