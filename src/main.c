@@ -197,11 +197,14 @@ double se_fps_counter(int tick){
     last_t = stm_now();
     fps = 1.0/60;
   }else{
+    call+=tick;
     uint64_t t = stm_now();
     double delta = stm_sec(stm_diff(t,last_t));
-    double alpha = 0.1;
-    fps=fps*(1.0-alpha)+delta/(double)tick*alpha;
-    last_t = t;
+    if(delta>0.5){
+      fps=delta/call;
+      last_t = t;
+      call=0;
+    }
     
   }
   return 1.0/fps; 
@@ -955,26 +958,32 @@ void se_update_frame() {
 
   static double simulation_time = -1;
   static double display_time = 0;
-  if(emu_state.step_frames<1)emu_state.step_frames=1;
+  if(emu_state.step_frames==0)emu_state.step_frames=1;
 
   double sim_fps= se_get_sim_fps();
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
+  bool unlocked_mode = emu_state.step_frames<0;
 
-  if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN)simulation_time = se_time()-sim_time_increment*2;
+  if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN&&!unlocked_mode)simulation_time = se_time()-sim_time_increment*2;
+  if(unlocked_mode){
+    sim_time_increment=0;
+    simulation_time=se_time()+1.0/60;
+    max_frames_per_tick=1000;
+  }
   int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
   while(max_frames_per_tick--){
     double error = se_time()-simulation_time;
-    if(emu_state.frame==0&&simulation_time>se_time())break;
-    if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){
-      break;
+    if(unlocked_mode){
+      if(simulation_time<se_time()){break;}
+    }else{
+      if(emu_state.frame==0&&simulation_time>se_time())break;
+      if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){break;}
     }
     se_emulate_single_frame();
     emu_state.frame++;
-    //Only breakout of emulation loop when we have enough audio queued up
     simulation_time+=sim_time_increment;
     emu_state.render_frame = false;
   }
- 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
 
@@ -1038,11 +1047,11 @@ static void frame(void) {
       if(igButton("Step Frame",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_STEP;
     }else{
       igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-      if(igButton("Pause",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_PAUSE;
-      if(igButton("1x",(ImVec2){0, 0}))emu_state.step_frames=1; 
-      if(igButton("2x",(ImVec2){0, 0}))emu_state.step_frames=2;
+      if(igButton("||",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_PAUSE;
+      if(igButton("|>",(ImVec2){0, 0}))emu_state.step_frames=1; 
+      if(igButton("|>|>",(ImVec2){0, 0}))emu_state.step_frames=2;
       igPopStyleVar(1);
-      if(igButton("10x",(ImVec2){0, 0}))emu_state.step_frames=10;
+      if(igButton("|>|>|>",(ImVec2){0, 0}))emu_state.step_frames=-1;
     }
     igPushItemWidth(100);
     igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
