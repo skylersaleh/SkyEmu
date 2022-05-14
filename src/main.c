@@ -6,170 +6,42 @@
  *
 **/
 
-#define SE_AUDIO_BUFF_SAMPLES 4096
+#define SE_AUDIO_BUFF_SAMPLES 2048
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
 #include "capstone/include/capstone/capstone.h"
-#define SB_NUM_SAVE_STATES 5
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
 #endif
 
-#include "sokol_app.h"
-#include "sokol_audio.h"
-#include "sokol_gfx.h"
-#include "sokol_time.h"
-#include "sokol_glue.h"
+#include <SDL.h>
+#include <SDL_scancode.h>
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+  #include <SDL_opengles2.h>
+#else
+  #include <SDL_opengl.h>
+#endif
+
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
-#include "sokol_imgui.h"
+#include "cimgui_sdl_ogl3_backend.h"
+
 #include "karla.h"
 #define STBI_ONLY_PNG
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "load_rom_png.h"
 #ifdef USE_TINY_FILE_DIALOGS
-#include "tinyfiledialogs.h"
+  #include "tinyfiledialogs.h"
 #endif
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
-
-static float se_dpi_scale(){
-  float dpi_scale = sapp_dpi_scale();
-  if(dpi_scale<=0)dpi_scale=1.;
-  return dpi_scale;
-}
-const char* se_keycode_to_string(int keycode){
-  switch(keycode){
-    default:           return "Unknown";
-    case SAPP_KEYCODE_SPACE:         return "SPACE";
-    case SAPP_KEYCODE_APOSTROPHE:    return "APOSTROPHE";
-    case SAPP_KEYCODE_COMMA:         return "COMMA";
-    case SAPP_KEYCODE_MINUS:         return "MINUS";
-    case SAPP_KEYCODE_PERIOD:        return "PERIOD";
-    case SAPP_KEYCODE_SLASH:         return "SLASH";
-    case SAPP_KEYCODE_0:             return "0";
-    case SAPP_KEYCODE_1:             return "1";
-    case SAPP_KEYCODE_2:             return "2";
-    case SAPP_KEYCODE_3:             return "3";
-    case SAPP_KEYCODE_4:             return "4";
-    case SAPP_KEYCODE_5:             return "5";
-    case SAPP_KEYCODE_6:             return "6";
-    case SAPP_KEYCODE_7:             return "7";
-    case SAPP_KEYCODE_8:             return "8";
-    case SAPP_KEYCODE_9:             return "9";
-    case SAPP_KEYCODE_SEMICOLON:     return "SEMICOLON";
-    case SAPP_KEYCODE_EQUAL:         return "EQUAL";
-    case SAPP_KEYCODE_A:             return "A";
-    case SAPP_KEYCODE_B:             return "B";
-    case SAPP_KEYCODE_C:             return "C";
-    case SAPP_KEYCODE_D:             return "D";
-    case SAPP_KEYCODE_E:             return "E";
-    case SAPP_KEYCODE_F:             return "F";
-    case SAPP_KEYCODE_G:             return "G";
-    case SAPP_KEYCODE_H:             return "H";
-    case SAPP_KEYCODE_I:             return "I";
-    case SAPP_KEYCODE_J:             return "J";
-    case SAPP_KEYCODE_K:             return "K";
-    case SAPP_KEYCODE_L:             return "L";
-    case SAPP_KEYCODE_M:             return "M";
-    case SAPP_KEYCODE_N:             return "N";
-    case SAPP_KEYCODE_O:             return "O";
-    case SAPP_KEYCODE_P:             return "P";
-    case SAPP_KEYCODE_Q:             return "Q";
-    case SAPP_KEYCODE_R:             return "R";
-    case SAPP_KEYCODE_S:             return "S";
-    case SAPP_KEYCODE_T:             return "T";
-    case SAPP_KEYCODE_U:             return "U";
-    case SAPP_KEYCODE_V:             return "V";
-    case SAPP_KEYCODE_W:             return "W";
-    case SAPP_KEYCODE_X:             return "X";
-    case SAPP_KEYCODE_Y:             return "Y";
-    case SAPP_KEYCODE_Z:             return "Z";
-    case SAPP_KEYCODE_LEFT_BRACKET:  return "LEFT_BRACKET";
-    case SAPP_KEYCODE_BACKSLASH:     return "BACKSLASH";
-    case SAPP_KEYCODE_RIGHT_BRACKET: return "RIGHT_BRACKET";
-    case SAPP_KEYCODE_GRAVE_ACCENT:  return "GRAVE_ACCENT";
-    case SAPP_KEYCODE_WORLD_1:       return "WORLD_1";
-    case SAPP_KEYCODE_WORLD_2:       return "WORLD_2";
-    case SAPP_KEYCODE_ESCAPE:        return "ESCAPE";
-    case SAPP_KEYCODE_ENTER:         return "ENTER";
-    case SAPP_KEYCODE_TAB:           return "TAB";
-    case SAPP_KEYCODE_BACKSPACE:     return "BACKSPACE";
-    case SAPP_KEYCODE_INSERT:        return "INSERT";
-    case SAPP_KEYCODE_DELETE:        return "DELETE";
-    case SAPP_KEYCODE_RIGHT:         return "RIGHT";
-    case SAPP_KEYCODE_LEFT:          return "LEFT";
-    case SAPP_KEYCODE_DOWN:          return "DOWN";
-    case SAPP_KEYCODE_UP:            return "UP";
-    case SAPP_KEYCODE_PAGE_UP:       return "PAGE_UP";
-    case SAPP_KEYCODE_PAGE_DOWN:     return "PAGE_DOWN";
-    case SAPP_KEYCODE_HOME:          return "HOME";
-    case SAPP_KEYCODE_END:           return "END";
-    case SAPP_KEYCODE_CAPS_LOCK:     return "CAPS_LOCK";
-    case SAPP_KEYCODE_SCROLL_LOCK:   return "SCROLL_LOCK";
-    case SAPP_KEYCODE_NUM_LOCK:      return "NUM_LOCK";
-    case SAPP_KEYCODE_PRINT_SCREEN:  return "PRINT_SCREEN";
-    case SAPP_KEYCODE_PAUSE:         return "PAUSE";
-    case SAPP_KEYCODE_F1:            return "F1";
-    case SAPP_KEYCODE_F2:            return "F2";
-    case SAPP_KEYCODE_F3:            return "F3";
-    case SAPP_KEYCODE_F4:            return "F4";
-    case SAPP_KEYCODE_F5:            return "F5";
-    case SAPP_KEYCODE_F6:            return "F6";
-    case SAPP_KEYCODE_F7:            return "F7";
-    case SAPP_KEYCODE_F8:            return "F8";
-    case SAPP_KEYCODE_F9:            return "F9";
-    case SAPP_KEYCODE_F10:           return "F10";
-    case SAPP_KEYCODE_F11:           return "F11";
-    case SAPP_KEYCODE_F12:           return "F12";
-    case SAPP_KEYCODE_F13:           return "F13";
-    case SAPP_KEYCODE_F14:           return "F14";
-    case SAPP_KEYCODE_F15:           return "F15";
-    case SAPP_KEYCODE_F16:           return "F16";
-    case SAPP_KEYCODE_F17:           return "F17";
-    case SAPP_KEYCODE_F18:           return "F18";
-    case SAPP_KEYCODE_F19:           return "F19";
-    case SAPP_KEYCODE_F20:           return "F20";
-    case SAPP_KEYCODE_F21:           return "F21";
-    case SAPP_KEYCODE_F22:           return "F22";
-    case SAPP_KEYCODE_F23:           return "F23";
-    case SAPP_KEYCODE_F24:           return "F24";
-    case SAPP_KEYCODE_F25:           return "F25";
-    case SAPP_KEYCODE_KP_0:          return "KP_0";
-    case SAPP_KEYCODE_KP_1:          return "KP_1";
-    case SAPP_KEYCODE_KP_2:          return "KP_2";
-    case SAPP_KEYCODE_KP_3:          return "KP_3";
-    case SAPP_KEYCODE_KP_4:          return "KP_4";
-    case SAPP_KEYCODE_KP_5:          return "KP_5";
-    case SAPP_KEYCODE_KP_6:          return "KP_6";
-    case SAPP_KEYCODE_KP_7:          return "KP_7";
-    case SAPP_KEYCODE_KP_8:          return "KP_8";
-    case SAPP_KEYCODE_KP_9:          return "KP_9";
-    case SAPP_KEYCODE_KP_DECIMAL:    return "KP_DECIMAL";
-    case SAPP_KEYCODE_KP_DIVIDE:     return "KP_DIVIDE";
-    case SAPP_KEYCODE_KP_MULTIPLY:   return "KP_MULTIPLY";
-    case SAPP_KEYCODE_KP_SUBTRACT:   return "KP_SUBTRACT";
-    case SAPP_KEYCODE_KP_ADD:        return "KP_ADD";
-    case SAPP_KEYCODE_KP_ENTER:      return "KP_ENTER";
-    case SAPP_KEYCODE_KP_EQUAL:      return "KP_EQUAL";
-    case SAPP_KEYCODE_LEFT_SHIFT:    return "LEFT_SHIFT";
-    case SAPP_KEYCODE_LEFT_CONTROL:  return "LEFT_CONTROL";
-    case SAPP_KEYCODE_LEFT_ALT:      return "LEFT_ALT";
-    case SAPP_KEYCODE_LEFT_SUPER:    return "LEFT_SUPER";
-    case SAPP_KEYCODE_RIGHT_SHIFT:   return "RIGHT_SHIFT";
-    case SAPP_KEYCODE_RIGHT_CONTROL: return "RIGHT_CONTROL";
-    case SAPP_KEYCODE_RIGHT_ALT:     return "RIGHT_ALT";
-    case SAPP_KEYCODE_RIGHT_SUPER:   return "RIGHT_SUPER";
-    case SAPP_KEYCODE_MENU:          return "MENU";
-  }
-}
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
@@ -177,87 +49,57 @@ sb_gb_t gb_state = { 0 };
 gba_t gba = { 0 };  
 nds_t nds = { 0 };
 
-sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
-int sb_valid_save_states = 0;
-unsigned sb_save_state_index=0;
-
 double se_time(){
-  static uint64_t base_time=0;
-  if(base_time==0) base_time= stm_now();
-  return stm_sec(stm_diff(stm_now(),base_time));
+  return (double)(SDL_GetPerformanceCounter())/(double)SDL_GetPerformanceFrequency();
 }
 
 double se_fps_counter(int tick){
   static int call = -1;
-  static uint64_t last_t = 0;
+  static double last_t = 0;
   static double fps = 1.0/60.0; 
   if(!tick)return 1.0/fps;
   if(call==-1){
     call = 0;
-    last_t = stm_now();
+    last_t = se_time();
     fps = 1.0/60;
   }else{
     call+=tick;
-    uint64_t t = stm_now();
-    double delta = stm_sec(stm_diff(t,last_t));
+    double t = se_time();
+    double delta = t-last_t;
     if(delta>0.5){
       fps=delta/call;
       last_t = t;
       call=0;
     }
-    
   }
   return 1.0/fps; 
 }
 
-void sb_pop_save_state(sb_gb_t* gb){
-  if(sb_valid_save_states>0){
-    --sb_valid_save_states;
-    --sb_save_state_index;
-    *gb = sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES];
-  }
-}
-void sb_push_save_state(sb_gb_t* gb){
-  ++sb_valid_save_states;
-  if(sb_valid_save_states>SB_NUM_SAVE_STATES)sb_valid_save_states = SB_NUM_SAVE_STATES;
-  ++sb_save_state_index;
-  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
-}
-
 #define GUI_MAX_IMAGES_PER_FRAME 16
+#define SE_MAX_KEYCODES 256
+#define SE_MAX_TOUCHPOINTS 10
 typedef struct {
     uint64_t laptime;
-    sg_pass_action pass_action;
-    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
+    GLuint image_stack[GUI_MAX_IMAGES_PER_FRAME];
     int current_image; 
     int screen_width;
     int screen_height;
-    int button_state[SAPP_MAX_KEYCODES];
     float volume; 
     bool show_settings; 
     bool show_developer;
     struct{
       bool active;
       float pos[2];
-    }touch_points[SAPP_MAX_TOUCHPOINTS];
-    float last_touch_time;
+    }touch_points[SE_MAX_TOUCHPOINTS];
+    double last_touch_time;
     bool draw_debug_menu;
     int mem_view_address;
+    double dpi_scale;
+    bool init_fonts;
 } gui_state_t;
 gui_state_t gui_state={.volume=1.0}; 
-static sg_image* se_get_image(){
-  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
-    gui_state.current_image++;
-    return gui_state.image_stack + gui_state.current_image-1; 
-  }
-  return NULL;
-}
-static void se_free_all_images(){
-  for(int i=0;i<gui_state.current_image;++i){
-    sg_destroy_image(gui_state.image_stack[i]);
-  }
-  gui_state.current_image=0;
-}
+static float se_dpi_scale(){ return gui_state.dpi_scale;}
+
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
 
@@ -316,7 +158,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
       char instr_str[80];
       
       if(insn[j].address==pc){
-        igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
         snprintf(instr_str,80,"PC ->0x%08x:", (int)insn[j].address);
         instr_str[79]=0;
         igText(instr_str);
@@ -363,12 +205,12 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     uint32_t addr = mmios[i].addr;
     uint32_t data = se_read32(read, addr);
     bool has_fields = false;
-    igPushIDInt(i);
+    igPushID_Int(i);
     char lab[80];
     snprintf(lab,80,"0x%08x: %s",addr,mmios[i].name);
-    if (igTreeNodeStr(lab)){
+    if (igTreeNode_Str(lab)){
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
-        igPushIDInt(f);
+        igPushID_Int(f);
         uint32_t start = mmios[i].bits[f].start; 
         uint32_t size = mmios[i].bits[f].size; 
         if(size){
@@ -400,7 +242,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
       }
       if(!has_fields){
         int v = data; 
-        igPushIDInt(0);
+        igPushID_Int(0);
         igPushItemWidth(150);
         if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
           se_write32(write,addr,v);
@@ -498,7 +340,6 @@ static void se_draw_emulated_system_screen(){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
 
-
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
   if(emu_state.system==SYSTEM_GBA){
     lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
@@ -577,6 +418,7 @@ static void se_draw_debug(){
 ///////////////////////////////
 
 void sb_poll_controller_input(sb_joy_t* joy){
+  /*
   joy->left  = gui_state.button_state[SAPP_KEYCODE_A];
   joy->right = gui_state.button_state[SAPP_KEYCODE_D];
   joy->up    = gui_state.button_state[SAPP_KEYCODE_W];
@@ -591,70 +433,60 @@ void sb_poll_controller_input(sb_joy_t* joy){
   joy->y = gui_state.button_state[SAPP_KEYCODE_M];
   joy->screen_folded = !gui_state.button_state[SAPP_KEYCODE_B];
   joy->pen_down =  gui_state.button_state[SAPP_KEYCODE_V];
+  */
 
+}
+static GLuint se_get_image(){
+  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
+    gui_state.current_image++;
+  }
+  GLuint tex =  gui_state.image_stack[gui_state.current_image]; 
+  if(tex==0){
+    glGenTextures(1,&gui_state.image_stack[gui_state.current_image]);
+    tex = gui_state.image_stack[gui_state.current_image];
+  }
+  return tex;
+}
+static void se_free_all_images(){
+  for(int i=0;i<gui_state.current_image;++i){
+    if(gui_state.image_stack[i]){
+      glDeleteTextures(1,&gui_state.image_stack[i]);
+      gui_state.image_stack[i]=0; 
+    }
+  }
+  gui_state.current_image=0;
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
-  sg_image_data im_data={0};
-  uint8_t * rgba8_data = data;
-  if(has_alpha==false){
-    rgba8_data= malloc(im_width*im_height*4);
-    for(int i=0;i<im_width*im_height;++i){
-      rgba8_data[i*4+0]= data[i*3+0];
-      rgba8_data[i*4+1]= data[i*3+1];
-      rgba8_data[i*4+2]= data[i*3+2];
-      rgba8_data[i*4+3]= 255; 
-    }
-  }
-  im_data.subimage[0][0].ptr = rgba8_data;
-  im_data.subimage[0][0].size = im_width*im_height*4; 
-  sg_image_desc desc={
-    .type=              SG_IMAGETYPE_2D,
-    .render_target=     false,
-    .width=             im_width,
-    .height=            im_height,
-    .num_slices=        1,
-    .num_mipmaps=       1,
-    .usage=             SG_USAGE_IMMUTABLE,
-    .pixel_format=      SG_PIXELFORMAT_RGBA8,
-    .sample_count=      1,
-    .min_filter=        SG_FILTER_NEAREST,
-    .mag_filter=        SG_FILTER_NEAREST,
-    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
-    .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
-    .max_anisotropy=    1,
-    .min_lod=           0.0f,
-    .max_lod=           1e9f,
-    .data=              im_data,
-  };
-
-  sg_image *image = se_get_image();
+  GLuint image = se_get_image();
   if(!image)return; 
-  *image =  sg_make_image(&desc);
+  glBindTexture(GL_TEXTURE_2D,image); 
+  glTexImage2D(GL_TEXTURE_2D,0, has_alpha? GL_RGBA : GL_RGB, im_width,im_height,0,has_alpha? GL_RGBA: GL_RGB,GL_UNSIGNED_BYTE,data);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);;
   float dpi_scale = se_dpi_scale();
   unsigned tint = opacity*0xff;
   tint*=0x010101;
   tint|=0xff000000;
   ImDrawList_AddImage(igGetWindowDrawList(),
-    (ImTextureID)(uintptr_t)image->id,
+    (ImTextureID)image,
     (ImVec2){x/dpi_scale,y/dpi_scale},
     (ImVec2){(x+render_width)/dpi_scale,(y+render_height)/dpi_scale},
     (ImVec2){0,0},(ImVec2){1,1},
     tint);
-  if(has_alpha==false)free(rgba8_data);
 }
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
   return se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,1.0);
 }
 bool se_draw_image_button(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
   float dpi_scale = se_dpi_scale();
-  igPushStyleColorVec4(ImGuiCol_Button, (ImVec4){0.f, 0.f, 0.f, 0.f});
-  igPushStyleColorVec4(ImGuiCol_ButtonActive, (ImVec4){0.f, 0.f, 0.f, 0.0f});
-  igPushStyleColorVec4(ImGuiCol_ButtonHovered, (ImVec4){0.f, 0.f, 0.f, 0.0f});
+  igPushStyleColor_Vec4(ImGuiCol_Button, (ImVec4){0.f, 0.f, 0.f, 0.f});
+  igPushStyleColor_Vec4(ImGuiCol_ButtonActive, (ImVec4){0.f, 0.f, 0.f, 0.0f});
+  igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, (ImVec4){0.f, 0.f, 0.f, 0.0f});
   igSetCursorScreenPos((ImVec2){x/dpi_scale,y/dpi_scale});
-  bool clicked = igButtonEx("",
+  bool clicked = igButtonEx("##",
     (ImVec2){(render_width)/dpi_scale,(render_height)/dpi_scale},
     ImGuiButtonFlags_None);
 
@@ -694,8 +526,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   ImU32 line_color = 0xffffff;
   ImU32 line_color2 =0x000000;
   ImU32 sel_color =0x000000;
-
-  float opacity = 5.-gui_state.last_touch_time;
+  double delta = se_time()-gui_state.last_touch_time;
+  float opacity = 5.-delta;
   if(opacity<=0){opacity=0;return;}
   if(opacity>1)opacity=1;
 
@@ -728,8 +560,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   float points[max_points][2]={0};
 
   int p = 0;
-  //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
-  for(int i=0; i<SAPP_MAX_TOUCHPOINTS;++i){
+
+  for(int i=0; i<SE_MAX_TOUCHPOINTS;++i){
     if(p<max_points&&gui_state.touch_points[i].active){
       points[p][0]=gui_state.touch_points[i].pos[0]/se_dpi_scale();
       points[p][1]=gui_state.touch_points[i].pos[1]/se_dpi_scale();
@@ -783,11 +615,11 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   ImDrawList_AddPolyline(dl,dpad_points,12,line_color2,true,line_w1);
   ImDrawList_AddPolyline(dl,dpad_points,12,line_color,true,line_w0);
   
-  if(down) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]+dpad_sz1},sel_color,0,ImDrawCornerFlags_None);
-  if(up)   ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]-dpad_sz1},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
+  if(down) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]+dpad_sz1},sel_color,0,ImDrawFlags_RoundCornersNone);
+  if(up)   ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]-dpad_sz1},(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},sel_color,0,ImDrawFlags_RoundCornersNone);
 
-  if(left) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
-  if(right)ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
+  if(left) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawFlags_RoundCornersNone);
+  if(right)ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawFlags_RoundCornersNone);
 
   char * button_name[] ={"Start", "Select"};
   int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
@@ -810,11 +642,11 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
       int dy = points[i][1]-button_y;
       if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
         button_press|=1<<b; 
-        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
+        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawFlags_RoundCornersNone);  
       }
     }
-    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
-    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawFlags_RoundCornersNone,line_w1);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawFlags_RoundCornersNone,line_w0);  
   }
   button_y=win_y+button_padding;
   for(int b=0;b<num_buttons;++b){                                           
@@ -832,11 +664,11 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
       int dy = points[i][1]-button_y;
       if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
         button_press|=1<<(b+2); 
-        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
+        ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawFlags_RoundCornersNone);  
       }
     }
-    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
-    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0); 
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawFlags_RoundCornersNone,line_w1);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawFlags_RoundCornersNone,line_w0); 
   }
   state->joy.left  |= left;
   state->joy.right |= right;
@@ -964,12 +796,11 @@ void se_update_frame() {
   double sim_time_increment = 1./sim_fps/emu_state.step_frames;
   bool unlocked_mode = emu_state.step_frames<0;
 
-  if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN&&!unlocked_mode)simulation_time = se_time()-sim_time_increment*2;
   if(unlocked_mode){
     sim_time_increment=0;
-    simulation_time=se_time()+1.0/60;
     max_frames_per_tick=1000;
-  }
+    simulation_time = se_time()+1.0/60;
+  }else if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN)simulation_time = se_time()-sim_time_increment*2;
   int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
   while(max_frames_per_tick--){
     double error = se_time()-simulation_time;
@@ -984,10 +815,9 @@ void se_update_frame() {
     simulation_time+=sim_time_increment;
     emu_state.render_frame = false;
   }
-  emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
+  emu_state.avg_frame_time = 1.0/se_fps_counter(1);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
 
-  sb_poll_controller_input(&emu_state.joy);
   se_draw_emulated_system_screen();
 }
 static void init(void) {
@@ -1003,40 +833,41 @@ static void init(void) {
         FS.syncfs(true, function (err) {});
     );
   #endif
-  sg_setup(&(sg_desc){
-      .context = sapp_sgcontext()
-  });
-  stm_setup();
-  simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
-
-  // initial clear color
-  gui_state.pass_action = (sg_pass_action) {
-      .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.5f, 1.0f, 1.0 } }
-  };
-  gui_state.last_touch_time=1e5;
-  saudio_setup(&(saudio_desc){
-    .sample_rate=SE_AUDIO_SAMPLE_RATE,
-    .num_channels=2,
-    .num_packets=16,
-    .packet_frames=512
-  });
+  gui_state.last_touch_time=0;
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }
 }
 
+static void se_init_karla(){
+  ImFontAtlas* atlas = igGetIO()->Fonts;    
+  ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
+    atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
+  int built = 0;
+  unsigned char* font_pixels;
+  int font_width, font_height;
+  int bytes_per_pixel;
+  ImFontAtlas_GetTexDataAsRGBA32(atlas, &font_pixels, &font_width, &font_height, &bytes_per_pixel);
+  GLuint tex;
+  glGenTextures(1,&tex);
+  glBindTexture(GL_TEXTURE_2D,tex); 
+  glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA, font_width,font_height,0,GL_RGBA,GL_UNSIGNED_BYTE,font_pixels);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+  atlas->TexID = (ImTextureID)(uintptr_t) tex;
+  igGetIO()->FontDefault=font;
+  igGetIO()->Fonts=atlas;
+  igGetIO()->FontGlobalScale/=se_dpi_scale();
+}
 static void frame(void) {
-  
-  const int width = sapp_width();
-  const int height = sapp_height();
-  const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
-  gui_state.last_touch_time+=delta_time;
-  gui_state.screen_width=width;
-  gui_state.screen_height=height;
-  simgui_new_frame(width, height, delta_time);
+  int height = gui_state.screen_height;
+  int width = gui_state.screen_width;
   float menu_height = 0; 
   /*=== UI CODE STARTS HERE ===*/
-  igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
+  igPushStyleVar_Vec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   if (igBeginMainMenuBar())
   {
     igText("SkyEmu", (ImVec2){0, 0});
@@ -1046,7 +877,7 @@ static void frame(void) {
       if(igButton("Play",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames = 1;}
       if(igButton("Step Frame",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_STEP;
     }else{
-      igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
+      igPushStyleVar_Vec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
       if(igButton("||",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_PAUSE;
       if(igButton("|>",(ImVec2){0, 0}))emu_state.step_frames=1; 
       if(igButton("|>|>",(ImVec2){0, 0}))emu_state.step_frames=2;
@@ -1061,76 +892,30 @@ static void frame(void) {
     igEndMainMenuBar();
   }
   igPopStyleVar(1);
-
   igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
   igSetNextWindowSize((ImVec2){width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
-  igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
-  igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
-  igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration
-    |ImGuiWindowFlags_NoBringToFrontOnFocus);
- 
+  igPushStyleVar_Float(ImGuiStyleVar_WindowBorderSize, 0.0f);
+  igPushStyleVar_Vec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
+  igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBringToFrontOnFocus);
   se_update_frame();
   igPopStyleVar(2);
   igEnd();
   if(gui_state.draw_debug_menu)se_draw_debug();
-  /*=== UI CODE ENDS HERE ===*/
-
-  sg_begin_default_pass(&gui_state.pass_action, width, height);
-  simgui_render();
-  sg_end_pass();
-  static bool init=false;
-  if(!init){
-    init=true;
-    ImFontAtlas* atlas = igGetIO()->Fonts;    
-    ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
-      atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
-    int built = 0;
- 
-
-    unsigned char* font_pixels;
-    int font_width, font_height;
-    int bytes_per_pixel;
-    ImFontAtlas_GetTexDataAsRGBA32(atlas, &font_pixels, &font_width, &font_height, &bytes_per_pixel);
-    sg_image_desc img_desc;
-    memset(&img_desc, 0, sizeof(img_desc));
-    img_desc.width = font_width;
-    img_desc.height = font_height;
-    img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-    img_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
-    img_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-    img_desc.min_filter = SG_FILTER_LINEAR;
-    img_desc.mag_filter = SG_FILTER_LINEAR;
-    img_desc.data.subimage[0][0].ptr = font_pixels;
-    img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
-    img_desc.label = "sokol-imgui-font";
-    atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
-    igGetIO()->FontDefault=font;
-    igGetIO()->Fonts=atlas;
-    igGetIO()->FontGlobalScale/=se_dpi_scale();
-  }
-  sg_commit();
-
-  int num_samples_to_push = saudio_expect()*2;
-  enum{samples_to_push=128};
-  float volume_sq = gui_state.volume*gui_state.volume/32768.;
-  for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
-    float audio_buff[samples_to_push];
-    int pushed = 0; 
-    if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push)break;
-    for(int i=0;i<samples_to_push;++i){
-      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
-      audio_buff[i]=data*volume_sq;
-    }
-    saudio_push(audio_buff, samples_to_push/2);
-  }
-  se_free_all_images();
 }
-
+void sdl2_audio_callback(void *unused, uint8_t *str, int len) {
+  int16_t* stream = (int16_t*)str;
+  int num_samples_to_push = len/(2);
+  float volume_sq = gui_state.volume*gui_state.volume;
+  for(int s = 0; s<num_samples_to_push;s+=1){
+    float value =0; 
+    if(sb_ring_buffer_size(&emu_state.audio_ring_buff)>=0){
+      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
+      value=data*volume_sq;
+    }
+    *(stream++)=value;
+  }
+}
 static void cleanup(void) {
-  simgui_shutdown();
-  se_free_all_images();
-  sg_shutdown();
-  saudio_shutdown();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {
@@ -1144,35 +929,37 @@ static void emsc_load_callback(const sapp_html5_fetch_response* response) {
   free(response->user_data);
 }
 #endif 
-static void event(const sapp_event* ev) {
-  simgui_handle_event(ev);
-  if (ev->type == SAPP_EVENTTYPE_FILES_DROPPED) {
-    // get the number of files and their paths like this:
-    const int num_dropped_files = sapp_get_num_dropped_files();
-    if(num_dropped_files){
-#ifdef EMSCRIPTEN
-    uint32_t size = sapp_html5_get_dropped_file_size(0);
-    uint8_t * buffer = (uint8_t*)malloc(size);
-    char *rom_file=(char*)malloc(4096); 
-    snprintf(rom_file,4096,"/%s",sapp_get_dropped_file_path(0));
+static void se_update_joypad(int scancode, bool pressed){
+  sb_joy_t*joy = &emu_state.joy;
+  if(scancode==SDL_SCANCODE_A)joy->left  = pressed;
+  if(scancode==SDL_SCANCODE_D)joy->right = pressed;
+  if(scancode==SDL_SCANCODE_W)joy->up    = pressed;
+  if(scancode==SDL_SCANCODE_S)joy->down  = pressed;
+  if(scancode==SDL_SCANCODE_J)joy->a = pressed;
+  if(scancode==SDL_SCANCODE_K)joy->b = pressed;
+  if(scancode==SDL_SCANCODE_RETURN)joy->start = pressed;
+  if(scancode==SDL_SCANCODE_APOSTROPHE)joy->select = pressed;
+  if(scancode==SDL_SCANCODE_U)joy->l = pressed;
+  if(scancode==SDL_SCANCODE_I)joy->r = pressed;
+  if(scancode==SDL_SCANCODE_N)joy->x = pressed;
+  if(scancode==SDL_SCANCODE_M)joy->y = pressed;
+  if(scancode==SDL_SCANCODE_B)joy->screen_folded = !pressed;
+  if(scancode==SDL_SCANCODE_V)joy->pen_down =  pressed;
+}
+static void se_process_event(const SDL_Event*ev) {
+  igImplSDL2_ProcessEvent(ev);
+  if(ev->type==SDL_DROPFILE)se_load_rom(ev->drop.file);
+  else if (ev->type == SDL_KEYDOWN) {
+    int scancode = ev->key.keysym.scancode; 
+    se_update_joypad(scancode,true);
+    if(scancode ==SDL_SCANCODE_F1)gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
 
-    sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
-      .dropped_file_index = 0,
-                .callback = emsc_load_callback,
-                .buffer_ptr = buffer,
-                .buffer_size = size,
-                .user_data=rom_file});
-#else
-        se_load_rom(sapp_get_dropped_file_path(0));
-#endif
-    }
-  }else if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
-    gui_state.button_state[ev->key_code] = true;
-    if(ev->key_code ==SAPP_KEYCODE_F1)gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
   }
-  else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
-    gui_state.button_state[ev->key_code] = false;
-  }else if(ev->type==SAPP_EVENTTYPE_TOUCHES_BEGAN||
+  else if (ev->type == SDL_KEYUP) {
+    int scancode = ev->key.keysym.scancode; 
+    se_update_joypad(scancode,false);
+  }
+  /*else if(ev->type==SAPP_EVENTTYPE_TOUCHES_BEGAN||
     ev->type==SAPP_EVENTTYPE_TOUCHES_MOVED||
     ev->type==SAPP_EVENTTYPE_TOUCHES_ENDED||
     ev->type==SAPP_EVENTTYPE_TOUCHES_CANCELLED){
@@ -1184,24 +971,146 @@ static void event(const sapp_event* ev) {
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
     }
-    gui_state.last_touch_time=0;
-  }
+    gui_state.last_touch_time=se_time();
+  }*/
 }
-sapp_desc sokol_main(int argc, char* argv[]) {
-  emu_state.cmd_line_arg_count =argc;
-  emu_state.cmd_line_args =argv;
+// Main code
+int main(int argc , char*argv[])
+{
+  // Setup SDL
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER|SDL_INIT_AUDIO) != 0)
+  {
+    printf("Error: %s\n", SDL_GetError());
+    return -1;
+  }
 
-  return (sapp_desc){
-      .init_cb = init,
-      .frame_cb = frame,
-      .cleanup_cb = cleanup,
-      .event_cb = event,
-      .window_title = "SkyEmu",
-      .width = 800,
-      .height = 600,
-      .enable_dragndrop = true,
-      .enable_clipboard =true,
-      .high_dpi = true,
-      .max_dropped_file_path_length = 8192,
-  };
+  // Decide GL+GLSL versions
+#if defined(IMGUI_IMPL_OPENGL_ES2)
+  // GL ES 2.0 + GLSL 100
+  const char* glsl_version = "#version 100";
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#elif defined(__APPLE__)
+  // GL 3.2 Core + GLSL 150
+  const char* glsl_version = "#version 150";
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#else
+  // GL 3.0 + GLSL 130
+  const char* glsl_version = "#version 130";
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+
+  // Create window with graphics context
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
+  SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window* window = SDL_CreateWindow("SkyEmu", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
+  SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+  SDL_GL_MakeCurrent(window, gl_context);
+  SDL_GL_SetSwapInterval(0); // Enable vsync
+
+  // Setup Dear ImGui context
+  igCreateContext(NULL);
+  ImGuiIO* io = igGetIO();
+  io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+  io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+  io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+  io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+  //io->ConfigViewportsNoAutoMerge = true;
+  //io.ConfigViewportsNoTaskBarIcon = true;
+
+  igStyleColorsDark(NULL);
+
+  // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+  ImGuiStyle* style = igGetStyle();
+  if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+  {
+    style->WindowRounding = 0.0f;
+    style->Colors[ImGuiCol_WindowBg].w = 1.0f;
+  }
+
+  // Setup Platform/Renderer backends
+  igImplSDL2_InitForOpenGL(window, gl_context);
+  igImplOpenGL3_Init(glsl_version);
+
+  SDL_AudioSpec as;
+  as.freq = SE_AUDIO_SAMPLE_RATE;
+  as.format = AUDIO_S16;
+  as.samples = SE_AUDIO_BUFF_SAMPLES;
+  as.callback=sdl2_audio_callback;
+  as.channels = SE_AUDIO_BUFF_CHANNELS;
+  SDL_AudioSpec as_got;
+
+  SDL_AudioDeviceID audio_dev = SDL_OpenAudioDevice(NULL,false, &as,&as_got,0);
+  SDL_PauseAudioDevice(audio_dev,0);
+  // Main loop
+  bool done = false;
+  while (!done){
+    // Poll and handle events (inputs, window resize, etc.)
+    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
+    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
+    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
+    // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
+    SDL_Event event;
+    while (SDL_PollEvent(&event)){
+      if (event.type == SDL_QUIT)
+          done = true;
+      if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
+          done = true;
+      se_process_event(&event);
+    }
+    if(gui_state.init_fonts==false){
+      glViewport(0, 0, (int)io->DisplaySize.x, (int)io->DisplaySize.y);
+      SDL_GL_GetDrawableSize(window,&gui_state.screen_width,&gui_state.screen_height);
+      int win_w = gui_state.screen_width, win_h=gui_state.screen_height; 
+      SDL_GetWindowSize(window, &win_w, &win_h);
+      gui_state.dpi_scale = (float)gui_state.screen_width/(float)win_w;
+      se_init_karla();
+      gui_state.init_fonts=true;
+    }
+    glClearColor(0,0,0,1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    // Start the Dear ImGui frame
+    igImplOpenGL3_NewFrame();
+    igImplSDL2_NewFrame();
+
+    igNewFrame();
+    frame();    
+    // Rendering
+    igRender();
+    igImplOpenGL3_RenderDrawData(igGetDrawData());
+
+    // Update and Render additional Platform Windows
+    // (Platform functions may change the current OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.
+    //  For this specific demo app we could also call SDL_GL_MakeCurrent(window, gl_context) directly)
+    if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable){
+      SDL_Window* backup_current_window = SDL_GL_GetCurrentWindow();
+      SDL_GLContext backup_current_context = SDL_GL_GetCurrentContext();
+      igUpdatePlatformWindows();
+      igRenderPlatformWindowsDefault(NULL,NULL);
+      SDL_GL_MakeCurrent(backup_current_window, backup_current_context);
+    }
+    SDL_GL_SwapWindow(window);
+    se_free_all_images();
+  }
+
+  // Cleanup
+  igImplOpenGL3_Shutdown();
+  igImplSDL2_Shutdown();
+  igDestroyContext(NULL);
+
+  SDL_GL_DeleteContext(gl_context);
+  SDL_DestroyWindow(window);
+  SDL_Quit();
+
+  return 0;
 }

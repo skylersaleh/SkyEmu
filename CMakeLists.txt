@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
-project(SkyEmu)
+project(SkyEmu C CXX OBJC)
 
 
 set(CMAKE_C_STANDARD 11)
@@ -66,21 +66,6 @@ if ((NOT IOS) OR (NOT EMSCRIPTEN) OR (NOT ANDROID))
     set_property(TARGET tinyfd PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
-#=== LIBRARY: cimgui + Dear ImGui
-add_library(cimgui STATIC 
-    src/cimgui/cimgui.cpp 
-    src/cimgui/cimgui.h 
-    src/cimgui/imgui/imgui.cpp
-    src/cimgui/imgui/imgui.h
-    src/cimgui/imgui/imgui_widgets.cpp 
-    src/cimgui/imgui/imgui_draw.cpp 
-    src/cimgui/imgui/imgui_tables.cpp
-    src/cimgui/imgui/imgui_demo.cpp
-    )
-set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-
-target_include_directories(cimgui INTERFACE src/cimgui)
-
 #=== LIBRARY: sokol
 # add headers to the the file list because they are useful to have in IDEs
 set(SOKOL_HEADERS
@@ -124,7 +109,32 @@ set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
 set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
 set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
 add_subdirectory(src/capstone)
-set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
+
+set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
+set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
+set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
+add_subdirectory(src/SDL2)
+find_package(OpenGL REQUIRED)
+
+#=== LIBRARY: cimgui + Dear ImGui
+add_library(cimgui STATIC 
+    src/cimgui-docking/cimgui.cpp 
+    src/cimgui-docking/cimgui.h 
+    src/cimgui-docking/imgui/imgui.cpp
+    src/cimgui-docking/imgui/imgui.h
+    src/cimgui-docking/imgui/imgui_widgets.cpp 
+    src/cimgui-docking/imgui/imgui_draw.cpp 
+    src/cimgui-docking/imgui/imgui_tables.cpp
+    src/cimgui-docking/imgui/imgui_demo.cpp
+    src/cimgui-docking/imgui/backends/imgui_impl_sdl.cpp
+    src/cimgui-docking/imgui/backends/imgui_impl_opengl3.cpp
+    src/cimgui_sdl_ogl3_backend.cpp
+    )
+set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+target_include_directories(cimgui PUBLIC src/cimgui-docking src/cimgui-docking/imgui src/SDL2/include)
+
+set(LINK_LIBS ${LINK_LIBS} capstone-static SDL2-static ${ALSA_LIBRARIES} ${OPENGL_LIBRARIES})
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
