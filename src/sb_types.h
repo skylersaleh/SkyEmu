@@ -34,10 +34,11 @@
 #define SB_BFE(VALUE, BITOFFSET, SIZE)                                         \
   (((VALUE) >> (BITOFFSET)) & ((1llu << (SIZE)) - 1))
 #define SB_BIT_TEST(VALUE,BITOFFSET) ((VALUE)&(1u<<(BITOFFSET)))
-#define SB_MODE_RESET 0
-#define SB_MODE_PAUSE 1
+#define SB_MODE_PAUSE 0
+#define SB_MODE_RESET 1
 #define SB_MODE_RUN 2
 #define SB_MODE_STEP 3
+#define SB_MODE_REWIND 4
 
 #define SB_LCD_W 160
 #define SB_LCD_H 144
@@ -96,6 +97,10 @@ typedef struct {
   float master_volume;
   int cmd_line_arg_count;
   char** cmd_line_args;
+  //Temporary storage for use by cores that persists across frames but not in save states
+  //or rewind buffers
+  uint8_t core_temp_storage[1024*1024];
+  uint32_t frames_since_rewind_push;
 } sb_emu_state_t;
 typedef struct{
   uint32_t addr;
@@ -142,7 +147,7 @@ typedef struct{
   unsigned int scanline_cycles;
   unsigned int curr_scanline;
   unsigned int curr_window_scanline;
-  uint8_t framebuffer[SB_LCD_W*SB_LCD_H*3];
+  uint8_t *framebuffer;
   uint8_t vram[SB_VRAM_BANK_SIZE*SB_VRAM_NUM_BANKS];
   uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
   bool in_hblank; //Used for HDMA

@@ -870,206 +870,169 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
   }
 
 }
-void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
-  static FILE* file = NULL;  
-  if (emu->run_mode == SB_MODE_RESET) {
-    if(file)fclose(file);
-    file = fopen("instr_trace.txt","wb");
+void sb_reset(sb_gb_t* gb){
+  memset(&gb->cpu, 0, sizeof(gb->cpu));
+  memset(&gb->dma, 0, sizeof(gb->dma));
+  memset(&gb->timers, 0, sizeof(gb->timers));
+  memset(&gb->lcd, 0, sizeof(gb->lcd));
+  memset(&gb->mem.wram, 0, sizeof(gb->mem.wram));
+  //Zero out memory
+  for(int i=0x8000;i<=0xffff;++i)gb->mem.data[i]=0;
+  gb->cpu.pc = 0x100;
 
-    memset(&gb->cpu, 0, sizeof(gb->cpu));
-    memset(&gb->dma, 0, sizeof(gb->dma));
-    memset(&gb->timers, 0, sizeof(gb->timers));
-    memset(&gb->lcd, 0, sizeof(gb->lcd));
-    memset(&gb->mem.wram, 0, sizeof(gb->mem.wram));
-    //Zero out memory
-    for(int i=0x8000;i<=0xffff;++i)gb->mem.data[i]=0;
-    gb->cpu.pc = 0x100;
-
-    gb->cpu.af=0x01B0;
-    gb->model = SB_GB;
-    if(gb->cart.game_boy_color){
-      gb->model = SB_GBC;
-    }
-    if(gb->model == SB_GBC){
-      gb->cpu.af|=0x11<<8;
-    }
-    gb->cpu.bc=0x0013;
-    gb->cpu.de=0x00D8;
-    gb->cpu.hl=0x014D;
-    gb->cpu.sp=0xFFFE;
-
-    gb->mem.data[0xFF05] = 0x00; // TIMA
-    gb->mem.data[0xFF06] = 0x00; // TMA
-    gb->mem.data[0xFF07] = 0x00; // TAC
-    /*
-    gb->mem.data[0xFF10] = 0x80; // NR10
-    gb->mem.data[0xFF11] = 0xBF; // NR11
-    gb->mem.data[0xFF12] = 0xF3; // NR12
-    gb->mem.data[0xFF14] = 0xBF; // NR14
-    gb->mem.data[0xFF16] = 0x3F; // NR21
-    gb->mem.data[0xFF17] = 0x00; // NR22
-    gb->mem.data[0xFF19] = 0xBF; // NR24
-    */
-    gb->mem.data[0xFF1A] = 0x7F; // NR30
-    gb->mem.data[0xFF1B] = 0xFF; // NR31
-    gb->mem.data[0xFF1C] = 0x9F; // NR32
-    gb->mem.data[0xFF1E] = 0xBF; // NR34
-    /*
-    gb->mem.data[0xFF20] = 0xFF; // NR41
-    gb->mem.data[0xFF21] = 0x00; // NR42
-    gb->mem.data[0xFF22] = 0x00; // NR43
-    gb->mem.data[0xFF23] = 0xBF; // NR44
-    gb->mem.data[0xFF24] = 0x77; // NR50
-    */
-    gb->mem.data[0xFF25] = 0xF3; // NR51
-    gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
-    gb->mem.data[0xFF40] = 0x91; // LCDC
-    gb->mem.data[0xFF42] = 0x00; // SCY
-    gb->mem.data[0xFF43] = 0x00; // SCX
-    gb->mem.data[0xFF44] = 0x90; // SCX
-    gb->mem.data[0xFF45] = 0x00; // LYC
-    gb->mem.data[0xFF47] = 0xFC; // BGP
-    gb->mem.data[0xFF48] = 0xFF; // OBP0
-    gb->mem.data[0xFF49] = 0xFF; // OBP1
-    gb->mem.data[0xFF4A] = 0x00; // WY
-    gb->mem.data[0xFF4B] = 0x00; // WX
-    gb->mem.data[0xFFFF] = 0x00; // IE
-
-    gb->timers.clocks_till_div_inc=0;
-    gb->timers.clocks_till_tima_inc=0;
-    gb->cart.mapped_rom_bank=1;
-
-    for(int i=0;i<SB_LCD_W*SB_LCD_H*3;++i){
-      gb->lcd.framebuffer[i] = 127;
-    }
-    emu->run_mode = SB_MODE_RUN;
+  gb->cpu.af=0x01B0;
+  gb->model = SB_GB;
+  if(gb->cart.game_boy_color){
+    gb->model = SB_GBC;
   }
+  if(gb->model == SB_GBC){
+    gb->cpu.af|=0x11<<8;
+  }
+  gb->cpu.bc=0x0013;
+  gb->cpu.de=0x00D8;
+  gb->cpu.hl=0x014D;
+  gb->cpu.sp=0xFFFE;
 
-  if (emu->rom_loaded&&(emu->run_mode == SB_MODE_RUN||emu->run_mode ==SB_MODE_STEP)) {
-    
-    int instructions_to_execute = emu->step_instructions;
-    if(instructions_to_execute==0)instructions_to_execute=6000000;
-    int frames_to_draw = 1;
-    float time_correction_scale = 1.0;
+  gb->mem.data[0xFF05] = 0x00; // TIMA
+  gb->mem.data[0xFF06] = 0x00; // TMA
+  gb->mem.data[0xFF07] = 0x00; // TAC
+  /*
+  gb->mem.data[0xFF10] = 0x80; // NR10
+  gb->mem.data[0xFF11] = 0xBF; // NR11
+  gb->mem.data[0xFF12] = 0xF3; // NR12
+  gb->mem.data[0xFF14] = 0xBF; // NR14
+  gb->mem.data[0xFF16] = 0x3F; // NR21
+  gb->mem.data[0xFF17] = 0x00; // NR22
+  gb->mem.data[0xFF19] = 0xBF; // NR24
+  */
+  gb->mem.data[0xFF1A] = 0x7F; // NR30
+  gb->mem.data[0xFF1B] = 0xFF; // NR31
+  gb->mem.data[0xFF1C] = 0x9F; // NR32
+  gb->mem.data[0xFF1E] = 0xBF; // NR34
+  /*
+  gb->mem.data[0xFF20] = 0xFF; // NR41
+  gb->mem.data[0xFF21] = 0x00; // NR42
+  gb->mem.data[0xFF22] = 0x00; // NR43
+  gb->mem.data[0xFF23] = 0xBF; // NR44
+  gb->mem.data[0xFF24] = 0x77; // NR50
+  */
+  gb->mem.data[0xFF25] = 0xF3; // NR51
+  gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
+  gb->mem.data[0xFF40] = 0x91; // LCDC
+  gb->mem.data[0xFF42] = 0x00; // SCY
+  gb->mem.data[0xFF43] = 0x00; // SCX
+  gb->mem.data[0xFF44] = 0x90; // SCX
+  gb->mem.data[0xFF45] = 0x00; // LYC
+  gb->mem.data[0xFF47] = 0xFC; // BGP
+  gb->mem.data[0xFF48] = 0xFF; // OBP0
+  gb->mem.data[0xFF49] = 0xFF; // OBP1
+  gb->mem.data[0xFF4A] = 0x00; // WY
+  gb->mem.data[0xFF4B] = 0x00; // WX
+  gb->mem.data[0xFFFF] = 0x00; // IE
 
-    for(int i=0;i<instructions_to_execute;++i){
+  gb->timers.clocks_till_div_inc=0;
+  gb->timers.clocks_till_tima_inc=0;
+  gb->cart.mapped_rom_bank=1;
+}
+void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
+  gb->lcd.framebuffer = emu->core_temp_storage; 
+  int instructions_to_execute = emu->step_instructions;
+  if(instructions_to_execute==0)instructions_to_execute=6000000;
+  int frames_to_draw = 1;
+  float time_correction_scale = 1.0;
 
-        bool double_speed = false;
-        sb_update_joypad_io_reg(emu, gb);
-        int dma_delta_cycles = sb_update_dma(gb);
-        int cpu_delta_cycles = 0;
-        if(dma_delta_cycles==0){
-          cpu_delta_cycles=4;
-          int pc = gb->cpu.pc;
+  for(int i=0;i<instructions_to_execute;++i){
+    bool double_speed = false;
+    sb_update_joypad_io_reg(emu, gb);
+    int dma_delta_cycles = sb_update_dma(gb);
+    int cpu_delta_cycles = 0;
+    if(dma_delta_cycles==0){
+      cpu_delta_cycles=4;
+      int pc = gb->cpu.pc;
+      unsigned op = sb_read8(gb,gb->cpu.pc);
 
-
-          unsigned op = sb_read8(gb,gb->cpu.pc);
-
-          bool request_speed_switch= false;
-          if(gb->model == SB_GBC){
-            unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
-            double_speed = SB_BFE(speed, 7, 1);
-            request_speed_switch = SB_BFE(speed, 0, 1);
-          }
-          //if(gb->cpu.pc == 0xC65F)gb->cpu.trigger_breakpoint =true;
-          /*
-          if(gb->cpu.prefix_op==false)
-          fprintf(file,"A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
-            SB_U16_HI(gb->cpu.af),SB_U16_LO(gb->cpu.af),
-            SB_U16_HI(gb->cpu.bc),SB_U16_LO(gb->cpu.bc),
-            SB_U16_HI(gb->cpu.de),SB_U16_LO(gb->cpu.de),
-            SB_U16_HI(gb->cpu.hl),SB_U16_LO(gb->cpu.hl),
-            gb->cpu.sp,pc,
-            sb_read8(gb,pc),
-            sb_read8(gb,pc+1),
-            sb_read8(gb,pc+2),
-            sb_read8(gb,pc+3)
-            );
-          */
-          if(gb->cpu.prefix_op)op+=256;
-     
-          int trigger_interrupt = -1;
-          // TODO: Can interrupts trigger between prefix ops and the second byte?
-          if(gb->cpu.prefix_op==false){
-            uint8_t ie = sb_read8_direct(gb,SB_IO_INTER_EN);
-            uint8_t i_flag = gb->cpu.last_inter_f;
-            uint8_t masked_interupt = ie&i_flag&0x1f;
-            for(int i=0;i<5;++i){
-              if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
-            }
-          }
-     
-          gb->cpu.prefix_op = false;
-          cpu_delta_cycles = 4;
-          bool call_interrupt = false;
-          if(trigger_interrupt!=-1&&request_speed_switch==false){
-            if(gb->cpu.interrupt_enable){
-              gb->cpu.interrupt_enable = false;
-              gb->cpu.deferred_interrupt_enable = false;
-              int interrupt_address = (trigger_interrupt*0x8)+0x40;
-              sb_call_impl(gb, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
-              cpu_delta_cycles = 5*4;
-              call_interrupt=true;
-            }
-            if(call_interrupt){
-              uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
-              i_flag &= ~(1<<trigger_interrupt);
-              sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
-            }
-            gb->cpu.wait_for_interrupt = false;
-
-          }
-
-          if(gb->cpu.deferred_interrupt_enable){
-            gb->cpu.deferred_interrupt_enable = false;
-            gb->cpu.interrupt_enable = true;
-          }
-     
-          if(call_interrupt==false&&gb->cpu.wait_for_interrupt==false){
-            sb_instr_t inst = sb_decode_table[op];
-            gb->cpu.pc+=inst.length;
-            int operand1 = sb_load_operand(gb,inst.op_src1);
-            int operand2 = sb_load_operand(gb,inst.op_src2);
-
-            unsigned pc_before_inst = gb->cpu.pc;
-            inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
-            if(gb->cpu.prefix_op==true)i--;
-
-            unsigned next_op = sb_read8(gb,gb->cpu.pc);
-            if(gb->cpu.prefix_op)next_op+=256;
-            sb_instr_t next_inst = sb_decode_table[next_op];
-            cpu_delta_cycles = 4*(gb->cpu.pc==pc_before_inst? next_inst.mcycles : next_inst.mcycles+inst.mcycles_branch_taken-inst.mcycles);
-          }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
-            gb->cpu.wait_for_interrupt = false;
-            sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
-          }
-          gb->cpu.last_inter_f = sb_read8_direct(gb,SB_IO_INTER_F);
+      bool request_speed_switch= false;
+      if(gb->model == SB_GBC){
+        unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
+        double_speed = SB_BFE(speed, 7, 1);
+        request_speed_switch = SB_BFE(speed, 0, 1);
+      }
+      if(gb->cpu.prefix_op)op+=256;
+ 
+      int trigger_interrupt = -1;
+      // TODO: Can interrupts trigger between prefix ops and the second byte?
+      if(gb->cpu.prefix_op==false){
+        uint8_t ie = sb_read8_direct(gb,SB_IO_INTER_EN);
+        uint8_t i_flag = gb->cpu.last_inter_f;
+        uint8_t masked_interupt = ie&i_flag&0x1f;
+        for(int i=0;i<5;++i){
+          if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
         }
-        sb_update_oam_dma(gb,cpu_delta_cycles);
-        int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
-        delta_cycles_after_speed+= dma_delta_cycles;
-        bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
-        sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
-
-        double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
-        delta_t*=time_correction_scale;
-        //sb_push_save_state(gb);
-
-        if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
-          gb->cpu.trigger_breakpoint = false;
-          emu->run_mode = SB_MODE_PAUSE;
-          break;
+      }
+      gb->cpu.prefix_op = false;
+      cpu_delta_cycles = 4;
+      bool call_interrupt = false;
+      if(trigger_interrupt!=-1&&request_speed_switch==false){
+        if(gb->cpu.interrupt_enable){
+          gb->cpu.interrupt_enable = false;
+          gb->cpu.deferred_interrupt_enable = false;
+          int interrupt_address = (trigger_interrupt*0x8)+0x40;
+          sb_call_impl(gb, interrupt_address, 0, 0, 0, (const uint8_t*)"----");
+          cpu_delta_cycles = 5*4;
+          call_interrupt=true;
         }
-        if(vblank){break;}
-        
-        sb_process_audio(gb,emu,delta_t);
-        int size = sb_ring_buffer_size(&emu->audio_ring_buff);
+        if(call_interrupt){
+          uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
+          i_flag &= ~(1<<trigger_interrupt);
+          sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
+        }
+        gb->cpu.wait_for_interrupt = false;
       }
 
-  }
+      if(gb->cpu.deferred_interrupt_enable){
+        gb->cpu.deferred_interrupt_enable = false;
+        gb->cpu.interrupt_enable = true;
+      }
+ 
+      if(call_interrupt==false&&gb->cpu.wait_for_interrupt==false){
+        sb_instr_t inst = sb_decode_table[op];
+        gb->cpu.pc+=inst.length;
+        int operand1 = sb_load_operand(gb,inst.op_src1);
+        int operand2 = sb_load_operand(gb,inst.op_src2);
 
-  if (emu->run_mode == SB_MODE_STEP) {
-    emu->run_mode = SB_MODE_PAUSE;
+        unsigned pc_before_inst = gb->cpu.pc;
+        inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
+        if(gb->cpu.prefix_op==true)i--;
+
+        unsigned next_op = sb_read8(gb,gb->cpu.pc);
+        if(gb->cpu.prefix_op)next_op+=256;
+        sb_instr_t next_inst = sb_decode_table[next_op];
+        cpu_delta_cycles = 4*(gb->cpu.pc==pc_before_inst? next_inst.mcycles : next_inst.mcycles+inst.mcycles_branch_taken-inst.mcycles);
+      }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
+        gb->cpu.wait_for_interrupt = false;
+        sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
+      }
+      gb->cpu.last_inter_f = sb_read8_direct(gb,SB_IO_INTER_F);
+    }
+    sb_update_oam_dma(gb,cpu_delta_cycles);
+    int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
+    delta_cycles_after_speed+= dma_delta_cycles;
+    bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
+    sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
+
+    double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
+    delta_t*=time_correction_scale;
+    //sb_push_save_state(gb);
+
+    if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
+      gb->cpu.trigger_breakpoint = false;
+      emu->run_mode = SB_MODE_PAUSE;
+      break;
+    }
+    if(vblank){break;}
+    
+    sb_process_audio(gb,emu,delta_t);
+    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
   }
 }
 float compute_vol_env_slope(uint8_t d){

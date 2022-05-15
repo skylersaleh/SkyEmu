@@ -13,7 +13,6 @@
 #include "nds.h"
 #include "gb.h"
 #include "capstone/include/capstone/capstone.h"
-#define SB_NUM_SAVE_STATES 5
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -170,17 +169,101 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_MENU:          return "MENU";
   }
 }
+#define SE_REWIND_BUFFER_SIZE (1024*1024)
+#define SE_REWIND_SEGMENT_SIZE 64
+#define SE_LAST_DELTA_IN_TX (1<<31)
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
-sb_gb_t gb_state = { 0 };
-gba_t gba = { 0 };  
-nds_t nds = { 0 };
+#define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
+typedef union{
+  sb_gb_t gb;
+  gba_t gba;  
+  nds_t nds;
+  // Raw data padded out to 64B to make rewind efficient
+  uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))/SE_REWIND_SEGMENT_SIZE+1];
+}se_core_state_t;
 
-sb_gb_t sb_save_states[SB_NUM_SAVE_STATES];
-int sb_valid_save_states = 0;
-unsigned sb_save_state_index=0;
+typedef struct{
+  uint32_t offset; 
+  uint64_t data[SE_REWIND_SEGMENT_SIZE/8];
+}se_core_delta_t;
+typedef struct{
+  se_core_delta_t deltas[SE_REWIND_BUFFER_SIZE];
+  uint32_t size;
+  uint32_t index; 
+  bool first_push; 
+  se_core_state_t last_core; 
+}se_core_rewind_buffer_t;
 
+
+se_core_state_t core;
+se_core_rewind_buffer_t rewind_buffer;
+
+bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
+  return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
+}
+void se_push_rewind_state(se_core_state_t* core, se_core_rewind_buffer_t* rewind){
+  if(!rewind->first_push){
+    rewind->first_push=true;
+    rewind->last_core= *core;
+    return; 
+  }
+  int total_segments = sizeof(se_core_state_t)/SE_REWIND_SEGMENT_SIZE;
+  uint64_t * new_data = (uint64_t*)core;
+  uint64_t * old_data = (uint64_t*)&rewind->last_core;
+  int total_deltas =0; 
+  for(int s=0; s<total_segments;++s){
+    bool delta = false; 
+    int base_off = s*SE_REWIND_SEGMENT_SIZE/8;
+    for(int s_off = 0; s_off< SE_REWIND_SEGMENT_SIZE/8;++s_off){
+      if(new_data[base_off+s_off]!=old_data[base_off+s_off]){delta = true;break;}
+    }
+    if(delta){
+      int rewind_index = rewind->index%SE_REWIND_BUFFER_SIZE;
+      int offset = s; 
+      if(total_deltas==0)offset|= SE_LAST_DELTA_IN_TX;
+      for(int s_off = 0; s_off< SE_REWIND_SEGMENT_SIZE/8;++s_off){
+        rewind->deltas[rewind_index].data[s_off] =old_data[base_off+s_off];
+        old_data[base_off+s_off]= new_data[base_off+s_off]; 
+      } 
+      rewind->deltas[rewind_index].offset = offset;
+      rewind->index++;
+      rewind->size++;
+      ++total_deltas;
+    }
+  }
+  if(rewind->size>=SE_REWIND_BUFFER_SIZE)rewind->size=SE_REWIND_BUFFER_SIZE-1; 
+  rewind->index= rewind->index%SE_REWIND_BUFFER_SIZE;
+  //Discard partial transactions remaing
+  while(rewind->size>0 && se_more_rewind_deltas(rewind,rewind->index-rewind->size))rewind->size--;
+}
+void se_rewind_state_single_tick(se_core_state_t* core, se_core_rewind_buffer_t* rewind){
+  uint64_t * old_data = (uint64_t*)&rewind->last_core;
+  int rewound_deltas=0; 
+  bool more_transactions = true;
+  while(rewind->size&&more_transactions){
+    ++rewound_deltas;
+    --rewind->size;
+    uint32_t rewind_index = (--rewind->index)%SE_REWIND_BUFFER_SIZE;
+    int s = rewind->deltas[rewind_index].offset; 
+    if(s&SE_LAST_DELTA_IN_TX){
+      more_transactions=false;
+      s&=~SE_LAST_DELTA_IN_TX;
+    }
+    int base_off = s*SE_REWIND_SEGMENT_SIZE/8;
+    for(int s_off = 0; s_off< SE_REWIND_SEGMENT_SIZE/8;++s_off){
+      old_data[base_off+s_off]=rewind->deltas[rewind_index].data[s_off];
+    }
+  }
+  rewind->index= rewind->index%SE_REWIND_BUFFER_SIZE;
+  *core = rewind->last_core;
+}
+void se_reset_rewind_buffer(se_core_rewind_buffer_t* rewind){
+  rewind->index = rewind->size = 0; 
+  rewind->first_push = false;
+
+}
 double se_time(){
   static uint64_t base_time=0;
   if(base_time==0) base_time= stm_now();
@@ -208,20 +291,6 @@ double se_fps_counter(int tick){
     
   }
   return 1.0/fps; 
-}
-
-void sb_pop_save_state(sb_gb_t* gb){
-  if(sb_valid_save_states>0){
-    --sb_valid_save_states;
-    --sb_save_state_index;
-    *gb = sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES];
-  }
-}
-void sb_push_save_state(sb_gb_t* gb){
-  ++sb_valid_save_states;
-  if(sb_valid_save_states>SB_NUM_SAVE_STATES)sb_valid_save_states = SB_NUM_SAVE_STATES;
-  ++sb_save_state_index;
-  sb_save_states[sb_save_state_index%SB_NUM_SAVE_STATES] = *gb;
 }
 
 #define GUI_MAX_IMAGES_PER_FRAME 16
@@ -423,8 +492,9 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
 static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
 
 void se_load_rom(const char *filename){
+  se_reset_rewind_buffer(&rewind_buffer);
   if(emu_state.rom_loaded){
-    if(emu_state.system==SYSTEM_NDS)nds_unload(&nds);
+    if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
   }
   char save_file[4096]; 
   save_file[0] = '\0';
@@ -437,13 +507,13 @@ void se_load_rom(const char *filename){
 #endif
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
-  if(gba_load_rom(&gba, filename,save_file)){
+  if(gba_load_rom(&core.gba, filename,save_file)){
     emu_state.system = SYSTEM_GBA;
     emu_state.rom_loaded = true;
-  }else if(sb_load_rom(&gb_state, &emu_state,filename,save_file)){
+  }else if(sb_load_rom(&core.gb, &emu_state,filename,save_file)){
     emu_state.system = SYSTEM_GB;
     emu_state.rom_loaded = true; 
-  }else if(nds_load_rom(&nds,filename,save_file)){
+  }else if(nds_load_rom(&core.nds,filename,save_file)){
     emu_state.system = SYSTEM_NDS;
     emu_state.rom_loaded = true; 
   }
@@ -454,16 +524,16 @@ void se_load_rom(const char *filename){
 static bool se_sync_save_to_disk(){
   bool saved = false;
   if(emu_state.system== SYSTEM_GB){
-    if(gb_state.cart.ram_is_dirty){
+    if(core.gb.cart.ram_is_dirty){
       saved=true;
-      if(sb_save_file_data(gb_state.cart.save_file_path,gb_state.cart.ram_data,gb_state.cart.ram_size)){
-      }else printf("Failed to write out save file: %s\n",gb_state.cart.save_file_path);
-      gb_state.cart.ram_is_dirty=false;
+      if(sb_save_file_data(core.gb.cart.save_file_path,core.gb.cart.ram_data,core.gb.cart.ram_size)){
+      }else printf("Failed to write out save file: %s\n",core.gb.cart.save_file_path);
+      core.gb.cart.ram_is_dirty=false;
     }
   }else if(emu_state.system ==SYSTEM_GBA){
-    if(gba.cart.backup_is_dirty){
+    if(core.gba.cart.backup_is_dirty){
       int size = 0; 
-      switch(gba.cart.backup_type){
+      switch(core.gba.cart.backup_type){
         case GBA_BACKUP_NONE       : size = 0;       break;
         case GBA_BACKUP_EEPROM     : size = 8*1024;  break;
         case GBA_BACKUP_EEPROM_512B: size = 512;     break;
@@ -474,10 +544,10 @@ static bool se_sync_save_to_disk(){
       }
       if(size){
         saved =true;
-        if(sb_save_file_data(gba.cart.save_file_path,gba.mem.cart_backup,size)){
-        }else printf("Failed to write out save file: %s\n",gba.cart.save_file_path);
+        if(sb_save_file_data(core.gba.cart.save_file_path,core.gba.mem.cart_backup,size)){
+        }else printf("Failed to write out save file: %s\n",core.gba.cart.save_file_path);
       }
-      gba.cart.backup_is_dirty=false;
+      core.gba.cart.backup_is_dirty=false;
     }
   }
   return saved;
@@ -490,9 +560,16 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static void se_emulate_single_frame(){
-  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&gb_state);
-  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &gba);
-  else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &nds);
+  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&core.gb);
+  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba);
+  else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds);
+  
+}
+static void se_reset_core(){
+  se_reset_rewind_buffer(&rewind_buffer);
+  if(emu_state.system == SYSTEM_GB)sb_reset(&core.gb);
+  else if(emu_state.system == SYSTEM_GBA)gba_reset(&core.gba);
+  else if(emu_state.system == SYSTEM_NDS)nds_reset(&core.nds);
 }
 static void se_draw_emulated_system_screen(){
   int lcd_render_x = 0, lcd_render_y = 0; 
@@ -535,31 +612,32 @@ static void se_draw_emulated_system_screen(){
   lcd_render_x+=v.x*se_dpi_scale();
   lcd_render_y+=v.y*se_dpi_scale();
   if(emu_state.system==SYSTEM_GBA){
-    se_draw_image(gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+    se_draw_image(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
   }else if (emu_state.system==SYSTEM_NDS){
-    se_draw_image(nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h*0.5,false);
-    se_draw_image(nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y+lcd_render_h*0.5, lcd_render_w, lcd_render_h*0.5,false);
-  }else{
-    se_draw_image(gb_state.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+    se_draw_image(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h*0.5,false);
+    se_draw_image(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y+lcd_render_h*0.5, lcd_render_w, lcd_render_h*0.5,false);
+  }else if (emu_state.system==SYSTEM_GB){
+    se_draw_image(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
   }
-  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,emu_state.run_mode!=SB_MODE_RUN);
+  bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND;
+  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,draw_click_region);
   sb_draw_onscreen_controller(&emu_state, controller_h);
 }
-static uint8_t gba_byte_read(uint64_t address){return gba_read8(&gba,address);}
-static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&gba,address,data);}
-static uint8_t gb_byte_read(uint64_t address){return sb_read8(&gb_state,address);}
-static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&gb_state,address,data);}
+static uint8_t gba_byte_read(uint64_t address){return gba_read8(&core.gba,address);}
+static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&core.gba,address,data);}
+static uint8_t gb_byte_read(uint64_t address){return sb_read8(&core.gb,address);}
+static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&core.gb,address,data);}
 
-static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&nds,address);}
-static void nds9_byte_write(uint64_t address, uint8_t data){nds9_write8(&nds,address,data);}
-static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&nds,address);}
-static void nds7_byte_write(uint64_t address, uint8_t data){nds7_write8(&nds,address,data);}
+static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&core.nds,address);}
+static void nds9_byte_write(uint64_t address, uint8_t data){nds9_write8(&core.nds,address,data);}
+static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&core.nds,address);}
+static void nds7_byte_write(uint64_t address, uint8_t data){nds7_write8(&core.nds,address,data);}
 
 static void se_draw_debug(){
   if(emu_state.system ==SYSTEM_GBA){
     se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write); 
     se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); 
-    se_draw_arm_state("CPU",&gba.cpu,&gba_byte_read); 
+    se_draw_arm_state("CPU",&core.gba.cpu,&gba_byte_read); 
   }else if(emu_state.system ==SYSTEM_GB){
     se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write); 
     se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write); 
@@ -568,8 +646,8 @@ static void se_draw_debug(){
     se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); 
     se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); 
     se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);
-    se_draw_arm_state("ARM7",&nds.arm7,&nds7_byte_read); 
-    se_draw_arm_state("ARM9",&nds.arm9,&nds9_byte_read); 
+    se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); 
+    se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read); 
   }
 }
 ///////////////////////////////
@@ -940,6 +1018,10 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
   }
 }
 void se_update_frame() {
+  if(emu_state.run_mode == SB_MODE_RESET){
+    se_reset_core();
+    emu_state.run_mode = SB_MODE_RUN;
+  }
   static unsigned frames_since_last_save = 0; 
   frames_since_last_save++;
   if(frames_since_last_save>10){
@@ -951,42 +1033,56 @@ void se_update_frame() {
       #endif
     }
   }
-  emu_state.frame=0;
-  int max_frames_per_tick =2+ emu_state.step_frames;
+  if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
+    emu_state.frame=0;
+    int max_frames_per_tick =2+ emu_state.step_frames;
 
-  emu_state.render_frame = true;
+    emu_state.render_frame = true;
 
-  static double simulation_time = -1;
-  static double display_time = 0;
-  if(emu_state.step_frames==0)emu_state.step_frames=1;
+    static double simulation_time = -1;
+    static double display_time = 0;
+    if(emu_state.step_frames==0)emu_state.step_frames=1;
 
-  double sim_fps= se_get_sim_fps();
-  double sim_time_increment = 1./sim_fps/emu_state.step_frames;
-  bool unlocked_mode = emu_state.step_frames<0;
+    double sim_fps= se_get_sim_fps();
+    double sim_time_increment = 1./sim_fps/emu_state.step_frames;
+    bool unlocked_mode = emu_state.step_frames<0;
 
-  if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode!=SB_MODE_RUN&&!unlocked_mode)simulation_time = se_time()-sim_time_increment*2;
-  if(unlocked_mode){
-    sim_time_increment=0;
-    simulation_time=se_time()+1.0/60;
-    max_frames_per_tick=1000;
-  }
-  int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
-  while(max_frames_per_tick--){
-    double error = se_time()-simulation_time;
+    if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE&&!unlocked_mode)simulation_time = se_time()-sim_time_increment*2;
     if(unlocked_mode){
-      if(simulation_time<se_time()){break;}
-    }else{
-      if(emu_state.frame==0&&simulation_time>se_time())break;
-      if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){break;}
+      sim_time_increment=0;
+      simulation_time=se_time()+1.0/60;
+      max_frames_per_tick=1000;
     }
-    se_emulate_single_frame();
-    emu_state.frame++;
-    simulation_time+=sim_time_increment;
-    emu_state.render_frame = false;
-  }
+    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
+    while(max_frames_per_tick--){
+      double error = se_time()-simulation_time;
+      if(unlocked_mode){
+        if(simulation_time<se_time()){break;}
+      }else{
+        if(emu_state.frame==0&&simulation_time>se_time())break;
+        if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){break;}
+      }
+      if(emu_state.run_mode==SB_MODE_REWIND){
+        se_rewind_state_single_tick(&core, &rewind_buffer);
+        emu_state.render_frame = true;
+        se_emulate_single_frame();
+        se_emulate_single_frame();
+        simulation_time+=sim_time_increment*2;
+      }else{
+        se_emulate_single_frame();
+        ++emu_state.frames_since_rewind_push;
+        if(emu_state.frames_since_rewind_push>7 ){
+          se_push_rewind_state(&core,&rewind_buffer);
+          emu_state.frames_since_rewind_push=0;
+        }
+        simulation_time+=sim_time_increment;
+      }
+      emu_state.frame++;
+      emu_state.render_frame = false;
+    }
+  }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
-
   sb_poll_controller_input(&emu_state.joy);
   se_draw_emulated_system_screen();
 }
@@ -1042,17 +1138,19 @@ static void frame(void) {
     igText("SkyEmu", (ImVec2){0, 0});
     
     if(igButton("Reset",(ImVec2){0, 0})){emu_state.run_mode = SB_MODE_RESET;}
-    if(emu_state.run_mode!=SB_MODE_RUN){
+    if(emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND){
       if(igButton("Play",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames = 1;}
       if(igButton("Step Frame",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_STEP;
     }else{
       igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-      if(igButton("||",(ImVec2){0, 0}))emu_state.run_mode=SB_MODE_PAUSE;
-      if(igButton("|>",(ImVec2){0, 0}))emu_state.step_frames=1; 
-      if(igButton("|>|>",(ImVec2){0, 0}))emu_state.step_frames=2;
+      if(igButton("<|<|",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;}
+      if(igButton("||",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_PAUSE;emu_state.step_frames=1;}
+      if(igButton("|>",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=1;}
+      if(igButton("|>|>",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;}
       igPopStyleVar(1);
-      if(igButton("|>|>|>",(ImVec2){0, 0}))emu_state.step_frames=-1;
+      if(igButton("|>|>|>",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;}
     }
+
     igPushItemWidth(100);
     igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
     igPopItemWidth();

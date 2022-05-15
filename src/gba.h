@@ -744,7 +744,7 @@ typedef struct gba_t{
   uint32_t first_target_buffer[GBA_LCD_W];
   uint32_t second_target_buffer[GBA_LCD_W];
   uint8_t window[GBA_LCD_W];
-  uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
+  uint8_t *framebuffer;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
   // This array acts as a FIFO to keep track of that. 
   uint16_t pipelined_if[5];
@@ -2701,61 +2701,54 @@ void gba_tick_rtc(gba_t*gba){
   gba->rtc.day_of_week=gba_bin_to_bcd(tm->tm_wday);
 }
 void gba_tick(sb_emu_state_t* emu, gba_t* gba){
-  if(emu->run_mode == SB_MODE_RESET){
-    gba_reset(gba);
-    emu->run_mode = SB_MODE_RUN;
-  }
-  if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    gba_tick_rtc(gba);
-    gba_tick_keypad(&emu->joy,gba);
-    bool prev_vblank = gba->ppu.last_vblank; 
-    //Skip emulation of a frame if we get too far ahead the audio playback
-    static int last_tick =0;
-    while(true){
-      int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
-      if(!ticks){
-        uint16_t int_if = gba_io_read16(gba,GBA_IF);
-        gba->cpu.i_cycles=0;
-        gba->mem.requests=0;
-        if(int_if){
-          int_if &= gba_io_read16(gba,GBA_IE);
-          uint32_t ime = gba_io_read32(gba,GBA_IME);
-          int_if *= SB_BFE(ime,0,1);
-          arm7_process_interrupts(&gba->cpu, int_if);
-        }
-        arm7_exec_instruction(&gba->cpu);
-        last_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
-        if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
+  gba->framebuffer=emu->core_temp_storage; 
+  gba_tick_rtc(gba);
+  gba_tick_keypad(&emu->joy,gba);
+  bool prev_vblank = gba->ppu.last_vblank; 
+  //Skip emulation of a frame if we get too far ahead the audio playback
+  static int last_tick =0;
+  while(true){
+    int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
+    if(!ticks){
+      uint16_t int_if = gba_io_read16(gba,GBA_IF);
+      gba->cpu.i_cycles=0;
+      gba->mem.requests=0;
+      if(int_if){
+        int_if &= gba_io_read16(gba,GBA_IE);
+        uint32_t ime = gba_io_read32(gba,GBA_IME);
+        int_if *= SB_BFE(ime,0,1);
+        arm7_process_interrupts(&gba->cpu, int_if);
       }
-      gba_tick_sio(gba);
-
-      double delta_t = ((double)ticks)/(16*1024*1024);
-      if(gba->active_if_pipe_stages==0){
-        int ppu_fast_forward = gba_ppu_compute_max_fast_forward(gba, emu->render_frame);
-        int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
-        int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
-        if(fast_forward_ticks>ticks&&!gba->cpu.wait_for_interrupt)fast_forward_ticks= ticks; 
-        gba->deferred_timer_ticks+=fast_forward_ticks;
-        gba->ppu.scan_clock+=fast_forward_ticks;
-        ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
-        delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
-      }
-      gba_tick_audio(gba, emu,delta_t);
-      for(int t = 0;t<ticks;++t){
-        gba_tick_interrupts(gba);
-        gba_tick_timers(gba);
-        gba_tick_ppu(gba,emu->render_frame);
-      }
-
-      if(gba->ppu.last_vblank && !prev_vblank){
-        prev_vblank = gba->ppu.last_vblank;
-        break;
-      }
-      prev_vblank = gba->ppu.last_vblank;
+      arm7_exec_instruction(&gba->cpu);
+      last_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
+      if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
     }
-  }                  
-  
-  if(emu->run_mode == SB_MODE_STEP) emu->run_mode = SB_MODE_PAUSE; 
+    gba_tick_sio(gba);
+
+    double delta_t = ((double)ticks)/(16*1024*1024);
+    if(gba->active_if_pipe_stages==0){
+      int ppu_fast_forward = gba_ppu_compute_max_fast_forward(gba, emu->render_frame);
+      int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
+      int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+      if(fast_forward_ticks>ticks&&!gba->cpu.wait_for_interrupt)fast_forward_ticks= ticks; 
+      gba->deferred_timer_ticks+=fast_forward_ticks;
+      gba->ppu.scan_clock+=fast_forward_ticks;
+      ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
+      delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
+    }
+    gba_tick_audio(gba, emu,delta_t);
+    for(int t = 0;t<ticks;++t){
+      gba_tick_interrupts(gba);
+      gba_tick_timers(gba);
+      gba_tick_ppu(gba,emu->render_frame);
+    }
+
+    if(gba->ppu.last_vblank && !prev_vblank){
+      prev_vblank = gba->ppu.last_vblank;
+      break;
+    }
+    prev_vblank = gba->ppu.last_vblank;
+  }                 
 }
 
 void gba_reset(gba_t*gba){

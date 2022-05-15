@@ -4107,77 +4107,69 @@ void nds_tick_rtc(nds_t*nds){
   nds->rtc.day_of_week=nds_bin_to_bcd(tm->tm_wday);
 }
 void nds_tick(sb_emu_state_t* emu, nds_t* nds){
-  if(emu->run_mode == SB_MODE_RESET){
-    nds_reset(nds);
-    emu->run_mode = SB_MODE_RUN;
-  }
-  if(emu->run_mode == SB_MODE_STEP||emu->run_mode == SB_MODE_RUN){
-    nds_tick_rtc(nds);
-    nds_tick_keypad(&emu->joy,nds);
-    //bool prev_vblank = nds->ppu.last_vblank; 
-    //Skip emulation of a frame if we get too far ahead the audio playback
-    static int last_tick =0;
-    static bool prev_vblank=false;
-    while(true){
-      int ticks = nds_tick_dma(nds,last_tick);
-      if(!ticks){
-        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-        uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
-        if(nds->halt){
-          ticks=2;
-          if(int7_if|int9_if){nds->halt = false;}
-        }else{
-          nds->mem.requests=0;
-          if(int7_if){
-            uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-            uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-            if(SB_BFE(ime,0,1)==1) arm7_process_interrupts(&nds->arm7, int7_if&ie);
-          }
-          if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
-          else if(!ticks){
-            arm7_exec_instruction(&nds->arm7);
-            ticks = nds->mem.requests; 
-          }
-
-          if(int9_if){
-            int9_if &= nds9_io_read32(nds,NDS9_IE);
-            uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-            if(SB_BFE(ime,0,1)==1&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
-          }
-          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-          else if(!ticks){
-            arm9_exec_instruction(&nds->arm9);
-            ticks = nds->mem.requests; 
-          }
+  nds_tick_rtc(nds);
+  nds_tick_keypad(&emu->joy,nds);
+  //bool prev_vblank = nds->ppu.last_vblank; 
+  //Skip emulation of a frame if we get too far ahead the audio playback
+  static int last_tick =0;
+  static bool prev_vblank=false;
+  while(true){
+    int ticks = nds_tick_dma(nds,last_tick);
+    if(!ticks){
+      uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+      uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
+      if(nds->halt){
+        ticks=2;
+        if(int7_if|int9_if){nds->halt = false;}
+      }else{
+        nds->mem.requests=0;
+        if(int7_if){
+          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+          if(SB_BFE(ime,0,1)==1) arm7_process_interrupts(&nds->arm7, int7_if&ie);
         }
-        //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
-        if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
-        if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
-      }
-      ticks=2;
-      last_tick=ticks;
-      nds_tick_sio(nds);
+        if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
+        else if(!ticks){
+          arm7_exec_instruction(&nds->arm7);
+          ticks = nds->mem.requests; 
+        }
 
-      double delta_t = ((double)ticks)/(16*1024*1024);
-
-      for(int t = 0;t<ticks;++t){
-        nds_tick_interrupts(nds);
-        nds_tick_timers(nds);
-        nds_tick_ppu(nds,0,emu->render_frame);
-        nds_tick_ppu(nds,1,emu->render_frame);
-        nds->current_clock++;
+        if(int9_if){
+          int9_if &= nds9_io_read32(nds,NDS9_IE);
+          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+          if(SB_BFE(ime,0,1)==1&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+        }
+        if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+        else if(!ticks){
+          arm9_exec_instruction(&nds->arm9);
+          ticks = nds->mem.requests; 
+        }
       }
-      
-      if(nds->ppu[0].last_vblank && !prev_vblank){
-        prev_vblank = nds->ppu[0].last_vblank;
-        break;
-      }
-      prev_vblank = nds->ppu[0].last_vblank;
-      
+      //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
+      if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
+      if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
     }
-  }                  
-  
-  if(emu->run_mode == SB_MODE_STEP) emu->run_mode = SB_MODE_PAUSE; 
+    ticks=2;
+    last_tick=ticks;
+    nds_tick_sio(nds);
+
+    double delta_t = ((double)ticks)/(16*1024*1024);
+
+    for(int t = 0;t<ticks;++t){
+      nds_tick_interrupts(nds);
+      nds_tick_timers(nds);
+      nds_tick_ppu(nds,0,emu->render_frame);
+      nds_tick_ppu(nds,1,emu->render_frame);
+      nds->current_clock++;
+    }
+    
+    if(nds->ppu[0].last_vblank && !prev_vblank){
+      prev_vblank = nds->ppu[0].last_vblank;
+      break;
+    }
+    prev_vblank = nds->ppu[0].last_vblank;
+    
+  }
 }
 void nds9_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t rom_offset, uint32_t ram_offset, uint32_t size){
   printf("Copy %s: Card[0x%x]-> RAM[0x%x] Size: %d Card Size:%zu\n",region_name,rom_offset,ram_offset,size,nds->mem.card_size);
