@@ -628,7 +628,7 @@ typedef struct {
   uint8_t palette[1024];
   uint8_t vram[128*1024];
   uint8_t oam[1024];
-  uint8_t cart_rom[32*1024*1024];
+  uint8_t *cart_rom;
   uint8_t cart_backup[128*1024];
   uint8_t flash_chip_id[4];
   uint32_t openbus_word;
@@ -1413,14 +1413,19 @@ int gba_search_rom_for_backup_string(gba_t* gba){
       bool matches = true; 
       const char* str = strings[type];
       while(str[str_off] && matches){
-        if(str[str_off]!=gba->mem.cart_rom[b+str_off])matches = false;
         if(b+str_off>=gba->cart.rom_size)matches=false; 
+        else if(str[str_off]!=gba->mem.cart_rom[b+str_off])matches = false;
         ++str_off;
       }
       if(matches)return backup_type[type];
     }
   }
   return GBA_BACKUP_NONE; 
+}
+void gba_unload(gba_t*gba){
+  printf("Unloading GBA\n");
+  if(gba->mem.cart_rom)sb_free_file_data(gba->mem.cart_rom);
+  gba->mem.cart_rom=NULL;
 }
 bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 
@@ -1431,6 +1436,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   uint8_t *data = sb_load_file_data(filename, &bytes);
   if(bytes>32*1024*1024){
     printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
+    sb_free_file_data(gba->mem.cart_rom);
     return false;
   }  
 
@@ -1438,8 +1444,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   gba->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
 
   gba_reset(gba);
-  memcpy(gba->mem.cart_rom, data, bytes);
-  sb_free_file_data(data);
+  gba->mem.cart_rom=data;
   gba->cart.rom_size = bytes; 
 
   memcpy(gba->cart.title,gba->mem.cart_rom+0x0A0,12);
@@ -2770,7 +2775,7 @@ void gba_reset(gba_t*gba){
   gba->cpu.write16 = arm7_write16;
   gba->cpu.write32 = arm7_write32;
 
-  gba->mem.openbus_word = gba->mem.cart_rom[0];
+  gba->mem.openbus_word = 0;
   
   for(int bg = 2;bg<4;++bg){
     gba_io_store16(gba,GBA_BG2PA+(bg-2)*0x10,1<<8);

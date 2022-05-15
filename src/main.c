@@ -495,6 +495,7 @@ void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   if(emu_state.rom_loaded){
     if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
+    else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
   }
   char save_file[4096]; 
   save_file[0] = '\0';
