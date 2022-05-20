@@ -1113,9 +1113,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
           gba->mem.prefetch_size=0;
         }
       }
-    }else {
-      gba->mem.prefetch_size+=wait; 
-    }
+    }else gba->mem.prefetch_size+=wait; 
   }
   gba->mem.requests+=wait;
 }
@@ -1582,8 +1580,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   if(forced_blank)return;
   bool visible = lcd_x<240 && lcd_y<160;
   //Render sprites over scanline when it completes
-  if(lcd_y<160 && lcd_x == 0){
-    
+  if((lcd_y<159 || lcd_y ==227) && lcd_x == 240){
+    int sprite_lcd_y = (lcd_y+1)%228;
     //Render sprites over scanline when it completes
     uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
     bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
@@ -1635,7 +1633,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
 
         int y_size = ysize_lookup[obj_size*4+obj_shape];
 
-        if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
+        if(((sprite_lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
           int16_t x_coord = SB_BFE(attr1,0,9);
           if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
 
@@ -1652,13 +1650,13 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
           int palette = SB_BFE(attr2,12,4);
           for(int x = x_start; x< x_end;++x){
             int sx = (x-x_coord);
-            int sy = (lcd_y-y_coord)&0xff;
+            int sy = (sprite_lcd_y-y_coord)&0xff;
             if(mosaic){
               uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
               int mos_x = SB_BFE(mos_reg,8,4)+1;
               int mos_y = SB_BFE(mos_reg,12,4)+1;
               sx = ((x/mos_x)*mos_x-x_coord);
-              sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
+              sy = (((sprite_lcd_y/mos_y)*mos_y-y_coord)&0xff);
             }
             if(rot_scale){
               uint32_t param_base = rotscale_param*0x20; 
@@ -1730,7 +1728,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         if(win_xmin>win_xmax)win_xmax=240;
         if(win_ymin>win_ymax)win_ymax=161;
         if(win_xmax>240)win_xmax=240;
-        if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
+        if(sprite_lcd_y<win_ymin||sprite_lcd_y>=win_ymax)continue;
         uint16_t winin = gba_io_read16(gba,GBA_WININ);
         uint8_t win_value = SB_BFE(winin,win*8,6);
         for(int x=win_xmin;x<win_xmax;++x)gba->window[x] = win_value;
