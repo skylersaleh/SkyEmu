@@ -1220,19 +1220,25 @@ static void frame(void) {
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
   if (igBeginMainMenuBar())
   {
+    int orig_x = igGetCursorPosX();
+    igSetCursorPosX((width/se_dpi_scale())-130);
+    igPushItemWidth(-0.01);
+    igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
+    igPopItemWidth();
+    igSetCursorPosX(orig_x);
+
     if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
     else igText("SkyEmu", (ImVec2){0, 0});
 
     if(igButton("Reset",(ImVec2){0, 0})){emu_state.run_mode = SB_MODE_RESET;}
 
-    igSetCursorPosX((width/2)-130);
-    igPushItemWidth(-0.01);
-    igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
-    igPopItemWidth();
+    
 
     int sel_width =35;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-    igSetCursorPosX((width/2)/se_dpi_scale()-sel_width*6/2);
+    int toggle_x = (width/2)/se_dpi_scale()-sel_width*6/2;
+    if(toggle_x<igGetCursorPosX())toggle_x=igGetCursorPosX();
+    igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
     int curr_toggle = 3;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
