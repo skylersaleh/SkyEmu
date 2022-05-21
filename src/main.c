@@ -1232,7 +1232,7 @@ static void frame(void) {
 
     int sel_width =35;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-    igSetCursorPosX((width/4)-sel_width*6/2);
+    igSetCursorPosX((width/2)/se_dpi_scale()-sel_width*6/2);
     igPushItemWidth(sel_width);
     int curr_toggle = 3;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
