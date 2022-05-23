@@ -35,6 +35,40 @@
 #include "tinyfiledialogs.h"
 #endif
 
+
+#define SE_KEY_A 0 
+#define SE_KEY_B 1 
+#define SE_KEY_X 2 
+#define SE_KEY_Y 3 
+#define SE_KEY_UP 4
+#define SE_KEY_DOWN 5
+#define SE_KEY_LEFT 6
+#define SE_KEY_RIGHT 7
+#define SE_KEY_L 8
+#define SE_KEY_R 9
+#define SE_KEY_START 10
+#define SE_KEY_SELECT 11
+#define SE_KEY_FOLD_SCREEN 12
+#define SE_KEY_PEN_DOWN 13
+#define SE_NUM_KEYBINDS 14
+
+const static char* se_keybind_names[]={
+  "A",
+  "B",
+  "X",
+  "Y",
+  "Up",
+  "Down",
+  "Left",
+  "Right",
+  "L",
+  "R",
+  "Start",
+  "Select",
+  "Fold Screen",
+  "Pen Down"
+};
+
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
@@ -169,6 +203,7 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_MENU:          return "MENU";
   }
 }
+
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
 #define SE_REWIND_SEGMENT_SIZE 64
 #define SE_LAST_DELTA_IN_TX (1<<31)
@@ -303,8 +338,6 @@ typedef struct {
     int screen_height;
     int button_state[SAPP_MAX_KEYCODES];
     float volume; 
-    bool show_settings; 
-    bool show_developer;
     struct{
       bool active;
       float pos[2];
@@ -312,8 +345,17 @@ typedef struct {
     float last_touch_time;
     bool draw_debug_menu;
     int mem_view_address;
+    bool sidebar_open;
+    int keycode_bind[SE_NUM_KEYBINDS];
+    int keybind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
+    int last_key_pressed;// Only within the current frame. -1 if no keys pressed during frame. 
 } gui_state_t;
 gui_state_t gui_state={.volume=1.0}; 
+
+bool se_key_is_pressed(int keycode){
+  if(keycode>SAPP_MAX_KEYCODES)return false;
+  return gui_state.button_state[keycode];
+}
 static sg_image* se_get_image(){
   if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
     gui_state.current_image++;
@@ -655,21 +697,37 @@ static void se_draw_debug(){
 // END UPDATE FOR NEW SYSTEM //
 ///////////////////////////////
 
+void se_set_default_keybind(gui_state_t *gui){
+  gui->keycode_bind[SE_KEY_A]     = SAPP_KEYCODE_J;  
+  gui->keycode_bind[SE_KEY_B]     = SAPP_KEYCODE_K;
+  gui->keycode_bind[SE_KEY_X]     = SAPP_KEYCODE_N;
+  gui->keycode_bind[SE_KEY_Y]     = SAPP_KEYCODE_M;
+  gui->keycode_bind[SE_KEY_UP]     = SAPP_KEYCODE_W;  
+  gui->keycode_bind[SE_KEY_DOWN]   = SAPP_KEYCODE_S;    
+  gui->keycode_bind[SE_KEY_LEFT]   = SAPP_KEYCODE_A;    
+  gui->keycode_bind[SE_KEY_RIGHT]  = SAPP_KEYCODE_D;     
+  gui->keycode_bind[SE_KEY_L]      = SAPP_KEYCODE_U; 
+  gui->keycode_bind[SE_KEY_R]      = SAPP_KEYCODE_I; 
+  gui->keycode_bind[SE_KEY_START]  = SAPP_KEYCODE_ENTER;      
+  gui->keycode_bind[SE_KEY_SELECT] = SAPP_KEYCODE_APOSTROPHE; 
+  gui->keycode_bind[SE_KEY_FOLD_SCREEN]= SAPP_KEYCODE_B;     
+  gui->keycode_bind[SE_KEY_PEN_DOWN]= SAPP_KEYCODE_V;     
+}
 void sb_poll_controller_input(sb_joy_t* joy){
-  joy->left  = gui_state.button_state[SAPP_KEYCODE_A];
-  joy->right = gui_state.button_state[SAPP_KEYCODE_D];
-  joy->up    = gui_state.button_state[SAPP_KEYCODE_W];
-  joy->down  = gui_state.button_state[SAPP_KEYCODE_S];
-  joy->a = gui_state.button_state[SAPP_KEYCODE_J];
-  joy->b = gui_state.button_state[SAPP_KEYCODE_K];
-  joy->start = gui_state.button_state[SAPP_KEYCODE_ENTER];
-  joy->select = gui_state.button_state[SAPP_KEYCODE_APOSTROPHE];
-  joy->l = gui_state.button_state[SAPP_KEYCODE_U];
-  joy->r = gui_state.button_state[SAPP_KEYCODE_I];
-  joy->x = gui_state.button_state[SAPP_KEYCODE_N];
-  joy->y = gui_state.button_state[SAPP_KEYCODE_M];
-  joy->screen_folded = !gui_state.button_state[SAPP_KEYCODE_B];
-  joy->pen_down =  gui_state.button_state[SAPP_KEYCODE_V];
+  joy->left  = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_LEFT]);
+  joy->right = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_RIGHT]);
+  joy->up    = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_UP]);
+  joy->down  = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_DOWN]);
+  joy->a = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_A]);
+  joy->b = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_B]);
+  joy->start = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_START]);
+  joy->select = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_SELECT]);
+  joy->l = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_L]);
+  joy->r = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_R]);
+  joy->x = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_X]);
+  joy->y = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_Y]);
+  joy->screen_folded = !se_key_is_pressed(gui_state.keycode_bind[SE_KEY_FOLD_SCREEN]);
+  joy->pen_down =  se_key_is_pressed(gui_state.keycode_bind[SE_KEY_PEN_DOWN]);
 
 }
 
@@ -1171,7 +1229,9 @@ void se_imgui_theme()
   style->TabRounding                       = 4;
 }
 static void init(void) {
-
+  se_set_default_keybind(&gui_state);
+  gui_state.last_key_pressed=-1;
+  gui_state.keybind_being_set=-1; 
   #if defined(EMSCRIPTEN)
    //Setup the offline file system
     EM_ASM(
@@ -1206,7 +1266,7 @@ static void init(void) {
 }
 
 static void frame(void) {
-  
+
   const int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
@@ -1218,6 +1278,7 @@ static void frame(void) {
   /*=== UI CODE STARTS HERE ===*/
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
+  ImGuiStyle* style = igGetStyle();
   if (igBeginMainMenuBar())
   {
     int orig_x = igGetCursorPosX();
@@ -1227,10 +1288,17 @@ static void frame(void) {
     igPopItemWidth();
     igSetCursorPosX(orig_x);
 
+    if(gui_state.sidebar_open){
+      igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+      if(igButton("Settings",(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      igPopStyleColor(1);
+    }else{
+      if(igButton("Settings",(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+    }
+
     if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
     else igText("SkyEmu", (ImVec2){0, 0});
 
-    if(igButton("Reset",(ImVec2){0, 0})){emu_state.run_mode = SB_MODE_RESET;}
 
     
 
@@ -1250,7 +1318,6 @@ static void frame(void) {
     const char* toggle_labels[]={"<|<|<|", "<|<|", "||", "|>", "|>|>","|>|>|>"};
     int num_toggles = 6;
     int next_toggle_id = -1; 
-    ImGuiStyle* style = igGetStyle();
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
@@ -1275,17 +1342,62 @@ static void frame(void) {
   }
   igPopStyleVar(2);
 
-  igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
-  igSetNextWindowSize((ImVec2){width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
+  int screen_x = 0; 
+  int screen_width = width; 
+
+  if(gui_state.sidebar_open){
+    int sidebar_w = 300; 
+    igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+    igSetNextWindowSize((ImVec2){sidebar_w, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
+    igBegin("Sidebar",0, ImGuiWindowFlags_NoCollapse| ImGuiWindowFlags_NoDecoration);
+
+    igText("Keybinding");
+    bool value= true; 
+    for(int i=0;i<SE_NUM_KEYBINDS;++i){
+      igText("%s",se_keybind_names[i]);
+      bool active = se_key_is_pressed(gui_state.keycode_bind[i]);
+      igSameLine(100,0);
+      if(gui_state.keybind_being_set==i)active=true;
+      if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+      const char* button_label = se_keycode_to_string(gui_state.keycode_bind[i]);
+      if(gui_state.keybind_being_set==i){
+        button_label= "Press new button";
+        if(gui_state.last_key_pressed!=-1){
+          gui_state.keycode_bind[i]=gui_state.last_key_pressed;
+          gui_state.keybind_being_set=-1; 
+        }
+      }
+      if(igButton(button_label,(ImVec2){-1, 0})){
+        gui_state.keybind_being_set = i;
+      }
+      if(active)igPopStyleColor(1);
+    }
+    if(igButton("Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
+
+    igSeparator();
+    const char * deb_tool_string = gui_state.draw_debug_menu? "Hide Debug Tools": "Show Debug Tools";
+    if(igButton(deb_tool_string,(ImVec2){0, 0}))gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
+    igEnd();
+    screen_x = sidebar_w;
+    screen_width -=screen_x*se_dpi_scale(); 
+    gui_state.last_key_pressed = -1;
+
+  }
+  if(gui_state.draw_debug_menu)se_draw_debug();
+
+  igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+  igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
   igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
+  igPushStyleColorVec4(ImGuiCol_WindowBg, (ImVec4){0,0,0,1.});
+
   igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration
     |ImGuiWindowFlags_NoBringToFrontOnFocus);
  
   se_update_frame();
   igPopStyleVar(2);
+  igPopStyleColor(1);
   igEnd();
-  if(gui_state.draw_debug_menu)se_draw_debug();
   /*=== UI CODE ENDS HERE ===*/
 
   sg_begin_default_pass(&gui_state.pass_action, width, height);
@@ -1381,7 +1493,7 @@ static void event(const sapp_event* ev) {
     }
   }else if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
     gui_state.button_state[ev->key_code] = true;
-    if(ev->key_code ==SAPP_KEYCODE_F1)gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
+    gui_state.last_key_pressed = ev->key_code; 
   }
   else if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
     gui_state.button_state[ev->key_code] = false;
