@@ -27,6 +27,8 @@
 #include "cimgui.h"
 #include "sokol_imgui.h"
 #include "karla.h"
+#include "forkawesome.h"
+#include "IconsForkAwesome.h"
 #define STBI_ONLY_PNG
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -1153,11 +1155,11 @@ void se_imgui_theme()
   colors[ImGuiCol_WindowBg]               = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
   colors[ImGuiCol_ChildBg]                = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
   colors[ImGuiCol_PopupBg]                = (ImVec4){0.19f, 0.19f, 0.19f, 0.92f};
-  colors[ImGuiCol_Border]                 = (ImVec4){0.3f, 0.3f, 0.3f, 1.0f};
+  colors[ImGuiCol_Border]                 = (ImVec4){0.1f, 0.1f, 0.1f, 1.0f};
   colors[ImGuiCol_BorderShadow]           = (ImVec4){0.00f, 0.00f, 0.00f, 0.24f};
-  colors[ImGuiCol_FrameBg]                = (ImVec4){0.05f, 0.05f, 0.05f, 0.54f};
-  colors[ImGuiCol_FrameBgHovered]         = (ImVec4){0.19f, 0.19f, 0.19f, 1.0f};
-  colors[ImGuiCol_FrameBgActive]          = (ImVec4){0.20f, 0.22f, 0.23f, 1.00f};
+  colors[ImGuiCol_FrameBg]                = (ImVec4){0.2f, 0.2f, 0.2f, 0.8f};
+  colors[ImGuiCol_FrameBgHovered]         = (ImVec4){0.1f, 0.1f, 0.1f, 1.0f};
+  colors[ImGuiCol_FrameBgActive]          = (ImVec4){0.29f, 0.29f, 0.29f, 1.00f};
   colors[ImGuiCol_TitleBg]                = (ImVec4){0.00f, 0.00f, 0.00f, 1.00f};
   colors[ImGuiCol_TitleBgActive]          = (ImVec4){0.06f, 0.06f, 0.06f, 1.00f};
   colors[ImGuiCol_TitleBgCollapsed]       = (ImVec4){0.00f, 0.00f, 0.00f, 1.00f};
@@ -1175,7 +1177,7 @@ void se_imgui_theme()
   colors[ImGuiCol_Header]                 = (ImVec4){0.00f, 0.00f, 0.00f, 0.52f};
   colors[ImGuiCol_HeaderHovered]          = (ImVec4){0.00f, 0.00f, 0.00f, 0.36f};
   colors[ImGuiCol_HeaderActive]           = (ImVec4){0.20f, 0.22f, 0.23f, 0.33f};
-  colors[ImGuiCol_Separator]              = (ImVec4){0.28f, 0.28f, 0.28f, 0.29f};
+  colors[ImGuiCol_Separator]              = (ImVec4){0.28f, 0.28f, 0.28f, 0.9f};
   colors[ImGuiCol_SeparatorHovered]       = (ImVec4){0.44f, 0.44f, 0.44f, 0.29f};
   colors[ImGuiCol_SeparatorActive]        = (ImVec4){0.40f, 0.44f, 0.47f, 1.00f};
   colors[ImGuiCol_ResizeGrip]             = (ImVec4){0.28f, 0.28f, 0.28f, 0.29f};
@@ -1214,7 +1216,7 @@ void se_imgui_theme()
   style->IndentSpacing                     = 25;
   style->ScrollbarSize                     = 15;
   style->GrabMinSize                       = 10;
-  style->WindowBorderSize                  = 0;
+  style->WindowBorderSize                  = 1;
   style->ChildBorderSize                   = 0;
   style->PopupBorderSize                   = 1;
   style->FrameBorderSize                   = 0;
@@ -1282,18 +1284,21 @@ static void frame(void) {
   if (igBeginMainMenuBar())
   {
     int orig_x = igGetCursorPosX();
-    igSetCursorPosX((width/se_dpi_scale())-130);
+    igSetCursorPosX((width/se_dpi_scale())-100);
     igPushItemWidth(-0.01);
-    igSliderFloat("",&gui_state.volume,0,1,"Volume: %.02f",ImGuiSliderFlags_AlwaysClamp);
+    igText(ICON_FK_VOLUME_UP);
+    int v = (int)(gui_state.volume*100); 
+    igSliderInt("",&v,0,100,"%d%%",ImGuiSliderFlags_AlwaysClamp);
+    gui_state.volume=v*0.01;
     igPopItemWidth();
     igSetCursorPosX(orig_x);
 
     if(gui_state.sidebar_open){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton("Settings",(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(igButton(ICON_FK_TIMES,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
       igPopStyleColor(1);
     }else{
-      if(igButton("Settings",(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(igButton(ICON_FK_BARS,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
 
     if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
@@ -1301,22 +1306,24 @@ static void frame(void) {
 
 
     
-
+    int num_toggles = 5;
     int sel_width =35;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-    int toggle_x = (width/2)/se_dpi_scale()-sel_width*6/2;
+    int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
     if(toggle_x<igGetCursorPosX())toggle_x=igGetCursorPosX();
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
+
+
     int curr_toggle = 3;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==1)curr_toggle=1;
     if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=2;
-    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=3;
-    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=4;
-    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=5;
-    const char* toggle_labels[]={"<|<|<|", "<|<|", "||", "|>", "|>|>","|>|>|>"};
-    int num_toggles = 6;
+    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=2;
+    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
+    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
+    const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
+    if(emu_state.run_mode==SB_MODE_PAUSE)toggle_labels[2]=ICON_FK_PLAY;
     int next_toggle_id = -1; 
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
@@ -1329,10 +1336,9 @@ static void frame(void) {
     switch(next_toggle_id){
       case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
       case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
-      case 2: {emu_state.run_mode=SB_MODE_PAUSE;emu_state.step_frames=1;} ;break;
-      case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=1;} ;break;
-      case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
-      case 5: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
+      case 2: {emu_state.run_mode=emu_state.run_mode==SB_MODE_PAUSE?SB_MODE_RUN: SB_MODE_PAUSE;emu_state.step_frames=1;} ;break;
+      case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
+      case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
     }
     igPopItemWidth();
     
@@ -1350,8 +1356,8 @@ static void frame(void) {
     igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igBegin("Sidebar",0, ImGuiWindowFlags_NoCollapse| ImGuiWindowFlags_NoDecoration);
-
-    igText("Keybinding");
+    igText(ICON_FK_GAMEPAD " Keybinds");
+    igSeparator();
     bool value= true; 
     for(int i=0;i<SE_NUM_KEYBINDS;++i){
       igText("%s",se_keybind_names[i]);
@@ -1361,7 +1367,7 @@ static void frame(void) {
       if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
       const char* button_label = se_keycode_to_string(gui_state.keycode_bind[i]);
       if(gui_state.keybind_being_set==i){
-        button_label= "Press new button";
+        button_label= "Press new button "ICON_FK_SIGN_IN;
         if(gui_state.last_key_pressed!=-1){
           gui_state.keycode_bind[i]=gui_state.last_key_pressed;
           gui_state.keybind_being_set=-1; 
@@ -1372,11 +1378,19 @@ static void frame(void) {
       }
       if(active)igPopStyleColor(1);
     }
-    if(igButton("Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
-
+    if(igButton(ICON_FK_REPEAT" Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
+    igText(ICON_FK_WRENCH " Advanced");
     igSeparator();
-    const char * deb_tool_string = gui_state.draw_debug_menu? "Hide Debug Tools": "Show Debug Tools";
+    const char * deb_tool_string = gui_state.draw_debug_menu? ICON_FK_BUG " Hide Debug Tools": ICON_FK_BUG " Show Debug Tools";
     if(igButton(deb_tool_string,(ImVec2){0, 0}))gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
+
+    /* TODO: Implement these later 
+    if(igButton(ICON_FK_REPEAT " Reset",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RESET;}
+    igSameLine(0,2);
+    if(igButton(ICON_FK_FAST_BACKWARD " Rewind Frame",(ImVec2){0, 0})){}
+    igSameLine(0,2);
+    if(igButton(ICON_FK_FAST_FORWARD " Advance Frame",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_STEP;}
+    */
     igEnd();
     screen_x = sidebar_w;
     screen_width -=screen_x*se_dpi_scale(); 
@@ -1409,6 +1423,14 @@ static void frame(void) {
     ImFontAtlas* atlas = igGetIO()->Fonts;    
     ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
       atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
+   ImFontAtlas_Build(atlas);
+
+    static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
+    ImFontConfig config=*ImFontConfig_ImFontConfig();
+    config.MergeMode = true;
+    config.GlyphMinAdvanceX = 13.0f;
+    ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
+      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),&config,icons_ranges);
     int built = 0;
  
 
@@ -1429,7 +1451,7 @@ static void frame(void) {
     img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
     img_desc.label = "sokol-imgui-font";
     atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
-    igGetIO()->FontDefault=font;
+    igGetIO()->FontDefault=font2;
     igGetIO()->Fonts=atlas;
     igGetIO()->FontGlobalScale/=se_dpi_scale();
   }
