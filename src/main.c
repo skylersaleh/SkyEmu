@@ -677,22 +677,68 @@ static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&core.nds,addr
 static void nds9_byte_write(uint64_t address, uint8_t data){nds9_write8(&core.nds,address,data);}
 static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&core.nds,address);}
 static void nds7_byte_write(uint64_t address, uint8_t data){nds7_write8(&core.nds,address,data);}
+typedef struct{
+  const char* short_label;
+  const char* label;
+  void (*function)();
+  bool visible;
+}se_debug_tool_desc_t; 
+
+void gba_memory_debugger(){se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); }
+void gba_cpu_debugger(){se_draw_arm_state("CPU",&core.gba.cpu,&gba_byte_read);}
+void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write);}
+
+void gb_mmio_debugger(){se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write);}
+void gb_memory_debugger(){se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write);}
+
+void nds7_mmio_debugger(){se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write); }
+void nds9_mmio_debugger(){se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); }
+void nds7_mem_debugger(){se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); }
+void nds9_mem_debugger(){se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);}
+void nds7_cpu_debugger(){se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); }
+void nds9_cpu_debugger(){se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read);}
+se_debug_tool_desc_t gba_debug_tools[]={
+  {ICON_FK_TELEVISION, "CPU", gba_cpu_debugger},
+  {ICON_FK_LIST_ALT, "MMIO", gba_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O, "Memory",gba_memory_debugger},
+  {NULL,NULL,NULL}
+};
+se_debug_tool_desc_t gb_debug_tools[]={
+  {ICON_FK_LIST_ALT, "MMIO", gb_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O, "Memory",gb_memory_debugger},
+  {NULL,NULL,NULL}
+};
+se_debug_tool_desc_t nds_debug_tools[]={
+  {ICON_FK_TELEVISION " 7", "ARM7 CPU", nds7_cpu_debugger},
+  {ICON_FK_TELEVISION " 9", "ARM9 CPU", nds9_cpu_debugger},
+  {ICON_FK_LIST_ALT " 7", "ARM7 MMIO", nds7_mmio_debugger},
+  {ICON_FK_LIST_ALT " 9", "ARM9 MMIO", nds9_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O " 7", "ARM7 Memory",nds7_mem_debugger},
+  {ICON_FK_PENCIL_SQUARE_O " 9", "ARM9 Memory",nds9_mem_debugger},
+  {NULL,NULL,NULL}
+};
 
 static void se_draw_debug(){
-  if(emu_state.system ==SYSTEM_GBA){
-    se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write); 
-    se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); 
-    se_draw_arm_state("CPU",&core.gba.cpu,&gba_byte_read); 
-  }else if(emu_state.system ==SYSTEM_GB){
-    se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write); 
-    se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write); 
-  }else if(emu_state.system ==SYSTEM_NDS){
-    se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write); 
-    se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); 
-    se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); 
-    se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);
-    se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); 
-    se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read); 
+  se_debug_tool_desc_t *desc = NULL;
+  if(emu_state.system ==SYSTEM_GBA)desc = gba_debug_tools;
+  if(emu_state.system ==SYSTEM_GB)desc = gb_debug_tools;
+  if(emu_state.system ==SYSTEM_NDS)desc = nds_debug_tools;
+  if(!desc)return;
+  ImGuiStyle* style = igGetStyle();
+  int id = 10;
+
+  while(desc->label){
+    igPushIDInt(id++);
+    if(desc->visible){
+      igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+      if(igButton(ICON_FK_TIMES,(ImVec2){0, 0})){desc->visible=!desc->visible;}
+      igPopStyleColor(1);
+      desc->function();
+    }else{
+      if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
+    }
+    desc++;
+    igPopID();
   }
 }
 ///////////////////////////////
@@ -1301,6 +1347,8 @@ static void frame(void) {
       if(igButton(ICON_FK_BARS,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
 
+    if(gui_state.draw_debug_menu)se_draw_debug();
+
     if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
     else igText("SkyEmu", (ImVec2){0, 0});
 
@@ -1397,7 +1445,6 @@ static void frame(void) {
     gui_state.last_key_pressed = -1;
 
   }
-  if(gui_state.draw_debug_menu)se_draw_debug();
 
   igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
   igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
