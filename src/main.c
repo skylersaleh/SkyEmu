@@ -401,16 +401,45 @@ static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
   write(address+3,SB_BFE(data,24,8));
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
-  igBegin(label, 0,0);
-  const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (PC)","CPSR","SPSR",NULL};
+  const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
   int r = 0; 
+  igText(ICON_FK_SERVER " Registers");
+  igSeparator();
+  int w= igGetWindowWidth();
   while(reg_names[r]){
     int value = arm7_reg_read(arm,r);
-    if(igInputInt(reg_names[r],&value, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+    igSetNextItemWidth((w-100)*0.5);
+    if(igInputInt(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
+      arm7_reg_write(arm,r,value);
+    }
+    igSetNextItemWidth(-50);
+    igSameLine(w*0.5,0);
+    ++r;
+    value = arm7_reg_read(arm,r+1);
+    if(igInputInt(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
       arm7_reg_write(arm,r,value);
     }
     ++r;
   }
+  uint32_t cpsr = arm7_reg_read(arm,CPSR);
+  int flag_bits[]={
+    31,30,29,28,
+    27,5,6,7,
+  };
+  const char * flag_names[]={
+    "N","Z","C","V","Q","T","F","I",NULL
+  };
+  for(int i=0;i<sizeof(flag_bits)/sizeof(flag_bits[0]);++i){
+    int b= flag_bits[i];
+    bool v = SB_BFE(cpsr,b,1);
+    int y = i/4;
+    int x = i%4; 
+    if(x!=0)igSameLine(x*w/4,0);
+    igCheckbox(flag_names[i],&v);
+    cpsr&=~(1<<b);
+    cpsr|= ((int)v)<<b;
+  }
+  arm7_reg_write(arm,CPSR,cpsr);
   unsigned pc = arm7_reg_read(arm,PC);
   bool thumb = arm7_get_thumb_bit(arm);
   pc-=thumb? 4: 8;
@@ -420,6 +449,8 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   int off = buffer_size/2;
   if(pc<off)off=pc;
   for(int i=0;i<buffer_size;++i)buffer[i]=read(pc-off+i);
+  igText(ICON_FK_LIST_OL " Disassembly");
+  igSeparator();
   csh handle;
   if (cs_open(CS_ARCH_ARM, thumb? CS_MODE_THUMB: CS_MODE_ARM, &handle) == CS_ERR_OK){
     cs_insn *insn;
@@ -430,32 +461,35 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
       
       if(insn[j].address==pc){
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
-        snprintf(instr_str,80,"PC ->0x%08x:", (int)insn[j].address);
-        instr_str[79]=0;
-        igText(instr_str);
-        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
-        instr_str[79]=0;
-        igSameLine(0,2);
-        igText(instr_str);
-        igPopStyleColor(1);
-      }else{
+        igText("PC " ICON_FK_ARROW_RIGHT);
+        igSameLine(40,0);
         snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
         instr_str[79]=0;
         igText(instr_str);
         snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
         instr_str[79]=0;
-        igSameLine(0,2);
+        igSameLine(130,0);
+        igText(instr_str);
+        igPopStyleColor(1);
+      }else{
+        snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
+        instr_str[79]=0;
+        igText("");
+        igSameLine(40,0);
+        igText(instr_str);
+        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
+        instr_str[79]=0;
+        igSameLine(130,0);
         igText(instr_str);
       }
-  
     }  
   }
-
-  igEnd();
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
-  igBegin(label, 0,0);
+  igText(ICON_FK_EXCHANGE " Read/Write Memory Address");
+  igSeparator();
   igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  igSeparator();
   int v = se_read32(read,gui->mem_view_address);
   if(igInputInt("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
     se_write32(write,gui->mem_view_address,v);
@@ -468,10 +502,20 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
     (*write)(gui->mem_view_address,v);
   }
-  igEnd();
+  v = se_read32(read,gui->mem_view_address);
+  if(igInputInt("data (signed 32b)",&v, 1,5,ImGuiInputTextFlags_None)){
+    se_write32(write,gui->mem_view_address,v);
+  }
+  v = se_read16(read,gui->mem_view_address);
+  if(igInputInt("data (signed 16b)",&v, 1,5,ImGuiInputTextFlags_None)){
+    se_write16(write,gui->mem_view_address,v);
+  }
+  v = (*read)(gui->mem_view_address);
+  if(igInputInt("data (signed 8b)",&v, 1,5,ImGuiInputTextFlags_None)){
+    (*write)(gui->mem_view_address,v);
+  }
 }
 void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write){
-  igBegin(label, 0,0);
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
     uint32_t data = se_read32(read, addr);
@@ -526,7 +570,6 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     }
     igPopID();
   }
-  igEnd();
 }
 /////////////////////////////////
 // BEGIN UPDATE FOR NEW SYSTEM //
@@ -717,12 +760,19 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_PENCIL_SQUARE_O " 9", "ARM9 Memory",nds9_mem_debugger},
   {NULL,NULL,NULL}
 };
-
-static void se_draw_debug(){
+static se_debug_tool_desc_t* se_get_debug_description(){
   se_debug_tool_desc_t *desc = NULL;
   if(emu_state.system ==SYSTEM_GBA)desc = gba_debug_tools;
   if(emu_state.system ==SYSTEM_GB)desc = gb_debug_tools;
   if(emu_state.system ==SYSTEM_NDS)desc = nds_debug_tools;
+  return desc; 
+}
+///////////////////////////////
+// END UPDATE FOR NEW SYSTEM //
+///////////////////////////////
+
+static void se_draw_debug_menu(){
+  se_debug_tool_desc_t* desc=se_get_debug_description();
   if(!desc)return;
   ImGuiStyle* style = igGetStyle();
   int id = 10;
@@ -733,7 +783,6 @@ static void se_draw_debug(){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
       if(igButton(ICON_FK_TIMES,(ImVec2){0, 0})){desc->visible=!desc->visible;}
       igPopStyleColor(1);
-      desc->function();
     }else{
       if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
     }
@@ -741,10 +790,22 @@ static void se_draw_debug(){
     igPopID();
   }
 }
-///////////////////////////////
-// END UPDATE FOR NEW SYSTEM //
-///////////////////////////////
-
+static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, float height){
+  se_debug_tool_desc_t* desc= se_get_debug_description();
+  if(!desc)return screen_x;
+  while(desc->label){
+    if(desc->visible){
+      igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
+      igSetNextWindowSize((ImVec2){sidebar_w, height}, ImGuiCond_Always);
+      igBegin(desc->label,0, ImGuiWindowFlags_NoCollapse);
+      desc->function();
+      igEnd();
+      screen_x+=sidebar_w;
+    }
+    desc++;
+  }
+  return screen_x;
+}
 void se_set_default_keybind(gui_state_t *gui){
   gui->keycode_bind[SE_KEY_A]     = SAPP_KEYCODE_J;  
   gui->keycode_bind[SE_KEY_B]     = SAPP_KEYCODE_K;
@@ -1253,8 +1314,8 @@ void se_imgui_theme()
   colors[ImGuiCol_ModalWindowDimBg]       = (ImVec4){1.00f, 0.00f, 0.00f, 0.35f};
 
   ImGuiStyle* style = igGetStyle();
-  //style->WindowPadding                     = (ImVec2){8.00f, 8.00f};
-  //style->FramePadding                      = (ImVec2){5.00f, 2.00f};
+  style->WindowPadding                     = (ImVec2){8.00f, 8.00f};
+  style->FramePadding                      = (ImVec2){5.00f, 2.00f};
   //style->CellPadding                       = (ImVec2){6.00f, 6.00f};
   style->ItemSpacing                       = (ImVec2){6.00f, 6.00f};
   //style->ItemInnerSpacing                  = (ImVec2){6.00f, 6.00f};
@@ -1347,7 +1408,7 @@ static void frame(void) {
       if(igButton(ICON_FK_BARS,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
 
-    if(gui_state.draw_debug_menu)se_draw_debug();
+    if(gui_state.draw_debug_menu)se_draw_debug_menu();
 
     if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
     else igText("SkyEmu", (ImVec2){0, 0});
@@ -1399,8 +1460,8 @@ static void frame(void) {
   int screen_x = 0; 
   int screen_width = width; 
 
+  int sidebar_w = 300; 
   if(gui_state.sidebar_open){
-    int sidebar_w = 300; 
     igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igBegin("Sidebar",0, ImGuiWindowFlags_NoCollapse| ImGuiWindowFlags_NoDecoration);
@@ -1426,6 +1487,8 @@ static void frame(void) {
       }
       if(active)igPopStyleColor(1);
     }
+    
+
     if(igButton(ICON_FK_REPEAT" Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
     igText(ICON_FK_WRENCH " Advanced");
     igSeparator();
@@ -1444,6 +1507,11 @@ static void frame(void) {
     screen_width -=screen_x*se_dpi_scale(); 
     gui_state.last_key_pressed = -1;
 
+  }
+  if(gui_state.draw_debug_menu){
+    int orig_screen_x = screen_x;
+    screen_x = se_draw_debug_panels(screen_x, sidebar_w,menu_height,height-menu_height*se_dpi_scale());
+    screen_width -=(screen_x-orig_screen_x)*se_dpi_scale();
   }
 
   igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
