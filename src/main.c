@@ -741,23 +741,23 @@ void nds9_mem_debugger(){se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_by
 void nds7_cpu_debugger(){se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); }
 void nds9_cpu_debugger(){se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read);}
 se_debug_tool_desc_t gba_debug_tools[]={
-  {ICON_FK_TELEVISION, "CPU", gba_cpu_debugger},
-  {ICON_FK_LIST_ALT, "MMIO", gba_mmio_debugger},
-  {ICON_FK_PENCIL_SQUARE_O, "Memory",gba_memory_debugger},
+  {ICON_FK_TELEVISION, ICON_FK_TELEVISION " CPU", gba_cpu_debugger},
+  {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gba_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gba_memory_debugger},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t gb_debug_tools[]={
-  {ICON_FK_LIST_ALT, "MMIO", gb_mmio_debugger},
-  {ICON_FK_PENCIL_SQUARE_O, "Memory",gb_memory_debugger},
+  {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gb_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gb_memory_debugger},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t nds_debug_tools[]={
-  {ICON_FK_TELEVISION " 7", "ARM7 CPU", nds7_cpu_debugger},
-  {ICON_FK_TELEVISION " 9", "ARM9 CPU", nds9_cpu_debugger},
-  {ICON_FK_LIST_ALT " 7", "ARM7 MMIO", nds7_mmio_debugger},
-  {ICON_FK_LIST_ALT " 9", "ARM9 MMIO", nds9_mmio_debugger},
-  {ICON_FK_PENCIL_SQUARE_O " 7", "ARM7 Memory",nds7_mem_debugger},
-  {ICON_FK_PENCIL_SQUARE_O " 9", "ARM9 Memory",nds9_mem_debugger},
+  {ICON_FK_TELEVISION " 7", ICON_FK_TELEVISION " ARM7 CPU", nds7_cpu_debugger},
+  {ICON_FK_TELEVISION " 9", ICON_FK_TELEVISION " ARM9 CPU", nds9_cpu_debugger},
+  {ICON_FK_SITEMAP " 7", ICON_FK_SITEMAP " ARM7 MMIO", nds7_mmio_debugger},
+  {ICON_FK_SITEMAP " 9", ICON_FK_SITEMAP " ARM9 MMIO", nds9_mmio_debugger},
+  {ICON_FK_PENCIL_SQUARE_O " 7", ICON_FK_PENCIL_SQUARE_O " ARM7 Memory",nds7_mem_debugger},
+  {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
   {NULL,NULL,NULL}
 };
 static se_debug_tool_desc_t* se_get_debug_description(){
