@@ -747,17 +747,12 @@ void sb_draw_scanline(sb_gb_t*gb){
         uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
         uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
 
-
         int cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
         if((bg_win_on_top||(SB_BFE(color_id,8,1)))&&master_priority){
           if((color_id&0x3)==0&&cid!=0){color_id = cid | (palette<<2); prior_sprite =prior;}
         }else if(cid!=0){color_id = cid | (palette<<2); prior_sprite=prior;}
 
       }
-      //r = SB_BFE(tile_id,0,3)*31;
-      //g = SB_BFE(tile_id,3,3)*31;
-      //b = SB_BFE(tile_id,6,2)*63;
-
     }
     sb_lookup_palette_color(gb,color_id,&r,&g,&b);
     gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;
@@ -939,7 +934,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=6000000;
   int frames_to_draw = 1;
-  float time_correction_scale = 1.0;
 
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
@@ -1021,7 +1015,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
 
     double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
-    delta_t*=time_correction_scale;
     //sb_push_save_state(gb);
 
     if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
@@ -1029,10 +1022,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
       emu->run_mode = SB_MODE_PAUSE;
       break;
     }
-    if(vblank){break;}
-    
     sb_process_audio(gb,emu,delta_t);
-    int size = sb_ring_buffer_size(&emu->audio_ring_buff);
+    if(vblank){break;}
   }
 }
 float compute_vol_env_slope(uint8_t d){

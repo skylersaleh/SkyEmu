@@ -408,14 +408,11 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   int w= igGetWindowWidth();
   while(reg_names[r]){
     int value = arm7_reg_read(arm,r);
-    igSetNextItemWidth((w-100)*0.5);
-    if(igInputInt(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
-      arm7_reg_write(arm,r,value);
-    }
-    igSetNextItemWidth(-50);
-    igSameLine(w*0.5,0);
-    ++r;
-    value = arm7_reg_read(arm,r+1);
+    if(r%2){
+      igSetNextItemWidth(-50);
+      igSameLine(w*0.5,0);
+    }else igSetNextItemWidth((w-100)*0.5);
+
     if(igInputInt(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
       arm7_reg_write(arm,r,value);
     }
