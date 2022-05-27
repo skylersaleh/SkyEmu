@@ -74,6 +74,7 @@ const static char* se_keybind_names[]={
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
+void se_reset_save_states();
 
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
@@ -210,6 +211,9 @@ const char* se_keycode_to_string(int keycode){
 #define SE_REWIND_SEGMENT_SIZE 64
 #define SE_LAST_DELTA_IN_TX (1<<31)
 
+#define SE_NUM_SAVE_STATES 4
+#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*3)
+
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
@@ -232,10 +236,18 @@ typedef struct{
   bool first_push; 
   se_core_state_t last_core; 
 }se_core_rewind_buffer_t;
-
+typedef struct{
+  se_core_state_t state;
+  uint8_t screenshot[SE_MAX_SCREENSHOT_SIZE];
+  int screenshot_width; 
+  int screenshot_height; 
+  int system;
+  bool valid;
+}se_save_state_t; 
 
 se_core_state_t core;
 se_core_rewind_buffer_t rewind_buffer;
+se_save_state_t save_states[SE_NUM_SAVE_STATES];
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -577,6 +589,7 @@ static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
 
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
+  se_reset_save_states();
   if(emu_state.rom_loaded){
     if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
     else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
@@ -651,15 +664,31 @@ static void se_emulate_single_frame(){
   
 }
 static void se_reset_core(){
-  se_reset_rewind_buffer(&rewind_buffer);
   if(emu_state.system == SYSTEM_GB)sb_reset(&core.gb);
   else if(emu_state.system == SYSTEM_GBA)gba_reset(&core.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_reset(&core.nds);
 }
+static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
+  *out_height=*out_width=0;
+  // output_bufer is always SE_MAX_SCREENSHOT_SIZE bytes. RGB8
+  if(emu_state.system==SYSTEM_GBA){
+    *out_width = GBA_LCD_W;
+    *out_height = GBA_LCD_H;
+    memcpy(output_buffer,core.gba.framebuffer,GBA_LCD_W*GBA_LCD_H*3);
+  }else if (emu_state.system==SYSTEM_NDS){
+    *out_width = NDS_LCD_W;
+    *out_height = NDS_LCD_H*2;
+    memcpy(output_buffer,core.nds.framebuffer_top,NDS_LCD_W*NDS_LCD_H*3);
+    memcpy(output_buffer+NDS_LCD_W*NDS_LCD_H*3,core.nds.framebuffer_bottom,NDS_LCD_W*NDS_LCD_H*3);
+  }else if (emu_state.system==SYSTEM_GB){
+    *out_width = SB_LCD_W;
+    *out_height = SB_LCD_H;
+    memcpy(output_buffer,core.gb.lcd.framebuffer,SB_LCD_W*SB_LCD_H*3);
+  }
+}
 static void se_draw_emulated_system_screen(){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
-
 
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
   if(emu_state.system==SYSTEM_GBA){
@@ -767,7 +796,19 @@ static se_debug_tool_desc_t* se_get_debug_description(){
 ///////////////////////////////
 // END UPDATE FOR NEW SYSTEM //
 ///////////////////////////////
-
+void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
+  save_state->state = *core; 
+  save_state->valid = true;
+  save_state->system = emu_state.system;
+  se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
+}
+void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
+  if(!save_state->valid || save_state->system != emu_state.system)return; 
+  *core=save_state->state;
+}
+void se_reset_save_states(){
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
+}
 static void se_draw_debug_menu(){
   se_debug_tool_desc_t* desc=se_get_debug_description();
   if(!desc)return;
@@ -1370,6 +1411,92 @@ static void init(void) {
     se_load_rom(emu_state.cmd_line_args[1]);
   }
 }
+void se_draw_menu_panel(){
+  ImGuiStyle *style = igGetStyle();
+  igText(ICON_FK_FLOPPY_O " Save States");
+  igSeparator();
+
+  int win_w = igGetWindowContentRegionWidth();
+  ImDrawList*dl= igGetWindowDrawList();
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    int slot_x = 0;
+    int slot_y = i;
+    int slot_w = (win_w-style->FramePadding.x)*0.5;
+    int slot_h = 64; 
+    if(i%2)igSameLine(0,style->FramePadding.x);
+    igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
+    ImVec2 screen_p;
+    igGetCursorScreenPos(&screen_p);
+    int screen_x = screen_p.x;
+    int screen_y = screen_p.y;
+    int screen_w = 64;
+    int screen_h = 64+style->FramePadding.y*2; 
+    int button_w = 50; 
+    igText("Slot %d",i);
+    if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state(&core, save_states+i);
+    if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state(&core, save_states+i);
+    if(save_states[i].valid){
+      float w_scale = 1.0;
+      float h_scale = 1.0;
+      if(save_states[i].screenshot_width>save_states[i].screenshot_height){
+        h_scale = (float)save_states[i].screenshot_height/(float)save_states[i].screenshot_width;
+      }else{
+        w_scale = (float)save_states[i].screenshot_width/(float)save_states[i].screenshot_height;
+      }
+      screen_w*=w_scale;
+      screen_h*=h_scale;
+      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+
+      se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
+                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), false);
+
+    }else{
+      screen_h*=0.85;
+      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+      ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+    }
+    igEndChildFrame();
+  }
+  igText(ICON_FK_GAMEPAD " Keybinds");
+  igSeparator();
+  bool value= true; 
+  for(int i=0;i<SE_NUM_KEYBINDS;++i){
+    igText("%s",se_keybind_names[i]);
+    bool active = se_key_is_pressed(gui_state.keycode_bind[i]);
+    igSameLine(100,0);
+    if(gui_state.keybind_being_set==i)active=true;
+    if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+    const char* button_label = se_keycode_to_string(gui_state.keycode_bind[i]);
+    if(gui_state.keybind_being_set==i){
+      button_label= "Press new button "ICON_FK_SIGN_IN;
+      if(gui_state.last_key_pressed!=-1){
+        gui_state.keycode_bind[i]=gui_state.last_key_pressed;
+        gui_state.keybind_being_set=-1; 
+      }
+    }
+    if(igButton(button_label,(ImVec2){-1, 0})){
+      gui_state.keybind_being_set = i;
+    }
+    if(active)igPopStyleColor(1);
+  }
+
+  if(igButton(ICON_FK_REPEAT" Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
+  igText(ICON_FK_WRENCH " Advanced");
+  igSeparator();
+  const char * deb_tool_string = gui_state.draw_debug_menu? ICON_FK_BUG " Hide Debug Tools": ICON_FK_BUG " Show Debug Tools";
+  if(igButton(deb_tool_string,(ImVec2){0, 0}))gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
+
+  /* TODO: Implement these later 
+  if(igButton(ICON_FK_REPEAT " Reset",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RESET;}
+  igSameLine(0,2);
+  if(igButton(ICON_FK_FAST_BACKWARD " Rewind Frame",(ImVec2){0, 0})){}
+  igSameLine(0,2);
+  if(igButton(ICON_FK_FAST_FORWARD " Advance Frame",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_STEP;}
+  */
+}
 
 static void frame(void) {
 
@@ -1462,43 +1589,7 @@ static void frame(void) {
     igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igBegin("Sidebar",0, ImGuiWindowFlags_NoCollapse| ImGuiWindowFlags_NoDecoration);
-    igText(ICON_FK_GAMEPAD " Keybinds");
-    igSeparator();
-    bool value= true; 
-    for(int i=0;i<SE_NUM_KEYBINDS;++i){
-      igText("%s",se_keybind_names[i]);
-      bool active = se_key_is_pressed(gui_state.keycode_bind[i]);
-      igSameLine(100,0);
-      if(gui_state.keybind_being_set==i)active=true;
-      if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      const char* button_label = se_keycode_to_string(gui_state.keycode_bind[i]);
-      if(gui_state.keybind_being_set==i){
-        button_label= "Press new button "ICON_FK_SIGN_IN;
-        if(gui_state.last_key_pressed!=-1){
-          gui_state.keycode_bind[i]=gui_state.last_key_pressed;
-          gui_state.keybind_being_set=-1; 
-        }
-      }
-      if(igButton(button_label,(ImVec2){-1, 0})){
-        gui_state.keybind_being_set = i;
-      }
-      if(active)igPopStyleColor(1);
-    }
-    
-
-    if(igButton(ICON_FK_REPEAT" Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
-    igText(ICON_FK_WRENCH " Advanced");
-    igSeparator();
-    const char * deb_tool_string = gui_state.draw_debug_menu? ICON_FK_BUG " Hide Debug Tools": ICON_FK_BUG " Show Debug Tools";
-    if(igButton(deb_tool_string,(ImVec2){0, 0}))gui_state.draw_debug_menu=!gui_state.draw_debug_menu;
-
-    /* TODO: Implement these later 
-    if(igButton(ICON_FK_REPEAT " Reset",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RESET;}
-    igSameLine(0,2);
-    if(igButton(ICON_FK_FAST_BACKWARD " Rewind Frame",(ImVec2){0, 0})){}
-    igSameLine(0,2);
-    if(igButton(ICON_FK_FAST_FORWARD " Advance Frame",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_STEP;}
-    */
+    se_draw_menu_panel();
     igEnd();
     screen_x = sidebar_w;
     screen_width -=screen_x*se_dpi_scale(); 
