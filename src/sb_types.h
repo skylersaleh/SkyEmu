@@ -15,11 +15,23 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
   #define FORCE_INLINE inline __attribute__((always_inline))
 #else
   #define FORCE_INLINE inline
 #endif
+
+// Macro for hinting that an expression is likely to be false.
+#if defined(__GNUC__) || defined(__clang__)
+#define SB_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define SB_UNLIKELY(x) (x)
+#endif  // defined(COMPILER_GCC)
+#if defined(COMPILER_GCC) || defined(__clang__)
+#define SB_LIKELY(x) __builtin_expect(!!(x), 1)
+#else
+#define SB_LIKELY(x) (x)
+#endif  // defined(COMPILER_GCC)
 
 #define SB_FILE_PATH_SIZE 1024
 #define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024

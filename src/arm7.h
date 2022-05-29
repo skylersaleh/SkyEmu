@@ -336,8 +336,10 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm9t_push_pop_reg,       "PUSHPOPREG","1011L10Rllllllll"},
    {arm9t_mult_ldst,          "MLDST",     "1100Lbbbllllllll"},
    // Conditional branches cant branch on condition 1111
-   {arm7t_cond_branch,        "COND B",    "1101ccccOOOOOOOO"},
-
+   {arm7t_cond_branch,        "COND B",    "11010cccOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "110110ccOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "1101110cOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "11011110OOOOOOOO"},
    {arm7t_soft_interrupt,     "SWI",       "11011111OOOOOOOO"},
    {arm7t_branch,             "B",         "11100OOOOOOOOOOO"},
    {arm7t_long_branch_link,   "BL",        "1111HOOOOOOOOOOO"},
@@ -346,49 +348,6 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_unknown,   "UNKNOWN1",           "1011--1---------"},
    {arm7t_unknown,   "UNKNOWN2",           "10110001--------"},
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
-};  
-// ARM7 Thumb Classes
-const static const char* arm7t_instruction_namess[]={
-   "arm7t_mov_shift_reg",
-   "arm7t_mov_shift_reg",
-   "arm7t_mov_shift_reg",
-   "arm7t_add_sub",
-   "arm7t_add_sub",
-   "arm7t_mov_cmp_add_sub_imm",
-   "arm7t_alu_op",
-   "arm9t_hi_reg_op",
-   "arm9t_pc_rel_ldst",
-   "arm9t_reg_off_ldst",
-   "arm7t_ldst_bh",
-   "arm9t_imm_off_ldst",
-   "arm7t_imm_off_ldst_bh",
-   "arm9t_stack_off_ldst",
-   "arm7t_load_addr",
-   "arm7t_add_off_sp",
-   "arm9t_push_pop_reg",
-   "arm9t_mult_ldst",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_cond_branch",
-   "arm7t_soft_interrupt",
-   "arm7t_branch",
-   "arm7t_long_branch_link",
-   "arm7t_long_branch_link",
-   "arm7t_unknown",
-   "arm7t_unknown",
-   "arm7t_unknown",
 };  
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
@@ -400,7 +359,7 @@ static const char* arm9_disasm_lookup_table[4096] = { 0 };
 static const char* arm7t_disasm_lookup_table[256] = { 0 };
 
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
-  if(reg<8)return reg;
+  if(SB_LIKELY(reg<8))return reg;
   int mode = cpu->registers[CPSR]&0xf;
 
   const static int8_t lookup[10*16+8]={
@@ -423,7 +382,7 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
      8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
   int8_t r = lookup[mode*10+reg];
-  if(r!=-1)return r; 
+  if(SB_LIKELY(r!=-1))return r; 
   cpu->trigger_breakpoint=true;
   printf("Undefined ARM mode: %d\n",mode);
   return 0;
@@ -433,14 +392,14 @@ static FORCE_INLINE void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value
 } 
 static FORCE_INLINE void arm9_reg_write_r15_thumb(arm7_t*cpu, unsigned reg, uint32_t value){
   cpu->registers[arm7_reg_index(cpu,reg)] = value;
-  if(reg==PC)arm7_set_thumb_bit(cpu,value&1);
+  if(SB_UNLIKELY(reg==PC))arm7_set_thumb_bit(cpu,value&1);
 } 
 static FORCE_INLINE uint32_t arm7_reg_read(arm7_t*cpu, unsigned reg){
   return cpu->registers[arm7_reg_index(cpu,reg)];
 }
 static FORCE_INLINE uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int r15_off){
   uint32_t v = arm7_reg_read(cpu,reg);
-  if(reg==15){
+  if(SB_UNLIKELY(reg==PC)){
     v+=r15_off;
     if(arm7_get_thumb_bit(cpu))v-=2;
   }
@@ -557,39 +516,6 @@ static arm7_t arm7_init(void* user_data){
   return arm;
 
 }
-static FORCE_INLINE void arm7t_dispatch_opcode(arm7_t* cpu, int opcode, int key){
-  switch(key){
-    case 0 ... 23: arm7t_mov_shift_reg(cpu,opcode);break;
-    case 24 ... 31: arm7t_add_sub(cpu,opcode);break;
-    case 32 ... 63: arm7t_mov_cmp_add_sub_imm(cpu,opcode);break;
-    case 64 ... 67: arm7t_alu_op(cpu,opcode);break;
-    case 68 ... 71: arm7t_hi_reg_op(cpu,opcode);break;
-    case 72 ... 79: arm7t_pc_rel_ldst(cpu,opcode);break;
-    case 80 ... 81: arm7t_reg_off_ldst(cpu,opcode);break;
-    case 82 ... 83: arm7t_ldst_bh(cpu,opcode);break;
-    case 84 ... 85: arm7t_reg_off_ldst(cpu,opcode);break;
-    case 86 ... 87: arm7t_ldst_bh(cpu,opcode);break;
-    case 88 ... 89: arm7t_reg_off_ldst(cpu,opcode);break;
-    case 90 ... 91: arm7t_ldst_bh(cpu,opcode);break;
-    case 92 ... 93: arm7t_reg_off_ldst(cpu,opcode);break;
-    case 94 ... 95: arm7t_ldst_bh(cpu,opcode);break;
-    case 96 ... 127: arm7t_imm_off_ldst(cpu,opcode);break;
-    case 128 ... 143: arm7t_imm_off_ldst_bh(cpu,opcode);break;
-    case 144 ... 159: arm7t_stack_off_ldst(cpu,opcode);break;
-    case 160 ... 175: arm7t_load_addr(cpu,opcode);break;
-    case 176: arm7t_add_off_sp(cpu,opcode);break;
-    case 177 ... 179: arm7t_unknown(cpu,opcode);break;
-    case 180 ... 181: arm7t_push_pop_reg(cpu,opcode);break;
-    case 182 ... 187: arm7t_unknown(cpu,opcode);break;
-    case 188 ... 189: arm7t_push_pop_reg(cpu,opcode);break;
-    case 190 ... 191: arm7t_unknown(cpu,opcode);break;
-    case 192 ... 207: arm7t_mult_ldst(cpu,opcode);break;
-    case 208 ... 222: arm7t_cond_branch(cpu,opcode);break;
-    case 223: arm7t_soft_interrupt(cpu,opcode);break;
-    case 224 ... 231: arm7t_branch(cpu,opcode);break;
-    case 232 ... 255: arm7t_long_branch_link(cpu,opcode);break;
-  }
-}
 static FORCE_INLINE bool arm7_get_thumb_bit(arm7_t* cpu){return ARM7_BFE(cpu->registers[CPSR],5,1);}
 static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   cpu->registers[CPSR] &= ~(1<<5);
@@ -676,7 +602,7 @@ static void arm9_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
 }
 static FORCE_INLINE bool arm7_check_cond_code(arm7_t *cpu, uint32_t opcode){
   uint32_t cond_code = ARM7_BFE(opcode,28,4);
-  if(cond_code==0xE)return true;
+  if(SB_LIKELY(cond_code==0xE))return true;
   uint32_t cpsr = cpu->registers[CPSR];
   bool N = ARM7_BFE(cpsr,31,1);
   bool Z = ARM7_BFE(cpsr,30,1);
@@ -849,13 +775,16 @@ static void arm9_exec_instruction(arm7_t* cpu){
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
 }
-static void arm7_exec_instruction(arm7_t* cpu){
-  if(cpu->wait_for_interrupt){
+static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
+  if(SB_UNLIKELY(cpu->wait_for_interrupt)){
     cpu->i_cycles=1; 
     return;
   }
+  if(SB_UNLIKELY(cpu->log_cmp_file)){
+    arm_check_log_file(cpu);
+  }
   bool thumb = arm7_get_thumb_bit(cpu);
-  if(cpu->prefetch_pc!=cpu->registers[PC]){
+  if(SB_UNLIKELY(cpu->prefetch_pc!=cpu->registers[PC])){
     if(thumb){
       cpu->registers[PC]&=~1;
       cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
@@ -868,30 +797,27 @@ static void arm7_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
   }
-  if(cpu->log_cmp_file){
-    arm_check_log_file(cpu);
-    thumb = arm7_get_thumb_bit(cpu);
-  }  cpu->next_fetch_sequential=true;
+
+  cpu->next_fetch_sequential=true;
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
   cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
   if(thumb==false){
     cpu->registers[PC] += 4;
     cpu->prefetch_pc = cpu->registers[PC];
-    if(arm7_check_cond_code(cpu,opcode)){
+    if(SB_LIKELY(arm7_check_cond_code(cpu,opcode))){
       uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
     	arm7_lookup_table[key](cpu,opcode);
     }
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }else{
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
-    arm7t_dispatch_opcode(cpu,opcode,key);
-    //arm7t_lookup_table[key](cpu,opcode);
+    arm7t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
 }
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {

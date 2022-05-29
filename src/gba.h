@@ -687,6 +687,7 @@ typedef struct{
   bool last_vblank;
   bool last_hblank;
   int last_lcd_y; 
+  bool has_hit_vblank;
   struct {
     int32_t internal_bgx;
     int32_t internal_bgy;
@@ -1078,13 +1079,13 @@ static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitc
 static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   int bank = SB_BFE(address,24,4);
   bool prefetch_en= gba->mem.prefetch_en;
-  if(!prefetch_en){
+  if(SB_UNLIKELY(!prefetch_en)){
     if(gba->cpu.i_cycles)request_size|=1;
     if(request_size&1)gba->cpu.next_fetch_sequential =false;
     gba->mem.prefetch_size = 0;
   }
   uint32_t wait = gba->mem.wait_state_table[bank*4+request_size];
-  if(prefetch_en){    
+  if(SB_LIKELY(prefetch_en)){    
     gba->mem.prefetch_size+=gba->cpu.i_cycles;
     if(bank>=0x08&&bank<=0x0D){
       if((request_size&1)){
@@ -1199,10 +1200,10 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
       gba->mem.openbus_word=*ret;
       break;
     case 0x4: 
-      if(addr<=0x40003FF ){
+      if(SB_LIKELY(addr<=0x40003FF)){
         if(req_type&GBA_REQ_READ){
           int io_reg = (addr>>2)&0xff;
-          if(gba->mem.mmio_reg_valid_lookup[io_reg]){
+          if(SB_LIKELY(gba->mem.mmio_reg_valid_lookup[io_reg])){
             gba_process_mmio_read(gba,addr);
             gba->mem.mmio_word = (*(uint32_t*)(gba->mem.io+(addr&0x3fc)))&gba->mem.mmio_data_mask_lookup[io_reg];
             ret = &gba->mem.mmio_word;
@@ -1230,7 +1231,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
     case 0xC:
     case 0xD:{
         int maddr = addr&0x1fffffc;
-        if(maddr>=gba->cart.rom_size){
+        if(SB_UNLIKELY(maddr>=gba->cart.rom_size)){
           gba->mem.openbus_word = ((maddr/2)&0xffff)|(((maddr/2+1)&0xffff)<<16);
           // Return ready when done writting EEPROM (required by Minish Cap)
           if(gba->cart.backup_type==GBA_BACKUP_EEPROM) gba->mem.openbus_word = 1; 
@@ -1544,6 +1545,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     if(lcd_y != gba->ppu.last_lcd_y){
       gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       if(vblank!=gba->ppu.last_vblank){
+        if(vblank)gba->ppu.has_hit_vblank=true;
         gba->ppu.last_vblank = vblank;
         bool vblank_irq_en = SB_BFE(disp_stat,3,1);
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
@@ -2307,7 +2309,7 @@ static FORCE_INLINE void gba_tick_sio(gba_t* gba){
 }
 static FORCE_INLINE void gba_tick_timers(gba_t* gba){
   gba->deferred_timer_ticks+=1;
-  if(gba->deferred_timer_ticks>=gba->timer_ticks_before_event)gba_compute_timers(gba); 
+  if(SB_UNLIKELY(gba->deferred_timer_ticks>=gba->timer_ticks_before_event))gba_compute_timers(gba); 
 }
 static void gba_compute_timers(gba_t* gba){
   int ticks = gba->deferred_timer_ticks; 
@@ -2424,7 +2426,7 @@ static FORCE_INLINE void gba_send_interrupt(gba_t*gba,int delay,int if_bit){
   }
 }
 static FORCE_INLINE void gba_tick_interrupts(gba_t*gba){
-  if(gba->active_if_pipe_stages){
+  if(SB_UNLIKELY(gba->active_if_pipe_stages)){
     uint16_t if_bit = gba->pipelined_if[0];
     if(if_bit){
       uint16_t if_val = gba_io_read16(gba,GBA_IF);
@@ -2441,7 +2443,7 @@ static FORCE_INLINE void gba_tick_interrupts(gba_t*gba){
 }
 static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){ 
   gba->audio.current_sim_time +=delta_time;
-  if(gba->audio.current_sample_generated_time >gba->audio.current_sim_time)return; 
+  if(SB_LIKELY(gba->audio.current_sample_generated_time >gba->audio.current_sim_time))return; 
   //TODO: Move these into a struct
   static float chan_t[4] = {0,0,0,0};
   static float length_t[4]={1e6,1e6,1e6,1e6};
@@ -2710,8 +2712,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   gba->framebuffer=emu->core_temp_storage; 
   gba_tick_rtc(gba);
   gba_tick_keypad(&emu->joy,gba);
-  bool prev_vblank = gba->ppu.last_vblank; 
-  //Skip emulation of a frame if we get too far ahead the audio playback
+  gba->ppu.has_hit_vblank=false;
   static int last_tick =0;
   while(true){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
@@ -2719,7 +2720,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       uint16_t int_if = gba_io_read16(gba,GBA_IF);
       gba->cpu.i_cycles=0;
       gba->mem.requests=0;
-      if(int_if){
+      if(SB_UNLIKELY(int_if)){
         int_if &= gba_io_read16(gba,GBA_IE);
         uint32_t ime = gba_io_read32(gba,GBA_IME);
         int_if *= SB_BFE(ime,0,1);
@@ -2727,16 +2728,19 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       arm7_exec_instruction(&gba->cpu);
       last_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
-      if(gba->cpu.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
+      if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
     }
     gba_tick_sio(gba);
 
     double delta_t = ((double)ticks)/(16*1024*1024);
-    if(gba->active_if_pipe_stages==0){
+    if(SB_LIKELY(gba->active_if_pipe_stages==0)){
       int ppu_fast_forward = gba_ppu_compute_max_fast_forward(gba, emu->render_frame);
       int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
-      if(fast_forward_ticks>ticks&&!gba->cpu.wait_for_interrupt)fast_forward_ticks= ticks; 
+      if(fast_forward_ticks>ticks){
+        if(gba->cpu.wait_for_interrupt)ticks=fast_forward_ticks;
+        else fast_forward_ticks=ticks;
+      }
       gba->deferred_timer_ticks+=fast_forward_ticks;
       gba->ppu.scan_clock+=fast_forward_ticks;
       ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
@@ -2748,12 +2752,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       gba_tick_timers(gba);
       gba_tick_ppu(gba,emu->render_frame);
     }
-
-    if(gba->ppu.last_vblank && !prev_vblank){
-      prev_vblank = gba->ppu.last_vblank;
-      break;
-    }
-    prev_vblank = gba->ppu.last_vblank;
+    if(SB_UNLIKELY(gba->ppu.has_hit_vblank))break;
   }                 
 }
 
