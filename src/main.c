@@ -321,17 +321,17 @@ double se_time(){
 
 double se_fps_counter(int tick){
   static int call = -1;
-  static uint64_t last_t = 0;
+  static double last_t = 0;
   static double fps = 1.0/60.0; 
   if(!tick)return 1.0/fps;
   if(call==-1){
     call = 0;
-    last_t = stm_now();
+    last_t = se_time();
     fps = 1.0/60;
   }else{
     call+=tick;
-    uint64_t t = stm_now();
-    double delta = stm_sec(stm_diff(t,last_t));
+    double t = se_time();
+    double delta = t-last_t;
     if(delta>0.5){
       fps=delta/call;
       last_t = t;
@@ -1252,21 +1252,21 @@ void se_update_frame() {
     double sim_fps= se_get_sim_fps();
     double sim_time_increment = 1./sim_fps/emu_state.step_frames;
     bool unlocked_mode = emu_state.step_frames<0;
-
-    if(fabs(se_time()-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE&&!unlocked_mode)simulation_time = se_time()-sim_time_increment*2;
+    double curr_time = se_time();
+    if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment*2;
     if(unlocked_mode){
       sim_time_increment=0;
-      simulation_time=se_time()+1.0/60;
       max_frames_per_tick=1000;
+      simulation_time=curr_time+1./50.;
     }
     int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     while(max_frames_per_tick--){
-      double error = se_time()-simulation_time;
+      double error = curr_time-simulation_time;
       if(unlocked_mode){
-        if(simulation_time<se_time()){break;}
+        if(simulation_time<curr_time&&emu_state.frame){break;}
       }else{
-        if(emu_state.frame==0&&simulation_time>se_time())break;
-        if(emu_state.frame&&se_time()-simulation_time<sim_time_increment*0.8){break;}
+        if(emu_state.frame==0&&simulation_time>curr_time)break;
+        if(emu_state.frame&&curr_time-simulation_time<sim_time_increment*0.8){break;}
       }
       if(emu_state.run_mode==SB_MODE_REWIND){
         se_rewind_state_single_tick(&core, &rewind_buffer);
@@ -1285,6 +1285,7 @@ void se_update_frame() {
       }
       emu_state.frame++;
       emu_state.render_frame = false;
+      curr_time = se_time();
     }
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
@@ -1431,8 +1432,8 @@ void se_draw_menu_panel(){
     int screen_y = screen_p.y;
     int screen_w = 64;
     int screen_h = 64+style->FramePadding.y*2; 
-    int button_w = 50; 
-    igText("Slot %d",i);
+    int button_w = 55; 
+    igText("Save Slot %d",i);
     if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state(&core, save_states+i);
     if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state(&core, save_states+i);
     if(save_states[i].valid){
@@ -1556,7 +1557,7 @@ static void frame(void) {
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
-    if(emu_state.run_mode==SB_MODE_PAUSE)toggle_labels[2]=ICON_FK_PLAY;
+    if(curr_toggle!=2)toggle_labels[2]=ICON_FK_PLAY;
     int next_toggle_id = -1; 
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
@@ -1569,7 +1570,7 @@ static void frame(void) {
     switch(next_toggle_id){
       case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
       case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
-      case 2: {emu_state.run_mode=emu_state.run_mode==SB_MODE_PAUSE?SB_MODE_RUN: SB_MODE_PAUSE;emu_state.step_frames=1;} ;break;
+      case 2: {emu_state.run_mode=curr_toggle==2?SB_MODE_PAUSE: SB_MODE_RUN;emu_state.step_frames=1;} ;break;
       case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
       case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
     }
@@ -1753,5 +1754,6 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .enable_clipboard =true,
       .high_dpi = true,
       .max_dropped_file_path_length = 8192,
+      .swap_interval=0
   };
 }
