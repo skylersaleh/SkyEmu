@@ -1088,18 +1088,18 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
   if(SB_LIKELY(prefetch_en)){    
     gba->mem.prefetch_size+=gba->cpu.i_cycles;
     if(bank>=0x08&&bank<=0x0D){
-      if((request_size&1)){
+      if(SB_UNLIKELY(request_size&1)){
         uint32_t pc = gba->cpu.prefetch_pc;    
-        if(pc<0x08000000)gba->mem.prefetch_size=0;
-        // Check if the bubble made it to the execute stage before being squashed, 
-        // and apply the bubble cycle if it was not squashed. 
-        // Note, only a single pipeline bubble is tracked using this infrastructure. 
-        int pc_bank = SB_BFE(pc,24,8);
-        int prefetch_cycles = gba->mem.wait_state_table[pc_bank*4]; 
-        int prefetch_phase = (gba->mem.prefetch_size)%prefetch_cycles;
-        if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1){
-          wait+=1;
-          gba->mem.pipeline_bubble_shift_register=0;
+        if(pc>=0x08000000){
+          // Check if the bubble made it to the execute stage before being squashed, 
+          // and apply the bubble cycle if it was not squashed. 
+          // Note, only a single pipeline bubble is tracked using this infrastructure. 
+          int pc_bank = SB_BFE(pc,24,8);
+          int prefetch_cycles = gba->mem.wait_state_table[pc_bank*4]; 
+          int prefetch_phase = (gba->mem.prefetch_size)%prefetch_cycles;
+          if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1){
+            wait+=1;
+          }
         }
         //Non sequential->reset prefetch buffer
         gba->mem.prefetch_size = 0;
