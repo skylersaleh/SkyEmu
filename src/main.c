@@ -1588,8 +1588,8 @@ static void frame(void) {
   int sidebar_w = 300; 
   if(gui_state.sidebar_open){
     igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
-    igSetNextWindowSize((ImVec2){sidebar_w, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("Sidebar",0, ImGuiWindowFlags_NoCollapse| ImGuiWindowFlags_NoDecoration);
+    igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
+    igBegin("Menu",0, ImGuiWindowFlags_NoCollapse);
     se_draw_menu_panel();
     igEnd();
     screen_x = sidebar_w;
@@ -1599,7 +1599,7 @@ static void frame(void) {
   }
   if(gui_state.draw_debug_menu){
     int orig_screen_x = screen_x;
-    screen_x = se_draw_debug_panels(screen_x, sidebar_w,menu_height,height-menu_height*se_dpi_scale());
+    screen_x = se_draw_debug_panels(screen_x, sidebar_w,menu_height,(height-menu_height*se_dpi_scale())/se_dpi_scale());
     screen_width -=(screen_x-orig_screen_x)*se_dpi_scale();
   }
 
