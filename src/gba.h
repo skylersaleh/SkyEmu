@@ -693,6 +693,7 @@ typedef struct{
     int32_t internal_bgy;
   }aff[2];
   uint16_t dispcnt_pipeline[3];
+  int fast_forward_ticks;
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1097,9 +1098,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
           int pc_bank = SB_BFE(pc,24,8);
           int prefetch_cycles = gba->mem.wait_state_table[pc_bank*4]; 
           int prefetch_phase = (gba->mem.prefetch_size)%prefetch_cycles;
-          if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1){
-            wait+=1;
-          }
+          if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1)wait+=1;
         }
         //Non sequential->reset prefetch buffer
         gba->mem.prefetch_size = 0;
@@ -1488,6 +1487,7 @@ static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.scan_clock+=1;
+  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
@@ -2734,7 +2734,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
 
     double delta_t = ((double)ticks)/(16*1024*1024);
     if(SB_LIKELY(gba->active_if_pipe_stages==0)){
-      int ppu_fast_forward = gba_ppu_compute_max_fast_forward(gba, emu->render_frame);
+      int ppu_fast_forward = gba->ppu.fast_forward_ticks;
       int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(fast_forward_ticks>ticks){
@@ -2743,6 +2743,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       }
       gba->deferred_timer_ticks+=fast_forward_ticks;
       gba->ppu.scan_clock+=fast_forward_ticks;
+      gba->ppu.fast_forward_ticks-=fast_forward_ticks;
       ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
       delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
     }
