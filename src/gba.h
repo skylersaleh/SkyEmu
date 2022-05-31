@@ -1473,16 +1473,16 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
 #define GBA_LCD_HBLANK_END   (296)
 #define GBA_LCD_HBLANK_START (GBA_LCD_W)
 #define GBA_LCD_VBLANK_START (GBA_LCD_H*1232)
-#define GBA_LCD_VBLANK_END   (227*1232-44)
+#define GBA_LCD_VBLANK_END   (227*1232)
 
 //Returns true if the fast forward failed to be more efficient in main emu loop
 static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render){
   int scanline_clock = (gba->ppu.scan_clock)%1232;
   //If inside hblank, can fastforward to outside of hblank
-  if(scanline_clock>GBA_LCD_HBLANK_START*4&&scanline_clock<GBA_LCD_HBLANK_END*4) return GBA_LCD_HBLANK_END*4-scanline_clock-1;
+  if(scanline_clock>=GBA_LCD_HBLANK_START*4&&scanline_clock<=GBA_LCD_HBLANK_END*4) return GBA_LCD_HBLANK_END*4-scanline_clock-1;
   //If inside hrender, can fastforward to hblank if not the first pixel and not visible
   bool not_visible = !render||gba->ppu.scan_clock>GBA_LCD_VBLANK_START; 
-  if(not_visible&& (scanline_clock>=1 && scanline_clock<GBA_LCD_HBLANK_START*4))return GBA_LCD_HBLANK_START*4-scanline_clock-1; 
+  if(not_visible&& (scanline_clock>=1 && scanline_clock<=GBA_LCD_HBLANK_START*4))return GBA_LCD_HBLANK_START*4-scanline_clock-1; 
   return 3-((gba->ppu.scan_clock)%4);
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
@@ -1491,17 +1491,19 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
 
-  int lcd_y = (gba->ppu.scan_clock+44)/1232;
+  int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   if(lcd_x==0||lcd_x==240||lcd_x==GBA_LCD_HBLANK_END){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+    int vcount = (lcd_y+ (lcd_x>=GBA_LCD_HBLANK_END))%228;
     bool vblank = lcd_y>=160&&lcd_y<227;
     bool hblank = lcd_x>=240&&lcd_x< GBA_LCD_HBLANK_END;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
-    disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
+    disp_stat |= vcount==vcount_cmp ? 0x4: 0;   
     gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
+    gba_io_store16(gba,GBA_VCOUNT,vcount);   
     uint32_t new_if = 0;
     if(hblank!=gba->ppu.last_hblank){
       gba->ppu.last_hblank = hblank;
@@ -1543,7 +1545,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       }
     }
     if(lcd_y != gba->ppu.last_lcd_y){
-      gba_io_store16(gba,GBA_VCOUNT,lcd_y);   
       if(vblank!=gba->ppu.last_vblank){
         if(vblank)gba->ppu.has_hit_vblank=true;
         gba->ppu.last_vblank = vblank;
