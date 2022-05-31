@@ -357,6 +357,8 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         gb->dma.active =true;
         gb->dma.bytes_transferred=0;
         gb->dma.in_hblank = gb->lcd.in_hblank;
+        gb->dma.hdma = (value&0x80)!=0;
+        value&=0x7f;
       }
     }
     if(addr == SB_IO_OAM_DMA){
@@ -820,7 +822,7 @@ int sb_update_dma(sb_gb_t *gb){
     uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
 
     int len = (SB_BFE(dma_mode_length, 0,7));
-    bool hdma_mode = SB_BFE(dma_mode_length, 7,1);
+    bool hdma_mode = gb->dma.hdma;
     if(!hdma_mode||(gb->dma.in_hblank==false&&gb->lcd.in_hblank==true&&gb->lcd.curr_scanline<SB_LCD_H-1))
     {
       while(len>=0){
@@ -837,17 +839,18 @@ int sb_update_dma(sb_gb_t *gb){
       }
 
       uint8_t new_mode = (len&0x7f);
-      if(hdma_mode)new_mode|=0x80;
       if(len<0){
         gb->dma.active = false;
+        gb->dma.hdma = false; 
         len = 0;
         hdma_mode = 0;
         new_mode = 0xff;
       }
+      if(!gb->dma.active)new_mode|=0x80;
       sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
-      gb->dma.in_hblank = gb->lcd.in_hblank;
-    }else{ gb->dma.in_hblank = false;}
-    delta_cycles+= bytes_transferred/2+1;
+    }
+    gb->dma.in_hblank = gb->lcd.in_hblank;
+    delta_cycles+= bytes_transferred/2;
   }
   return delta_cycles;
 }

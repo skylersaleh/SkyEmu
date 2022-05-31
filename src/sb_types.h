@@ -173,6 +173,7 @@ typedef struct{
 
   bool oam_dma_active;
   int oam_bytes_transferred; 
+  bool hdma; 
 } sb_dma_t;
 
 typedef struct{
