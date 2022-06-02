@@ -271,8 +271,9 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     unsigned int bank_off = 0x4000*(bank);
     return gb->cart.data[addr-0x4000+bank_off];
   }else if(addr>=0x8000&&addr<=0x9fff){
-    uint8_t vbank =gb->mem.data[SB_IO_GBC_VBK]%SB_VRAM_NUM_BANKS;
-    return gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
+    uint8_t vbank =sb_read8_direct(gb,SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;
+    uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
+    return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
     return gb->cart.ram_data[ram_addr_off];
@@ -352,13 +353,18 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         // Writing bit 7 to 0 for a running transfer halts HDMA
         if(!(value&0x80)){
           gb->dma.active = false;
+          value|=0x80;
         }
       }else{
         gb->dma.active =true;
         gb->dma.bytes_transferred=0;
-        gb->dma.in_hblank = gb->lcd.in_hblank;
         gb->dma.hdma = (value&0x80)!=0;
+        gb->dma.in_hblank = false;
         value&=0x7f;
+        uint16_t dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
+                    ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
+        uint16_t dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
+                    ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
       }
     }
     if(addr == SB_IO_OAM_DMA){
@@ -470,6 +476,7 @@ static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
     gb->lcd.last_frame_ppu_disabled = true;
+    gb->lcd.in_hblank=true;
     ly = 0;
   }else{
 
@@ -828,12 +835,17 @@ int sb_update_dma(sb_gb_t *gb){
       while(len>=0){
         for(int i=0;i<16;++i){
           int off = gb->dma.bytes_transferred++;
-          if(off+dma_src>0xffff){len=0;break;}
-          uint8_t data = sb_read8(gb,off+dma_src);
-          sb_store8(gb,off+dma_dst,data);
+          if(dma_src>0xffff){len=0;break;}
+          uint8_t data = sb_read8(gb,dma_src);
+          sb_store8(gb,dma_dst,data);
+          dma_src++;
+          dma_dst++;
           bytes_transferred+=1;
-          
         }
+        sb_store8_direct(gb,SB_IO_DMA_SRC_LO,SB_BFE(dma_src,0,8));
+        sb_store8_direct(gb,SB_IO_DMA_SRC_HI,SB_BFE(dma_src,8,8));
+        sb_store8_direct(gb,SB_IO_DMA_DST_LO,SB_BFE(dma_dst,0,8));
+        sb_store8_direct(gb,SB_IO_DMA_DST_HI,SB_BFE(dma_dst,8,8));
         len--;           
         if(hdma_mode)break;
       }
