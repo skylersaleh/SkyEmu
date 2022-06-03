@@ -407,6 +407,8 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;;
     return;
   }else if(addr >= 0x4000 && addr <=0x5fff){
+    gb->cart.rumble = false;
+    if((value&(1<<3))&&gb->cart.has_rumble)gb->cart.rumble=true;
     //MBC3 rombank select
     //TODO implement other mappers
     value %= (gb->cart.ram_size/0x2000);
@@ -950,6 +952,9 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
   if(instructions_to_execute==0)instructions_to_execute=6000000;
   int frames_to_draw = 1;
 
+  int total_cylces = 0; 
+  int rumble_cycles= 0; 
+
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
     sb_update_joypad_io_reg(emu, gb);
@@ -1029,6 +1034,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
     sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
 
+    rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
+    total_cylces+=delta_cycles_after_speed;
     double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
     //sb_push_save_state(gb);
 
@@ -1040,6 +1047,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     sb_process_audio(gb,emu,delta_t);
     if(vblank){break;}
   }
+  emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
 }
 float compute_vol_env_slope(uint8_t d){
   int dir = SB_BFE(d,3,1);
@@ -1115,6 +1123,13 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
     case 0x20:gb->cart.mbc_type = SB_MBC_MBC6; break;
     case 0x22:gb->cart.mbc_type = SB_MBC_MBC7; break;
 
+  }
+  gb->cart.has_rumble=false;
+  switch(gb->cart.type){
+    case 0x1C:
+    case 0x1D:
+    case 0x1E:
+    case 0x22: gb->cart.has_rumble=true; break;
   }
   switch (gb->cart.data[0x148]) {
     case 0x0: gb->cart.rom_size = 32 * 1024;  break;

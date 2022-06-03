@@ -1,15 +1,20 @@
 cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
 set(CMAKE_OSX_ARCHITECTURES arm64 x86_64)
-project(SkyEmu)
+
+if(APPLE)
+  project(SkyEmu OBJC C CXX)
+else()
+  project(SkyEmu C CXX)
+endif()
+
 
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
 set(LINK_LIBS "")
 if (EMSCRIPTEN)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1  -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=1 ")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=1 ")
-    set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1  -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=0 ")
 endif ()
 if (MSVC)
     # Perform extremely aggressive optimization on Release builds:
@@ -81,6 +86,17 @@ add_library(cimgui STATIC
 set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 target_include_directories(cimgui INTERFACE src/cimgui)
+#=== LIBRARY: SDL2
+set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
+set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
+set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
+set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)
+
+add_subdirectory(src/SDL2)
+
+if (EMSCRIPTEN)
+    set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
+endif ()
 
 #=== LIBRARY: sokol
 # add headers to the the file list because they are useful to have in IDEs
@@ -115,7 +131,7 @@ else()
     add_executable(${PROJECT_NAME} src/main.c)
 endif()
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=1 --closure 1 ")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=256MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=0 --closure 0 ")
 endif ()
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
 
@@ -124,10 +140,11 @@ set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
 set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
 set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
 set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
+set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
 add_subdirectory(src/capstone)
-set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
+
+set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES} SDL2-static)
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
-# That's it! You should have an example executable that you can run. Have fun!

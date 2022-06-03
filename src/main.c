@@ -37,6 +37,8 @@
 #include "tinyfiledialogs.h"
 #endif
 
+#include "SDL.h"
+
 
 #define SE_KEY_A 0 
 #define SE_KEY_B 1 
@@ -70,11 +72,66 @@ const static char* se_keybind_names[]={
   "Fold Screen",
   "Pen Down"
 };
+#define SE_ANALOG_UP_DOWN    0
+#define SE_ANALOG_LEFT_RIGHT 1
+#define SE_ANALOG_L 2
+#define SE_ANALOG_R 3
+#define SE_NUM_ANALOGBINDS  4
+const static char* se_analog_bind_names[]={
+  "Analog Up/Down",
+  "Analog Left/Right",
+  "Analog L",
+  "Analog R",
+};
+//Reserve space for extra keybinds/analog binds so that adding them in new versions don't break
+//a users settings.
+#define SE_NUM_KEYBINDS_ALLOC 64
+#define SE_NUM_ANALOGBINDS_ALLOC 64
+
+#define GUI_MAX_IMAGES_PER_FRAME 16
+typedef struct{
+  char name[128];
+  char guid[64];
+  SDL_Joystick * sdl_joystick; 
+  bool active; 
+  bool connected;
+  int key_binds[SE_NUM_KEYBINDS];
+  int analog_binds[SE_NUM_ANALOGBINDS];
+  int keybind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
+  int last_key_pressed;// Only within the current frame. -1 if no keys pressed during frame. 
+  int analogbind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
+  int last_analog_movement;// Only within the current frame. -1 if no keys pressed during frame. 
+  bool key_value[SE_NUM_KEYBINDS];
+  float analog_value[SE_NUM_ANALOGBINDS];
+}se_controller_state_t;
+typedef struct {
+    uint64_t laptime;
+    sg_pass_action pass_action;
+    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
+    int current_image; 
+    int screen_width;
+    int screen_height;
+    int button_state[SAPP_MAX_KEYCODES];
+    float volume; 
+    struct{
+      bool active;
+      float pos[2];
+    }touch_points[SAPP_MAX_TOUCHPOINTS];
+    float last_touch_time;
+    bool draw_debug_menu;
+    int mem_view_address;
+    bool sidebar_open;
+    int keycode_bind[SE_NUM_KEYBINDS];
+    int keybind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
+    int last_key_pressed;// Only within the current frame. -1 if no keys pressed during frame. 
+    se_controller_state_t controller;
+} gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
 void se_reset_save_states();
+void se_set_new_controller(se_controller_state_t* cont, SDL_Joystick*joy);
 
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
@@ -342,28 +399,6 @@ double se_fps_counter(int tick){
   return 1.0/fps; 
 }
 
-#define GUI_MAX_IMAGES_PER_FRAME 16
-typedef struct {
-    uint64_t laptime;
-    sg_pass_action pass_action;
-    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
-    int current_image; 
-    int screen_width;
-    int screen_height;
-    int button_state[SAPP_MAX_KEYCODES];
-    float volume; 
-    struct{
-      bool active;
-      float pos[2];
-    }touch_points[SAPP_MAX_TOUCHPOINTS];
-    float last_touch_time;
-    bool draw_debug_menu;
-    int mem_view_address;
-    bool sidebar_open;
-    int keycode_bind[SE_NUM_KEYBINDS];
-    int keybind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
-    int last_key_pressed;// Only within the current frame. -1 if no keys pressed during frame. 
-} gui_state_t;
 gui_state_t gui_state={.volume=1.0}; 
 
 bool se_key_is_pressed(int keycode){
@@ -1223,6 +1258,84 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
     #endif
   }
 }
+static void se_poll_sdl(){
+  SDL_Event sdlEvent;
+  se_controller_state_t *cont = &gui_state.controller;
+  cont->last_key_pressed=-1;
+  cont->last_analog_movement=-1;
+  while( SDL_PollEvent( &sdlEvent ) ) {
+      switch( sdlEvent.type ) {
+      case SDL_JOYDEVICEADDED:{
+        if(!cont->sdl_joystick){
+          se_set_new_controller(cont,SDL_JoystickOpen(sdlEvent.jdevice.which));
+        }
+        break;
+      }
+      case SDL_JOYDEVICEREMOVED:
+        if(cont->sdl_joystick==SDL_JoystickFromInstanceID(sdlEvent.jdevice.which)){
+          SDL_JoystickClose(cont->sdl_joystick);
+          cont->sdl_joystick = NULL;
+        }
+        break;
+      case SDL_JOYBUTTONDOWN:
+        if(SDL_JoystickFromInstanceID(sdlEvent.jbutton.which)==cont->sdl_joystick)
+          cont->last_key_pressed = sdlEvent.jbutton.button;
+        break;
+      case SDL_CONTROLLERBUTTONDOWN:
+      case SDL_CONTROLLERBUTTONUP:
+        //OnControllerButton( sdlEvent.cbutton );
+        break;
+      case SDL_JOYAXISMOTION:
+        if(SDL_JoystickFromInstanceID(sdlEvent.jaxis.which)==cont->sdl_joystick){
+          float v = sdlEvent.jaxis.value/32768.f;
+          if((v>0.3&&v<0.7)||(v<-0.3&&v>-0.6))
+            cont->last_analog_movement = sdlEvent.jaxis.axis;  
+        }
+        break;      
+      }
+  }
+  if(cont->sdl_joystick){
+    for(int k= 0; k<SE_NUM_KEYBINDS;++k){
+      int key = cont->key_binds[k];
+      bool val = false; 
+      if(key<SDL_JoystickNumButtons(cont->sdl_joystick)&&key!=-1){
+        val = SDL_JoystickGetButton(cont->sdl_joystick,key);
+      }
+      cont->key_value[k] = val;
+    }
+    for(int a= 0; a<SE_NUM_ANALOGBINDS;++a){
+      int axis= cont->analog_binds[a];
+      float val = 0; 
+      if(axis<SDL_JoystickNumAxes(cont->sdl_joystick)&&axis!=-1){
+        val = SDL_JoystickGetAxis(cont->sdl_joystick,axis)/32768.f;
+      }
+      cont->analog_value[a]= val;
+    }
+    float intensity= emu_state.joy.rumble*65000;
+    SDL_JoystickRumble(cont->sdl_joystick, intensity, intensity, 100);
+
+    emu_state.joy.left  |= cont->key_value[SE_KEY_LEFT];
+    emu_state.joy.right |= cont->key_value[SE_KEY_RIGHT];
+    emu_state.joy.up    |= cont->key_value[SE_KEY_UP];
+    emu_state.joy.down  |= cont->key_value[SE_KEY_DOWN];
+    emu_state.joy.a |= cont->key_value[SE_KEY_A];
+    emu_state.joy.b |= cont->key_value[SE_KEY_B];
+    emu_state.joy.start |= cont->key_value[SE_KEY_START];
+    emu_state.joy.select |= cont->key_value[SE_KEY_SELECT];
+    emu_state.joy.l |= cont->key_value[SE_KEY_L];
+    emu_state.joy.r |= cont->key_value[SE_KEY_R];
+    emu_state.joy.x |= cont->key_value[SE_KEY_X];
+    emu_state.joy.y |= cont->key_value[SE_KEY_Y];
+
+    emu_state.joy.left  |= cont->analog_value[SE_ANALOG_LEFT_RIGHT]<-0.3;
+    emu_state.joy.right |= cont->analog_value[SE_ANALOG_LEFT_RIGHT]> 0.3;
+    emu_state.joy.up    |= cont->analog_value[SE_ANALOG_UP_DOWN]<-0.3;
+    emu_state.joy.down  |= cont->analog_value[SE_ANALOG_UP_DOWN]>0.3;
+
+    emu_state.joy.l  |= cont->analog_value[SE_ANALOG_L]>0.1;
+    emu_state.joy.r |= cont->analog_value[SE_ANALOG_R]>0.1;
+  }
+}
 void se_update_frame() {
   if(emu_state.run_mode == SB_MODE_RESET){
     se_reset_core();
@@ -1290,7 +1403,6 @@ void se_update_frame() {
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
-  sb_poll_controller_input(&emu_state.joy);
   se_draw_emulated_system_screen();
 }
 void se_imgui_theme()
@@ -1377,6 +1489,9 @@ void se_imgui_theme()
   style->TabRounding                       = 4;
 }
 static void init(void) {
+  if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
+    printf("Failed to init SDL: %s\n",SDL_GetError());
+  }
   se_set_default_keybind(&gui_state);
   gui_state.last_key_pressed=-1;
   gui_state.keybind_being_set=-1; 
@@ -1411,6 +1526,132 @@ static void init(void) {
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }
+}
+int se_get_sdl_key_bind(SDL_GameController* gc, int button){
+  SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
+  if(bind.bindType!=SDL_CONTROLLER_BINDTYPE_BUTTON)return -1;
+  else return bind.value.button;
+}
+int se_get_sdl_axis_bind(SDL_GameController* gc, int button){
+  SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForAxis(gc, button);
+  if(bind.bindType!=SDL_CONTROLLER_BINDTYPE_AXIS)return -1;
+  else return bind.value.axis;
+}
+void se_set_new_controller(se_controller_state_t* cont, SDL_Joystick*joy){
+  if(joy==cont->sdl_joystick)return; 
+  if(cont->sdl_joystick)SDL_JoystickClose(cont->sdl_joystick);
+  cont->sdl_joystick = joy; 
+  if(cont->sdl_joystick==NULL)return;
+  strncpy(cont->name, SDL_JoystickName(cont->sdl_joystick),sizeof(cont->name));
+  SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(joy), cont->guid, sizeof(cont->guid));
+
+  for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key_binds[i]=-1;
+  for(int i=0;i<SE_NUM_ANALOGBINDS;++i)cont->analog_binds[i]=-1;
+  cont->last_key_pressed = cont->last_analog_movement=-1;
+  cont->keybind_being_set=-1;
+  cont->analogbind_being_set=-1;
+
+  int joy_index = 0; 
+  SDL_GameController * gc = SDL_GameControllerOpen(joy_index);
+  if(gc){
+    SDL_GameControllerUpdate();
+    cont->key_binds[SE_KEY_A]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_A);
+    cont->key_binds[SE_KEY_B]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_B);
+    cont->key_binds[SE_KEY_X]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_X);
+    cont->key_binds[SE_KEY_Y]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_Y);
+    cont->key_binds[SE_KEY_L]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+    cont->key_binds[SE_KEY_R]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+    cont->key_binds[SE_KEY_UP]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_UP);
+    cont->key_binds[SE_KEY_DOWN]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+    cont->key_binds[SE_KEY_LEFT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+    cont->key_binds[SE_KEY_RIGHT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+    cont->key_binds[SE_KEY_START]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_START);
+    cont->key_binds[SE_KEY_SELECT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_BACK);
+
+    cont->analog_binds[SE_ANALOG_UP_DOWN] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTY);
+    cont->analog_binds[SE_ANALOG_LEFT_RIGHT] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTX);
+    cont->analog_binds[SE_ANALOG_L] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+    cont->analog_binds[SE_ANALOG_R] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+
+    SDL_GameControllerClose(gc);
+  }
+}
+void se_draw_controller_config(gui_state_t* gui){
+  igText(ICON_FK_GAMEPAD " Controllers");
+  igSeparator();
+  ImGuiStyle* style = igGetStyle();
+  se_controller_state_t *cont = &gui->controller;
+  const char* cont_name = "No Controller";
+  if(cont->sdl_joystick){
+    cont_name = SDL_JoystickName(cont->sdl_joystick);
+  }
+  if(igBeginCombo("Controller", cont_name, ImGuiComboFlags_None)){
+    {
+      bool is_selected=cont->sdl_joystick==NULL;
+      if(igSelectableBool("No Controller",is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
+        se_set_new_controller(cont,NULL);
+      }
+      if(is_selected)igSetItemDefaultFocus();
+    }
+    for(int j= 0;j<SDL_NumJoysticks();++j){
+      bool is_selected=false;
+      const char* jname = SDL_JoystickNameForIndex(j);
+      if(igSelectableBool(jname,is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
+        se_set_new_controller(cont,SDL_JoystickOpen(j));
+      }
+      if(is_selected)igSetItemDefaultFocus();
+    }
+    igEndCombo();
+  }
+  if(!cont->sdl_joystick)return;
+  for(int k=0;k<SE_NUM_KEYBINDS;++k){
+    igPushIDInt(k);
+    igText("%s",se_keybind_names[k]);
+    bool active = cont->key_value[k];
+    igSameLine(100,0);
+    if(cont->keybind_being_set==k)active=true;
+    if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+    const char* button_label = "Not bound"; 
+    char buff[32];
+    if(cont->key_binds[k]!=-1){snprintf(buff, sizeof(buff),"Key %d", cont->key_binds[k]);button_label=buff;}
+    if(cont->keybind_being_set==k){
+      button_label= "Press new button "ICON_FK_SIGN_IN;
+      if(cont->last_key_pressed!=-1){
+        cont->key_binds[k]=cont->last_key_pressed;
+        cont->keybind_being_set=-1; 
+      }
+    }
+    if(igButton(button_label,(ImVec2){-1, 0})){
+      cont->keybind_being_set = k;
+    }
+    if(active)igPopStyleColor(1);
+    igPopID();
+  } 
+  for(int a=0;a<SE_NUM_ANALOGBINDS;++a){
+    igPushIDInt(a+10000);
+    igText("%s",se_analog_bind_names[a]);
+    bool active = cont->analog_value[a]>0.5||cont->analog_value[a]<-0.5;
+    igSameLine(100,0);
+    if(cont->analogbind_being_set==a)active=true;
+    if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+    const char* button_label = "Not bound"; 
+    char buff[32];
+    if(cont->analog_binds[a]!=-1){snprintf(buff, sizeof(buff),"Analog %d (%.2f)", cont->analog_binds[a],cont->analog_value[a]);button_label=buff;}
+    if(cont->analogbind_being_set==a){
+      button_label= "Move Axis "ICON_FK_SIGN_IN;
+      if(cont->last_analog_movement!=-1){
+        cont->analog_binds[a]=cont->last_analog_movement;
+        cont->analogbind_being_set=-1; 
+      }
+    }
+    if(igButton(button_label,(ImVec2){-1, 0})){
+      cont->analogbind_being_set = a;
+    }
+    if(active)igPopStyleColor(1);
+    igPopID();
+  } 
+  if(SDL_JoystickHasRumble(cont->sdl_joystick)){igText("Rumble Supported");
+  }else igText("Rumble Not Supported");
 }
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
@@ -1483,8 +1724,7 @@ void se_draw_menu_panel(){
     }
     if(active)igPopStyleColor(1);
   }
-
-  if(igButton(ICON_FK_REPEAT" Reset to default keybinds",(ImVec2){0, 0}))se_set_default_keybind(&gui_state);
+  se_draw_controller_config(&gui_state);
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
   const char * deb_tool_string = gui_state.draw_debug_menu? ICON_FK_BUG " Hide Debug Tools": ICON_FK_BUG " Show Debug Tools";
@@ -1500,7 +1740,8 @@ void se_draw_menu_panel(){
 }
 
 static void frame(void) {
-
+  sb_poll_controller_input(&emu_state.joy);
+  se_poll_sdl();
   const int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
@@ -1552,7 +1793,7 @@ static void frame(void) {
     int curr_toggle = 3;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==1)curr_toggle=1;
-    if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=2;
+    if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=2;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
@@ -1682,6 +1923,7 @@ static void cleanup(void) {
   se_free_all_images();
   sg_shutdown();
   saudio_shutdown();
+  SDL_Quit();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {

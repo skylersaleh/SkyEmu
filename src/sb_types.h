@@ -84,6 +84,7 @@ typedef struct{
   bool a, b, start, select;
   bool l, r,x,y; 
   bool pen_down, screen_folded;
+  float rumble; 
 } sb_joy_t;
   
 typedef struct{
@@ -153,6 +154,8 @@ typedef struct {
   unsigned mapped_rom_bank;
   int rom_size;
   int ram_size;
+  bool rumble;
+  bool has_rumble; 
 } sb_gb_cartridge_t;
 
 typedef struct{
