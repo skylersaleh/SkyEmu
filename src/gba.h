@@ -727,6 +727,10 @@ typedef struct{
   uint8_t minute;
   uint8_t second;
 }gba_rtc_t;
+typedef struct{
+  int ticks_till_transfer_done; 
+  bool last_active; 
+}gba_sio_t; 
 typedef struct gba_t{
   gba_mem_t mem;
   arm7_t cpu;
@@ -735,6 +739,7 @@ typedef struct gba_t{
   gba_ppu_t ppu;
   gba_rtc_t rtc;
   gba_dma_t dma[4]; 
+  gba_sio_t sio; 
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -976,7 +981,7 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data); return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
-      int addr = baddr&~3;
+      int addr = baddr&~1;
       //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
       if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
       gba_process_rtc_state_machine(gba);
@@ -994,6 +999,7 @@ static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
     if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
+    if(baddr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
     // Remaining 8 bit ops are not supported on VRAM or ROM
     return; 
   }
@@ -2299,13 +2305,24 @@ static FORCE_INLINE void gba_tick_sio(gba_t* gba){
   bool active = SB_BFE(siocnt,7,1);
   bool irq_enabled = SB_BFE(siocnt,14,1);
   if(active){
-   
-    if(irq_enabled){
-      uint16_t if_bit = 1<<(GBA_INT_SERIAL);
-      gba_send_interrupt(gba,4,if_bit);
+    if(gba->sio.last_active==false){
+      gba->sio.last_active =true;
+      gba->sio.ticks_till_transfer_done=8*8;
     }
-    siocnt&= ~(1<<7);
-    gba_io_store16(gba,GBA_SIOCNT,siocnt);
+    bool internal_clock = SB_BFE(siocnt,0,1);
+    if(internal_clock)gba->sio.ticks_till_transfer_done--;
+    if(gba->sio.ticks_till_transfer_done<=0){
+      if(irq_enabled){
+        uint16_t if_bit = 1<<(GBA_INT_SERIAL);
+        gba_send_interrupt(gba,4,if_bit);
+      }
+      siocnt&= ~(1<<7);
+      gba_io_store16(gba,GBA_SIOCNT,siocnt);
+      gba->sio.last_active=false;
+      gba_io_store8(gba,GBA_SIODATA8,0);
+      gba_io_store32(gba,GBA_SIODATA32,0);
+    }
+    
   }
 }
 static FORCE_INLINE void gba_tick_timers(gba_t* gba){
@@ -2732,7 +2749,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
     }
     gba_tick_sio(gba);
-
     double delta_t = ((double)ticks)/(16*1024*1024);
     if(SB_LIKELY(gba->active_if_pipe_stages==0)){
       int ppu_fast_forward = gba->ppu.fast_forward_ticks;
@@ -2755,7 +2771,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       gba_tick_ppu(gba,emu->render_frame);
     }
     if(SB_UNLIKELY(gba->ppu.has_hit_vblank))break;
-  }                 
+  } 
+  emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1);        
 }
 
 void gba_reset(gba_t*gba){
