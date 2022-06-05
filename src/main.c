@@ -410,7 +410,11 @@ double se_fps_counter(int tick){
 }
 
 gui_state_t gui_state={.volume=1.0}; 
-
+static void se_emscripten_flush_fs(){
+#if defined(EMSCRIPTEN)
+    EM_ASM( FS.syncfs(function (err) {}););
+#endif
+}
 static void se_save_recent_games_list(){
   gui_state_t* gui = &gui_state;
   char pref_path[SB_FILE_PATH_SIZE];
@@ -425,6 +429,7 @@ static void se_save_recent_games_list(){
     fprintf(f,"%s\n",gui->recently_loaded_games[i].path);
   }
   fclose(f);
+  se_emscripten_flush_fs();
 }
 void se_load_recent_games_list(){
   gui_state_t* gui = &gui_state;
@@ -1495,9 +1500,7 @@ void se_update_frame() {
     bool saved = se_sync_save_to_disk();
     if(saved){
       frames_since_last_save=0;
-      #if defined(EMSCRIPTEN)
-        EM_ASM( FS.syncfs(function (err) {}););
-      #endif
+      se_emscripten_flush_fs();
     }
   }
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
