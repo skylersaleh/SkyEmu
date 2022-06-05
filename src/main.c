@@ -143,40 +143,6 @@ static const char* se_get_pref_path(){
 #endif
 }
 
-static void se_save_recent_games_list(gui_state_t* gui){
-  char pref_path[SB_FILE_PATH_SIZE];
-  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
-  FILE* f = fopen(pref_path,"wb");
-  if(!f){
-    printf("Failed to save recent games list to: %s\n",pref_path);
-    return;
-  }
-  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    if(strcmp("",gui->recently_loaded_games[i].path)==0)break;
-    fprintf(f,"%s\n",gui->recently_loaded_games[i].path);
-  }
-  fclose(f);
-}
-static void se_load_recent_games_list(gui_state_t* gui){
-  char pref_path[SB_FILE_PATH_SIZE];
-  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
-  FILE* f = fopen(pref_path,"rb");
-  if(!f)return; 
-  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    memset(gui->recently_loaded_games[i].path,0,SB_FILE_PATH_SIZE);
-  }
-  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    char* res = fgets(gui->recently_loaded_games[i].path, SB_FILE_PATH_SIZE,f);
-    if(res==NULL)break;
-    //Get rid of newline and carriage return characters at end
-    while(*res){
-      if(*res=='\n'||*res=='\r')*res='\0';
-      ++res;
-    }
-  }
-  fclose(f);
-}
-
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
@@ -445,6 +411,42 @@ double se_fps_counter(int tick){
 
 gui_state_t gui_state={.volume=1.0}; 
 
+static void se_save_recent_games_list(){
+  gui_state_t* gui = &gui_state;
+  char pref_path[SB_FILE_PATH_SIZE];
+  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  FILE* f = fopen(pref_path,"wb");
+  if(!f){
+    printf("Failed to save recent games list to: %s\n",pref_path);
+    return;
+  }
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    if(strcmp("",gui->recently_loaded_games[i].path)==0)break;
+    fprintf(f,"%s\n",gui->recently_loaded_games[i].path);
+  }
+  fclose(f);
+}
+void se_load_recent_games_list(){
+  gui_state_t* gui = &gui_state;
+  char pref_path[SB_FILE_PATH_SIZE];
+  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  FILE* f = fopen(pref_path,"rb");
+  if(!f)return; 
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    memset(gui->recently_loaded_games[i].path,0,SB_FILE_PATH_SIZE);
+  }
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    char* res = fgets(gui->recently_loaded_games[i].path, SB_FILE_PATH_SIZE,f);
+    if(res==NULL)break;
+    //Get rid of newline and carriage return characters at end
+    while(*res){
+      if(*res=='\n'||*res=='\r')*res='\0';
+      ++res;
+    }
+  }
+  fclose(f);
+}
+
 bool se_key_is_pressed(int keycode){
   if(keycode>SAPP_MAX_KEYCODES)return false;
   return gui_state.button_state[keycode];
@@ -711,7 +713,7 @@ void se_load_rom(const char *filename){
         g=g2;
       }
     }
-    se_save_recent_games_list(&gui_state);
+    se_save_recent_games_list();
   }
   return; 
 }
@@ -1636,15 +1638,15 @@ void se_imgui_theme()
   style->TabRounding                       = 4;
 }
 #if defined(EMSCRIPTEN)
-   //Setup the offline file system
-    EM_JS(void, em_init_fs, (),{
-     return Asyncify.handleSleep(wakeUp => {
-        // Make a directory other than '/'
-        FS.mkdir('/offline');
-        // Then mount with IDBFS type
-        FS.mount(IDBFS, {}, '/offline');
-        // Then sync
-        FS.syncfs(true, function (err) {wakeUp()});
+  //Setup the offline file system
+  EM_JS(void, em_init_fs, (),{
+      // Make a directory other than '/'
+      FS.mkdir('/offline');
+      // Then mount with IDBFS type
+      FS.mount(IDBFS, {}, '/offline');
+      // Then sync
+      FS.syncfs(true, function (err) {
+        Module.ccall('se_load_recent_games_list');
       });
   });
   #endif
@@ -1652,7 +1654,7 @@ static void init(void) {
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
-  se_load_recent_games_list(&gui_state);
+  se_load_recent_games_list();
   se_set_default_keybind(&gui_state);
   gui_state.last_key_pressed=-1;
   gui_state.keybind_being_set=-1; 
@@ -2139,12 +2141,11 @@ static void event(const sapp_event* ev) {
   }
 }
 sapp_desc sokol_main(int argc, char* argv[]) {
+  emu_state.cmd_line_arg_count =argc;
+  emu_state.cmd_line_args =argv;
   #if defined(EMSCRIPTEN)
     em_init_fs();  
   #endif
-  emu_state.cmd_line_arg_count =argc;
-  emu_state.cmd_line_args =argv;
-
   return (sapp_desc){
       .init_cb = init,
       .frame_cb = frame,
