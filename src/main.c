@@ -130,13 +130,17 @@ typedef struct {
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
-void se_load_rom_click_region(bool visible);
+void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, SDL_Joystick*joy);
 
 static const char* se_get_pref_path(){
+#ifdef EMSCRIPTEN
+  return "/offline/";
+#else
   return SDL_GetPrefPath("Sky","SkyEmu");
+#endif
 }
 
 static void se_save_recent_games_list(gui_state_t* gui){
@@ -1289,19 +1293,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igPopID();
   return clicked; 
 }
-void se_load_rom_click_region(bool visible){
-  int x, y, w,  h;
-  ImVec2 win_p,win_size;
-  igGetWindowPos(&win_p);
-  igGetWindowSize(&win_size);
-  x = win_p.x;
-  y = win_p.y;
-  w = win_size.x;
-  h = win_size.y;
-  x/=se_dpi_scale();
-  y/=se_dpi_scale();
-  w/=se_dpi_scale();
-  h/=se_dpi_scale();
+void se_load_rom_overlay(bool visible){
   static bool last_visible = false;
   if(visible==false){
 #if defined(EMSCRIPTEN)
@@ -1336,6 +1328,56 @@ void se_load_rom_click_region(bool visible){
     #endif
   }
   float list_y_off = igGetWindowHeight(); 
+  #ifdef EMSCRIPTEN
+    int x, y, w,  h;
+    ImVec2 win_p,win_size;
+    igGetWindowPos(&win_p);
+    igGetWindowSize(&win_size);
+    x = win_p.x;
+    y = win_p.y;
+    w = win_size.x;
+    h = win_size.y;
+      char * new_path = (char*)EM_ASM_INT({
+      var input = document.getElementById('fileInput');
+      input.style.left = $0 +'px';
+      input.style.top = $1 +'px';
+      input.style.width = $2 +'px';
+      input.style.height= $3 +'px';
+      input.style.visibility = 'visible';
+      if(input.value!= ''){
+        console.log(input.value);
+        var reader= new FileReader();
+        var file = input.files[0];
+        function print_file(e){
+            var result=reader.result;
+            const uint8_view = new Uint8Array(result);
+            var out_file = '/offline/'+filename;
+            FS.writeFile(out_file, uint8_view);
+            FS.syncfs(function (err) {});
+            var input_stage = document.getElementById('fileStaging');
+            input_stage.value = out_file;
+        }
+        reader.addEventListener('loadend', print_file);
+        reader.readAsArrayBuffer(file);
+        var filename = file.name;
+        input.value = '';
+      }
+      var input_stage = document.getElementById('fileStaging');
+      var ret_path = '';
+      if(input_stage.value !=''){
+        ret_path = input_stage.value;
+        input_stage.value = '';
+      }
+      var sz = lengthBytesUTF8(ret_path)+1;
+      var string_on_heap = _malloc(sz);
+      stringToUTF8(ret_path, string_on_heap, sz);
+      return string_on_heap;
+    },x,y,w,h);
+
+    if(new_path[0])se_load_rom(new_path);
+    free(new_path);
+
+  #endif 
   igEnd();
   ImVec2 child_size; 
   child_size.x = w_size.x;
@@ -1593,6 +1635,19 @@ void se_imgui_theme()
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
 }
+#if defined(EMSCRIPTEN)
+   //Setup the offline file system
+    EM_JS(void, em_init_fs, (),{
+     return Asyncify.handleSleep(wakeUp => {
+        // Make a directory other than '/'
+        FS.mkdir('/offline');
+        // Then mount with IDBFS type
+        FS.mount(IDBFS, {}, '/offline');
+        // Then sync
+        FS.syncfs(true, function (err) {wakeUp()});
+      });
+  });
+  #endif
 static void init(void) {
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
@@ -1601,17 +1656,6 @@ static void init(void) {
   se_set_default_keybind(&gui_state);
   gui_state.last_key_pressed=-1;
   gui_state.keybind_being_set=-1; 
-  #if defined(EMSCRIPTEN)
-   //Setup the offline file system
-    EM_ASM(
-        // Make a directory other than '/'
-        FS.mkdir('/offline');
-        // Then mount with IDBFS type
-        FS.mount(IDBFS, {}, '/offline');
-        // Then sync
-        FS.syncfs(true, function (err) {});
-    );
-  #endif
   sg_setup(&(sg_desc){
       .context = sapp_sgcontext()
   });
@@ -1968,7 +2012,7 @@ static void frame(void) {
     igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igBegin("##ClickRegion",NULL,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground);
   }
-  se_load_rom_click_region(draw_click_region);
+  se_load_rom_overlay(draw_click_region);
   if(draw_click_region)igEnd();
 
   /*=== UI CODE ENDS HERE ===*/
@@ -2095,6 +2139,9 @@ static void event(const sapp_event* ev) {
   }
 }
 sapp_desc sokol_main(int argc, char* argv[]) {
+  #if defined(EMSCRIPTEN)
+    em_init_fs();  
+  #endif
   emu_state.cmd_line_arg_count =argc;
   emu_state.cmd_line_args =argv;
 
