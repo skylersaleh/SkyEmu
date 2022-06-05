@@ -1914,9 +1914,8 @@ static void frame(void) {
     int orig_x = igGetCursorPosX();
     igSetCursorPosX((width/se_dpi_scale())-100);
     igPushItemWidth(-0.01);
-    igText(ICON_FK_VOLUME_UP);
     int v = (int)(gui_state.volume*100); 
-    igSliderInt("",&v,0,100,"%d%%",ImGuiSliderFlags_AlwaysClamp);
+    igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
     gui_state.volume=v*0.01;
     igPopItemWidth();
     igSetCursorPosX(orig_x);
