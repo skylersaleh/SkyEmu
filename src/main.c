@@ -9,6 +9,7 @@
 #define SE_AUDIO_BUFF_SAMPLES 4096
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
+
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
@@ -29,16 +30,12 @@
 #include "karla.h"
 #include "forkawesome.h"
 #include "IconsForkAwesome.h"
-#define STBI_ONLY_PNG
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-#include "load_rom_png.h"
+
 #ifdef USE_TINY_FILE_DIALOGS
 #include "tinyfiledialogs.h"
 #endif
 
 #include "SDL.h"
-
 
 #define SE_KEY_A 0 
 #define SE_KEY_B 1 
@@ -89,6 +86,7 @@ const static char* se_analog_bind_names[]={
 #define SE_NUM_ANALOGBINDS_ALLOC 64
 
 #define GUI_MAX_IMAGES_PER_FRAME 16
+#define SE_NUM_RECENT_PATHS 16
 typedef struct{
   char name[128];
   char guid[64];
@@ -104,6 +102,9 @@ typedef struct{
   bool key_value[SE_NUM_KEYBINDS];
   float analog_value[SE_NUM_ANALOGBINDS];
 }se_controller_state_t;
+typedef struct{
+  char path[SB_FILE_PATH_SIZE];
+}se_game_info_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -125,13 +126,52 @@ typedef struct {
     int keybind_being_set; //-1 if no keybind currently being set. The SE_KEY_* if currently rebinding. 
     int last_key_pressed;// Only within the current frame. -1 if no keys pressed during frame. 
     se_controller_state_t controller;
+    se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
-void se_load_rom_click_region(int x,int y, int w, int h, bool visible);
+void se_load_rom_click_region(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, SDL_Joystick*joy);
+
+static const char* se_get_pref_path(){
+  return SDL_GetPrefPath("Sky","SkyEmu");
+}
+
+static void se_save_recent_games_list(gui_state_t* gui){
+  char pref_path[SB_FILE_PATH_SIZE];
+  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  FILE* f = fopen(pref_path,"wb");
+  if(!f){
+    printf("Failed to save recent games list to: %s\n",pref_path);
+    return;
+  }
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    if(strcmp("",gui->recently_loaded_games[i].path)==0)break;
+    fprintf(f,"%s\n",gui->recently_loaded_games[i].path);
+  }
+  fclose(f);
+}
+static void se_load_recent_games_list(gui_state_t* gui){
+  char pref_path[SB_FILE_PATH_SIZE];
+  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  FILE* f = fopen(pref_path,"rb");
+  if(!f)return; 
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    memset(gui->recently_loaded_games[i].path,0,SB_FILE_PATH_SIZE);
+  }
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    char* res = fgets(gui->recently_loaded_games[i].path, SB_FILE_PATH_SIZE,f);
+    if(res==NULL)break;
+    //Get rid of newline and carriage return characters at end
+    while(*res){
+      if(*res=='\n'||*res=='\r')*res='\0';
+      ++res;
+    }
+  }
+  fclose(f);
+}
 
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
@@ -651,7 +691,24 @@ void se_load_rom(const char *filename){
     emu_state.rom_loaded = true; 
   }
   if(emu_state.rom_loaded==false)printf("ERROR: Unknown ROM type: %s\n", filename);
-  else emu_state.run_mode= SB_MODE_RESET;
+  else{
+    emu_state.run_mode= SB_MODE_RESET;
+    se_game_info_t * recent_games=gui_state.recently_loaded_games;
+    //Create a copy in case file name comes from one of these slots that will be modified. 
+    char temp_filename[SB_FILE_PATH_SIZE];
+    strncpy(temp_filename,filename,SB_FILE_PATH_SIZE);
+    if(strncmp(filename,recent_games[0].path,SB_FILE_PATH_SIZE)!=0){
+      se_game_info_t g;
+      strncpy(g.path,filename,SB_FILE_PATH_SIZE);
+      for(int i=0; i<SE_NUM_RECENT_PATHS;++i){
+        se_game_info_t g2 = recent_games[i];
+        recent_games[i]=g;
+        if(strncmp(temp_filename,g2.path,SB_FILE_PATH_SIZE)==0||strncmp("",g2.path,SB_FILE_PATH_SIZE)==0)break;
+        g=g2;
+      }
+    }
+    se_save_recent_games_list(&gui_state);
+  }
   return; 
 }
 static bool se_sync_save_to_disk(){
@@ -768,8 +825,6 @@ static void se_draw_emulated_system_screen(){
   }else if (emu_state.system==SYSTEM_GB){
     se_draw_image(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
   }
-  bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND;
-  se_load_rom_click_region(lcd_render_x,lcd_render_y,lcd_render_w,lcd_render_h,draw_click_region);
   sb_draw_onscreen_controller(&emu_state, controller_h);
 }
 static uint8_t gba_byte_read(uint64_t address){return gba_read8(&core.gba,address);}
@@ -1168,8 +1223,65 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   state->joy.l |= SB_BFE(button_press,2,1);
   state->joy.r |= SB_BFE(button_press,3,1);
 }
+void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
+  ImVec2 curr_cursor;
+  igGetCursorPos(&curr_cursor);
+  ImVec2 backup_cursor = curr_cursor;
+  ImVec2 curr_cursor_screen;
+  igGetCursorScreenPos(&curr_cursor_screen);
 
-void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
+  curr_cursor.x+=p.x;
+  curr_cursor.y+=p.y;
+  curr_cursor_screen.x+=p.x;
+  curr_cursor_screen.y+=p.y;
+  ImU32 color = igColorConvertFloat4ToU32(igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+  ImDrawList_AddRectFilled(igGetWindowDrawList(),curr_cursor_screen,(ImVec2){curr_cursor_screen.x+size.x,curr_cursor_screen.y+size.y},color,0,ImDrawCornerFlags_None);
+
+  ImVec2 text_sz; 
+  igCalcTextSize(&text_sz, text,NULL,0,0);
+
+  curr_cursor.x+=(size.x-text_sz.x)*0.5;
+  curr_cursor.y+=(size.y-text_sz.y)*0.5;
+  igSetCursorPos(curr_cursor);
+  igText(text);
+  igSetCursorPos(backup_cursor);
+}
+bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box){
+  int item_height = 40; 
+  int padding = 4; 
+  int box_h = item_height-padding*2;
+  int box_w = box_h;
+  bool clicked = false;
+  igPushIDStr(second_label);
+  ImVec2 curr_pos; 
+  igGetCursorPos(&curr_pos);
+  curr_pos.y+=padding; 
+  curr_pos.x+=padding;
+  if(igSelectableBool("",false,ImGuiSelectableFlags_None, (ImVec2){igGetWindowContentRegionWidth(),item_height}))clicked=true;
+  ImVec2 next_pos;
+  igGetCursorPos(&next_pos);
+  igSetCursorPos(curr_pos);
+  ImVec2 rect_p = (ImVec2){0,0};
+  se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
+  igSetCursorPosY(curr_pos.y-padding*0.5);
+  igSetCursorPosX(curr_pos.x+box_w);
+  igBeginChildFrame(igGetIDStr(first_label),(ImVec2){igGetWindowContentRegionWidth()-box_w-padding,item_height},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoInputs);
+  igText(first_label);
+  igTextDisabled(second_label);
+  igEndChildFrame();
+  igSetCursorPos(next_pos);
+  igPopID();
+  return clicked; 
+}
+void se_load_rom_click_region(bool visible){
+  int x, y, w,  h;
+  ImVec2 win_p,win_size;
+  igGetWindowPos(&win_p);
+  igGetWindowSize(&win_size);
+  x = win_p.x;
+  y = win_p.y;
+  w = win_size.x;
+  h = win_size.y;
   x/=se_dpi_scale();
   y/=se_dpi_scale();
   w/=se_dpi_scale();
@@ -1189,66 +1301,16 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
   }
   last_visible=true;
 
-  static bool loaded = false;
-  static uint8_t * load_rom_image;
-  static int load_rom_im_w, load_rom_im_h;
-  if(!loaded){
-    loaded=true;
-    int c;
-    load_rom_image = stbi_load_from_memory(load_rom_png,load_rom_png_len,&load_rom_im_w,&load_rom_im_h,&c, 4);
-  }
- 
- #if defined(EMSCRIPTEN)
- 
-  char * new_path = (char*)EM_ASM_INT({
-    var input = document.getElementById('fileInput');
-    input.style.left = $0 +'px';
-    input.style.top = $1 +'px';
-    input.style.width = $2 +'px';
-    input.style.height= $3 +'px';
-    input.style.visibility = 'visible';
-    if(input.value!= ''){
-      console.log(input.value);
-      var reader= new FileReader();
-      var file = input.files[0];
-      function print_file(e){
-          var result=reader.result;
-          const uint8_view = new Uint8Array(result);
-          var out_file = '/offline/'+filename;
-          FS.writeFile(out_file, uint8_view);
-          FS.syncfs(function (err) {});
-          var input_stage = document.getElementById('fileStaging');
-          input_stage.value = out_file;
-      }
-      reader.addEventListener('loadend', print_file);
-      reader.readAsArrayBuffer(file);
-      var filename = file.name;
-      input.value = '';
-    }
-    var input_stage = document.getElementById('fileStaging');
-    var ret_path = '';
-    if(input_stage.value !=''){
-      ret_path = input_stage.value;
-      input_stage.value = '';
-    }
-    var sz = lengthBytesUTF8(ret_path)+1;
-    var string_on_heap = _malloc(sz);
-    stringToUTF8(ret_path, string_on_heap, sz);
-    return string_on_heap;
-  },x,y,w,h);
-
-  if(new_path[0])se_load_rom(new_path);
-  free(new_path);
-  //printf("Open: %s\n",file_name);
-  //free(file_name);
-#endif
-  w*=se_dpi_scale();
-  h*=se_dpi_scale();
-  x*=se_dpi_scale();
-  y*=se_dpi_scale();
-  int x_off = (w-load_rom_im_w)*0.5;
-  int y_off = (h-load_rom_im_h)*0.5;
-  if(se_draw_image_button(load_rom_image,load_rom_im_w,load_rom_im_h,x+x_off,y+y_off,load_rom_im_w,load_rom_im_h,true)){
+  ImVec2 w_pos, w_size;
+  igGetWindowPos(&w_pos);
+  igGetWindowSize(&w_size);
+  w_size.x/=se_dpi_scale();
+  w_size.y/=se_dpi_scale();
+  igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
+  igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
+  igSetNextWindowBgAlpha(0.9);
+  igBegin(ICON_FK_FILE_O " Load Game",NULL,ImGuiWindowFlags_NoCollapse);
+  if(se_selectable_with_box("Load ROM from file (.gb, .gbc, .gba)", "You can also drag & drop a ROM to load it",ICON_FK_FOLDER_OPEN)){
     #ifdef USE_TINY_FILE_DIALOGS
       char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
                                           valid_rom_file_types,NULL,0);
@@ -1257,6 +1319,32 @@ void se_load_rom_click_region(int x,int y, int w, int h, bool visible){
       }
     #endif
   }
+  float list_y_off = igGetWindowHeight(); 
+  igEnd();
+  ImVec2 child_size; 
+  child_size.x = w_size.x;
+  child_size.y = w_size.y-list_y_off;
+  igSetNextWindowSize(child_size,ImGuiCond_Always);
+  igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
+  igSetNextWindowBgAlpha(0.9);
+  igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
+  int num_entries=0;
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    se_game_info_t *info = gui_state.recently_loaded_games+i;
+    if(strcmp(info->path,"")==0)break;
+    const char* base, *file_name, *ext; 
+    sb_breakup_path(info->path,&base,&file_name,&ext);
+    char ext_upper[8]={0};
+    for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
+    if(se_selectable_with_box(file_name,info->path,ext_upper)){
+      se_load_rom(info->path);
+    }
+    igSeparator();
+    num_entries++;
+  }
+  if(num_entries==0)igText("No recently played games");
+  igEnd();
+  return;
 }
 static void se_poll_sdl(){
   SDL_Event sdlEvent;
@@ -1409,9 +1497,9 @@ void se_imgui_theme()
 {
   ImVec4* colors = igGetStyle()->Colors;
   colors[ImGuiCol_Text]                   = (ImVec4){1.00f, 1.00f, 1.00f, 1.00f};
-  colors[ImGuiCol_TextDisabled]           = (ImVec4){0.50f, 0.50f, 0.50f, 1.00f};
+  colors[ImGuiCol_TextDisabled]           = (ImVec4){0.6f, 0.6f, 0.6f, 1.f};
   colors[ImGuiCol_WindowBg]               = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
-  colors[ImGuiCol_ChildBg]                = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+  colors[ImGuiCol_ChildBg]                = (ImVec4){0.14f, 0.14f, 0.14f, 0.40f};
   colors[ImGuiCol_PopupBg]                = (ImVec4){0.19f, 0.19f, 0.19f, 0.92f};
   colors[ImGuiCol_Border]                 = (ImVec4){0.1f, 0.1f, 0.1f, 1.0f};
   colors[ImGuiCol_BorderShadow]           = (ImVec4){0.00f, 0.00f, 0.00f, 0.24f};
@@ -1492,6 +1580,7 @@ static void init(void) {
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
+  se_load_recent_games_list(&gui_state);
   se_set_default_keybind(&gui_state);
   gui_state.last_key_pressed=-1;
   gui_state.keybind_being_set=-1; 
@@ -1836,7 +1925,6 @@ static void frame(void) {
     screen_x = sidebar_w;
     screen_width -=screen_x*se_dpi_scale(); 
     gui_state.last_key_pressed = -1;
-
   }
   if(gui_state.draw_debug_menu){
     int orig_screen_x = screen_x;
@@ -1857,6 +1945,15 @@ static void frame(void) {
   igPopStyleVar(2);
   igPopStyleColor(1);
   igEnd();
+  bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND;
+  if(draw_click_region){
+    igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+    igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
+    igBegin("##ClickRegion",NULL,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground);
+  }
+  se_load_rom_click_region(draw_click_region);
+  if(draw_click_region)igEnd();
+
   /*=== UI CODE ENDS HERE ===*/
 
   sg_begin_default_pass(&gui_state.pass_action, width, height);
