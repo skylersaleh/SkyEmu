@@ -951,21 +951,37 @@ void se_set_default_keybind(gui_state_t *gui){
   gui->keycode_bind[SE_KEY_PEN_DOWN]= SAPP_KEYCODE_V;     
 }
 void sb_poll_controller_input(sb_joy_t* joy){
-  joy->left  = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_LEFT]);
-  joy->right = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_RIGHT]);
-  joy->up    = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_UP]);
-  joy->down  = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_DOWN]);
-  joy->a = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_A]);
-  joy->b = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_B]);
-  joy->start = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_START]);
-  joy->select = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_SELECT]);
-  joy->l = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_L]);
-  joy->r = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_R]);
-  joy->x = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_X]);
-  joy->y = se_key_is_pressed(gui_state.keycode_bind[SE_KEY_Y]);
-  joy->screen_folded = !se_key_is_pressed(gui_state.keycode_bind[SE_KEY_FOLD_SCREEN]);
-  joy->pen_down =  se_key_is_pressed(gui_state.keycode_bind[SE_KEY_PEN_DOWN]);
+  joy->left  |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_LEFT]);
+  joy->right |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_RIGHT]);
+  joy->up    |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_UP]);
+  joy->down  |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_DOWN]);
+  joy->a |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_A]);
+  joy->b |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_B]);
+  joy->start |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_START]);
+  joy->select |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_SELECT]);
+  joy->l |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_L]);
+  joy->r |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_R]);
+  joy->x |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_X]);
+  joy->y |= se_key_is_pressed(gui_state.keycode_bind[SE_KEY_Y]);
+  joy->screen_folded |= !se_key_is_pressed(gui_state.keycode_bind[SE_KEY_FOLD_SCREEN]);
+  joy->pen_down |=  se_key_is_pressed(gui_state.keycode_bind[SE_KEY_PEN_DOWN]);
 
+}
+void se_reset_joy(sb_joy_t*joy){
+  joy->left  = 
+  joy->right = 
+  joy->up    = 
+  joy->down  = 
+  joy->a = 
+  joy->b = 
+  joy->start = 
+  joy->select = 
+  joy->l = 
+  joy->r = 
+  joy->x = 
+  joy->y = 
+  joy->screen_folded =
+  joy->pen_down = false;
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
@@ -1491,6 +1507,7 @@ void se_update_frame() {
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
+  se_reset_joy(&emu_state.joy);
   se_draw_emulated_system_screen();
 }
 void se_imgui_theme()
