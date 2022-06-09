@@ -6,7 +6,6 @@
  *
 **/
 
-#define SE_AUDIO_BUFF_SAMPLES 4096
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
 
@@ -1523,7 +1522,6 @@ void se_update_frame() {
       max_frames_per_tick=1000;
       simulation_time=curr_time+1./50.;
     }
-    int samples_per_buffer = SE_AUDIO_BUFF_SAMPLES*SE_AUDIO_BUFF_CHANNELS;
     while(max_frames_per_tick--){
       double error = curr_time-simulation_time;
       if(unlocked_mode){
@@ -1675,8 +1673,9 @@ static void init(void) {
   saudio_setup(&(saudio_desc){
     .sample_rate=SE_AUDIO_SAMPLE_RATE,
     .num_channels=2,
-    .num_packets=16,
-    .packet_frames=512
+    .num_packets=4,
+    .buffer_frames=800*2,
+    .packet_frames=800
   });
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
@@ -2063,17 +2062,20 @@ static void frame(void) {
     igGetIO()->FontGlobalScale/=se_dpi_scale();
   }
   sg_commit();
-
   int num_samples_to_push = saudio_expect()*2;
-  enum{samples_to_push=128};
+  enum{samples_to_push=200};
   float volume_sq = gui_state.volume*gui_state.volume/32768.;
   for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
+    static int fill = 0; 
+    float average_volue=0;
     float audio_buff[samples_to_push];
     int pushed = 0; 
     if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push)break;
     for(int i=0;i<samples_to_push;++i){
       int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
       audio_buff[i]=data*volume_sq;
+      ++pushed;
+      average_volue+=fabs(audio_buff[i]);
     }
     saudio_push(audio_buff, samples_to_push/2);
   }
