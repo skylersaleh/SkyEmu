@@ -218,6 +218,26 @@ static inline bool sb_path_has_file_ext(const char * path, const char * ext){
   }
   return true;
 }
+static bool sb_load_file_data_into_buffer(const char* path, void* buffer, size_t buffer_size){
+  FILE *f = fopen(path, "rb");
+  if(f){
+    size_t size = 0; 
+    fseek(f, 0,SEEK_END);
+    size = ftell(f);
+    fseek(f, 0,SEEK_SET);
+    if(size!=buffer_size){
+      printf("%s is the wrong size. Expected: %zu got: %zu\n",path,buffer_size,size);
+      return false; 
+    }
+    size =fread(buffer, 1, size, f);
+    printf("Loaded file %s file_size %zu\n",path,size);
+    fclose(f);
+    return true;
+  }else{
+    printf("Failed to open file %s\n",path);
+  }
+  return false;
+}
 static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
   FILE *f = fopen(path, "rb");
   if(file_size)*file_size = 0; 
@@ -237,13 +257,13 @@ static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
     printf("Failed to open file %s\n",path);
   }
   return NULL;
-
 }
 static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size){
   FILE *f = fopen(path, "wb");
   size_t written = -1; 
   if(f){
     written = fwrite(data,1,file_size, f);
+    fclose(f);
   }
   if(written!=file_size){
     printf("Error failed to save: %s (wrote: %zu out of %zu)\n",path,written,file_size);
