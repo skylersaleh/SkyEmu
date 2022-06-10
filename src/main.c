@@ -116,7 +116,8 @@ typedef struct{
   // Be very careful to keep alignment and ordering the same otherwise you will break the settings. 
   uint32_t draw_debug_menu;
   float volume; 
-  uint32_t padding[254];
+  uint32_t light_mode; 
+  uint32_t padding[253];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 typedef struct {
@@ -1699,6 +1700,68 @@ void se_imgui_theme()
   colors[ImGuiCol_NavWindowingHighlight]  = (ImVec4){1.00f, 0.00f, 0.00f, 0.70f};
   colors[ImGuiCol_NavWindowingDimBg]      = (ImVec4){1.00f, 0.00f, 0.00f, 0.20f};
   colors[ImGuiCol_ModalWindowDimBg]       = (ImVec4){1.00f, 0.00f, 0.00f, 0.35f};
+  
+  if(gui_state.settings.light_mode){
+    int invert_list[]={
+      ImGuiCol_Text,
+      ImGuiCol_TextDisabled,
+      ImGuiCol_WindowBg,
+      ImGuiCol_ChildBg,
+      ImGuiCol_PopupBg,
+      ImGuiCol_Border,
+      ImGuiCol_BorderShadow,
+      ImGuiCol_FrameBg,
+      ImGuiCol_FrameBgHovered,
+      ImGuiCol_FrameBgActive,
+      ImGuiCol_TitleBg,
+      ImGuiCol_TitleBgActive,
+      ImGuiCol_TitleBgCollapsed,
+      ImGuiCol_MenuBarBg,
+      ImGuiCol_ScrollbarBg,
+      ImGuiCol_ScrollbarGrab,
+      ImGuiCol_ScrollbarGrabHovered,
+      ImGuiCol_ScrollbarGrabActive,
+      ImGuiCol_SliderGrab,
+      ImGuiCol_SliderGrabActive,
+      ImGuiCol_Button,
+      ImGuiCol_ButtonHovered,
+      ImGuiCol_ButtonActive,
+      ImGuiCol_Header,
+      ImGuiCol_HeaderHovered,
+      ImGuiCol_HeaderActive,
+      ImGuiCol_Separator,
+      ImGuiCol_SeparatorHovered,
+      ImGuiCol_SeparatorActive,
+      ImGuiCol_ResizeGrip,
+      ImGuiCol_ResizeGripHovered,
+      ImGuiCol_ResizeGripActive,
+      ImGuiCol_Tab,
+      ImGuiCol_TabHovered,
+      ImGuiCol_TabActive,
+      ImGuiCol_TabUnfocused,
+      ImGuiCol_TabUnfocusedActive,
+      ImGuiCol_PlotLines,
+      ImGuiCol_PlotLinesHovered,
+      ImGuiCol_PlotHistogram,
+      ImGuiCol_PlotHistogramHovered,
+      ImGuiCol_TableHeaderBg,
+      ImGuiCol_TableBorderStrong,
+      ImGuiCol_TableBorderLight,
+      ImGuiCol_TableRowBg,
+      ImGuiCol_TableRowBgAlt,
+      ImGuiCol_TextSelectedBg,
+      ImGuiCol_DragDropTarget,
+      ImGuiCol_NavHighlight,
+      ImGuiCol_NavWindowingHighlight,
+      ImGuiCol_NavWindowingDimBg,
+      ImGuiCol_ModalWindowDimBg,
+    };
+    for(int i=0;i<sizeof(invert_list)/sizeof(invert_list[0]);++i){
+      colors[invert_list[i]].x=1.0-colors[invert_list[i]].x;
+      colors[invert_list[i]].y=1.0-colors[invert_list[i]].y;
+      colors[invert_list[i]].z=1.0-colors[invert_list[i]].z;
+    }
+  }
 
   ImGuiStyle* style = igGetStyle();
   style->WindowPadding                     = (ImVec2){8.00f, 8.00f};
@@ -1919,8 +1982,15 @@ void se_draw_menu_panel(){
   se_draw_controller_config(&gui_state);
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
-  const char * deb_tool_string = gui_state.settings.draw_debug_menu? ICON_FK_BUG " Hide Debug Tools": ICON_FK_BUG " Show Debug Tools";
-  if(igButton(deb_tool_string,(ImVec2){0, 0}))gui_state.settings.draw_debug_menu=!gui_state.settings.draw_debug_menu;
+  bool light_mode = gui_state.settings.light_mode; 
+  if(igCheckbox("Light Mode",&light_mode)){
+    gui_state.settings.light_mode = light_mode;
+    se_imgui_theme();
+  }
+
+  bool draw_debug_menu = gui_state.settings.draw_debug_menu;
+  igCheckbox("Show Debug Tools",&draw_debug_menu);
+  gui_state.settings.draw_debug_menu = draw_debug_menu;
 
   /* TODO: Implement these later 
   if(igButton(ICON_FK_REPEAT " Reset",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RESET;}
