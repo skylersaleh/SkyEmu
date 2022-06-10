@@ -1964,7 +1964,7 @@ void se_draw_menu_panel(){
     }
     igEndChildFrame();
   }
-  igText(ICON_FK_GAMEPAD " Keybinds");
+  igText(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
   bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
