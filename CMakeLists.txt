@@ -107,6 +107,8 @@ set(SDL_LOCALE OFF CACHE BOOL "SDL Video support" FORCE)
 
 add_definitions(-DSDL_LEAN_AND_MEAN=1)
 add_subdirectory(src/SDL2)
+set_property(TARGET SDL2-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
@@ -158,6 +160,7 @@ set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architect
 set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
 set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
 add_subdirectory(src/capstone)
+set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES} SDL2-static)
 

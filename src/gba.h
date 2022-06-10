@@ -995,7 +995,7 @@ static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x05000000){
     // 8 bit stores to palette mirror across 8 bit halves
     if((baddr&0xff000000)==0x5000000){gba_store16(gba,baddr&~1,(data&0xff)*0x0101); return; }
-    if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF))return gba_store16(gba,baddr&~1,(data&0xff)*0x0101);
+    if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF)){gba_store16(gba,baddr&~1,(data&0xff)*0x0101);return;}
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
     if(baddr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
