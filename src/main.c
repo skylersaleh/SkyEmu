@@ -422,7 +422,7 @@ double se_fps_counter(int tick){
   return 1.0/fps; 
 }
 
-gui_state_t gui_state={}; 
+gui_state_t gui_state={ 0 }; 
 static void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
     EM_ASM( FS.syncfs(function (err) {}););
@@ -1060,7 +1060,7 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
   if(has_alpha==false)free(rgba8_data);
 }
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
-  return se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,1.0);
+  se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,1.0);
 }
 bool se_draw_image_button(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
   float dpi_scale = se_dpi_scale();

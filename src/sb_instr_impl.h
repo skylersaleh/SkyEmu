@@ -141,28 +141,28 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
     case SB_OP_AF: { gb->cpu.af = value & 0xfff0; return; }
     case SB_OP_B: { SB_U16_HI_SET(gb->cpu.bc,value);return; }
     case SB_OP_BC: { gb->cpu.bc = value; return; }
-    case SB_OP_BC_INDIRECT: { return sb_store8(gb,gb->cpu.bc, value); }
+    case SB_OP_BC_INDIRECT: { sb_store8(gb,gb->cpu.bc, value); return; }
     case SB_OP_C: { SB_U16_LO_SET(gb->cpu.bc,value);return; }
     case SB_OP_D: { SB_U16_HI_SET(gb->cpu.de,value);return; }
     case SB_OP_DE: { gb->cpu.de = value; return; }
-    case SB_OP_DE_INDIRECT: { return sb_store8(gb,gb->cpu.de, value); }
+    case SB_OP_DE_INDIRECT: { sb_store8(gb,gb->cpu.de, value); return; }
     case SB_OP_E: { SB_U16_LO_SET(gb->cpu.de,value);return; }
     case SB_OP_FF00_PLUS_C_INDIRECT: {
-      return sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
+      sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value); return;
     }
     case SB_OP_FF00_PLUS_U8_INDIRECT: {
-      return sb_store8(gb,0xff00+sb_read8(gb,gb->cpu.pc-1), value);
+      sb_store8(gb,0xff00+sb_read8(gb,gb->cpu.pc-1), value);return;
     }
     case SB_OP_H: { SB_U16_HI_SET(gb->cpu.hl,value);return; }
     case SB_OP_HL: { gb->cpu.hl = value; return; }
     //Increments and decrements happen on the operand read
-    case SB_OP_HL_DEC_INDIRECT: { return sb_store8(gb,gb->cpu.hl+1, value); }
-    case SB_OP_HL_INC_INDIRECT: { return sb_store8(gb,gb->cpu.hl-1, value); }
-    case SB_OP_HL_INDIRECT: { return sb_store8(gb,gb->cpu.hl, value); }
+    case SB_OP_HL_DEC_INDIRECT: { sb_store8(gb,gb->cpu.hl+1, value); return; }
+    case SB_OP_HL_INC_INDIRECT: { sb_store8(gb,gb->cpu.hl-1, value); return;}
+    case SB_OP_HL_INDIRECT: { sb_store8(gb,gb->cpu.hl, value); return;}
     case SB_OP_L: { SB_U16_LO_SET(gb->cpu.hl,value);return; }
     case SB_OP_SP: { gb->cpu.sp = value; return; }
-    case SB_OP_SP_PLUS_I8: { return sb_store8(gb,gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1), value); }
-    case SB_OP_U16_INDIRECT: { return sb_store8(gb,sb_read16(gb, gb->cpu.pc-2), value); }
+    case SB_OP_SP_PLUS_I8: { sb_store8(gb,gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1), value); return;}
+    case SB_OP_U16_INDIRECT: { sb_store8(gb,sb_read16(gb, gb->cpu.pc-2), value); return;}
 
   }
   gb->cpu.trigger_breakpoint=true;
