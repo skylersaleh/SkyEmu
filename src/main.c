@@ -10,6 +10,7 @@
 #define SE_AUDIO_BUFF_CHANNELS 2
 #define SE_REBIND_TIMER_LENGTH 5.0
 
+#define SE_TRANSPARENT_BG_ALPHA 0.9
 
 #include "gba.h"
 #include "nds.h"
@@ -931,7 +932,7 @@ static void se_draw_debug_menu(){
     igPushIDInt(id++);
     if(desc->visible){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(ICON_FK_TIMES,(ImVec2){0, 0})){desc->visible=!desc->visible;}
+      if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
       igPopStyleColor(1);
     }else{
       if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
@@ -947,7 +948,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
     if(desc->visible){
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, height}, ImGuiCond_Always);
-      igBegin(desc->label,0, ImGuiWindowFlags_NoCollapse);
+      igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse);
       desc->function();
       igEnd();
       screen_x+=sidebar_w;
@@ -1405,7 +1406,7 @@ void se_load_rom_overlay(bool visible){
   w_size.y/=se_dpi_scale();
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
-  igSetNextWindowBgAlpha(0.9);
+  igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
   igBegin(ICON_FK_FILE_O " Load Game",NULL,ImGuiWindowFlags_NoCollapse);
   if(se_selectable_with_box("Load ROM from file (.gb, .gbc, .gba)", "You can also drag & drop a ROM to load it",ICON_FK_FOLDER_OPEN)){
     #ifdef USE_TINY_FILE_DIALOGS
@@ -2013,14 +2014,30 @@ static void frame(void) {
   }
   igPopStyleVar(2);
 
-  int screen_x = 0; 
-  int screen_width = width; 
+  float screen_x = 0; 
+  float screen_width = width; 
+  float scaled_screen_width = screen_width/se_dpi_scale();
 
-  int sidebar_w = 300; 
+  float sidebar_w = 300; 
+  int num_sidebars_open = gui_state.sidebar_open;
+  if(gui_state.settings.draw_debug_menu){
+    se_debug_tool_desc_t* desc=se_get_debug_description();
+    while(desc&&desc->label){
+      num_sidebars_open+=desc->visible;
+      ++desc;
+    }
+  }
+  bool draw_sidebars_over_screen = scaled_screen_width-sidebar_w*num_sidebars_open<sidebar_w*0.5;
+  if(draw_sidebars_over_screen){
+    sidebar_w = scaled_screen_width/num_sidebars_open;
+    ImVec4 window_bg = style->Colors[ImGuiCol_WindowBg];
+    window_bg.w = SE_TRANSPARENT_BG_ALPHA; 
+    igPushStyleColorVec4(ImGuiCol_WindowBg, window_bg);
+  }
   if(gui_state.sidebar_open){
     igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("Menu",0, ImGuiWindowFlags_NoCollapse);
+    igBegin("Menu",&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse);
     se_draw_menu_panel();
     igEnd();
     screen_x = sidebar_w;
@@ -2031,6 +2048,11 @@ static void frame(void) {
     int orig_screen_x = screen_x;
     screen_x = se_draw_debug_panels(screen_x, sidebar_w,menu_height,(height-menu_height*se_dpi_scale())/se_dpi_scale());
     screen_width -=(screen_x-orig_screen_x)*se_dpi_scale();
+  }
+  if(draw_sidebars_over_screen){
+    screen_x = 0;
+    screen_width = width;
+    igPopStyleColor(1);
   }
 
   igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
