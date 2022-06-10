@@ -833,7 +833,7 @@ static void se_draw_emulated_system_screen(){
   }
 
   int controller_h = scr_h; 
-  if(lcd_render_h*1.8<scr_h){
+  if(lcd_render_h*1.8<scr_h&&gui_state.last_touch_time>=0){
     lcd_render_y = extra_space*0.05;
     controller_h = scr_h-lcd_render_h-lcd_render_y;
   }
@@ -1180,7 +1180,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   ImU32 line_color2 =0x000000;
   ImU32 sel_color =0x000000;
 
-  float opacity = 5.-gui_state.last_touch_time;
+  float opacity = 5.-(se_time()-gui_state.last_touch_time);
   if(opacity<=0){opacity=0;return;}
   if(opacity>1)opacity=1;
 
@@ -2007,7 +2007,6 @@ static void frame(void) {
   const int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
-  gui_state.last_touch_time+=delta_time;
   gui_state.screen_width=width;
   gui_state.screen_height=height;
   simgui_new_frame(width, height, delta_time);
@@ -2254,7 +2253,7 @@ static void init(void) {
   gui_state.pass_action = (sg_pass_action) {
       .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.5f, 1.0f, 1.0 } }
   };
-  gui_state.last_touch_time=1e5;
+  gui_state.last_touch_time=-10000;
   saudio_setup(&(saudio_desc){
     .sample_rate=SE_AUDIO_SAMPLE_RATE,
     .num_channels=2,
@@ -2325,7 +2324,7 @@ static void event(const sapp_event* ev) {
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
     }
-    gui_state.last_touch_time=0;
+    gui_state.last_touch_time=se_time();
   }
 }
 sapp_desc sokol_main(int argc, char* argv[]) {
