@@ -144,7 +144,13 @@ endif()
 target_link_libraries(sokol PUBLIC cimgui)
 target_include_directories(sokol INTERFACE src/sokol)
 if(WIN32)
-    add_executable(${PROJECT_NAME} WIN32 src/main.c)
+    set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
+    add_executable(${PROJECT_NAME} WIN32 src/main.c ${APP_ICON_RESOURCE_WINDOWS})
+elseif(APPLE)
+    set(MACOSX_BUNDLE_ICON_FILE AppIcon.icns)
+    set(APP_ICON src/resources/icons/AppIcon.icns)
+    set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    add_executable(${PROJECT_NAME} src/main.c ${APP_ICON})
 else()
     add_executable(${PROJECT_NAME} src/main.c)
 endif()
@@ -165,5 +171,18 @@ set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded
 set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES} SDL2-static)
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
-set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+if(MSVC)
+    set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+elseif(APPLE)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        MACOSX_BUNDLE ON
+        MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME}
+        MACOSX_BUNDLE_BUNDLE_IDENTIFIER "com.sky.${PROJECT_NAME}")
+elseif(EMSCRIPTEN)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/favicon_package
+                ${CMAKE_CURRENT_BINARY_DIR}/bin)
+endif()
 
