@@ -140,6 +140,7 @@ typedef struct {
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
     persistent_settings_t settings;
     persistent_settings_t last_saved_settings;
+    bool last_light_mode_setting;
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -1651,6 +1652,7 @@ void se_update_frame() {
 }
 void se_imgui_theme()
 {
+  gui_state.last_light_mode_setting= gui_state.settings.light_mode;
   ImVec4* colors = igGetStyle()->Colors;
   colors[ImGuiCol_Text]                   = (ImVec4){1.00f, 1.00f, 1.00f, 1.00f};
   colors[ImGuiCol_TextDisabled]           = (ImVec4){0.6f, 0.6f, 0.6f, 1.f};
@@ -1990,10 +1992,7 @@ void se_draw_menu_panel(){
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
   bool light_mode = gui_state.settings.light_mode; 
-  if(igCheckbox("Light Mode",&light_mode)){
-    gui_state.settings.light_mode = light_mode;
-    se_imgui_theme();
-  }
+  if(igCheckbox("Light Mode",&light_mode))gui_state.settings.light_mode = light_mode;
 
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   igCheckbox("Show Debug Tools",&draw_debug_menu);
@@ -2018,6 +2017,7 @@ static void frame(void) {
   gui_state.screen_height=height;
   simgui_new_frame(width, height, delta_time);
   float menu_height = 0; 
+  if(gui_state.last_light_mode_setting!=gui_state.settings.light_mode)se_imgui_theme();
   /*=== UI CODE STARTS HERE ===*/
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
