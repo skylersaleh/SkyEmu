@@ -1358,7 +1358,7 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   igText(text);
   igSetCursorPos(backup_cursor);
 }
-bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover){
+bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover, int reduce_width){
   int item_height = 40; 
   int padding = 4; 
   int box_h = item_height-padding*2;
@@ -1369,7 +1369,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igGetCursorPos(&curr_pos);
   curr_pos.y+=padding; 
   curr_pos.x+=padding;
-  if(igSelectableBool("",force_hover,ImGuiSelectableFlags_None, (ImVec2){igGetWindowContentRegionWidth(),item_height}))clicked=true;
+  if(igSelectableBool("",force_hover,ImGuiSelectableFlags_None, (ImVec2){igGetWindowContentRegionWidth()-reduce_width,item_height}))clicked=true;
   ImVec2 next_pos;
   igGetCursorPos(&next_pos);
   igSetCursorPos(curr_pos);
@@ -1377,7 +1377,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
   igSetCursorPosY(curr_pos.y-padding*0.5);
   igSetCursorPosX(curr_pos.x+box_w);
-  igBeginChildFrame(igGetIDStr(first_label),(ImVec2){igGetWindowContentRegionWidth()-box_w-padding,item_height},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoInputs);
+  igBeginChildFrame(igGetIDStr(first_label),(ImVec2){igGetWindowContentRegionWidth()-box_w-padding-reduce_width,item_height},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoInputs);
   igText(first_label);
   igTextDisabled(second_label);
   igEndChildFrame();
@@ -1385,6 +1385,36 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igPopID();
   return clicked; 
 }
+#ifdef EMSCRIPTEN
+void se_download_emscripten_file(const char * path){
+  const char * base,*file, *ext;
+  sb_breakup_path(path,&base,&file,&ext);
+  char name[SB_FILE_PATH_SIZE];
+  snprintf(name,SB_FILE_PATH_SIZE,"%s.%s",file,ext);
+  size_t data_size;
+  uint8_t*data = sb_load_file_data(path,&data_size);
+
+  EM_ASM_({
+    name = $0;
+    data = $1;
+    data_size = $2;
+    const a = document.createElement('a');
+    a.style = 'display:none';
+    document.body.appendChild(a);
+    const view = new Uint8Array(Module.HEAPU8.buffer, data, data_size);
+    const blob = new Blob([view], {
+        type: 'octet/stream'
+    });
+    const url = window.URL.createObjectURL(blob);
+    a.href = url;
+    const filename = UTF8ToString(name);
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, name, data, data_size);
+}
+#endif 
 void se_load_rom_overlay(bool visible){
   static bool last_visible = false;
   if(visible==false){
@@ -1468,7 +1498,14 @@ void se_load_rom_overlay(bool visible){
       return input.matches('#fileInput:hover');
     });
   #endif 
-  if(se_selectable_with_box("Load ROM from file (.gb, .gbc, .gba)", "You can also drag & drop a ROM to load it",ICON_FK_FOLDER_OPEN,hover)){
+  const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba)";
+  const char * prompt2= "You can also drag & drop a ROM to load it";
+  #ifdef EMSCRIPTEN
+  prompt1 = "Load ROM(.gb, .gbc, .gba) or save(.sav) from file";
+  prompt2 = "You can also drag & drop a ROM/save file to load it";
+  #endif
+
+  if(se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,hover,0)){
     #ifdef USE_TINY_FILE_DIALOGS
       char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
                                           valid_rom_file_types,NULL,0);
@@ -1487,17 +1524,32 @@ void se_load_rom_overlay(bool visible){
   igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
   int num_entries=0;
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    igPushIDInt(i);
     se_game_info_t *info = gui_state.recently_loaded_games+i;
     if(strcmp(info->path,"")==0)break;
     const char* base, *file_name, *ext; 
     sb_breakup_path(info->path,&base,&file_name,&ext);
     char ext_upper[8]={0};
     for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
-    if(se_selectable_with_box(file_name,info->path,ext_upper,false)){
+    int reduce_width = 0; 
+    #ifdef EMSCRIPTEN
+    char save_file_path[SB_FILE_PATH_SIZE];
+    snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
+    bool save_exists = sb_file_exists(save_file_path);
+    if(save_exists)reduce_width=85; 
+    #endif
+    if(se_selectable_with_box(file_name,info->path,ext_upper,false,reduce_width)){
       se_load_rom(info->path);
     }
+    #ifdef EMSCRIPTEN
+    if(save_exists){
+      igSameLine(0,4);
+      if(igButton(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
+    }
+    #endif 
     igSeparator();
     num_entries++;
+    igPopID();
   }
   if(num_entries==0)igText("No recently played games");
   igEnd();
@@ -2301,7 +2353,7 @@ static void event(const sapp_event* ev) {
     uint32_t size = sapp_html5_get_dropped_file_size(0);
     uint8_t * buffer = (uint8_t*)malloc(size);
     char *rom_file=(char*)malloc(4096); 
-    snprintf(rom_file,4096,"/%s",sapp_get_dropped_file_path(0));
+    snprintf(rom_file,4096,"/offline/%s",sapp_get_dropped_file_path(0));
 
     sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
       .dropped_file_index = 0,
