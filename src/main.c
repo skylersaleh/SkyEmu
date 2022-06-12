@@ -160,6 +160,7 @@ static const char* se_get_pref_path(){
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
+  dpi_scale*=1.15;
   return dpi_scale;
 }
 const char* se_keycode_to_string(int keycode){
