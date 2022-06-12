@@ -1357,7 +1357,7 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   igText(text);
   igSetCursorPos(backup_cursor);
 }
-bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box){
+bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover){
   int item_height = 40; 
   int padding = 4; 
   int box_h = item_height-padding*2;
@@ -1368,7 +1368,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igGetCursorPos(&curr_pos);
   curr_pos.y+=padding; 
   curr_pos.x+=padding;
-  if(igSelectableBool("",false,ImGuiSelectableFlags_None, (ImVec2){igGetWindowContentRegionWidth(),item_height}))clicked=true;
+  if(igSelectableBool("",force_hover,ImGuiSelectableFlags_None, (ImVec2){igGetWindowContentRegionWidth(),item_height}))clicked=true;
   ImVec2 next_pos;
   igGetCursorPos(&next_pos);
   igSetCursorPos(curr_pos);
@@ -1409,25 +1409,19 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
   igBegin(ICON_FK_FILE_O " Load Game",NULL,ImGuiWindowFlags_NoCollapse);
-  if(se_selectable_with_box("Load ROM from file (.gb, .gbc, .gba)", "You can also drag & drop a ROM to load it",ICON_FK_FOLDER_OPEN)){
-    #ifdef USE_TINY_FILE_DIALOGS
-      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
-                                          valid_rom_file_types,NULL,0);
-      if (outPath){
-          se_load_rom(outPath);
-      }
-    #endif
-  }
+  
   float list_y_off = igGetWindowHeight(); 
+  bool hover = false;
   #ifdef EMSCRIPTEN
     int x, y, w,  h;
-    ImVec2 win_p,win_size;
-    igGetWindowPos(&win_p);
-    igGetWindowSize(&win_size);
+    ImVec2 win_p,win_max;
+    igGetWindowContentRegionMin(&win_p);
+    igGetWindowContentRegionMax(&win_max);
     x = win_p.x;
     y = win_p.y;
-    w = win_size.x;
-    h = win_size.y;
+    w = win_max.x-win_p.x;
+    h = win_max.y-win_p.y;
+    y+=w_pos.y;
       char * new_path = (char*)EM_ASM_INT({
       var input = document.getElementById('fileInput');
       input.style.left = $0 +'px';
@@ -1435,6 +1429,7 @@ void se_load_rom_overlay(bool visible){
       input.style.width = $2 +'px';
       input.style.height= $3 +'px';
       input.style.visibility = 'visible';
+      input = document.getElementById('fileInput');
       if(input.value!= ''){
         console.log(input.value);
         var reader= new FileReader();
@@ -1467,8 +1462,20 @@ void se_load_rom_overlay(bool visible){
 
     if(new_path[0])se_load_rom(new_path);
     free(new_path);
-
+    hover = (bool)EM_ASM_INT({
+      var input = document.getElementById('fileInput');
+      return input.matches('#fileInput:hover');
+    });
   #endif 
+  if(se_selectable_with_box("Load ROM from file (.gb, .gbc, .gba)", "You can also drag & drop a ROM to load it",ICON_FK_FOLDER_OPEN,hover)){
+    #ifdef USE_TINY_FILE_DIALOGS
+      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
+                                          valid_rom_file_types,NULL,0);
+      if (outPath){
+          se_load_rom(outPath);
+      }
+    #endif
+  }
   igEnd();
   ImVec2 child_size; 
   child_size.x = w_size.x;
@@ -1485,7 +1492,7 @@ void se_load_rom_overlay(bool visible){
     sb_breakup_path(info->path,&base,&file_name,&ext);
     char ext_upper[8]={0};
     for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
-    if(se_selectable_with_box(file_name,info->path,ext_upper)){
+    if(se_selectable_with_box(file_name,info->path,ext_upper,false)){
       se_load_rom(info->path);
     }
     igSeparator();
