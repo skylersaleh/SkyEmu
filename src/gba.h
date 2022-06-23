@@ -690,6 +690,9 @@ typedef struct{
   struct {
     int32_t internal_bgx;
     int32_t internal_bgy;
+    int32_t render_bgx;
+    int32_t render_bgy;
+    bool cpu_wrote_affine;
   }aff[2];
   uint16_t dispcnt_pipeline[3];
   int fast_forward_ticks;
@@ -1391,10 +1394,12 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     int aff_bg = (address_u32-GBA_BG2X)/32;
     gba->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
     gba->ppu.aff[aff_bg].internal_bgx|= word_data;
+    gba->ppu.aff[aff_bg].cpu_wrote_affine = true;
   }else if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
     int aff_bg = (address_u32-GBA_BG2X)/32;
     gba->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
     gba->ppu.aff[aff_bg].internal_bgy|= word_data;
+    gba->ppu.aff[aff_bg].cpu_wrote_affine = true;
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -1495,15 +1500,14 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
   if(gba->ppu.scan_clock%4)return;
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
-
   int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
-  if(lcd_x==0||lcd_x==240||lcd_x==GBA_LCD_HBLANK_END){
+  if(lcd_x==0||lcd_x==GBA_LCD_HBLANK_START||lcd_x==GBA_LCD_HBLANK_END){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     int vcount = (lcd_y+ (lcd_x>=GBA_LCD_HBLANK_END))%228;
     bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=240&&lcd_x< GBA_LCD_HBLANK_END;
+    bool hblank = lcd_x>=GBA_LCD_HBLANK_START&&lcd_x< GBA_LCD_HBLANK_END;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
     disp_stat |= vcount==vcount_cmp ? 0x4: 0;   
@@ -1519,34 +1523,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
         gba->ppu.dispcnt_pipeline[1]=gba->ppu.dispcnt_pipeline[2];
         gba->ppu.dispcnt_pipeline[2]=gba_io_read16(gba, GBA_DISPCNT);
-      }else if(render){
-        uint16_t dispcnt = gba->ppu.dispcnt_pipeline[0];
-
-        int bg_mode = SB_BFE(dispcnt,0,3);
-
-        // From Mirei: Affine registers are only incremented when bg_mode is not 0
-        // and the bg is enabled.
-        if(bg_mode!=0){
-          for(int aff=0;aff<2;++aff){
-            bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
-            if(!bg_en)continue;
-            int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
-            int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
-            uint16_t bgcnt = gba_io_read16(gba, GBA_BG2CNT+aff*2);
-            bool mosaic = SB_BFE(bgcnt,6,1);
-            if(mosaic){
-              uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
-              int mos_y = SB_BFE(mos_reg,4,4)+1;
-              if((lcd_y%mos_y)==0){
-                gba->ppu.aff[aff].internal_bgx+=b*mos_y;
-                gba->ppu.aff[aff].internal_bgy+=d*mos_y;
-              }
-            }else{
-              gba->ppu.aff[aff].internal_bgx+=b;
-              gba->ppu.aff[aff].internal_bgy+=d;
-            }
-          }
-        }
       }
     }
     if(lcd_y != gba->ppu.last_lcd_y){
@@ -1562,25 +1538,62 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
         if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
-      //Latch BGX and BGY registers
-      if(lcd_y==0&&render){
-        for(int aff=0;aff<2;++aff){
-          gba->ppu.aff[aff].internal_bgx=gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
-          gba->ppu.aff[aff].internal_bgy=gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
-
-          gba->ppu.aff[aff].internal_bgx = SB_BFE(gba->ppu.aff[aff].internal_bgx,0,28);
-          gba->ppu.aff[aff].internal_bgy = SB_BFE(gba->ppu.aff[aff].internal_bgy,0,28);
-
-          gba->ppu.aff[aff].internal_bgx = (gba->ppu.aff[aff].internal_bgx<<4)>>4;
-          gba->ppu.aff[aff].internal_bgy = (gba->ppu.aff[aff].internal_bgy<<4)>>4;
-        }
-      }
     }
     gba_send_interrupt(gba,3,new_if);
   }
 
   if(!render)return; 
+  if(lcd_y ==0 &&lcd_x==0){
+    //Latch BGX and BGY registers
+    for(int aff=0;aff<2;++aff){
+      gba->ppu.aff[aff].internal_bgx=gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
+      gba->ppu.aff[aff].internal_bgy=gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
 
+      gba->ppu.aff[aff].internal_bgx = SB_BFE(gba->ppu.aff[aff].internal_bgx,0,28);
+      gba->ppu.aff[aff].internal_bgy = SB_BFE(gba->ppu.aff[aff].internal_bgy,0,28);
+
+      gba->ppu.aff[aff].internal_bgx = (gba->ppu.aff[aff].internal_bgx<<4)>>4;
+      gba->ppu.aff[aff].internal_bgy = (gba->ppu.aff[aff].internal_bgy<<4)>>4;
+    }
+  }
+  if(lcd_x==GBA_LCD_HBLANK_START){
+    // The behavior in this codeblock heavily impacts Iridion3D, Pinball Tycoon, and Star Wars. 
+    // Retest these titles if you make a change here. 
+    for(int aff=0;aff<2;++aff){
+      gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
+      gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
+    }
+    uint16_t dispcnt = gba->ppu.dispcnt_pipeline[0];
+    int bg_mode = SB_BFE(dispcnt,0,3);
+    // From Mirei: Affine registers are only incremented when bg_mode is not 0
+    // and the bg is enabled.
+    if(bg_mode!=0){
+      for(int aff=0;aff<2;++aff){
+        bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
+        if(!bg_en)continue;
+        int32_t b = (int16_t)gba_io_read16(gba,GBA_BG2PB+(aff)*0x10);
+        int32_t d = (int16_t)gba_io_read16(gba,GBA_BG2PD+(aff)*0x10);
+        uint16_t bgcnt = gba_io_read16(gba, GBA_BG2CNT+aff*2);
+        bool mosaic = SB_BFE(bgcnt,6,1);
+        if(mosaic){
+          uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+          int mos_y = SB_BFE(mos_reg,4,4)+1;
+          if((lcd_y%mos_y)==0){
+            gba->ppu.aff[aff].internal_bgx+=b*mos_y;
+            gba->ppu.aff[aff].internal_bgy+=d*mos_y;
+          }
+        }else{
+          gba->ppu.aff[aff].internal_bgx+=b;
+          gba->ppu.aff[aff].internal_bgy+=d;
+        }
+        if(!gba->ppu.aff[aff].cpu_wrote_affine){
+          gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
+          gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
+        }
+        gba->ppu.aff[aff].cpu_wrote_affine=false;
+      }
+    }
+  }
   uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
@@ -1788,8 +1801,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
           }
           colors = true;
 
-          int32_t bgx = gba->ppu.aff[bg-2].internal_bgx;
-          int32_t bgy = gba->ppu.aff[bg-2].internal_bgy;
+          int32_t bgx = gba->ppu.aff[bg-2].render_bgx;
+          int32_t bgy = gba->ppu.aff[bg-2].render_bgy;
 
           int32_t a = (int16_t)gba_io_read16(gba,GBA_BG2PA+(bg-2)*0x10);
           int32_t c = (int16_t)gba_io_read16(gba,GBA_BG2PC+(bg-2)*0x10);
@@ -2292,7 +2305,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   gba->activate_dmas|=ticks!=0;
  
   if(gba->last_transaction_dma&&ticks==0){
-    ticks+=2; 
+    ticks+=3; 
     gba->last_transaction_dma=false;
   }
 
