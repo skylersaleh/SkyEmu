@@ -2314,7 +2314,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   gba->activate_dmas|=ticks!=0;
  
   if(gba->last_transaction_dma&&ticks==0){
-    ticks+=3; 
+    ticks+=2; 
     gba->last_transaction_dma=false;
   }
 
