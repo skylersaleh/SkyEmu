@@ -1554,6 +1554,9 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
 
       gba->ppu.aff[aff].internal_bgx = (gba->ppu.aff[aff].internal_bgx<<4)>>4;
       gba->ppu.aff[aff].internal_bgy = (gba->ppu.aff[aff].internal_bgy<<4)>>4;
+
+      gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
+      gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
     }
   }
   if(lcd_x==GBA_LCD_HBLANK_START){
