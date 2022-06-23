@@ -1,8 +1,8 @@
-<img width="200" align="left" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430950-1d969fa8-e192-4e0d-a585-521b4b286725.png">
+<img width="90" align="left" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430950-1d969fa8-e192-4e0d-a585-521b4b286725.png">
 
 # SkyEmu
 
-SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability. It is still fairly early in development and should be considered as beta quality. 
+SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
 
 <img width="1015" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430669-20c8079a-bf5c-44b6-b7da-270aca51f216.png">
 
