@@ -1618,9 +1618,9 @@ void se_load_rom_overlay(bool visible){
   igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
   int num_entries=0;
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    igPushIDInt(i);
     se_game_info_t *info = gui_state.recently_loaded_games+i;
     if(strcmp(info->path,"")==0)break;
+    igPushIDInt(i);
     const char* base, *file_name, *ext; 
     sb_breakup_path(info->path,&base,&file_name,&ext);
     char ext_upper[8]={0};
