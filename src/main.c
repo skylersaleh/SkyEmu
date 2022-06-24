@@ -2528,7 +2528,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .event_cb = event,
       .window_title = "SkyEmu",
       .width = 1280,
-      .height = 720,
+      .height = 800,
       .enable_dragndrop = true,
       .enable_clipboard =true,
       .high_dpi = true,
