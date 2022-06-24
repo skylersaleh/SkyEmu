@@ -58,6 +58,8 @@
 #define SE_KEY_PEN_DOWN 13
 #define SE_NUM_KEYBINDS 14
 
+#define SE_HAT_MASK (1<<16)
+
 const static char* se_keybind_names[]={
   "A",
   "B",
@@ -1201,7 +1203,22 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
       switch(keybind_type){
         case SE_BIND_KEYBOARD: button_label=se_keycode_to_string(state->bound_id[k]);break;
         case SE_BIND_KEY: 
-          snprintf(buff, sizeof(buff),"Key %d", state->bound_id[k]);button_label=buff;
+          { 
+            int key = state->bound_id[k];
+            bool is_hat = key&SE_HAT_MASK;
+            if(is_hat){
+              int hat_id = SB_BFE(key,8,8);
+              int hat_val = SB_BFE(key,0,8);
+              const char * dir = "";
+              if(hat_val == SDL_HAT_UP)dir="UP";
+              if(hat_val == SDL_HAT_DOWN)dir="DOWN";
+              if(hat_val == SDL_HAT_LEFT)dir="LEFT";
+              if(hat_val == SDL_HAT_RIGHT)dir="RIGHT";
+
+              snprintf(buff, sizeof(buff),"Hat %d %s", hat_id, dir);
+              button_label=buff;
+            }else snprintf(buff, sizeof(buff),"Key %d", state->bound_id[k]);button_label=buff;
+          }
           button_label=buff;
           break;
         case SE_BIND_ANALOG: 
@@ -1653,6 +1670,18 @@ static void se_poll_sdl(){
           cont->sdl_gc = NULL;
         }
         break;
+      case SDL_JOYHATMOTION:{
+        int value = 0;
+        if(sdlEvent.jhat.value==SDL_HAT_UP)value = SDL_HAT_UP;
+        if(sdlEvent.jhat.value==SDL_HAT_DOWN)value = SDL_HAT_DOWN;
+        if(sdlEvent.jhat.value==SDL_HAT_LEFT)value = SDL_HAT_LEFT;
+        if(sdlEvent.jhat.value==SDL_HAT_RIGHT)value = SDL_HAT_RIGHT;
+        if(value){
+          value |= sdlEvent.jhat.hat<<8;
+          value |= SE_HAT_MASK;
+          cont->key.last_bind_activitiy = value;
+        }
+        }break;
       case SDL_JOYBUTTONDOWN:
         if(SDL_JoystickFromInstanceID(sdlEvent.jbutton.which)==cont->sdl_joystick)
           cont->key.last_bind_activitiy = sdlEvent.jbutton.button;
@@ -1673,10 +1702,25 @@ static void se_poll_sdl(){
   if(cont->sdl_joystick){
     for(int k= 0; k<SE_NUM_KEYBINDS;++k){
       int key = cont->key.bound_id[k];
+      if(key==-1)continue;
       bool val = false; 
-      if(key<SDL_JoystickNumButtons(cont->sdl_joystick)&&key!=-1){
-        val = SDL_JoystickGetButton(cont->sdl_joystick,key);
+      bool is_hat = key&(SE_HAT_MASK);
+      if(is_hat){
+        int hat_id = SB_BFE(key,8,8);
+        if(hat_id<SDL_JoystickNumHats(cont->sdl_joystick)){
+          int hat_value = SDL_JoystickGetHat(cont->sdl_joystick,hat_id);
+          int match_value = SB_BFE(key,0,8);
+          if(match_value==SDL_HAT_UP)val |= (hat_value==SDL_HAT_UP)|(hat_value==SDL_HAT_RIGHTUP)|(hat_value==SDL_HAT_LEFTUP);
+          if(match_value==SDL_HAT_DOWN)val |= (hat_value==SDL_HAT_DOWN)|(hat_value==SDL_HAT_RIGHTDOWN)|(hat_value==SDL_HAT_LEFTDOWN);
+          if(match_value==SDL_HAT_LEFT)val |= (hat_value==SDL_HAT_LEFT)|(hat_value==SDL_HAT_LEFTDOWN)|(hat_value==SDL_HAT_LEFTUP);
+          if(match_value==SDL_HAT_RIGHT)val |= (hat_value==SDL_HAT_RIGHT)|(hat_value==SDL_HAT_RIGHTDOWN)|(hat_value==SDL_HAT_RIGHTUP);
+        }
+      }else{
+        if(key<SDL_JoystickNumButtons(cont->sdl_joystick)){
+          val = SDL_JoystickGetButton(cont->sdl_joystick,key);
+        }
       }
+      
       cont->key.value[k] = val;
     }
     for(int a= 0; a<SE_NUM_ANALOGBINDS;++a){
@@ -2175,7 +2219,8 @@ static void frame(void) {
     int sel_width =35;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
     int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
-    if(toggle_x+sel_width*num_toggles>(width/se_dpi_scale())-100)toggle_x=(width/se_dpi_scale())-100-+sel_width*num_toggles;
+    float toggle_width = sel_width*num_toggles;
+    if(toggle_x+toggle_width>(width/se_dpi_scale())-110)toggle_x=igGetCursorPosX()+((width/se_dpi_scale()-igGetCursorPosX())-110-sel_width*num_toggles)*0.5;
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
 
