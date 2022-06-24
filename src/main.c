@@ -1983,6 +1983,17 @@ void se_imgui_theme()
   #endif
 int se_get_sdl_key_bind(SDL_GameController* gc, int button){
   SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
+  if(bind.bindType==SDL_CONTROLLER_BINDTYPE_HAT){
+    int hat_id = bind.value.hat.hat;
+    int hat_mask = bind.value.hat.hat_mask;
+    int mask = 0;
+    if(hat_mask&SDL_HAT_UP)mask = SDL_HAT_UP;
+    if(hat_mask&SDL_HAT_DOWN)mask = SDL_HAT_DOWN;
+    if(hat_mask&SDL_HAT_LEFT)mask = SDL_HAT_LEFT;
+    if(hat_mask&SDL_HAT_RIGHT)mask = SDL_HAT_RIGHT;
+    if(!mask)return -1;
+    return SE_HAT_MASK| (hat_id<<8)|mask;
+  };
   if(bind.bindType!=SDL_CONTROLLER_BINDTYPE_BUTTON)return -1;
   else return bind.value.button;
 }
