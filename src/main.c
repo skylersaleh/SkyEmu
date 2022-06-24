@@ -120,6 +120,18 @@ typedef struct{
   uint32_t padding[253];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
+#define SE_STATS_GRAPH_DATA 256
+typedef struct{
+  double last_render_time;
+  float fps_emulation;
+  float fps_render;
+  float volume_l;
+  float volume_r;
+  float waveform_l[SE_STATS_GRAPH_DATA];
+  float waveform_r[SE_STATS_GRAPH_DATA];
+  float waveform_fps_emulation[SE_STATS_GRAPH_DATA];
+  float waveform_fps_render[SE_STATS_GRAPH_DATA];
+}se_emulator_stats_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -141,6 +153,8 @@ typedef struct {
     persistent_settings_t settings;
     persistent_settings_t last_saved_settings;
     bool last_light_mode_setting;
+    bool overlay_open;
+    se_emulator_stats_t emu_stats; 
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -160,7 +174,7 @@ static const char* se_get_pref_path(){
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
-  dpi_scale*=1.15;
+  dpi_scale*=1.10;
   return dpi_scale;
 }
 const char* se_keycode_to_string(int keycode){
@@ -512,6 +526,65 @@ static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
   write(address+1,SB_BFE(data,8,8));
   write(address+2,SB_BFE(data,16,8));
   write(address+3,SB_BFE(data,24,8));
+}
+void se_draw_emu_stats(){
+  se_emulator_stats_t *stats = &gui_state.emu_stats;
+  stats->fps_emulation = se_fps_counter(0);
+  double curr_time = se_time();
+  double fps_render = 1.0/(curr_time-stats->last_render_time);
+  double fps_emulation = fps_render*emu_state.frame;
+  stats->fps_render = fps_render;
+  stats->fps_emulation = fps_emulation;
+  stats->last_render_time=curr_time;
+  float render_min=1e9, render_max=0, render_avg=0; 
+  float emulate_min=1e9, emulate_max=0, emulate_avg=0; 
+  for(int i=0;i<SE_STATS_GRAPH_DATA-1;++i){
+    stats->waveform_fps_render[i]=stats->waveform_fps_render[i+1];
+    stats->waveform_fps_emulation[i]=stats->waveform_fps_emulation[i+1];
+    if(stats->waveform_fps_render[i]>render_max)render_max=stats->waveform_fps_render[i];
+    if(stats->waveform_fps_render[i]<render_min)render_min=stats->waveform_fps_render[i];
+    render_avg+=stats->waveform_fps_render[i];
+
+    if(stats->waveform_fps_emulation[i]>emulate_max)emulate_max=stats->waveform_fps_emulation[i];
+    if(stats->waveform_fps_emulation[i]<emulate_min)emulate_min=stats->waveform_fps_emulation[i];
+    emulate_avg+=stats->waveform_fps_emulation[i];
+  }
+  render_avg/=SE_STATS_GRAPH_DATA-1;
+  emulate_avg/=SE_STATS_GRAPH_DATA-1;
+  stats->waveform_fps_render[SE_STATS_GRAPH_DATA-1] = fps_render;
+  stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-1] = fps_emulation;
+
+  float avg_volume_l = 0; float avg_volume_r = 0; 
+  for(int i=0;i<SE_STATS_GRAPH_DATA;++i){
+    float l = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.write_ptr-i*2-2)%SB_AUDIO_RING_BUFFER_SIZE]/32768.;
+    float r = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.write_ptr-i*2-1)%SB_AUDIO_RING_BUFFER_SIZE]/32768.;
+    avg_volume_l +=fabs(l);
+    avg_volume_r +=fabs(r);
+    stats->waveform_l[i]=l;
+    stats->waveform_r[i]=r;
+  }
+  avg_volume_r/=SE_STATS_GRAPH_DATA;
+  avg_volume_l/=SE_STATS_GRAPH_DATA;
+
+  float content_width = igGetWindowContentRegionWidth();
+  igText(ICON_FK_CLOCK_O " FPS");
+  igSeparator();
+  char label_tmp[128];
+  snprintf(label_tmp,128,"Display FPS: %2.1f\n",render_avg);
+  igPlotLinesFloatPtr("",stats->waveform_fps_render,SE_STATS_GRAPH_DATA,0,label_tmp,0,render_max*1.3,(ImVec2){content_width,80},4);
+
+  snprintf(label_tmp,128,"Emulation FPS: %2.1f\n",emulate_avg);
+  igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,0,emulate_max*1.3,(ImVec2){content_width,80},4);
+  
+  igText(ICON_FK_VOLUME_UP " Audio");
+  igSeparator();
+  igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,"Left Audio Channel",-1,1,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,"Right Audio Channel",-1,1,(ImVec2){content_width,80},4);
+
+  float audio_buff_size = sb_ring_buffer_size(&emu_state.audio_ring_buff)/(float)SB_AUDIO_RING_BUFFER_SIZE;
+  snprintf(label_tmp,128,"Audio Ring (Samples Available: %d)", sb_ring_buffer_size(&emu_state.audio_ring_buff));
+  igText(label_tmp);
+  igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
@@ -886,11 +959,13 @@ se_debug_tool_desc_t gba_debug_tools[]={
   {ICON_FK_TELEVISION, ICON_FK_TELEVISION " CPU", gba_cpu_debugger},
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gba_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gba_memory_debugger},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gb_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gb_memory_debugger},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t nds_debug_tools[]={
@@ -900,6 +975,7 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_SITEMAP " 9", ICON_FK_SITEMAP " ARM9 MMIO", nds9_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O " 7", ICON_FK_PENCIL_SQUARE_O " ARM7 Memory",nds7_mem_debugger},
   {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
 static se_debug_tool_desc_t* se_get_debug_description(){
@@ -1440,7 +1516,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
-  igBegin(ICON_FK_FILE_O " Load Game",NULL,ImGuiWindowFlags_NoCollapse);
+  igBegin(ICON_FK_FILE_O " Load Game",&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse);
   
   float list_y_off = igGetWindowHeight(); 
   bool hover = false;
@@ -1650,6 +1726,7 @@ void se_update_frame() {
       se_emscripten_flush_fs();
     }
   }
+  const int frames_per_rewind_state = 8; 
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
     int max_frames_per_tick =2+ emu_state.step_frames;
@@ -1687,7 +1764,7 @@ void se_update_frame() {
       }else{
         se_emulate_single_frame();
         ++emu_state.frames_since_rewind_push;
-        if(emu_state.frames_since_rewind_push>7 ){
+        if(emu_state.frames_since_rewind_push>frames_per_rewind_state-1 ){
           se_push_rewind_state(&core,&rewind_buffer);
           emu_state.frames_since_rewind_push=0;
         }
@@ -1702,6 +1779,8 @@ void se_update_frame() {
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   se_reset_joy(&emu_state.joy);
   se_draw_emulated_system_screen();
+  if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
+  if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
 }
 void se_imgui_theme()
 {
@@ -1747,9 +1826,9 @@ void se_imgui_theme()
   colors[ImGuiCol_TabUnfocusedActive]     = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
   //colors[ImGuiCol_DockingPreview]         = (ImVec4){0.33f, 0.67f, 0.86f, 1.00f};
   //colors[ImGuiCol_DockingEmptyBg]         = (ImVec4){1.00f, 0.00f, 0.00f, 1.00f};
-  colors[ImGuiCol_PlotLines]              = (ImVec4){1.00f, 0.00f, 0.00f, 1.00f};
+  colors[ImGuiCol_PlotLines]              = (ImVec4){0.33f, 0.67f, 0.86f, 1.00f};
   colors[ImGuiCol_PlotLinesHovered]       = (ImVec4){1.00f, 0.00f, 0.00f, 1.00f};
-  colors[ImGuiCol_PlotHistogram]          = (ImVec4){1.00f, 0.00f, 0.00f, 1.00f};
+  colors[ImGuiCol_PlotHistogram]          = (ImVec4){0.33f, 0.67f, 0.86f, 1.00f};
   colors[ImGuiCol_PlotHistogramHovered]   = (ImVec4){1.00f, 0.00f, 0.00f, 1.00f};
   colors[ImGuiCol_TableHeaderBg]          = (ImVec4){0.00f, 0.00f, 0.00f, 0.52f};
   colors[ImGuiCol_TableBorderStrong]      = (ImVec4){0.00f, 0.00f, 0.00f, 0.52f};
@@ -1802,10 +1881,6 @@ void se_imgui_theme()
       ImGuiCol_TabActive,
       ImGuiCol_TabUnfocused,
       ImGuiCol_TabUnfocusedActive,
-      ImGuiCol_PlotLines,
-      ImGuiCol_PlotLinesHovered,
-      ImGuiCol_PlotHistogram,
-      ImGuiCol_PlotHistogramHovered,
       ImGuiCol_TableHeaderBg,
       ImGuiCol_TableBorderStrong,
       ImGuiCol_TableBorderLight,
@@ -2095,17 +2170,12 @@ static void frame(void) {
     }
 
     if(gui_state.settings.draw_debug_menu)se_draw_debug_menu();
-
-    if(emu_state.run_mode==SB_MODE_RUN) igText("%.0f FPS",se_fps_counter(0));
-    else igText("SkyEmu", (ImVec2){0, 0});
-
-
     
     int num_toggles = 5;
     int sel_width =35;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
     int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
-    if(toggle_x<igGetCursorPosX())toggle_x=igGetCursorPosX();
+    if(toggle_x+sel_width*num_toggles>(width/se_dpi_scale())-100)toggle_x=(width/se_dpi_scale())-100-+sel_width*num_toggles;
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
 
@@ -2197,14 +2267,15 @@ static void frame(void) {
   igPopStyleVar(2);
   igPopStyleColor(1);
   igEnd();
-  bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND && !draw_sidebars_over_screen;
+  bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND && !draw_sidebars_over_screen&& gui_state.overlay_open;
   if(draw_click_region){
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("##ClickRegion",NULL,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground);
+    igBegin("##ClickRegion",&gui_state.overlay_open,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground);
   }
   se_load_rom_overlay(draw_click_region);
   if(draw_click_region)igEnd();
+  if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_REWIND)gui_state.overlay_open= true; 
 
   /*=== UI CODE ENDS HERE ===*/
 
@@ -2298,6 +2369,7 @@ void se_load_settings(){
   }
 }
 static void init(void) {
+  gui_state.overlay_open= true;
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
@@ -2311,7 +2383,7 @@ static void init(void) {
   se_imgui_theme();
   // initial clear color
   gui_state.pass_action = (sg_pass_action) {
-      .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.5f, 1.0f, 1.0 } }
+      .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.0f, 0.0f, 1.0 } }
   };
   gui_state.last_touch_time=-10000;
   saudio_setup(&(saudio_desc){
@@ -2405,6 +2477,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .enable_clipboard =true,
       .high_dpi = true,
       .max_dropped_file_path_length = 8192,
-      .swap_interval=0
+      .swap_interval=0,
+      .ios_keyboard_resizes_canvas=true
   };
 }

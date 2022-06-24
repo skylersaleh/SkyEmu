@@ -2698,8 +2698,6 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
       sample_volume_r+=channels[i]*chan_r[i];
     }
     
-    sample_volume_l*=0.25;
-    sample_volume_r*=0.25;
 
     const float lowpass_coef = 0.999;
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
