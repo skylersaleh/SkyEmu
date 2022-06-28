@@ -125,8 +125,7 @@ _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must 
 #define SE_STATS_GRAPH_DATA 256
 typedef struct{
   double last_render_time;
-  float fps_emulation;
-  float fps_render;
+  double last_emu_time;
   float volume_l;
   float volume_r;
   float waveform_l[SE_STATS_GRAPH_DATA];
@@ -529,32 +528,55 @@ static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
   write(address+2,SB_BFE(data,16,8));
   write(address+3,SB_BFE(data,24,8));
 }
+void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emulated){
+  double time = se_time();
+  double delta = time-stats->last_emu_time;
+  stats->last_emu_time = time;
+  double fps = 1.0/delta*frames_emulated; 
+
+  int abs_frames = abs(frames_emulated);
+  for(int i=0;i<SE_STATS_GRAPH_DATA-abs_frames;++i){
+    stats->waveform_fps_emulation[i]=stats->waveform_fps_emulation[i+abs_frames];
+  }
+  for(int i=0;i<abs_frames;++i)
+    stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-abs_frames+i]= fps;
+}
 void se_draw_emu_stats(){
   se_emulator_stats_t *stats = &gui_state.emu_stats;
-  stats->fps_emulation = se_fps_counter(0);
   double curr_time = se_time();
   double fps_render = 1.0/(curr_time-stats->last_render_time);
-  double fps_emulation = fps_render*emu_state.frame;
-  stats->fps_render = fps_render;
-  stats->fps_emulation = fps_emulation;
   stats->last_render_time=curr_time;
   float render_min=1e9, render_max=0, render_avg=0; 
   float emulate_min=1e9, emulate_max=0, emulate_avg=0; 
+  int render_data_points = 0; 
+  int emulate_data_points =0;
+
+  se_record_emulation_frame_stats(&gui_state.emu_stats,emu_state.frame);
+
   for(int i=0;i<SE_STATS_GRAPH_DATA-1;++i){
     stats->waveform_fps_render[i]=stats->waveform_fps_render[i+1];
-    stats->waveform_fps_emulation[i]=stats->waveform_fps_emulation[i+1];
     if(stats->waveform_fps_render[i]>render_max)render_max=stats->waveform_fps_render[i];
     if(stats->waveform_fps_render[i]<render_min)render_min=stats->waveform_fps_render[i];
-    render_avg+=stats->waveform_fps_render[i];
+    if(stats->waveform_fps_render[i]){
+      render_avg+=1.0/stats->waveform_fps_render[i];
+      render_data_points++;
+    }
 
     if(stats->waveform_fps_emulation[i]>emulate_max)emulate_max=stats->waveform_fps_emulation[i];
     if(stats->waveform_fps_emulation[i]<emulate_min)emulate_min=stats->waveform_fps_emulation[i];
-    emulate_avg+=stats->waveform_fps_emulation[i];
+    if(stats->waveform_fps_emulation[i]){
+      emulate_avg+=1.0/stats->waveform_fps_emulation[i];
+      ++emulate_data_points;
+    }
   }
-  render_avg/=SE_STATS_GRAPH_DATA-1;
-  emulate_avg/=SE_STATS_GRAPH_DATA-1;
+  if(render_data_points<1)render_data_points=1;
+  if(emulate_data_points<1)emulate_data_points=1;
+  render_avg/=render_data_points;
+  render_avg=1.0/render_avg;
+  emulate_avg/=emulate_data_points;
+  emulate_avg=1.0/emulate_avg;
+
   stats->waveform_fps_render[SE_STATS_GRAPH_DATA-1] = fps_render;
-  stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-1] = fps_emulation;
 
   float avg_volume_l = 0; float avg_volume_r = 0; 
   for(int i=0;i<SE_STATS_GRAPH_DATA;++i){
