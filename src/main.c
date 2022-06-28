@@ -529,6 +529,7 @@ static void se_write32(emu_byte_write_t write, uint64_t address,uint32_t data){
   write(address+3,SB_BFE(data,24,8));
 }
 void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emulated){
+  if(frames_emulated==0)return;
   double time = se_time();
   double delta = time-stats->last_emu_time;
   stats->last_emu_time = time;
