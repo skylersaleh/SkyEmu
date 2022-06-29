@@ -1993,16 +1993,16 @@ static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   uint16_t reg_value = 0;
   //Null joy updates are used to tick the joypad when mmios are set
   if(joy){
-    reg_value|= !(joy->a)     <<0;
-    reg_value|= !(joy->b)     <<1;
-    reg_value|= !(joy->select)<<2;
-    reg_value|= !(joy->start) <<3;
-    reg_value|= !(joy->right) <<4;
-    reg_value|= !(joy->left)  <<5;
-    reg_value|= !(joy->up)    <<6;
-    reg_value|= !(joy->down)  <<7;
-    reg_value|= !(joy->r)     <<8;
-    reg_value|= !(joy->l)     <<9;
+    reg_value|= !(joy->inputs[SE_KEY_A]>0.3)     <<0;
+    reg_value|= !(joy->inputs[SE_KEY_B]>0.3)     <<1;
+    reg_value|= !(joy->inputs[SE_KEY_SELECT]>0.3)<<2;
+    reg_value|= !(joy->inputs[SE_KEY_START]>0.3) <<3;
+    reg_value|= !(joy->inputs[SE_KEY_RIGHT]>0.3) <<4;
+    reg_value|= !(joy->inputs[SE_KEY_LEFT]>0.3)  <<5;
+    reg_value|= !(joy->inputs[SE_KEY_UP]>0.3)    <<6;
+    reg_value|= !(joy->inputs[SE_KEY_DOWN]>0.3)  <<7;
+    reg_value|= !(joy->inputs[SE_KEY_R]>0.3)     <<8;
+    reg_value|= !(joy->inputs[SE_KEY_L]>0.3)     <<9;
     gba_io_store16(gba, GBA_KEYINPUT, reg_value);
   }else reg_value = gba_io_read16(gba, GBA_KEYINPUT);
 

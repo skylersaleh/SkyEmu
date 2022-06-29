@@ -39,24 +39,6 @@
 
 #include "SDL.h"
 
-#define SE_BIND_KEYBOARD 0
-#define SE_BIND_KEY 1
-#define SE_BIND_ANALOG 2
-#define SE_KEY_A 0 
-#define SE_KEY_B 1 
-#define SE_KEY_X 2 
-#define SE_KEY_Y 3 
-#define SE_KEY_UP 4
-#define SE_KEY_DOWN 5
-#define SE_KEY_LEFT 6
-#define SE_KEY_RIGHT 7
-#define SE_KEY_L 8
-#define SE_KEY_R 9
-#define SE_KEY_START 10
-#define SE_KEY_SELECT 11
-#define SE_KEY_FOLD_SCREEN 12
-#define SE_KEY_PEN_DOWN 13
-#define SE_NUM_KEYBINDS 14
 
 #define SE_HAT_MASK (1<<16)
 
@@ -73,8 +55,12 @@ const static char* se_keybind_names[]={
   "R",
   "Start",
   "Select",
-  "Fold Screen",
-  "Pen Down"
+  "Fold Screen (NDS)",
+  "Tap Screen (NDS)",
+  "Emulator " ICON_FK_PAUSE "/" ICON_FK_PLAY,
+  "Emulator " ICON_FK_BACKWARD,
+  "Emulator " ICON_FK_FORWARD,
+  "Emulator " ICON_FK_FAST_FORWARD,
 };
 #define SE_ANALOG_UP_DOWN    0
 #define SE_ANALOG_LEFT_RIGHT 1
@@ -1075,40 +1061,25 @@ void se_set_default_keybind(gui_state_t *gui){
   gui->key.bound_id[SE_KEY_START]  = SAPP_KEYCODE_ENTER;      
   gui->key.bound_id[SE_KEY_SELECT] = SAPP_KEYCODE_APOSTROPHE; 
   gui->key.bound_id[SE_KEY_FOLD_SCREEN]= SAPP_KEYCODE_B;     
-  gui->key.bound_id[SE_KEY_PEN_DOWN]= SAPP_KEYCODE_V;     
+  gui->key.bound_id[SE_KEY_PEN_DOWN]= SAPP_KEYCODE_V; 
+  gui->key.bound_id[SE_KEY_EMU_PAUSE]= SAPP_KEYCODE_V;
+
+  gui->key.bound_id[SE_KEY_EMU_PAUSE]= SAPP_KEYCODE_SPACE;     
+  gui->key.bound_id[SE_KEY_EMU_REWIND]= SAPP_KEYCODE_R;     
+  gui->key.bound_id[SE_KEY_EMU_FF_2X]= SAPP_KEYCODE_F;     
+  gui->key.bound_id[SE_KEY_EMU_FF_MAX]= SAPP_KEYCODE_TAB;     
+    
 }
 void sb_poll_controller_input(sb_joy_t* joy){
-  joy->left  |= 0.5<(gui_state.key.value[SE_KEY_LEFT]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_LEFT]));
-  joy->right |= 0.5<(gui_state.key.value[SE_KEY_RIGHT]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_RIGHT]));
-  joy->up    |= 0.5<(gui_state.key.value[SE_KEY_UP]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_UP]));
-  joy->down  |= 0.5<(gui_state.key.value[SE_KEY_DOWN]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_DOWN]));
-  joy->a |= 0.5<(gui_state.key.value[SE_KEY_A]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_A]));
-  joy->b |= 0.5<(gui_state.key.value[SE_KEY_B]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_B]));
-  joy->start |= 0.5<(gui_state.key.value[SE_KEY_START]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_START]));
-  joy->select |= 0.5<(gui_state.key.value[SE_KEY_SELECT]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_SELECT]));
-  joy->l |= 0.5<(gui_state.key.value[SE_KEY_L]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_L]));
-  joy->r |= 0.5<(gui_state.key.value[SE_KEY_R]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_R]));
-  joy->x |= 0.5<(gui_state.key.value[SE_KEY_X]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_X]));
-  joy->y |= 0.5<(gui_state.key.value[SE_KEY_Y]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_Y]));
-  joy->screen_folded |= !(0.5<(gui_state.key.value[SE_KEY_FOLD_SCREEN]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_FOLD_SCREEN])));
-  joy->pen_down |=  0.5<(gui_state.key.value[SE_KEY_PEN_DOWN]=se_key_is_pressed(gui_state.key.bound_id[SE_KEY_PEN_DOWN]));
-
+  for(int i=0;i<SE_NUM_KEYBINDS;++i){
+    gui_state.key.value[i]=se_key_is_pressed(gui_state.key.bound_id[i]);
+    joy->inputs[i] += 0.5<gui_state.key.value[i];
+  }
 }
 void se_reset_joy(sb_joy_t*joy){
-  joy->left  = 
-  joy->right = 
-  joy->up    = 
-  joy->down  = 
-  joy->a = 
-  joy->b = 
-  joy->start = 
-  joy->select = 
-  joy->l = 
-  joy->r = 
-  joy->x = 
-  joy->y = 
-  joy->screen_folded =
-  joy->pen_down = false;
+  for(int i=0;i<SE_NUM_KEYBINDS;++i){
+    joy->inputs[i]=0;
+  }
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
@@ -1441,16 +1412,17 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
     ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
     ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0); 
   }
-  state->joy.left  |= left;
-  state->joy.right |= right;
-  state->joy.up    |= up;
-  state->joy.down  |= down;
-  state->joy.a |= a;
-  state->joy.b |= b;
-  state->joy.start |= SB_BFE(button_press,0,1);
-  state->joy.select |= SB_BFE(button_press,1,1);
-  state->joy.l |= SB_BFE(button_press,2,1);
-  state->joy.r |= SB_BFE(button_press,3,1);
+  state->joy.inputs[SE_KEY_LEFT]  += left;
+  state->joy.inputs[SE_KEY_RIGHT] += right;
+  state->joy.inputs[SE_KEY_UP]    += up;
+  state->joy.inputs[SE_KEY_DOWN]  += down;
+
+  state->joy.inputs[SE_KEY_A] += a;
+  state->joy.inputs[SE_KEY_B] += b;
+  state->joy.inputs[SE_KEY_L] += SB_BFE(button_press,2,1);
+  state->joy.inputs[SE_KEY_R] += SB_BFE(button_press,3,1);
+  state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,0,1);
+  state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,1,1);
 }
 void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   ImVec2 curr_cursor;
@@ -1757,26 +1729,15 @@ static void se_poll_sdl(){
     float intensity= emu_state.joy.rumble*65000;
     SDL_JoystickRumble(cont->sdl_joystick, intensity, intensity, 100);
 
-    emu_state.joy.left  |= cont->key.value[SE_KEY_LEFT]>0.5;
-    emu_state.joy.right |= cont->key.value[SE_KEY_RIGHT]>0.5;
-    emu_state.joy.up    |= cont->key.value[SE_KEY_UP]>0.5;
-    emu_state.joy.down  |= cont->key.value[SE_KEY_DOWN]>0.5;
-    emu_state.joy.a |= cont->key.value[SE_KEY_A]>0.5;
-    emu_state.joy.b |= cont->key.value[SE_KEY_B]>0.5;
-    emu_state.joy.start |= cont->key.value[SE_KEY_START]>0.5;
-    emu_state.joy.select |= cont->key.value[SE_KEY_SELECT]>0.5;
-    emu_state.joy.l |= cont->key.value[SE_KEY_L]>0.5;
-    emu_state.joy.r |= cont->key.value[SE_KEY_R]>0.5;
-    emu_state.joy.x |= cont->key.value[SE_KEY_X]>0.5;
-    emu_state.joy.y |= cont->key.value[SE_KEY_Y]>0.5;
+    for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]  += cont->key.value[i]>0.5;
 
-    emu_state.joy.left  |= cont->analog.value[SE_ANALOG_LEFT_RIGHT]<-0.3;
-    emu_state.joy.right |= cont->analog.value[SE_ANALOG_LEFT_RIGHT]> 0.3;
-    emu_state.joy.up    |= cont->analog.value[SE_ANALOG_UP_DOWN]<-0.3;
-    emu_state.joy.down  |= cont->analog.value[SE_ANALOG_UP_DOWN]>0.3;
+    emu_state.joy.inputs[SE_KEY_LEFT]  += cont->analog.value[SE_ANALOG_LEFT_RIGHT]<-0.3;
+    emu_state.joy.inputs[SE_KEY_RIGHT] += cont->analog.value[SE_ANALOG_LEFT_RIGHT]> 0.3;
+    emu_state.joy.inputs[SE_KEY_UP]   += cont->analog.value[SE_ANALOG_UP_DOWN]<-0.3;
+    emu_state.joy.inputs[SE_KEY_DOWN] += cont->analog.value[SE_ANALOG_UP_DOWN]>0.3;
 
-    emu_state.joy.l  |= cont->analog.value[SE_ANALOG_L]>0.1;
-    emu_state.joy.r |= cont->analog.value[SE_ANALOG_R]>0.1;
+    emu_state.joy.inputs[SE_KEY_L]  += cont->analog.value[SE_ANALOG_L]>0.1;
+    emu_state.joy.inputs[SE_KEY_R]  += cont->analog.value[SE_ANALOG_R]>0.1;
   }
 }
 void se_update_frame() {
@@ -1844,6 +1805,7 @@ void se_update_frame() {
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
+  emu_state.prev_frame_joy = emu_state.joy; 
   se_reset_joy(&emu_state.joy);
   se_draw_emulated_system_screen();
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
@@ -2057,6 +2019,11 @@ void se_set_default_controller_binds(se_controller_state_t* cont){
   cont->key.bound_id[SE_KEY_START]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_START);
   cont->key.bound_id[SE_KEY_SELECT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_BACK);
 
+  cont->key.bound_id[SE_KEY_EMU_PAUSE] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_GUIDE);
+  cont->key.bound_id[SE_KEY_EMU_REWIND] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE1);
+  cont->key.bound_id[SE_KEY_EMU_FF_2X] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE2);
+  cont->key.bound_id[SE_KEY_EMU_FF_MAX] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE3);
+
   cont->analog.bound_id[SE_ANALOG_UP_DOWN] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTY);
   cont->analog.bound_id[SE_ANALOG_LEFT_RIGHT] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTX);
   cont->analog.bound_id[SE_ANALOG_L] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_TRIGGERLEFT);
@@ -2266,9 +2233,29 @@ static void frame(void) {
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=2;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
+
+    sb_joy_t *curr = &emu_state.joy;
+    sb_joy_t *prev = &emu_state.prev_frame_joy;
+
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
     if(curr_toggle!=2)toggle_labels[2]=ICON_FK_PLAY;
     int next_toggle_id = -1; 
+
+    if(curr->inputs[SE_KEY_EMU_PAUSE] && !prev->inputs[SE_KEY_EMU_PAUSE])next_toggle_id = 2; 
+
+    if(emu_state.run_mode!=SB_MODE_PAUSE){
+      if(curr->inputs[SE_KEY_EMU_REWIND] && !prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 1;
+      if(!curr->inputs[SE_KEY_EMU_REWIND] && prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 2;
+      if(curr->inputs[SE_KEY_EMU_FF_2X] && !prev->inputs[SE_KEY_EMU_FF_2X])next_toggle_id = 3;
+      if(!curr->inputs[SE_KEY_EMU_FF_2X] && prev->inputs[SE_KEY_EMU_FF_2X])next_toggle_id = 2;
+      if(curr->inputs[SE_KEY_EMU_FF_MAX] && !prev->inputs[SE_KEY_EMU_FF_MAX])next_toggle_id = 4;
+      if(!curr->inputs[SE_KEY_EMU_FF_MAX] && prev->inputs[SE_KEY_EMU_FF_MAX])next_toggle_id = 2;
+
+      //Don't pause a game that is already running at normal speed. 
+      if(curr_toggle==2 &&next_toggle_id==2)next_toggle_id=-1;
+    }
+
+
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);

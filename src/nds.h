@@ -3699,16 +3699,16 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
     uint16_t reg_value = 0;
     //Null joy updates are used to tick the joypad when mmios are set
     if(joy){
-      reg_value|= !(joy->a)     <<0;
-      reg_value|= !(joy->b)     <<1;
-      reg_value|= !(joy->select)<<2;
-      reg_value|= !(joy->start) <<3;
-      reg_value|= !(joy->right) <<4;
-      reg_value|= !(joy->left)  <<5;
-      reg_value|= !(joy->up)    <<6;
-      reg_value|= !(joy->down)  <<7;
-      reg_value|= !(joy->r)     <<8;
-      reg_value|= !(joy->l)     <<9;
+      reg_value|= !(joy->inputs[SE_KEY_A]>0.3)     <<0;
+      reg_value|= !(joy->inputs[SE_KEY_B]>0.3)     <<1;
+      reg_value|= !(joy->inputs[SE_KEY_SELECT]>0.3)<<2;
+      reg_value|= !(joy->inputs[SE_KEY_START]>0.3) <<3;
+      reg_value|= !(joy->inputs[SE_KEY_RIGHT]>0.3) <<4;
+      reg_value|= !(joy->inputs[SE_KEY_LEFT]>0.3)  <<5;
+      reg_value|= !(joy->inputs[SE_KEY_UP]>0.3)    <<6;
+      reg_value|= !(joy->inputs[SE_KEY_DOWN]>0.3)  <<7;
+      reg_value|= !(joy->inputs[SE_KEY_R]>0.3)     <<8;
+      reg_value|= !(joy->inputs[SE_KEY_L]>0.3)     <<9;
       nds_io_store16(nds, cpu,GBA_KEYINPUT, reg_value);
     }else reg_value = nds_io_read16(nds, cpu,GBA_KEYINPUT);
 
@@ -3733,10 +3733,10 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
   }
   uint16_t ext_key = 0; 
   if(joy){
-    ext_key|= !(joy->x) <<0;
-    ext_key|= !(joy->y) <<1;
-    ext_key|= !(joy->pen_down)<<6;
-    ext_key|= !(joy->screen_folded) <<7;
+    ext_key|= !(joy->inputs[SE_KEY_X]>0.3) <<0;
+    ext_key|= !(joy->inputs[SE_KEY_Y]>0.3) <<1;
+    ext_key|= !(joy->inputs[SE_KEY_PEN_DOWN]>0.3)<<6;
+    ext_key|= !(joy->inputs[SE_KEY_FOLD_SCREEN]>0.3) <<7;
     ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }

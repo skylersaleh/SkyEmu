@@ -65,11 +65,29 @@
 #define SB_GB 0 
 #define SB_GBC 1 
 
-#define SB_PANEL_CPU      0
-#define SB_PANEL_TILEMAPS 1
-#define SB_PANEL_TILEDATA 2
-#define SB_PANEL_AUDIO    3
-#define SB_PANEL_IO       4
+#define SE_BIND_KEYBOARD 0
+#define SE_BIND_KEY 1
+#define SE_BIND_ANALOG 2
+#define SE_KEY_A 0 
+#define SE_KEY_B 1 
+#define SE_KEY_X 2 
+#define SE_KEY_Y 3 
+#define SE_KEY_UP 4
+#define SE_KEY_DOWN 5
+#define SE_KEY_LEFT 6
+#define SE_KEY_RIGHT 7
+#define SE_KEY_L 8
+#define SE_KEY_R 9
+#define SE_KEY_START 10
+#define SE_KEY_SELECT 11
+#define SE_KEY_FOLD_SCREEN 12
+#define SE_KEY_PEN_DOWN 13
+#define SE_KEY_EMU_PAUSE 14
+#define SE_KEY_EMU_REWIND 15
+#define SE_KEY_EMU_FF_2X 16
+#define SE_KEY_EMU_FF_MAX 17
+
+#define SE_NUM_KEYBINDS 18
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*4)
@@ -80,10 +98,7 @@
 #define SYSTEM_NDS 3
 
 typedef struct{
-  bool up,down,left,right;
-  bool a, b, start, select;
-  bool l, r,x,y; 
-  bool pen_down, screen_folded;
+  float inputs[SE_NUM_KEYBINDS];
   float rumble; 
 } sb_joy_t;
   
@@ -101,6 +116,8 @@ typedef struct {
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
+  sb_joy_t prev_frame_joy;  //Used for tracking button press changes in a frame 
+
   int frame;
   bool render_frame;
   double avg_frame_time; 

@@ -448,8 +448,14 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
   // Bit 1 - P11 Input: Left  or B        (0=Pressed) (Read Only)
   // Bit 0 - P10 Input: Right or A        (0=Pressed) (Read Only)
 
-  uint8_t data_dir =    ((!state->joy.down)<<3)| ((!state->joy.up)<<2)    |((!state->joy.left)<<1)|((!state->joy.right));
-  uint8_t data_action = ((!state->joy.start)<<3)|((!state->joy.select)<<2)|((!state->joy.b)<<1)   |(!state->joy.a);
+  uint8_t data_dir =    ((!(state->joy.inputs[SE_KEY_DOWN]>0.3))<<3)|
+                        ((!(state->joy.inputs[SE_KEY_UP]>0.3))<<2)  |
+                        ((!(state->joy.inputs[SE_KEY_LEFT]>0.3))<<1)|
+                        ((!(state->joy.inputs[SE_KEY_RIGHT]>0.3)));
+  uint8_t data_action = ((!(state->joy.inputs[SE_KEY_START]>0.3))<<3)|
+                        ((!(state->joy.inputs[SE_KEY_SELECT]>0.3))<<2)|
+                        ((!(state->joy.inputs[SE_KEY_B]>0.3))<<1)|
+                        (!(state->joy.inputs[SE_KEY_A]>0.3));
 
   uint8_t data = gb->mem.data[SB_IO_JOYPAD];
 
