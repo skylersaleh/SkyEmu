@@ -142,6 +142,10 @@ typedef struct {
     bool last_light_mode_setting;
     bool overlay_open;
     se_emulator_stats_t emu_stats; 
+    // Utilize a watchdog channel to detect if the audio context has encountered an error
+    // and restart it if a problem occurred. 
+    int audio_watchdog_timer; 
+    int audio_watchdog_triggered; 
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -596,6 +600,8 @@ void se_draw_emu_stats(){
   snprintf(label_tmp,128,"Audio Ring (Samples Available: %d)", sb_ring_buffer_size(&emu_state.audio_ring_buff));
   igText(label_tmp);
   igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
+  snprintf(label_tmp,128,"Audio Watchdog Triggered %d Times", gui_state.audio_watchdog_triggered);
+  igText(label_tmp);
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
@@ -2179,7 +2185,16 @@ void se_draw_menu_panel(){
   if(igButton(ICON_FK_FAST_FORWARD " Advance Frame",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_STEP;}
   */
 }
-
+static void se_init_audio(){
+ saudio_setup(&(saudio_desc){
+    .sample_rate=SE_AUDIO_SAMPLE_RATE,
+    .num_channels=2,
+    .num_packets=4,
+    .buffer_frames=1024*2,
+    .packet_frames=1024
+  });
+ emu_state.audio_ring_buff.read_ptr = emu_state.audio_ring_buff.write_ptr=0;
+}
 static void frame(void) {
   sb_poll_controller_input(&emu_state.joy);
   se_poll_sdl();
@@ -2404,7 +2419,17 @@ static void frame(void) {
     }
     //printf("Samples pushed: %d average_volue %f\n",pushed,average_volume/pushed);
     saudio_push(audio_buff, samples_to_push/2);
+    gui_state.audio_watchdog_timer = 0;
   }
+  //This watchdog timer was inserted since 
+  gui_state.audio_watchdog_timer++;
+  if(gui_state.audio_watchdog_timer>100){
+    gui_state.audio_watchdog_timer=0;
+    saudio_shutdown();
+    se_init_audio();
+    gui_state.audio_watchdog_triggered++;
+  }
+  
   se_free_all_images();
   if(memcmp(&gui_state.last_saved_settings, &gui_state.settings,sizeof(gui_state.settings))){
     char settings_path[SB_FILE_PATH_SIZE];
@@ -2452,13 +2477,7 @@ static void init(void) {
       .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.0f, 0.0f, 1.0 } }
   };
   gui_state.last_touch_time=-10000;
-  saudio_setup(&(saudio_desc){
-    .sample_rate=SE_AUDIO_SAMPLE_RATE,
-    .num_channels=2,
-    .num_packets=4,
-    .buffer_frames=1024*2,
-    .packet_frames=1024
-  });
+  se_init_audio();
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }
