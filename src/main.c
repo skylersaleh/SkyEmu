@@ -595,7 +595,22 @@ void se_draw_emu_stats(){
   igSeparator();
   igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,"Left Audio Channel",-1,1,(ImVec2){content_width,80},4);
   igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,"Right Audio Channel",-1,1,(ImVec2){content_width,80},4);
-
+  
+  const char* null_names[] = {NULL};
+  const char ** channel_names = null_names; 
+  if(emu_state.system == SYSTEM_GB){
+    static const char* names[] ={"Channel 1 (Square)","Channel 2 (Square)","Channel 3 (Wave)","Channel 4 (Noise)",NULL};
+    channel_names= names;
+  }else if(emu_state.system == SYSTEM_GBA){
+    static const char* names[] ={"Channel 1 (Square)","Channel 2 (Square)","Channel 3 (Wave)","Channel 4 (Noise)", "Channel A (FIFO)", "Channel B (FIFO)",NULL};
+    channel_names= names;
+  }
+  for(int i=0;i<6;++i){
+    if(!channel_names[i])break;
+    igText(channel_names[i]);
+    igSameLine(content_width*0.42,0);
+    igProgressBar(emu_state.audio_channel_output[i],(ImVec2){content_width*0.6,0},"");
+  }
   float audio_buff_size = sb_ring_buffer_size(&emu_state.audio_ring_buff)/(float)SB_AUDIO_RING_BUFFER_SIZE;
   snprintf(label_tmp,128,"Audio Ring (Samples Available: %d)", sb_ring_buffer_size(&emu_state.audio_ring_buff));
   igText(label_tmp);
@@ -2417,7 +2432,6 @@ static void frame(void) {
       ++pushed;
       average_volume+=fabs(audio_buff[i]);
     }
-    //printf("Samples pushed: %d average_volue %f\n",pushed,average_volume/pushed);
     saudio_push(audio_buff, samples_to_push/2);
     gui_state.audio_watchdog_timer = 0;
   }

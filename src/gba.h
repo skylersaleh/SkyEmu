@@ -2662,9 +2662,7 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     if(chan_t[3]>=1.0)last_noise_value = sb_random_float(0,1)*2.-1.;
     
     //Loop back
-    for(int i=0;i<4;++i){
-      chan_t[i]-=(int)chan_t[i];
-    }
+    for(int i=0;i<4;++i)chan_t[i]-=(int)chan_t[i];
     
     //Compute and clamp Volume Envelopes
     float v[4];
@@ -2678,7 +2676,6 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     int offset = (wav_samp&1)? 0:4;
     dat = (dat>>offset)&0xf;
     
-
     float channels[6] = {0,0,0,0,0,0};
     channels[0] = gba_bandlimited_square(chan_t[0],duty[0],sample_delta_t*freq_hz[0])*v[0];
     channels[1] = gba_bandlimited_square(chan_t[1],duty[1],sample_delta_t*freq_hz[1])*v[1];
@@ -2697,25 +2694,19 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
       sample_volume_l+=channels[i]*chan_l[i];
       sample_volume_r+=channels[i]*chan_r[i];
     }
-    
-
     const float lowpass_coef = 0.999;
-    emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
-    emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
     
     for(int i=0;i<6;++i){
       emu->audio_channel_output[i] = emu->audio_channel_output[i]*lowpass_coef 
-                                  + fabs(channels[i]*(chan_l[i]+chan_r[i])*0.5)*(1.0-lowpass_coef); 
+                                   + fabs(channels[i]*(chan_l[i]+chan_r[i])*0.5)*(1.0-lowpass_coef); 
     }
     // Clipping
     if(sample_volume_l>1.0)sample_volume_l=1;
     if(sample_volume_r>1.0)sample_volume_r=1;
     if(sample_volume_l<-1.0)sample_volume_l=-1;
     if(sample_volume_r<-1.0)sample_volume_r=-1;
-    float out_l = sample_volume_l-capacitor_l;
-    float out_r = sample_volume_r-capacitor_r;
-    capacitor_l = (sample_volume_l-out_l)*0.996;
-    capacitor_r = (sample_volume_r-out_r)*0.996;
+    float out_l = sample_volume_l;
+    float out_r = sample_volume_r;
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
