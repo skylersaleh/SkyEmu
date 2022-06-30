@@ -2691,8 +2691,12 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     float sample_volume_r = 0;
     
     for(int i=0;i<6;++i){
-      sample_volume_l+=channels[i]*chan_l[i];
-      sample_volume_r+=channels[i]*chan_r[i];
+      float l = channels[i]*chan_l[i];
+      float r = channels[i]*chan_r[i];
+      //These checks are put into place to discard infs/NaNs for robustness for
+      //errors in the above code. 
+      if(l>-2&&l<2)sample_volume_l+=l;
+      if(r>-2&&r<2)sample_volume_r+=r;
     }
     const float lowpass_coef = 0.999;
     

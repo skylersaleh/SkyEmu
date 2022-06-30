@@ -405,7 +405,12 @@ double se_time(){
   if(base_time==0) base_time= stm_now();
   return stm_sec(stm_diff(stm_now(),base_time));
 }
-
+static void se_tooltip(const char * tooltip){
+  if(igGetCurrentContext()->HoveredIdTimer<1.5)return;
+  if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
+    igSetTooltip(tooltip);
+  }
+}
 double se_fps_counter(int tick){
   static int call = -1;
   static double last_t = 0;
@@ -548,14 +553,14 @@ void se_draw_emu_stats(){
     stats->waveform_fps_render[i]=stats->waveform_fps_render[i+1];
     if(stats->waveform_fps_render[i]>render_max)render_max=stats->waveform_fps_render[i];
     if(stats->waveform_fps_render[i]<render_min)render_min=stats->waveform_fps_render[i];
-    if(stats->waveform_fps_render[i]){
+    if(stats->waveform_fps_render[i]>5){
       render_avg+=1.0/stats->waveform_fps_render[i];
       render_data_points++;
     }
 
     if(stats->waveform_fps_emulation[i]>emulate_max)emulate_max=stats->waveform_fps_emulation[i];
     if(stats->waveform_fps_emulation[i]<emulate_min)emulate_min=stats->waveform_fps_emulation[i];
-    if(stats->waveform_fps_emulation[i]){
+    if(stats->waveform_fps_emulation[i]>5){
       emulate_avg+=1.0/stats->waveform_fps_emulation[i];
       ++emulate_data_points;
     }
@@ -569,17 +574,12 @@ void se_draw_emu_stats(){
 
   stats->waveform_fps_render[SE_STATS_GRAPH_DATA-1] = fps_render;
 
-  float avg_volume_l = 0; float avg_volume_r = 0; 
   for(int i=0;i<SE_STATS_GRAPH_DATA;++i){
     float l = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.write_ptr-i*2-2)%SB_AUDIO_RING_BUFFER_SIZE]/32768.;
     float r = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.write_ptr-i*2-1)%SB_AUDIO_RING_BUFFER_SIZE]/32768.;
-    avg_volume_l +=fabs(l);
-    avg_volume_r +=fabs(r);
     stats->waveform_l[i]=l;
     stats->waveform_r[i]=r;
   }
-  avg_volume_r/=SE_STATS_GRAPH_DATA;
-  avg_volume_l/=SE_STATS_GRAPH_DATA;
 
   float content_width = igGetWindowContentRegionWidth();
   igText(ICON_FK_CLOCK_O " FPS");
@@ -1048,6 +1048,9 @@ static void se_draw_debug_menu(){
     }else{
       if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
     }
+    char tmp_str[256];
+    snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+    se_tooltip(tmp_str);
     desc++;
     igPopID();
   }
@@ -1278,7 +1281,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   win_h=controller_h;
   float size_scalar = win_w;
   if(controller_h*1.4<win_w)size_scalar=controller_h*1.4;
-  size_scalar*=1.2;
+  size_scalar*=1.15;
 
   int button_padding =0.02*size_scalar; 
   int button_h = win_h*0.1;
@@ -1387,7 +1390,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
   char * button_name[] ={"Start", "Select"};
   int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
   int button_press=0;           
-  int button_x_off = button_padding;
+  int button_x_off = button_padding+win_x;
   int button_w = (win_w-(num_buttons+1)*button_padding)/num_buttons;
   int button_y = win_y+win_h-button_h-button_padding;
   for(int b=0;b<num_buttons;++b){                                           
@@ -1398,7 +1401,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
     int x_max = dpad_pos[0]+dpad_sz1;
     if(b){
       x_min = b_pos[0]-button_r;
-      x_max =win_w-button_padding;
+      x_max = win_x+win_w-button_padding;
     }
     for(int i = 0;i<p;++i){
       int dx = points[i][0]-x_min;
@@ -1420,7 +1423,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h){
     int x_max = dpad_pos[0]+dpad_sz1;
     if(b){
       x_min = b_pos[0]-button_r;
-      x_max =win_w-button_padding;
+      x_max = win_x+win_w-button_padding;
     }
     for(int i = 0;i<p;++i){
       int dx = points[i][0]-x_min;
@@ -1956,19 +1959,19 @@ void se_imgui_theme()
   //style->CellPadding                       = (ImVec2){6.00f, 6.00f};
   style->ItemSpacing                       = (ImVec2){6.00f, 6.00f};
   //style->ItemInnerSpacing                  = (ImVec2){6.00f, 6.00f};
-  //style->TouchExtraPadding                 = (ImVec2){0.00f, 0.00f};
+  style->TouchExtraPadding                 = (ImVec2){2.00f, 4.00f};
   style->IndentSpacing                     = 25;
   style->ScrollbarSize                     = 15;
   style->GrabMinSize                       = 10;
   style->WindowBorderSize                  = 1;
   style->ChildBorderSize                   = 0;
-  style->PopupBorderSize                   = 1;
+  style->PopupBorderSize                   = 0;
   style->FrameBorderSize                   = 0;
   style->TabBorderSize                     = 1;
   style->WindowRounding                    = 0;
   style->ChildRounding                     = 4;
   style->FrameRounding                     = 0;
-  style->PopupRounding                     = 4;
+  style->PopupRounding                     = 0;
   style->ScrollbarRounding                 = 9;
   style->GrabRounding                      = 3;
   style->LogSliderDeadzone                 = 4;
@@ -2192,13 +2195,12 @@ void se_draw_menu_panel(){
   igCheckbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
 
-  /* TODO: Implement these later 
-  if(igButton(ICON_FK_REPEAT " Reset",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_RESET;}
-  igSameLine(0,2);
-  if(igButton(ICON_FK_FAST_BACKWARD " Rewind Frame",(ImVec2){0, 0})){}
-  igSameLine(0,2);
-  if(igButton(ICON_FK_FAST_FORWARD " Advance Frame",(ImVec2){0, 0})){emu_state.run_mode=SB_MODE_STEP;}
-  */
+}
+static void se_reset_audio_ring(){
+  //Reset the audio ring to 50% full with empty samples to avoid crackles while the buffer fills back up. 
+  emu_state.audio_ring_buff.read_ptr = 0;
+  emu_state.audio_ring_buff.write_ptr=SB_AUDIO_RING_BUFFER_SIZE/2;
+  for(int i=0;i<SB_AUDIO_RING_BUFFER_SIZE/2;++i)emu_state.audio_ring_buff.data[i]=0; 
 }
 static void se_init_audio(){
  saudio_setup(&(saudio_desc){
@@ -2208,8 +2210,9 @@ static void se_init_audio(){
     .buffer_frames=1024*2,
     .packet_frames=1024
   });
- emu_state.audio_ring_buff.read_ptr = emu_state.audio_ring_buff.write_ptr=0;
+ se_reset_audio_ring();
 }
+
 static void frame(void) {
   sb_poll_controller_input(&emu_state.joy);
   se_poll_sdl();
@@ -2232,6 +2235,7 @@ static void frame(void) {
     igPushItemWidth(-0.01);
     int v = (int)(gui_state.settings.volume*100); 
     igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
+    se_tooltip("Adjust volume");
     gui_state.settings.volume=v*0.01;
     igPopItemWidth();
     igSetCursorPosX(orig_x);
@@ -2243,6 +2247,7 @@ static void frame(void) {
     }else{
       if(igButton(ICON_FK_BARS,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
+    se_tooltip("Show/Hide Menu Panel");
 
     if(gui_state.settings.draw_debug_menu)se_draw_debug_menu();
     
@@ -2255,11 +2260,12 @@ static void frame(void) {
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
 
+    if(!emu_state.rom_loaded) emu_state.run_mode = SB_MODE_PAUSE;
 
     int curr_toggle = 3;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
     if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==1)curr_toggle=1;
-    if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=3;
+    if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=2;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=2;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
@@ -2268,7 +2274,14 @@ static void frame(void) {
     sb_joy_t *prev = &emu_state.prev_frame_joy;
 
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
-    if(curr_toggle!=2)toggle_labels[2]=ICON_FK_PLAY;
+    const char* toggle_tooltips[]={
+      "Rewind at 8x speed",
+      "Rewind at 4x speed",
+      "Toggle pause/play.\n When paused, the rom selection screen will be shown.",
+      "Run at 2x Speed",
+      "Run at the fastest speed possible",
+    };
+    if(emu_state.run_mode==SB_MODE_PAUSE)toggle_labels[2]=ICON_FK_PLAY;
     int next_toggle_id = -1; 
 
     if(curr->inputs[SE_KEY_EMU_PAUSE] && !prev->inputs[SE_KEY_EMU_PAUSE])next_toggle_id = 2; 
@@ -2290,6 +2303,8 @@ static void frame(void) {
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
       if(igButton(toggle_labels[i],(ImVec2){sel_width, 0}))next_toggle_id = i;
+      se_tooltip(toggle_tooltips[i]);
+      
       if(active_button)igPopStyleColor(1);
 
       if(i==num_toggles-1)igPopStyleVar(1);
@@ -2297,7 +2312,7 @@ static void frame(void) {
     switch(next_toggle_id){
       case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
       case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
-      case 2: {emu_state.run_mode=curr_toggle==2?SB_MODE_PAUSE: SB_MODE_RUN;emu_state.step_frames=1;} ;break;
+      case 2: {emu_state.run_mode=emu_state.run_mode==SB_MODE_RUN&&emu_state.step_frames==1?SB_MODE_PAUSE: SB_MODE_RUN;emu_state.step_frames=1;} ;break;
       case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
       case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
     }
@@ -2425,7 +2440,10 @@ static void frame(void) {
     float average_volume=0;
     float audio_buff[samples_to_push];
     int pushed = 0; 
-    if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push)break;
+    if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push){
+      se_reset_audio_ring();
+      break;
+    }
     for(int i=0;i<samples_to_push;++i){
       int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
       audio_buff[i]=data*volume_sq;
