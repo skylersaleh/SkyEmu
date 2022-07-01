@@ -1497,8 +1497,9 @@ static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.scan_clock+=1;
-  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
+  gba->ppu.fast_forward_ticks--;
   if(gba->ppu.scan_clock%4)return;
+  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
   int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
