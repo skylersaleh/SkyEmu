@@ -940,10 +940,13 @@ static void se_draw_emulated_system_screen(){
     lcd_render_h = scr_w*lcd_aspect;
   }
 
-  int controller_h = fmin(scr_h,scr_w*0.66); 
+  int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
   if(gui_state.last_touch_time>=0){
     lcd_render_y = 0;
+    if(controller_h+lcd_render_h<height){
+      controller_h = fmin(height-lcd_render_h,scr_w);
+    }
     if(controller_h+lcd_render_h<height){
       lcd_render_y+=(height-lcd_render_h-controller_h)*0.33;
       controller_y_pad=(height-lcd_render_h-controller_h-lcd_render_y)*0.25;
