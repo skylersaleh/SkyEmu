@@ -1825,6 +1825,8 @@ void se_update_frame() {
       emu_state.frame++;
       emu_state.render_frame = false;
       curr_time = se_time();
+      if(emu_state.run_mode==SB_MODE_PAUSE)break;
+
     }
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);

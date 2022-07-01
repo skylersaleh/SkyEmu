@@ -173,7 +173,7 @@ static FORCE_INLINE uint32_t arm7_reg_read_r15_adj(arm7_t*cpu, unsigned reg, int
 static FORCE_INLINE void arm7_reg_write(arm7_t*cpu, unsigned reg, uint32_t value);
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg);
 static int arm_lookup_arm_instruction_class(const arm7_instruction_t*instruction_table, uint32_t opcode_key);
-static int arm7_lookup_thumb_instruction_class(uint32_t opcode_key);
+static int arm_lookup_thumb_instruction_class(const arm7_instruction_t*instruction_table,uint32_t opcode_key);
 static FORCE_INLINE uint32_t arm7_shift(arm7_t* arm, uint32_t opcode, uint64_t value, uint32_t shift_value, int* carry);
 static FORCE_INLINE uint32_t arm7_load_shift_reg(arm7_t* arm, uint32_t opcode, int* carry);
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate);
@@ -324,6 +324,42 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_add_sub,            "SUB",       "00011I1nnnsssddd"},
    {arm7t_mov_cmp_add_sub_imm,"MCASIMM",   "001oodddOOOOOOOO"},
    {arm7t_alu_op,             "ALU",       "010000oooosssddd"},
+   {arm7t_hi_reg_op,          "HROP",      "010001oohHsssddd"},
+   {arm7t_pc_rel_ldst,        "PCRLD",     "01001dddOOOOOOOO"},
+   {arm7t_reg_off_ldst,       "LDST[RD]",  "0101LB0ooobbbddd"},
+   {arm7t_ldst_bh,            "SLDST[RD]", "0101HS1ooobbbddd"},
+   {arm7t_imm_off_ldst,       "LDST[IMM]", "011BLOOOOObbbddd"},
+   {arm7t_imm_off_ldst_bh,    "SLDSTH[IMM]","1000LOOOOObbbddd"},
+   {arm7t_stack_off_ldst,     "LDST[SP]",  "1001LdddOOOOOOOO"},
+   {arm7t_load_addr,          "LDADDR",    "1010SdddOOOOOOOO"},
+   {arm7t_add_off_sp,         "SP+=OFF",   "10110000SOOOOOOO"},
+   {arm7t_push_pop_reg,       "PUSHPOPREG","1011L10Rllllllll"},
+   {arm7t_mult_ldst,          "MLDST",     "1100Lbbbllllllll"},
+   // Conditional branches cant branch on condition 1111
+   {arm7t_cond_branch,        "COND B",    "11010cccOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "110110ccOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "1101110cOOOOOOOO"},
+   {arm7t_cond_branch,        "COND B",    "11011110OOOOOOOO"},
+   {arm7t_soft_interrupt,     "SWI",       "11011111OOOOOOOO"},
+   {arm7t_branch,             "B",         "11100OOOOOOOOOOO"},
+   {arm7t_long_branch_link,   "BL",        "1111HOOOOOOOOOOO"},
+   {arm7t_long_branch_link,   "BLX",       "11101OOOOOOOOOOO"},
+   //Empty Opcode Space
+   {arm7t_unknown,   "UNKNOWN1",           "1011--1---------"},
+   {arm7t_unknown,   "UNKNOWN2",           "10110001--------"},
+   {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
+   {NULL},
+};  
+
+// ARM7 Thumb Classes
+const static arm7_instruction_t arm9t_instruction_classes[]={
+   {arm7t_mov_shift_reg,      "LSL",       "00000OOOOOsssddd"},
+   {arm7t_mov_shift_reg,      "LSR",       "00001OOOOOsssddd"},
+   {arm7t_mov_shift_reg,      "ASR",       "00010OOOOOsssddd"},
+   {arm7t_add_sub,            "ADD",       "00011I0nnnsssddd"},
+   {arm7t_add_sub,            "SUB",       "00011I1nnnsssddd"},
+   {arm7t_mov_cmp_add_sub_imm,"MCASIMM",   "001oodddOOOOOOOO"},
+   {arm7t_alu_op,             "ALU",       "010000oooosssddd"},
    {arm9t_hi_reg_op,          "HROP",      "010001oohHsssddd"},
    {arm9t_pc_rel_ldst,        "PCRLD",     "01001dddOOOOOOOO"},
    {arm9t_reg_off_ldst,       "LDST[RD]",  "0101LB0ooobbbddd"},
@@ -348,15 +384,18 @@ const static arm7_instruction_t arm7t_instruction_classes[]={
    {arm7t_unknown,   "UNKNOWN1",           "1011--1---------"},
    {arm7t_unknown,   "UNKNOWN2",           "10110001--------"},
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
+   {NULL},
 };  
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
 static arm7_handler_t arm9_lookup_table[4096] = { 0 };
 static arm7_handler_t arm7t_lookup_table[256] = { 0 };
+static arm7_handler_t arm9t_lookup_table[256] = { 0 };
 
 static const char* arm7_disasm_lookup_table[4096] = { 0 };
 static const char* arm9_disasm_lookup_table[4096] = { 0 };
 static const char* arm7t_disasm_lookup_table[256] = { 0 };
+static const char* arm9t_disasm_lookup_table[256] = { 0 };
 
 static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(SB_LIKELY(reg<8))return reg;
@@ -457,24 +496,24 @@ static int arm_lookup_arm_instruction_class(const arm7_instruction_t*instruction
   } 
   return matched_class; 
 }
-static int arm7_lookup_thumb_instruction_class(uint32_t opcode_key){
+static int arm_lookup_thumb_instruction_class(const arm7_instruction_t*instruction_table, uint32_t opcode_key){
   int key_bits[] = {8,9,10,11,12,13,14,15};
   int matched_class = -1; 
-  for(int c = 0; c<sizeof(arm7t_instruction_classes)/sizeof(arm7_instruction_t);++c){
+  for(int c = 0; instruction_table[c].handler;++c){
     bool matches = true; 
     for(int bit = 0; bit< sizeof(key_bits)/sizeof(key_bits[0]); ++bit){
       bool bit_value = (opcode_key>>bit)&1; 
       int b_off = key_bits[bit];
-      matches &= arm7t_instruction_classes[c].bitfield[15-b_off] != '1' || bit_value == true; 
-      matches &= arm7t_instruction_classes[c].bitfield[15-b_off] != '0' || bit_value == false;
+      matches &= instruction_table[c].bitfield[15-b_off] != '1' || bit_value == true; 
+      matches &= instruction_table[c].bitfield[15-b_off] != '0' || bit_value == false;
       if(!matches)break; 
     }
 
     if(matches){
       if(matched_class!=-1){
         printf("ARM7t: Class %s and %s have ambiguous encodings\n", 
-          arm7t_instruction_classes[c].name,
-          arm7t_instruction_classes[matched_class].name);
+          instruction_table[c].name,
+          instruction_table[matched_class].name);
       }
       matched_class = c; 
     }
@@ -507,9 +546,15 @@ static arm7_t arm7_init(void* user_data){
   }
   // Generate Thumb Lookup Table
   for(int i=0;i<256;++i){
-    int inst_class = arm7_lookup_thumb_instruction_class(i);
+    int inst_class = arm_lookup_thumb_instruction_class(arm7t_instruction_classes,i);
     arm7t_lookup_table[i]=inst_class==-1 ? NULL: arm7t_instruction_classes[inst_class].handler;
     arm7t_disasm_lookup_table[i]=inst_class==-1? NULL: arm7t_instruction_classes[inst_class].name;
+  }
+  // Generate Thumb Lookup Table
+  for(int i=0;i<256;++i){
+    int inst_class = arm_lookup_thumb_instruction_class(arm9t_instruction_classes,i);
+    arm9t_lookup_table[i]=inst_class==-1 ? NULL: arm9t_instruction_classes[inst_class].handler;
+    arm9t_disasm_lookup_table[i]=inst_class==-1? NULL: arm9t_instruction_classes[inst_class].name;
   }
   arm7_t arm = {.user_data = user_data};
   arm.prefetch_pc=-1;
@@ -568,9 +613,9 @@ static void arm9_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm
   }else{
     opcode = cpu->read16(cpu->user_data,mem_address);
     uint32_t key = ((opcode>>8)&0xff);
-    int instr_class = arm7_lookup_thumb_instruction_class(key);
-    name = instr_class==-1? "INVALID" : arm7t_instruction_classes[instr_class].name;
-    key_str = instr_class==-1?  "" : arm7t_instruction_classes[instr_class].bitfield;
+    int instr_class = arm_lookup_thumb_instruction_class(arm9t_instruction_classes,key);
+    name = instr_class==-1? "INVALID" : arm9t_instruction_classes[instr_class].name;
+    key_str = instr_class==-1?  "" : arm9t_instruction_classes[instr_class].bitfield;
   }
   int offset = snprintf(out_disasm,out_size,"%s%s ",name,cond_code);
   bool letter_handled[256];
@@ -770,7 +815,7 @@ static void arm9_exec_instruction(arm7_t* cpu){
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
-    arm7t_lookup_table[key](cpu,opcode);
+    arm9t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
@@ -1424,6 +1469,9 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   //addr&=~3;
   int cycle = 0; 
   int last_bank = -1;
+
+  bool user_bank_transfer = S && (!L || !SB_BFE(reglist,15,1));
+
   for(int i=0;i<16;++i){
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
@@ -1431,7 +1479,7 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     if(ARM7_BFE(reglist,i,1)==0)continue;  
 
     // When S is set the registers are read from the user bank
-    int reg_index = S ? i : arm7_reg_index(cpu,i);
+    int reg_index = user_bank_transfer ? i : arm7_reg_index(cpu,i);
     //Store happens before writeback 
     int a = addr;
     //Inexplicablly SRAM accesses are not DWORD aligned. GBA suite memory test can be used to verify this. 
@@ -1517,6 +1565,8 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
   //addr&=~3;
   int cycle = 0; 
   int last_bank = -1;
+
+  bool user_bank_transfer = S && (!L || !SB_BFE(reglist,15,1));
   for(int i=0;i<16;++i){
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
@@ -1524,7 +1574,7 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
     if(ARM7_BFE(reglist,i,1)==0)continue;  
 
     // When S is set the registers are read from the user bank
-    int reg_index = S ? i : arm7_reg_index(cpu,i);
+    int reg_index = user_bank_transfer ? i : arm7_reg_index(cpu,i);
     //Store happens before writeback 
     int a = addr;
     if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
