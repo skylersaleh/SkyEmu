@@ -794,22 +794,30 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
 // Used for file loading dialogs
 static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
 
+static void se_reset_core(){
+  if(emu_state.system == SYSTEM_GB)sb_reset(&core.gb);
+  else if(emu_state.system == SYSTEM_GBA)gba_reset(&core.gba);
+  else if(emu_state.system == SYSTEM_NDS)nds_reset(&core.nds);
+}
+
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
-  if(emu_state.rom_loaded){
-    if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
-    else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
-  }
   char save_file[4096]; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
   sb_breakup_path(filename,&base, &c, &ext);
 #if defined(EMSCRIPTEN)
+    if(sb_path_has_file_ext(filename,".sav")){se_reset_core(); return;}
     snprintf(save_file,4096,"/offline/%s.sav",c);
 #else
     snprintf(save_file,4096,"%s/%s.sav",base, c);
 #endif
+
+  if(emu_state.rom_loaded){
+    if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
+    else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
+  }
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
   if(gba_load_rom(&core.gba, filename,save_file)){
@@ -886,11 +894,6 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds);
   
-}
-static void se_reset_core(){
-  if(emu_state.system == SYSTEM_GB)sb_reset(&core.gb);
-  else if(emu_state.system == SYSTEM_GBA)gba_reset(&core.gba);
-  else if(emu_state.system == SYSTEM_NDS)nds_reset(&core.nds);
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
   *out_height=*out_width=0;
@@ -2558,17 +2561,19 @@ static void event(const sapp_event* ev) {
     const int num_dropped_files = sapp_get_num_dropped_files();
     if(num_dropped_files){
 #ifdef EMSCRIPTEN
-    uint32_t size = sapp_html5_get_dropped_file_size(0);
-    uint8_t * buffer = (uint8_t*)malloc(size);
-    char *rom_file=(char*)malloc(4096); 
-    snprintf(rom_file,4096,"/offline/%s",sapp_get_dropped_file_path(0));
+    for(int i=0;i<num_dropped_files;++i){
+      uint32_t size = sapp_html5_get_dropped_file_size(i);
+      uint8_t * buffer = (uint8_t*)malloc(size);
+      char *rom_file=(char*)malloc(4096); 
+      snprintf(rom_file,4096,"/offline/%s",sapp_get_dropped_file_path(i));
 
-    sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
-      .dropped_file_index = 0,
-                .callback = emsc_load_callback,
-                .buffer_ptr = buffer,
-                .buffer_size = size,
-                .user_data=rom_file});
+      sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
+        .dropped_file_index = 0,
+                  .callback = emsc_load_callback,
+                  .buffer_ptr = buffer,
+                  .buffer_size = size,
+                  .user_data=rom_file});
+    }
 #else
         se_load_rom(sapp_get_dropped_file_path(0));
 #endif
