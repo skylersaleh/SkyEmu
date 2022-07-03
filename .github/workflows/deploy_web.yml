@@ -3,7 +3,6 @@ on: [push,pull_request]
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1
@@ -11,7 +10,6 @@ jobs:
         uses: mymindstorm/setup-emsdk@v10
         with:
           actions-cache-folder: 'emsdk-cache'
-
       - name: Install and Build 🔧 # This example project is built using npm and outputs the result to the 'build' folder. Replace with the commands required to build your project, or remove this step entirely if your site is pre-built.
         run: |
           mkdir build
@@ -19,8 +17,22 @@ jobs:
           emcmake cmake .. -DPLATFORM=Web && cmake --build .
           mkdir website
           mv bin/SkyEmu.html bin/index.html
-
       - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.4
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: build/bin # The folder the action should deploy.
+          target-folder: commit/${{ github.sha }}
+      - name: Post PR Comment
+        uses: mshick/add-pr-comment@v1
+        with:
+          message: |
+            Web build for this PR is live at https://web.skyemu.app/commit/${{ github.sha }}/index.html
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token-user-login: 'github-actions[bot]' # The user.login for temporary GitHub tokens
+          allow-repeats: true # This is the default
+      - name: Deploy to main site 🚀
+        if: github.ref == 'refs/heads/main'
         uses: JamesIves/github-pages-deploy-action@4.1.4
         with:
           branch: gh-pages # The branch the action should deploy to.
