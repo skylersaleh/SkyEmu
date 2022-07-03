@@ -584,6 +584,7 @@ void se_draw_emu_stats(){
     stats->waveform_r[i]=r;
   }
 
+  printf("Time: %f Display FPS: %f Display ms: %f\n", se_time(),fps_render,1.0/fps_render);
   float content_width = igGetWindowContentRegionWidth();
   igText(ICON_FK_CLOCK_O " FPS");
   igSeparator();
