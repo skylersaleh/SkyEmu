@@ -1632,7 +1632,7 @@ void se_load_rom_overlay(bool visible){
   const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
   #ifdef EMSCRIPTEN
-  prompt1 = "Load ROM(.gb, .gbc, .gba) or save(.sav) from file";
+  prompt1 = "Load ROM(.gb, .gbc, .gba), save(.sav), or GBA bios (gba_bios.bin) from file";
   prompt2 = "You can also drag & drop a ROM/save file to load it";
   #endif
 
