@@ -78,7 +78,7 @@ const static char* se_analog_bind_names[]={
 #define SE_NUM_BINDS_ALLOC 64
 
 #define GUI_MAX_IMAGES_PER_FRAME 16
-#define SE_NUM_RECENT_PATHS 16
+#define SE_NUM_RECENT_PATHS 32
 typedef struct{
   int bind_being_set;
   double rebind_start_time;//The time that the rebind button was pressed (used for the timer to cancel keybinding)
@@ -808,7 +808,12 @@ void se_load_rom(const char *filename){
   const char* base, *c, *ext; 
   sb_breakup_path(filename,&base, &c, &ext);
 #if defined(EMSCRIPTEN)
-    if(sb_path_has_file_ext(filename,".sav")){se_reset_core(); return;}
+    if(sb_path_has_file_ext(filename,".sav")){
+      if(strncmp(filename,gui_state.recently_loaded_games[0].path,SB_FILE_PATH_SIZE)!=0){
+        return se_load_rom(gui_state.recently_loaded_games[0].path);
+      }
+      return;
+    }
     snprintf(save_file,4096,"/offline/%s.sav",c);
 #else
     snprintf(save_file,4096,"%s/%s.sav",base, c);
@@ -2568,7 +2573,7 @@ static void event(const sapp_event* ev) {
       snprintf(rom_file,4096,"/offline/%s",sapp_get_dropped_file_path(i));
 
       sapp_html5_fetch_dropped_file(&(sapp_html5_fetch_request){
-        .dropped_file_index = 0,
+        .dropped_file_index = i,
                   .callback = emsc_load_callback,
                   .buffer_ptr = buffer,
                   .buffer_size = size,
@@ -2617,6 +2622,9 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .enable_clipboard =true,
       .high_dpi = true,
       .max_dropped_file_path_length = 8192,
+#if defined(EMSCRIPTEN)
+      .max_dropped_files=32,
+#endif
       .swap_interval=0,
       .ios_keyboard_resizes_canvas=true
   };
