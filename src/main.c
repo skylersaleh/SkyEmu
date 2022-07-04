@@ -41,6 +41,8 @@
 
 
 #define SE_HAT_MASK (1<<16)
+#define SE_JOY_POS_MASK (1<<17)
+#define SE_JOY_NEG_MASK (1<<18)
 
 const static char* se_keybind_names[]={
   "A",
@@ -1240,6 +1242,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
           { 
             int key = state->bound_id[k];
             bool is_hat = key&SE_HAT_MASK;
+            bool is_joy = key&(SE_JOY_NEG_MASK|SE_JOY_POS_MASK);
             if(is_hat){
               int hat_id = SB_BFE(key,8,8);
               int hat_val = SB_BFE(key,0,8);
@@ -1251,6 +1254,10 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
 
               snprintf(buff, sizeof(buff),"Hat %d %s", hat_id, dir);
               button_label=buff;
+            }else if(is_joy){
+              int joy_id = SB_BFE(key,0,16);
+              const char* dir = (key&SE_JOY_NEG_MASK)? "<-0.3": ">0.3";
+              snprintf(buff, sizeof(buff),"Analog %d %s",joy_id,dir);
             }else snprintf(buff, sizeof(buff),"Key %d", state->bound_id[k]);button_label=buff;
           }
           button_label=buff;
@@ -1737,6 +1744,9 @@ static void se_poll_sdl(){
           float v = sdlEvent.jaxis.value/32768.f;
           if((v>0.3)||(v<-0.3&&v>-0.6))
             cont->analog.last_bind_activitiy = sdlEvent.jaxis.axis;  
+
+          if(v>0.3&&v<0.6)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_POS_MASK;
+          if(v<-0.3&&v>-0.6)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_NEG_MASK;
         }
         break;      
       }
@@ -1747,6 +1757,7 @@ static void se_poll_sdl(){
       if(key==-1)continue;
       bool val = false; 
       bool is_hat = key&(SE_HAT_MASK);
+      bool is_joy = key&(SE_JOY_NEG_MASK|SE_JOY_POS_MASK);
       if(is_hat){
         int hat_id = SB_BFE(key,8,8);
         if(hat_id<SDL_JoystickNumHats(cont->sdl_joystick)){
@@ -1756,6 +1767,14 @@ static void se_poll_sdl(){
           if(match_value==SDL_HAT_DOWN)val |= (hat_value==SDL_HAT_DOWN)|(hat_value==SDL_HAT_RIGHTDOWN)|(hat_value==SDL_HAT_LEFTDOWN);
           if(match_value==SDL_HAT_LEFT)val |= (hat_value==SDL_HAT_LEFT)|(hat_value==SDL_HAT_LEFTDOWN)|(hat_value==SDL_HAT_LEFTUP);
           if(match_value==SDL_HAT_RIGHT)val |= (hat_value==SDL_HAT_RIGHT)|(hat_value==SDL_HAT_RIGHTDOWN)|(hat_value==SDL_HAT_RIGHTUP);
+        }
+      }else if(is_joy){
+        int joy_id = SB_BFE(key,0,16);
+        if(joy_id<SDL_JoystickNumAxes(cont->sdl_joystick)){
+          float v = SDL_JoystickGetAxis(cont->sdl_joystick,joy_id)/32768.f;
+          val = false; 
+          if(key&SE_JOY_NEG_MASK)val|= v<-0.3;
+          if(key&SE_JOY_POS_MASK)val|= v>0.3;
         }
       }else{
         if(key<SDL_JoystickNumButtons(cont->sdl_joystick)){
