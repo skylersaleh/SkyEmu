@@ -18,7 +18,7 @@ jobs:
           mkdir website
           mv bin/SkyEmu.html bin/index.html
       - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@4.1.4
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
@@ -34,7 +34,7 @@ jobs:
           allow-repeats: true # This is the default
       - name: Deploy to main site 🚀
         if: github.ref == 'refs/heads/main'
-        uses: JamesIves/github-pages-deploy-action@4.1.4
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
