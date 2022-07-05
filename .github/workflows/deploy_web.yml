@@ -24,6 +24,7 @@ jobs:
           folder: build/bin # The folder the action should deploy.
           target-folder: commit/${{ github.sha }}
           force: false
+          clean: false
       - name: Post PR Comment
         if: github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v1
@@ -40,3 +41,4 @@ jobs:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
           force: false
+          clean: false
