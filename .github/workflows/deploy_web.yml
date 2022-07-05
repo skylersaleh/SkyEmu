@@ -25,10 +25,11 @@ jobs:
           target-folder: commit/${{ github.sha }}
           force: false
       - name: Post PR Comment
+        if: github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v1
         with:
           message: |
-            Web build for this PR is live at https://web.skyemu.app/commit/${{ github.sha }}/index.html
+            Web build for ${{ github.sha }} will be live at https://web.skyemu.app/commit/${{ github.sha }}/index.html
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           repo-token-user-login: 'github-actions[bot]' # The user.login for temporary GitHub tokens
           allow-repeats: true # This is the default
