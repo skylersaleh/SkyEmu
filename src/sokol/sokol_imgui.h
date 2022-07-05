@@ -223,6 +223,11 @@
 #endif
 #endif
 
+#include <math.h>
+#define SOKOL_SCROLL_STATE_IDLE 0
+#define SOKOL_SCROLL_STATE_REG_SCROLL 1
+#define SOKOL_SCROLL_STATE_INERTIAL_SCROLL 2
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -329,6 +334,9 @@ typedef struct {
     uint8_t keys_down[SIMGUI_MAX_KEY_VALUE];     // bits 0..3 or modifiers, != 0 is key-down
     uint8_t keys_up[SIMGUI_MAX_KEY_VALUE];       // same is keys_down
     #endif
+    float inertial_scroll_x;
+    float inertial_scroll_y; 
+    int inertial_scroll_state;
 } _simgui_state_t;
 static _simgui_state_t _simgui;
 
@@ -1896,6 +1904,19 @@ SOKOL_API_IMPL void simgui_new_frame(int width, int height, double delta_time) {
 }
 
 SOKOL_API_IMPL void simgui_render(void) {
+    if(_simgui.inertial_scroll_state>0){
+        ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
+        if(igGetCurrentContext()->ActiveIdWindow)window=igGetCurrentContext()->ActiveIdWindow;
+               
+        if (window!=NULL&&!(window->Flags & ImGuiWindowFlags_NoScrollWithMouse) && !(window->Flags & ImGuiWindowFlags_NoMouseInputs))
+        {
+            igSetScrollXWindowPtr(window,((int)_simgui.inertial_scroll_x)+window->Scroll.x);
+            igSetScrollYWindowPtr(window,((int)_simgui.inertial_scroll_y)+window->Scroll.y);
+        }
+        if(_simgui.inertial_scroll_state==SOKOL_SCROLL_STATE_REG_SCROLL)_simgui.inertial_scroll_state=SOKOL_SCROLL_STATE_IDLE;
+        _simgui.inertial_scroll_y*=0.95;
+        _simgui.inertial_scroll_x*=0.95; 
+    }
     #if defined(__cplusplus)
         ImGui::Render();
         ImDrawData* draw_data = ImGui::GetDrawData();
@@ -2092,18 +2113,29 @@ SOKOL_API_IMPL bool simgui_handle_event(const sapp_event* ev) {
             _simgui.btn_down[0] = true;
             io->MousePos.x = ev->touches[0].pos_x / dpi_scale;
             io->MousePos.y = ev->touches[0].pos_y / dpi_scale;
+            _simgui.inertial_scroll_state = SOKOL_SCROLL_STATE_IDLE;
             break;
         case SAPP_EVENTTYPE_TOUCHES_MOVED:
-            io->MousePos.x = ev->touches[0].pos_x / dpi_scale;
-            io->MousePos.y = ev->touches[0].pos_y / dpi_scale;
+            if(!igGetCurrentContext()->ActiveIdUsingNavDirMask){
+                float dx = -((int)(ev->touches[0].pos_x / dpi_scale)-io->MousePos.x);
+                float dy = -((int)(ev->touches[0].pos_y / dpi_scale)-io->MousePos.y);
+                _simgui.inertial_scroll_x = dx;
+                _simgui.inertial_scroll_y = dy;
+                _simgui.inertial_scroll_state=SOKOL_SCROLL_STATE_REG_SCROLL;
+                if(fabs(dx)>2||fabs(dy)>2)igSetActiveID(0,NULL);
+            }
+            io->MousePos.x = (int)(ev->touches[0].pos_x / dpi_scale);
+            io->MousePos.y = (int)(ev->touches[0].pos_y / dpi_scale);
             break;
         case SAPP_EVENTTYPE_TOUCHES_ENDED:
             _simgui.btn_up[0] = true;
             io->MousePos.x = ev->touches[0].pos_x / dpi_scale;
             io->MousePos.y = ev->touches[0].pos_y / dpi_scale;
+            _simgui.inertial_scroll_state =SOKOL_SCROLL_STATE_INERTIAL_SCROLL;
             break;
         case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
             _simgui.btn_up[0] = _simgui.btn_down[0] = false;
+            _simgui.inertial_scroll_state =SOKOL_SCROLL_STATE_INERTIAL_SCROLL;
             break;
         case SAPP_EVENTTYPE_KEY_DOWN:
             /* intercept Ctrl-V, this is handled via EVENTTYPE_CLIPBOARD_PASTED */
