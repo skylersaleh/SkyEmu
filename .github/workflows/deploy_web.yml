@@ -23,6 +23,7 @@ jobs:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
           target-folder: commit/${{ github.sha }}
+          force: false
       - name: Post PR Comment
         uses: mshick/add-pr-comment@v1
         with:
@@ -37,3 +38,4 @@ jobs:
         with:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
+          force: false
