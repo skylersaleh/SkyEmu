@@ -2147,12 +2147,14 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           int src_addr = gba->dma[i].source_addr; 
           int dst_addr = gba->dma[i].dest_addr; 
 
-          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
-          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
-          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
-          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
+          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,transfer_bytes|GBA_REQ_READ)+(src_addr&2);
+          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&2);
+          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&2);
+          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&2);
           if(source_end-source_start==bytes&&dest_end-dest_start==bytes){
-            if((src_addr<0x08000000)&&(src_addr>=0x02000000)){
+            bool overlaps_io = src_addr<=0x04000000&&src_addr+bytes>=0x04000000;
+            overlaps_io |= dst_addr<=0x05000000&&dst_addr+bytes>=0x04000000;
+            if((src_addr<0x08000000)&&(src_addr>=0x02000000)&&!overlaps_io){
               // Restrict the amount of cycles that can be spent on a fast DMA to avoid missing
               // events for very large DMAs. 
               if(fast_dma_count>128)fast_dma_count=128;
