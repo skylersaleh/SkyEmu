@@ -1224,8 +1224,17 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
       gba->mem.openbus_word=*ret;
       break;
     case 0x6: 
-      if(addr&0x10000)ret = (uint32_t*)(gba->mem.vram+(addr&0x07ffc)+0x10000);
-      else ret = (uint32_t*)(gba->mem.vram+(addr&0x1fffc));
+      if(addr&0x10000){
+        ret = (uint32_t*)(gba->mem.vram+(addr&0x07ffc)+0x10000);
+        gba->mem.openbus_word= *ret;
+        if(addr&0x08000){
+          uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
+          int bg_mode = SB_BFE(dispcnt,0,3);
+          //Don't allow writes to mirrored VRAM in bitmap mode. 
+          //Needed for Acrobat Kid. Still requires testing to verify correct behavior
+          if(bg_mode>2)ret = &gba->mem.openbus_word;
+        }
+      }else ret = (uint32_t*)(gba->mem.vram+(addr&0x1fffc));
       gba->mem.openbus_word=*ret;
       break;
     case 0x7: 
