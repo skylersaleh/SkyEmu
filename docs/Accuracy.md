@@ -11,9 +11,9 @@ Iridion 3D                                              | Pass        | [Fail](a
 James Pond - Codename Robocod                           | Pass        | Pass                                               | Pass                                                | Pass | 
 Lufia - The Ruins of Lore (USA)                         | Pass        | Pass                                               | Pass                                                | [Fail](accuracy_screenshots/VBA-M/Lufia.png) | VBA-M has rendering corruption
 Pinball Tycoon                                          | Fail        | Pass                                               | Pass                                                | [Fail](accuracy_screenshots/VBA-M/PinballTycoon.png) | SkyEmu has choppy audio. VBA-M has rendering corruption.
-Sennen Kazoku                                           | Pass        | [Fail](accuracy_screenshots/NBA/Sennen.png)        | Pass                                                | [Fail](accuracy_screenshots/VBA-M/Sennen.png) | NBA/VBA-M fail to boot
+Sennen Kazoku                                           | Pass        | Pass ([staging build only](https://github.com/nba-emu/NanoBoyAdvance/commit/7e09229fc441aa730883b5567d9ee9944c9aac0a))        | Pass                                                | [Fail](accuracy_screenshots/VBA-M/Sennen.png) | VBA-M fail to boot
 Star Wars - Episode II - Attack of the Clones (USA)     | Pass        | [Fail](accuracy_screenshots/NBA/StarWars.png)      | [Fail](accuracy_screenshots/mGBA/StarWars.png)      | [Fail](accuracy_screenshots/VBA-M/StarWars.png) | NBA/mGBA/VBA-M have rendering corruption
-**Games Passed / Total Games**                          | 8/10        | 7/10                                               | 7/10                                                | 2/10     
+**Games Passed / Total Games**                          | 8/10        | 8/10                                               | 7/10                                                | 2/10     
 ------------------------------------------------------------------------------------------------------------------
 
 # Accuracy on Test Roms
