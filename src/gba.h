@@ -15,6 +15,7 @@
 #define GBA_LCD_W 240
 #define GBA_LCD_H 160
 #define GBA_SWAPCHAIN_SIZE 4 
+#define GBA_AUDIO_DMA_ACTIVATE_THRESHOLD 16
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // MMIO Register listing from GBATEK (https://problemkaputt.de/gbatek.htm#gbamemorymap) //
@@ -2062,7 +2063,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         gba->dma[i].current_transaction=0;
         gba->dma[i].startup_delay=2;
       }
-  
       int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
       int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
       bool dma_repeat = SB_BFE(cnt_h,9,1); 
@@ -2111,13 +2111,12 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         bool audio_dma = (mode==3) && (i==1||i==2);
         if(audio_dma){
           if(gba->dma[i].activate_audio_dma==false)continue;
+          gba->dma[i].activate_audio_dma=false;
           int fifo = -1;
           uint32_t dst = gba->dma[i].dest_addr;
           if(dst == GBA_FIFO_A)fifo =0; 
           if(dst == GBA_FIFO_B)fifo =1; 
           if(fifo == -1)continue;
-          int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
-          if(size>=16)continue;
         }
         if(gba->dma[i].source_addr>=0x08000000&&gba->dma[i].dest_addr>=0x08000000){
           force_first_write_sequential=true;
@@ -2152,8 +2151,11 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
           uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&3);
           uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&3);
-          if(source_end-source_start==bytes&&dest_end-dest_start==bytes&&mode!=3){
-            if((i!=0||src_addr<0x08000000)&&(src_addr>=0x02000000)){
+          if(source_end-source_start==bytes&&dest_end-dest_start==bytes){
+            if((src_addr<0x08000000)&&(src_addr>=0x02000000)){
+              // Restrict the amount of cycles that can be spent on a fast DMA to avoid missing
+              // events for very large DMAs. 
+              if(fast_dma_count>128)fast_dma_count=128;
               bytes = fast_dma_count*transfer_bytes;
               memcpy(dest_start,source_start, bytes);
               gba->dma[i].current_transaction=fast_dma_count;
@@ -2167,7 +2169,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
             }
           }
         }
-        
       }
       const static int dir_lookup[4]={1,-1,0,1};
       int src_dir = dir_lookup[src_addr_ctl];
@@ -2230,15 +2231,11 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       }
       bool audio_dma = (mode==3) && (i==1||i==2);
       if(audio_dma){
-        if(gba->dma[i].activate_audio_dma==false)continue;
-        gba->dma[i].activate_audio_dma=false;
         int fifo = -1;
         dst&=~3;
         src&=~3;
         if(dst == GBA_FIFO_A)fifo =0; 
         if(dst == GBA_FIFO_B)fifo =1; 
-        int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f;
-        if(size>=16)continue;
         for(int x=0;x<4;++x){
           uint32_t src_addr=src+x*4*src_dir;
           uint32_t data = gba_read32(gba,src_addr);
@@ -2413,13 +2410,17 @@ static void gba_compute_timers(gba_t* gba){
       }
       if(last_timer_overflow){
         uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
-        for(int i=0;i<2;++i){
-          int timer = SB_BFE(soundcnt_h,10+i*4,1);
-          if(timer!=t)continue;
-          gba->dma[i+1].activate_audio_dma=gba->activate_dmas=true;
-          int samples_to_pop=last_timer_overflow;
-          while(samples_to_pop--&& ((gba->audio.fifo[i].write_ptr^(gba->audio.fifo[i].read_ptr+1))&0x1f)){
-            gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
+        if(t<2){
+          for(int i=0;i<2;++i){
+            int timer = SB_BFE(soundcnt_h,10+i*4,1);
+            if(timer!=t)continue;
+            int samples_to_pop=last_timer_overflow;
+            int size = (gba->audio.fifo[i].write_ptr-gba->audio.fifo[i].read_ptr)&0x1f;
+            while(samples_to_pop--&& size){
+              gba->audio.fifo[i].read_ptr=(gba->audio.fifo[i].read_ptr+1)&0x1f;
+              --size;
+            }
+            if(size<GBA_AUDIO_DMA_ACTIVATE_THRESHOLD)gba->dma[i+1].activate_audio_dma=gba->activate_dmas=true;
           }
         }
         if(irq_en){

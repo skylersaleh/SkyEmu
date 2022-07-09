@@ -10,10 +10,10 @@ Hello Kitty Collection - Miracle Fashion Maker (Japan)  | Pass        | Pass    
 Iridion 3D                                              | Pass        | [Fail](accuracy_screenshots/NBA/Iridion.png)       | [Fail](accuracy_screenshots/mGBA/Iridion.png)       | [Fail](accuracy_screenshots/VBA-M/Iridion.png) | NBA/mGBA/VBA-M have rendering corruption
 James Pond - Codename Robocod                           | Pass        | Pass                                               | Pass                                                | Pass | 
 Lufia - The Ruins of Lore (USA)                         | Pass        | Pass                                               | Pass                                                | [Fail](accuracy_screenshots/VBA-M/Lufia.png) | VBA-M has rendering corruption
-Pinball Tycoon                                          | Fail        | Pass                                               | Pass                                                | [Fail](accuracy_screenshots/VBA-M/PinballTycoon.png) | SkyEmu has choppy audio. VBA-M has rendering corruption.
+Pinball Tycoon                                          | Pass        | Pass                                               | Pass                                                | [Fail](accuracy_screenshots/VBA-M/PinballTycoon.png) | VBA-M has rendering corruption.
 Sennen Kazoku                                           | Pass        | Pass ([staging build only](https://github.com/nba-emu/NanoBoyAdvance/commit/7e09229fc441aa730883b5567d9ee9944c9aac0a))        | Pass                                                | [Fail](accuracy_screenshots/VBA-M/Sennen.png) | VBA-M fail to boot
 Star Wars - Episode II - Attack of the Clones (USA)     | Pass        | [Fail](accuracy_screenshots/NBA/StarWars.png)      | [Fail](accuracy_screenshots/mGBA/StarWars.png)      | [Fail](accuracy_screenshots/VBA-M/StarWars.png) | NBA/mGBA/VBA-M have rendering corruption
-**Games Passed / Total Games**                          | 8/10        | 8/10                                               | 7/10                                                | 2/10     
+**Games Passed / Total Games**                          | 9/10        | 8/10                                               | 7/10                                                | 2/10     
 ------------------------------------------------------------------------------------------------------------------
 
 # Accuracy on Test Roms
