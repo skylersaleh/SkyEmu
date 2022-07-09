@@ -28,7 +28,7 @@ https://web.skyemu.app/
 
 On Mobile platforms it is recommended to add to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will remove the browsers UI. 
 
-Nightly native builds can be downloaded at the following links: 
+Native builds can be downloaded at the following links: 
 
 - [Windows](https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_win/main/WindowsRelease.zip)
 - [macOS](https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/main/MacOSRelease.zip)
