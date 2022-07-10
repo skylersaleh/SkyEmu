@@ -16,6 +16,8 @@ Star Wars - Episode II - Attack of the Clones (USA)     | Pass        | Pass ([s
 **Games Passed / Total Games**                          | 10/10       | 10/10                                               | 7/10                                                | 2/10     
 ------------------------------------------------------------------------------------------------------------------
 
+The full set of screenshots (including the pass frames) are located [here](https://github.com/skylersaleh/SkyEmu/tree/main/docs/accuracy_screenshots)
+
 # Accuracy on Test Roms
 
 Testname                                              | SkyEmu 1.0  | NanoBoyAdvance 1.5  | mGBA 0.9.3         | VBA-M 2.1.4 |
