@@ -1269,8 +1269,10 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
      }else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
       else{
         //Flash
-        if(gba->cart.in_chip_id_mode&&addr<=0xE000001) ret = (uint32_t*)(gba->mem.flash_chip_id);
-        else ret = (uint32_t*)(gba->mem.cart_backup+(addr&0xfffc)+gba->cart.flash_bank*64*1024);
+        if(gba->cart.in_chip_id_mode&&addr<=0xE000001){
+          gba->mem.openbus_word = *(uint32_t*)gba->mem.flash_chip_id;
+          ret = &gba->mem.openbus_word;
+        }else ret = (uint32_t*)(gba->mem.cart_backup+(addr&0xfffc)+gba->cart.flash_bank*64*1024);
       }
       gba->mem.openbus_word=(*ret&0xffff)*0x10001;
       break;
@@ -1485,8 +1487,13 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   }
 
   // Setup flash chip id (this is not used if the cartridge does not have flash backup storage)
-  gba->mem.flash_chip_id[1]=0x13;
-  gba->mem.flash_chip_id[0]=0x62;
+  if(gba->cart.backup_type==GBA_BACKUP_FLASH_64K){
+    gba->mem.flash_chip_id[1]=0xd4;
+    gba->mem.flash_chip_id[0]=0xbf;
+  }else{
+    gba->mem.flash_chip_id[1]=0x13;
+    gba->mem.flash_chip_id[0]=0x62;
+  }
   return true; 
 }  
     
