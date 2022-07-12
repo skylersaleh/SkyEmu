@@ -805,7 +805,7 @@ static void se_reset_core(){
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
-  char save_file[4096]; 
+  char save_file[SB_FILE_PATH_SIZE]; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
   sb_breakup_path(filename,&base, &c, &ext);
@@ -816,9 +816,9 @@ void se_load_rom(const char *filename){
       }
       return;
     }
-    snprintf(save_file,4096,"/offline/%s.sav",c);
+    snprintf(save_file,SB_FILE_PATH_SIZE,"/offline/%s.sav",c);
 #else
-    snprintf(save_file,4096,"%s/%s.sav",base, c);
+    se_join_path(save_file, SB_FILE_PATH_SIZE, base, c, ".sav");
 #endif
 
   if(emu_state.rom_loaded){

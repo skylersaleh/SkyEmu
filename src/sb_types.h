@@ -302,9 +302,9 @@ static void sb_free_file_data(uint8_t* data){
   if(data)free(data);
 }
 static void sb_breakup_path(const char* path, const char** base_path, const char** file_name, const char** ext){
-  static char tmp_path[4096];
-  strncpy(tmp_path,path,4096-1);
-  tmp_path[4095]='\0';
+  static char tmp_path[SB_FILE_PATH_SIZE];
+  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
+  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
   size_t sz = strlen(tmp_path);
   *base_path = "";
   *file_name = tmp_path;
@@ -326,13 +326,20 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
     }
   }
 }
+static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
+  char * seperator = base_path[0]==0? "" : "/"; 
+  if(add_extension){
+    const char * ext_sep = add_extension[0]=='.' ? "": ".";
+    snprintf(dest_path,dest_size,"%s%s%s%s%s",base_path, seperator, file_name,ext_sep,add_extension);
+  }else snprintf(dest_path,dest_size,"%s%s%s",base_path, seperator, file_name);
+  dest_path[dest_size-1]=0;
+}
 static bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size){
   bool loaded_bios=false;
   const char* base, *file, *ext; 
   sb_breakup_path(base_path, &base,&file, &ext);
   static char bios_path[SB_FILE_PATH_SIZE];
-  snprintf(bios_path,SB_FILE_PATH_SIZE,"%s/%s",base, file_name);
-  bios_path[SB_FILE_PATH_SIZE-1]=0;
+  se_join_path(bios_path,SB_FILE_PATH_SIZE,base,file_name,NULL);
   size_t bios_bytes=0;
   uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
   if(bios_data){
@@ -352,7 +359,7 @@ static FILE * se_load_log_file(const char* rom_path, const char* log_name){
   const char* base, *file, *ext; 
   sb_breakup_path(rom_path, &base,&file, &ext);
   static char log_path[SB_FILE_PATH_SIZE];
-  snprintf(log_path,SB_FILE_PATH_SIZE,"%s/%s.%s",base, file,log_name);
+  se_join_path(log_path,SB_FILE_PATH_SIZE,base,file,log_name);
   log_path[SB_FILE_PATH_SIZE-1]=0;
   FILE * f = fopen(log_path, "rb");
   if(f)printf("Loaded log file:%s\n",log_path);
