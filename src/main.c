@@ -898,7 +898,16 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static void se_emulate_single_frame(){
-  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&core.gb);
+  if(emu_state.system == SYSTEM_GB){
+    if(gui_state.test_runner_mode){
+      uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
+      for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
+    }else{
+      uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+      for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
+    }
+    sb_tick(&emu_state,&core.gb);
+  }
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds);
   

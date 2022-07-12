@@ -220,6 +220,7 @@ typedef struct {
   sb_timer_t timers;
   sb_dma_t dma; 
   int model; 
+  uint8_t dmg_palette[4*3];
 } sb_gb_t;  
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);

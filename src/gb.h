@@ -626,11 +626,9 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
     else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
     color_id = SB_BFE(palette,2*(color_id&0x3),2);
 
-    const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
-
-    *r = palette_dmg_green[color_id*3+0];
-    *g = palette_dmg_green[color_id*3+1];
-    *b = palette_dmg_green[color_id*3+2];
+    *r = gb->dmg_palette[color_id*3+0];
+    *g = gb->dmg_palette[color_id*3+1];
+    *b = gb->dmg_palette[color_id*3+2];
   }else if(gb->model == SB_GBC){
 
     int palette = SB_BFE(color_id,2,6);
