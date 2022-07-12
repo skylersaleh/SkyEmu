@@ -2508,7 +2508,8 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
   static float length_t[4]={1e6,1e6,1e6,1e6};
   float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
   float volume_env[4]={0,0,0,0};
-  static float last_noise_value = 0;
+  static uint16_t lfsr4 = 0x7FFF;
+
 
   gba->audio.current_sample_generated_time -= (int)(gba->audio.current_sim_time);
   gba->audio.current_sim_time -= (int)(gba->audio.current_sim_time);
@@ -2602,11 +2603,14 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
 
   uint16_t soundcnt4_h = gba_io_read16(gba, GBA_SOUND4CNT_H);
   float r4 = SB_BFE(soundcnt4_h,0,3);
+  bool counter_step = SB_BFE(soundcnt4_h,3,1); //(0=15 bits, 1=7 bits)
   uint8_t s4 = SB_BFE(soundcnt4_h,4,4);
   if(r4==0)r4=0.5;
   freq_hz[3] =  524288.0/r4/pow(2.0,s4+1);
   if(SB_BFE(soundcnt4_l,14,1)==0){length[3] = 1.0e9;}
-  if(SB_BFE(soundcnt4_l,15,1)){length_t[3] = 0;}
+  if(SB_BFE(soundcnt4_l,15,1)){
+    length_t[3] = 0;
+  }
   soundcnt4_h&=0x7fff;
   gba_io_store16(gba, GBA_SOUND4CNT_H,soundcnt4_h);
 
@@ -2679,7 +2683,17 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
 
     //Generate new noise value if needed
-    if(chan_t[3]>=1.0)last_noise_value = sb_random_float(0,1)*2.-1.;
+    if(chan_t[3]>=1.0) {
+      int bit = (lfsr4 ^ (lfsr4 >> 1)) & 1;
+
+      lfsr4 >>= 1;
+      lfsr4 |= bit << 14;
+
+      if (counter_step) {
+        lfsr4 &= ~(1 << 7);
+        lfsr4 |= bit << 6;
+      }
+    }
     
     //Loop back
     for(int i=0;i<4;++i)chan_t[i]-=(int)chan_t[i];
@@ -2699,8 +2713,8 @@ static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double d
     float channels[6] = {0,0,0,0,0,0};
     channels[0] = gba_bandlimited_square(chan_t[0],duty[0],sample_delta_t*freq_hz[0])*v[0];
     channels[1] = gba_bandlimited_square(chan_t[1],duty[1],sample_delta_t*freq_hz[1])*v[1];
-    channels[2] = (dat)*v[2]/16.;
-    channels[3] = last_noise_value*v[3];
+    channels[2] = (dat)*v[2]/8.;
+    channels[3] = ((lfsr4 & 1))*v[3];
 
     for(int i=0;i<2;++i)
       channels[4+i] = gba->audio.fifo[i].data[gba->audio.fifo[i].read_ptr&0x1f]/128.;
