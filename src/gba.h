@@ -1428,6 +1428,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   return false;
 }
 int gba_search_rom_for_backup_string(gba_t* gba){
+  int btype = GBA_BACKUP_NONE; 
   for(int b = 0; b< gba->cart.rom_size;++b){
     const char* strings[]={"EEPROM_", "SRAM_", "FLASH_","FLASH512_","FLASH1M_"};
     int backup_type[]= {GBA_BACKUP_EEPROM,GBA_BACKUP_SRAM,GBA_BACKUP_FLASH_64K, GBA_BACKUP_FLASH_64K, GBA_BACKUP_FLASH_128K};
@@ -1440,10 +1441,16 @@ int gba_search_rom_for_backup_string(gba_t* gba){
         else if(str[str_off]!=gba->mem.cart_rom[b+str_off])matches = false;
         ++str_off;
       }
-      if(matches)return backup_type[type];
+      if(matches){
+        if(btype!=backup_type[type]&&btype!=GBA_BACKUP_NONE){
+          printf("Found multiple backup types, defaulting to none\n");
+          return GBA_BACKUP_NONE;
+        }
+        btype = backup_type[type];
+      }
     }
   }
-  return GBA_BACKUP_NONE; 
+  return btype; 
 }
 void gba_unload(gba_t*gba){
   printf("Unloading GBA\n");
