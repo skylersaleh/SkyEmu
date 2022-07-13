@@ -288,6 +288,22 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   }
   return gb->mem.data[addr];
 }
+uint8_t sb_io_or_mask(int addr){
+  if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
+    uint8_t audio_reg_mask_table[]={
+      0x80,0x3F,0x00,0xFF,0xBF, // NR10-NR15
+      0xFF,0x3F,0x00,0xFF,0xBF, // NR20-NR25
+      0x7F,0xFF,0x9F,0xFF,0xBF, // NR30-NR35
+      0xFF,0xFF,0x00,0x00,0xBF, // NR40-NR45
+      0x00,0x00,0x70,           // NR50-NR52
+      0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,// Wave RAM
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    };
+    return audio_reg_mask_table[addr-SB_IO_AUD1_TONE_SWEEP];
+  }
+  return 0; 
+}
 uint8_t sb_read8(sb_gb_t *gb, int addr) {
   //if(addr == 0xff44)return 0x90;
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
@@ -304,6 +320,7 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
       uint8_t d= sb_read8_direct(gb,addr);
       return d|0xfe;
     }
+    return sb_read8_direct(gb,addr)|sb_io_or_mask(addr);
   }
   return sb_read8_direct(gb,addr);
 }
@@ -393,9 +410,12 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       sb_store8(gb,SB_IO_TIMA,0);//TIMA and DIV are the same counter
     }else if(addr == SB_IO_SERIAL_BYTE){
       printf("%c",(char)value);
-    } else if (addr == SB_IO_SOUND_ON_OFF){
-      uint8_t d= sb_read8_direct(gb,addr);
-      value = (d&0x7f)|(value&0x80);
+    }else if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
+      gb->audio.regs_written = true;
+      if(addr==SB_IO_SOUND_ON_OFF){
+        value&=0xf0;
+        value|=sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf;
+      }
     }
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
@@ -1186,9 +1206,6 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;
 
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  current_sim_time +=delta_time;
-  if(current_sample_generated_time >current_sim_time)return; 
   current_sample_generated_time -= (int)(current_sim_time);
   current_sim_time -= (int)(current_sim_time);
 
@@ -1202,7 +1219,40 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   static float capacitor_l = 0.0;
 
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+  if(gb->audio.regs_written){
+    gb->audio.regs_written = false; 
+    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF);
+    bool master_enable = SB_BFE(nrf_52,7,1);
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+    if(!master_enable){
+      nrf_52&=0xf0;
+      for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
+        sb_store8_direct(gb,i,0);
+      }
+      for(int i=0;i<4;++i){
+        length_t[i]=1e10;
+      }
+    }else{
+      for(int i=0;i<4;++i){
+        uint8_t freq_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI+i*5);
+        if(SB_BFE(freq_hi,7,1)){
+          length_t[i] = 0;
+          chan_t[i]=0;
+          nrf_52|=1<<i;
+          if(i==4)lfsr4 = 0x7FFF;
+        }
+        sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
+      }
+    }
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+  }
 
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  current_sim_time +=delta_time;
+  if(current_sample_generated_time >current_sim_time)return; 
+  int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF);
+  bool master_enable = SB_BFE(nrf_52,7,1);
+  if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
   uint8_t freq_sweep1 = sb_read8_direct(gb, SB_IO_AUD1_TONE_SWEEP);
   float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
@@ -1210,7 +1260,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   //float freq_sweep_n1 = 131072./(2048-SB_BFE(freq_sweep1, 0,3));
   float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
   if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
-  //if(freq_sweep_time_mul1==0)freq_sweep_time_mul1=1.0e6;
+  if(freq_sweep_time_mul1==0)freq_sweep_time_mul1=1.0e6;
   uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
   uint8_t freq1_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ);
   uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
@@ -1221,10 +1271,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume_env[0] = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   length[0] = (64.-SB_BFE(length_duty1,0,6))/256.;
-  if(SB_BFE(freq1_hi,7,1)){length_t[0] = 0;}
   if(SB_BFE(freq1_hi,6,1)==0){length[0] = 1.0e9;}
-  freq1_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI,freq1_hi);
 
   uint8_t length_duty2 = sb_read8_direct(gb, SB_IO_AUD2_LENGTH_DUTY);
   uint8_t freq2_lo = sb_read8_direct(gb,SB_IO_AUD2_FREQ);
@@ -1236,11 +1283,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume_env[1] = compute_vol_env_slope(vol_env2);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
   length[1] = (64.-SB_BFE(length_duty2,0,6))/256.;
-
-  if(SB_BFE(freq2_hi,7,1)){ length_t[1]=0;}
   if(SB_BFE(freq2_hi,6,1)==0){length[1] = 1.0e9;}
-  freq2_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD2_FREQ_HI,freq2_hi);
 
   uint8_t power3 = sb_read8_direct(gb,SB_IO_AUD3_POWER);
   uint8_t length3_dat = sb_read8_direct(gb,SB_IO_AUD3_LENGTH);
@@ -1253,10 +1296,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   length[2] = (256.-length3_dat)/256.;
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
-  if(SB_BFE(freq3_hi,7,1)){length_t[2]=0.f;}
   if(SB_BFE(freq3_hi,6,1)==0){length[2] = 1.0e9;}
-  freq3_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD3_FREQ_HI,freq3_hi);
 
   uint8_t length_duty4 = sb_read8_direct(gb, SB_IO_AUD4_LENGTH);
   uint8_t counter4 = sb_read8_direct(gb, SB_IO_AUD4_COUNTER);
@@ -1269,14 +1309,9 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume[3] = SB_BFE(vol_env4,4,4)/15.f;
   volume_env[3] = compute_vol_env_slope(vol_env4);
   length[3] = (64.-SB_BFE(length_duty4,0,6))/256.;
-  if(SB_BFE(counter4,7,1)){
-    length_t[3] = 0;
-    lfsr4 = 0x7FFF;
-  }
+  
   if(SB_BFE(counter4,6,1)==0){length[3] = 1.0e9;}
   bool sevenBit4 = SB_BFE(poly4,3,1);
-  counter4 &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
 
   uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
@@ -1293,10 +1328,16 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     //Advance each channel    
+    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
     freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
     for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
-    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
-    for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
+    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+    for(int i=0;i<4;++i){
+      bool active = length_t[i]<length[i];
+      nrf_52|=active<<i;
+      if(!active){volume[i]=0;volume_env[i]=0;}
+    }
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
 
     //Generate new noise value if needed
     if(chan_t[3]>=1.0) {
@@ -1320,7 +1361,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
     v[2]=1.0; //Wave channel doesn't have a volume envelop 
 
-	//Lookup wave table value
+	  //Lookup wave table value
     unsigned wav_samp = ((unsigned)(chan_t[2]*32))%32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     int offset = (wav_samp&1)? 0:4;
@@ -1337,8 +1378,10 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     float sample_volume_l = 0;
     float sample_volume_r = 0;
     for(int i=0;i<4;++i){
-      sample_volume_l+=channels[i]*chan_l[i];
-      sample_volume_r+=channels[i]*chan_r[i];
+      float l = channels[i]*chan_l[i];
+      float r = channels[i]*chan_r[i];
+      if(l>=-2.&&l<=2)sample_volume_l+=l;
+      if(r>=-2.&&r<=2)sample_volume_r+=r;
     }
     
     sample_volume_l*=0.25;
