@@ -215,6 +215,10 @@ static FORCE_INLINE uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
 typedef struct{
   bool regs_written; 
 }sb_audio_t;
+typedef struct{
+  uint32_t ticks_to_complete; 
+  bool last_active;
+}sb_serial_t;
 typedef struct {
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
@@ -223,6 +227,7 @@ typedef struct {
   sb_timer_t timers;
   sb_dma_t dma; 
   sb_audio_t audio;
+  sb_serial_t serial;
   int model; 
   uint8_t dmg_palette[4*3];
 } sb_gb_t;  

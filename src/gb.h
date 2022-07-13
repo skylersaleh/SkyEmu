@@ -3,6 +3,7 @@
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
+#define SB_IO_SERIAL_CTRL 0xff02
 #define SB_IO_DIV         0xff04
 #define SB_IO_TIMA        0xff05
 #define SB_IO_TMA         0xff06
@@ -86,7 +87,7 @@ mmio_reg_t gb_io_reg_desc[]={
     { 1, 1, "Input: Left  or B        (0=Pressed) (Read Only)"},
     { 0, 1, "Input: Right or A        (0=Pressed) (Read Only)"},
   }},       
-  { SB_IO_SERIAL_BYTE, "SERIAL_BYTE", { 
+  { SB_IO_SERIAL_CTRL, "SERIAL_CTRL", { 
     { 7, 1, "Transfer Start Flag (0=No transfer is in progress or requested, 1=Transfer in progress, or requested)"},
     { 1, 1, "Clock Speed (0=Normal, 1=Fast) ** CGB Mode Only **"},
     { 0, 1, "Shift Clock (0=External Clock, 1=Internal Clock)"},
@@ -483,6 +484,13 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
 
   if(0 == (data & (1<<4))) data |= data_dir;
   if(0 == (data & (1<<5))) data |= data_action;
+
+  switch(SB_BFE(data,4,2)){
+    case 0: data|=data_dir|data_action; break;
+    case 1: data|=data_action; break;
+    case 2: data|=data_dir; break;
+    case 3: data|=0xf; break;
+  }
 
   gb->mem.data[SB_IO_JOYPAD] = data;
 
@@ -970,6 +978,31 @@ void sb_reset(sb_gb_t* gb){
   gb->timers.clocks_till_tima_inc=0;
   gb->cart.mapped_rom_bank=1;
 }
+static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
+  //Just a stub for now;
+  uint8_t siocnt= sb_read8_direct(gb,SB_IO_SERIAL_CTRL);
+  bool active = SB_BFE(siocnt,7,1);
+  if(active){
+    if(gb->serial.last_active==false){
+      gb->serial.last_active =true;
+      gb->serial.ticks_to_complete=4*1024*1024/1024;
+      bool fast_clock = SB_BFE(siocnt,1,1)&&gb->model == SB_GBC;
+      if(fast_clock)gb->serial.ticks_to_complete/=2;
+    }
+    bool internal_clock = SB_BFE(siocnt,0,1);
+    if(internal_clock)gb->serial.ticks_to_complete-=delta_cycles;
+    if(gb->serial.ticks_to_complete<=0){
+      siocnt&=0x7f;
+      sb_store8_direct(gb,SB_IO_SERIAL_CTRL,siocnt);
+      sb_store8_direct(gb,SB_IO_SERIAL_BYTE,0xff);
+      uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
+      i_flag |= (1<<3);
+      sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
+      active =false;
+    }
+  }
+  gb->serial.last_active =active; 
+}
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
   gb->lcd.framebuffer = emu->core_temp_storage; 
   int instructions_to_execute = emu->step_instructions;
@@ -1057,7 +1090,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     delta_cycles_after_speed+= dma_delta_cycles;
     bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
     sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
-
+    sb_tick_sio(gb,delta_cycles_after_speed);
     rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
     total_cylces+=delta_cycles_after_speed;
     double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
