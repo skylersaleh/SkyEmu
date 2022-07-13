@@ -1239,7 +1239,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
           length_t[i] = 0;
           chan_t[i]=0;
           nrf_52|=1<<i;
-          if(i==4)lfsr4 = 0x7FFF;
+          if(i==3)lfsr4 = 0x7FFF;
         }
         sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
       }
