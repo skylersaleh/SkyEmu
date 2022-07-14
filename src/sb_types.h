@@ -175,6 +175,7 @@ typedef struct {
   int ram_size;
   bool rumble;
   bool has_rumble; 
+  bool bank_mode; //MBC1
 } sb_gb_cartridge_t;
 
 typedef struct{

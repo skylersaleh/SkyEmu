@@ -265,18 +265,33 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
-  if(addr>=0x4000&&addr<=0x7fff){
-    int bank = gb->cart.mapped_rom_bank;
-    bank %= (gb->cart.rom_size)/0x4000;
-    if(bank ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)bank = 1;
-    unsigned int bank_off = 0x4000*(bank);
-    return gb->cart.data[addr-0x4000+bank_off];
+  if(addr>=0x0000&&addr<=0x3fff){
+    int cart_addr = SB_BFE(addr,0,14);
+    if(gb->cart.bank_mode&&gb->cart.mbc_type==SB_MBC_MBC1){
+      cart_addr|=SB_BFE(gb->cart.mapped_ram_bank,0,2)<<19;
+    }
+    cart_addr%= (gb->cart.rom_size);
+    return gb->cart.data[cart_addr];
+  }else if(addr>=0x4000&&addr<=0x7fff){
+    int cart_addr = SB_BFE(addr,0,14);
+    cart_addr|=(gb->cart.mapped_rom_bank)<<14;
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      cart_addr|=SB_BFE(gb->cart.mapped_ram_bank,0,2)<<19;
+    }
+    cart_addr%= (gb->cart.rom_size);
+    return gb->cart.data[cart_addr];
   }else if(addr>=0x8000&&addr<=0x9fff){
     uint8_t vbank =sb_read8_direct(gb,SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;
     uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
     return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
+    if(!gb->cart.ram_write_enable)return 0xff;
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      ram_addr_off = SB_BFE(addr,0,13);
+      if(gb->cart.bank_mode)ram_addr_off|= SB_BFE(gb->cart.mapped_ram_bank,0,2)<<13;
+    }
+    ram_addr_off%=gb->cart.ram_size;
     return gb->cart.ram_data[ram_addr_off];
   }else if(addr>=0xD000&&addr<=0xDfff){
     int bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
@@ -340,9 +355,14 @@ static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     return;
   }else if(addr>=0xA000&&addr<=0xBfff){
     if(gb->cart.ram_write_enable){
-      int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+      int ram_addr_off  = SB_BFE(addr,0,13);
+      if(gb->cart.mbc_type==SB_MBC_MBC1){
+        if(gb->cart.bank_mode)ram_addr_off|= SB_BFE(gb->cart.mapped_ram_bank,0,2)<<13;
+      }else ram_addr_off|= gb->cart.mapped_ram_bank<<13;
+      ram_addr_off%=gb->cart.ram_size;
       gb->cart.ram_data[ram_addr_off]=value;
       gb->cart.ram_is_dirty = true;
+      //printf("RAM WRITE: MEM[%04x, %04x] = %02x B:%d BM:%d\n",addr,ram_addr_off,value, gb->cart.mapped_ram_bank,gb->cart.bank_mode);
     }
     return;
   }else if(addr>=0xD000&&addr<=0xDfff){
@@ -420,26 +440,40 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     }
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
+    return;
   }else if(addr >= 0x2000 && addr <=0x3fff){
     //MBC3 rombank select
-    if(addr>=0x3000&& gb->cart.mbc_type==SB_MBC_MBC5){
-      gb->cart.mapped_rom_bank&=0xff;
-      gb->cart.mapped_rom_bank|= (int)(value&1)<<8;
-    }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;;
+    switch(gb->cart.mbc_type){
+      case SB_MBC_MBC1: gb->cart.mapped_rom_bank=value%32; if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC2: gb->cart.mapped_rom_bank=value%16; if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC3: gb->cart.mapped_rom_bank=value%256;if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC5: 
+      case SB_MBC_MBC7: 
+        if(addr>=0x3000){
+          gb->cart.mapped_rom_bank&=0xff;
+          gb->cart.mapped_rom_bank|= (int)(value&1)<<8;
+        }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;
+      break;
+    }    
     return;
   }else if(addr >= 0x4000 && addr <=0x5fff){
     gb->cart.rumble = false;
     if((value&(1<<3))&&gb->cart.has_rumble)gb->cart.rumble=true;
     //MBC3 rombank select
     //TODO implement other mappers
-    value %= (gb->cart.ram_size/0x2000);
+    if(gb->cart.mbc_type!=SB_MBC_MBC1)value %= (gb->cart.ram_size/0x2000);
+    else value%=4;
     gb->cart.mapped_ram_bank = value;
     return;
   }else if (addr>=0xfe00 && addr<=0xfe9f ){
     //OAM cannot be written to in mode 2 and 3
     int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=2) return;            
-  } else if (addr>=0x8000 && addr <=0x9fff){
+  } else if(addr>=0x6000&&addr<=0x7fff){
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      gb->cart.bank_mode = SB_BFE(value,0,1);
+    }
+  }else if (addr>=0x8000 && addr <=0x9fff){
     //VRAM cannot be writen to in mode 3
     int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=3) return;            
@@ -977,6 +1011,9 @@ void sb_reset(sb_gb_t* gb){
   gb->timers.clocks_till_div_inc=0;
   gb->timers.clocks_till_tima_inc=0;
   gb->cart.mapped_rom_bank=1;
+  gb->cart.mapped_ram_bank=0;
+  gb->cart.ram_write_enable=false;
+  gb->cart.bank_mode = false; 
 }
 static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   //Just a stub for now;
