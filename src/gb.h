@@ -1181,6 +1181,7 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
   size_t bytes = 0;
   uint8_t *data = sb_load_file_data(file_path, &bytes);
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
+  if(!data)return false;
   printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
   for (size_t i = 0; i < bytes; ++i) {
     gb->cart.data[i] = data[i];

@@ -1464,6 +1464,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   }
   size_t bytes = 0;                                                       
   uint8_t *data = sb_load_file_data(filename, &bytes);
+  if(!data)return false;
   if(bytes>32*1024*1024){
     printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
     sb_free_file_data(gba->mem.cart_rom);
