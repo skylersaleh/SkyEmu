@@ -92,9 +92,15 @@ mmio_reg_t gb_io_reg_desc[]={
     { 1, 1, "Clock Speed (0=Normal, 1=Fast) ** CGB Mode Only **"},
     { 0, 1, "Shift Clock (0=External Clock, 1=Internal Clock)"},
   }},  
-  { SB_IO_DIV, "DIV", { 0 }},          
-  { SB_IO_TIMA, "TIMA", { 0 }},         
-  { SB_IO_TMA, "TMA", { 0 }},          
+  { SB_IO_DIV, "DIV", { 
+    { 0 ,8, "Div Value"},
+  }},          
+  { SB_IO_TIMA, "TIMA", { 
+    { 0 ,8, "Timer Value"},
+  }},         
+  { SB_IO_TMA, "TMA", { 
+    { 0 ,8, "Timer Modulo"},
+  }},          
   { SB_IO_TAC, "TAC", { 
     { 2 ,1, "Timer Enable"},
     { 0, 2, "Clock Divider (0: Clk/1024 1: Clk/16 2: Clk/64 3: Clk/256)"}
@@ -427,8 +433,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
       }
     }else if(addr == SB_IO_DIV){
-      value = 0; //All writes reset the div timer
-      sb_store8(gb,SB_IO_TIMA,0);//TIMA and DIV are the same counter
+      gb->timers.total_clock_ticks = 0;
     }else if(addr == SB_IO_SERIAL_BYTE){
       printf("%c",(char)value);
     }else if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
@@ -851,36 +856,33 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
   uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
   bool tima_enable = SB_BFE(tac, 2, 1);
   int clk_sel = SB_BFE(tac, 0, 2);
-  gb->timers.clocks_till_div_inc -=delta_clocks;
-  int period = 4*1024*1024/16384;
-  while(gb->timers.clocks_till_div_inc<=0){
-    gb->timers.clocks_till_div_inc += period;
 
-    uint8_t d = sb_read8_direct(gb, SB_IO_DIV);
-    sb_store8_direct(gb, SB_IO_DIV, d+1);
-  }
-  if(tima_enable)gb->timers.clocks_till_tima_inc -=delta_clocks;
-  period =0;
+  int tma_bit = 0; 
   switch(clk_sel){
-    case 0: period = 1024; break;
-    case 1: period = 16; break;
-    case 2: period = 64; break;
-    case 3: period = 256; break;
+    case 0: tma_bit = 9;break; //4khz
+    case 1: tma_bit = 3;break; //256khz
+    case 2: tma_bit = 5;break; //64Khz
+    case 3: tma_bit = 7;break; //16Khz
   }
-  while(gb->timers.clocks_till_tima_inc<=0){
-    gb->timers.clocks_till_tima_inc += period;
-
-    uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
-    // Trigger timer interrupt
-    if(d == 255){
-      uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      i_flag |= 1<<2;
-      sb_store8_direct(gb, SB_IO_INTER_F, i_flag);
-      d = sb_read8_direct(gb,SB_IO_TMA);
-
-    }else d +=1;
-    sb_store8_direct(gb, SB_IO_TIMA, d);
+  for(int i=0;i<delta_clocks;++i){
+    uint16_t curr = gb->timers.total_clock_ticks;
+    uint16_t next = curr+1;
+    gb->timers.total_clock_ticks=next;
+    bool tick_tima = SB_BFE(curr,tma_bit,1)&tima_enable;
+    if(tick_tima==false&&gb->timers.last_tick_tima==true){
+      uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
+      // Trigger timer interrupt
+      if(d == 255){
+        uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+        i_flag |= 1<<2;
+        sb_store8_direct(gb, SB_IO_INTER_F, i_flag);
+        d = sb_read8_direct(gb,SB_IO_TMA);
+      }else d +=1;
+      sb_store8_direct(gb, SB_IO_TIMA, d);
+    }
+    gb->timers.last_tick_tima = tick_tima;
   }
+  sb_store8_direct(gb, SB_IO_DIV, SB_BFE(gb->timers.total_clock_ticks,8,8));
 }
 int sb_update_dma(sb_gb_t *gb){
 
@@ -1008,8 +1010,7 @@ void sb_reset(sb_gb_t* gb){
   gb->mem.data[0xFF4B] = 0x00; // WX
   gb->mem.data[0xFFFF] = 0x00; // IE
 
-  gb->timers.clocks_till_div_inc=0;
-  gb->timers.clocks_till_tima_inc=0;
+  gb->timers.total_clock_ticks = 0; 
   gb->cart.mapped_rom_bank=1;
   gb->cart.mapped_ram_bank=0;
   gb->cart.ram_write_enable=false;
@@ -1077,7 +1078,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
           if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
         }
       }
-      gb->cpu.prefix_op = false;
       cpu_delta_cycles = 4;
       bool call_interrupt = false;
       if(trigger_interrupt!=-1&&request_speed_switch==false){
@@ -1109,13 +1109,18 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         int operand2 = sb_load_operand(gb,inst.op_src2);
 
         unsigned pc_before_inst = gb->cpu.pc;
+        gb->cpu.prefix_op = false;
         inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb->cpu.prefix_op==true)i--;
 
         unsigned next_op = sb_read8(gb,gb->cpu.pc);
         if(gb->cpu.prefix_op)next_op+=256;
         sb_instr_t next_inst = sb_decode_table[next_op];
-        cpu_delta_cycles = 4*(gb->cpu.pc==pc_before_inst? next_inst.mcycles : next_inst.mcycles+inst.mcycles_branch_taken-inst.mcycles);
+        cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1)+(next_inst.mcycles-1));
+        gb->cpu.branch_taken=false;
+        if(gb->cpu.prefix_op){
+          cpu_delta_cycles = 4*(next_inst.mcycles-1);
+        }
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
         sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
@@ -1126,7 +1131,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
     delta_cycles_after_speed+= dma_delta_cycles;
     bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
-    sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
+    sb_update_timers(gb,dma_delta_cycles?dma_delta_cycles:cpu_delta_cycles);
     sb_tick_sio(gb,delta_cycles_after_speed);
     rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
     total_cylces+=delta_cycles_after_speed;

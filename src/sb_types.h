@@ -152,6 +152,7 @@ typedef struct {
   bool prefix_op;
   bool trigger_breakpoint; 
   int last_inter_f; 
+  bool branch_taken;
 } sb_gb_cpu_t;
 
 typedef struct {
@@ -193,15 +194,15 @@ typedef struct{
   bool in_hblank; 
   bool active;
   int bytes_transferred;
-
   bool oam_dma_active;
   int oam_bytes_transferred; 
   bool hdma; 
 } sb_dma_t;
 
 typedef struct{
-  int clocks_till_div_inc;
-  int clocks_till_tima_inc;
+  uint32_t total_clock_ticks; 
+  bool tima_written;
+  bool last_tick_tima;
 } sb_timer_t;
 
 static FORCE_INLINE uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){

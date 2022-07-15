@@ -228,7 +228,7 @@ static void sb_call_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
 }
 
 static void sb_callc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1)sb_call_impl(gb, op2, 0, 0, 0, flag_mask);
+  if(op1){sb_call_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
 }
 
 static void sb_ccf_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -299,7 +299,7 @@ static void sb_jp_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum
 }
 
 static void sb_jpc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1)sb_jp_impl(gb, op2, 0, 0, 0, flag_mask);
+  if(op1){sb_jp_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
 }
 
 static void sb_jr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -307,7 +307,7 @@ static void sb_jr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum
 }
 
 static void sb_jrc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1) sb_jr_impl(gb, op2, 0, 0, 0, flag_mask);
+  if(op1){ sb_jr_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
 }
 
 static void sb_ld_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -365,7 +365,7 @@ static void sb_ret_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 }
 
 static void sb_retc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1)sb_ret_impl(gb, op2, 0, 0, 0,flag_mask);
+  if(op1){sb_ret_impl(gb, op2, 0, 0, 0,flag_mask);gb->cpu.branch_taken=true;}
 }
 
 static void sb_reti_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -506,7 +506,7 @@ static void sb_stop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
   gb->cpu.wait_for_interrupt=true;
   gb->cpu.interrupt_enable = true; 
   // Div is reset on stop
-  gb->timers.clocks_till_div_inc = 0;
+  gb->timers.total_clock_ticks = 0;
   sb_store8(gb,0xff04,0);
 }
 
