@@ -1287,7 +1287,6 @@ static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
     gba->audio.fifo[fifo].data[gba->audio.fifo[fifo].write_ptr]= data; 
   }else{
     //gba->audio.fifo[fifo].write_ptr=gba->audio.fifo[fifo].read_ptr = 0; 
-    //printf("Tried to push audio samples to full fifo\n");
   }
 }
 static void gba_recompute_mmio_mask_table(gba_t* gba){
@@ -2272,7 +2271,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           ticks+=gba_compute_access_cycles_dma(gba, src_addr, x!=0? 2:3);
           ticks+=gba_compute_access_cycles_dma(gba, dst, x!=0||force_first_write_sequential? 2:3);
         }
-        dma_repeat=true;
         dst_addr_ctl= 2; 
         transfer_bytes=4;
         cnt=4;
