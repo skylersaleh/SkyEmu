@@ -162,7 +162,9 @@ static const char* se_get_pref_path(){
 #ifdef EMSCRIPTEN
   return "/offline/";
 #else
-  return SDL_GetPrefPath("Sky","SkyEmu");
+  static const char* cached_pref_path=NULL;
+  if(cached_pref_path==NULL)cached_pref_path=SDL_GetPrefPath("Sky","SkyEmu");
+  return cached_pref_path;
 #endif
 }
 
@@ -1135,6 +1137,8 @@ void se_reset_joy(sb_joy_t*joy){
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
+  sg_image *image = se_get_image();
+  if(!image){return; }
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
   if(has_alpha==false){
@@ -1170,8 +1174,6 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
     .data=              im_data,
   };
 
-  sg_image *image = se_get_image();
-  if(!image)return; 
   *image =  sg_make_image(&desc);
   float dpi_scale = se_dpi_scale();
   unsigned tint = opacity*0xff;
@@ -2457,13 +2459,13 @@ static void frame(void) {
    ImFontAtlas_Build(atlas);
 
     static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
-    ImFontConfig config=*ImFontConfig_ImFontConfig();
-    config.MergeMode = true;
-    config.GlyphMinAdvanceX = 13.0f;
+    ImFontConfig* config=ImFontConfig_ImFontConfig();
+    config->MergeMode = true;
+    config->GlyphMinAdvanceX = 13.0f;
     ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
-      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),&config,icons_ranges);
+      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),config,icons_ranges);
     int built = 0;
- 
+    ImFontConfig_destroy(config);
 
     unsigned char* font_pixels;
     int font_width, font_height;
