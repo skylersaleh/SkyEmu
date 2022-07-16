@@ -8,7 +8,7 @@ SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its 
 
 # Features
 
-- [Highly accurate Game Boy Advanced emulation](docs/Accuracy.md)
+- [Highly accurate Game Boy Advance emulation](docs/Accuracy.md)
 - Game Boy and Game Boy Color Emulation 
 - Experimental Nintendo DS support (only capable of running homebrew currently)
 - Cross Platform: Windows, MacOS, Linux, Web App (with touch screen controls for iOS and Android)
