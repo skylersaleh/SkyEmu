@@ -1744,24 +1744,31 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
             if(tile<512&&bg_mode>=3&&bg_mode<=5)continue;
             uint8_t palette_id;
             int obj_tile_base = GBA_OBJ_TILES0_2;
+            bool transparent = false; 
             if(colors_or_palettes==false){
               palette_id= gba->mem.vram[obj_tile_base+tile*8*4+tx/2+ty*4];
               palette_id= (palette_id>>((tx&1)*4))&0xf;
-              if(palette_id==0)continue;
+              transparent=palette_id==0;
               palette_id+=palette*16;
             }else{
               palette_id=gba->mem.vram[obj_tile_base+tile*8*4+tx+ty*8];
-              if(palette_id==0)continue;
+              transparent=palette_id==0;
             }
 
             uint32_t col = *(uint16_t*)(gba->mem.palette+GBA_OBJ_PALETTE+palette_id*2);
             //Handle window objects(not displayed but control the windowing of other things)
-            if(obj_mode==2){gba->window[x]=obj_window_control; 
+            if(obj_mode==2&&!transparent){gba->window[x]=obj_window_control; 
             }else if(obj_mode!=3){
               int type =4;
               col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
               if(obj_mode==1)col|=1<<16;
-              if((col>>17)>(gba->first_target_buffer[x]>>17))gba->first_target_buffer[x]=col;
+              if((col>>17)>(gba->first_target_buffer[x]>>17)){
+                if(transparent){
+                  //Update priority for transparent pixels (needed for golden sun)
+                  if(SB_BFE(gba->first_target_buffer[x],17,3)!=5)
+                    gba->first_target_buffer[x]=(gba->first_target_buffer[x]&(0x0fffffff))|(col&0xf0000000);
+                }else gba->first_target_buffer[x]=col;
+              }
             }  
           }
         }
