@@ -15,7 +15,7 @@
 #define GBA_LCD_W 240
 #define GBA_LCD_H 160
 #define GBA_SWAPCHAIN_SIZE 4 
-#define GBA_AUDIO_DMA_ACTIVATE_THRESHOLD 16
+#define GBA_AUDIO_DMA_ACTIVATE_THRESHOLD 12
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // MMIO Register listing from GBATEK (https://problemkaputt.de/gbatek.htm#gbamemorymap) //
@@ -1281,8 +1281,8 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
 }
 
 static FORCE_INLINE void gba_audio_fifo_push(gba_t*gba, int fifo, int8_t data){
-  int free_entries = (((gba->audio.fifo[fifo].write_ptr+1))-gba->audio.fifo[fifo].read_ptr)&0x1f; 
-  if(free_entries){
+  int size = (gba->audio.fifo[fifo].write_ptr-gba->audio.fifo[fifo].read_ptr)&0x1f; 
+  if(size<28){
     gba->audio.fifo[fifo].write_ptr = (gba->audio.fifo[fifo].write_ptr+1)&0x1f;
     gba->audio.fifo[fifo].data[gba->audio.fifo[fifo].write_ptr]= data; 
   }else{
