@@ -229,7 +229,7 @@ mmio_reg_t gba_io_reg_desc[]={
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG0 Control */
   { GBA_BG1CNT  , "BG1CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
@@ -239,7 +239,7 @@ mmio_reg_t gba_io_reg_desc[]={
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG1 Control */
   { GBA_BG2CNT  , "BG2CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
@@ -249,7 +249,7 @@ mmio_reg_t gba_io_reg_desc[]={
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG2 Control */
   { GBA_BG3CNT  , "BG3CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
@@ -259,7 +259,7 @@ mmio_reg_t gba_io_reg_desc[]={
     { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
     { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
     { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,1, "Screen Size (0-3)"},
+    { 14,2, "Screen Size (0-3)"},
   } }, /* R/W BG3 Control */
   { GBA_BG0HOFS , "BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
   { GBA_BG0VOFS , "BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
@@ -693,7 +693,8 @@ typedef struct{
     int32_t internal_bgy;
     int32_t render_bgx;
     int32_t render_bgy;
-    bool cpu_wrote_affine;
+    bool wrote_bgx;
+    bool wrote_bgy;
   }aff[2];
   uint16_t dispcnt_pipeline[3];
   int fast_forward_ticks;
@@ -759,6 +760,8 @@ typedef struct gba_t{
   // This array acts as a FIFO to keep track of that. 
   uint16_t pipelined_if[5];
   int active_if_pipe_stages; 
+  int last_cpu_tick;
+  int residual_dma_ticks; 
 } gba_t; 
 
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
@@ -1402,15 +1405,15 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     }
   */
   }else if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
-    int aff_bg = (address_u32-GBA_BG2X)/32;
-    gba->ppu.aff[aff_bg].internal_bgx&= ~word_mask;
-    gba->ppu.aff[aff_bg].internal_bgx|= word_data;
-    gba->ppu.aff[aff_bg].cpu_wrote_affine = true;
+    int aff_bg = (address_u32-GBA_BG2X)/0x10;
+    gba->ppu.aff[aff_bg].wrote_bgx= true;
+    int lcd_y = (gba->ppu.scan_clock)/1232;
+    int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   }else if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
-    int aff_bg = (address_u32-GBA_BG2X)/32;
-    gba->ppu.aff[aff_bg].internal_bgy&= ~word_mask;
-    gba->ppu.aff[aff_bg].internal_bgy|= word_data;
-    gba->ppu.aff[aff_bg].cpu_wrote_affine = true;
+    int aff_bg = (address_u32-GBA_BG2Y)/0x10;
+    gba->ppu.aff[aff_bg].wrote_bgy = true;
+    int lcd_y = (gba->ppu.scan_clock)/1232;
+    int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -1504,7 +1507,7 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
   return true; 
 }  
     
-#define GBA_LCD_HBLANK_END   (296)
+#define GBA_LCD_HBLANK_END   (295)
 #define GBA_LCD_HBLANK_START (GBA_LCD_W)
 #define GBA_LCD_VBLANK_START (GBA_LCD_H*1232)
 #define GBA_LCD_VBLANK_END   (227*1232)
@@ -1568,29 +1571,8 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   }
 
   if(!render)return; 
-  if(lcd_y ==0 &&lcd_x==0){
-    //Latch BGX and BGY registers
-    for(int aff=0;aff<2;++aff){
-      gba->ppu.aff[aff].internal_bgx=gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
-      gba->ppu.aff[aff].internal_bgy=gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
-
-      gba->ppu.aff[aff].internal_bgx = SB_BFE(gba->ppu.aff[aff].internal_bgx,0,28);
-      gba->ppu.aff[aff].internal_bgy = SB_BFE(gba->ppu.aff[aff].internal_bgy,0,28);
-
-      gba->ppu.aff[aff].internal_bgx = (gba->ppu.aff[aff].internal_bgx<<4)>>4;
-      gba->ppu.aff[aff].internal_bgy = (gba->ppu.aff[aff].internal_bgy<<4)>>4;
-
-      gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
-      gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
-    }
-  }
+  
   if(lcd_x==GBA_LCD_HBLANK_START){
-    // The behavior in this codeblock heavily impacts Iridion3D, Pinball Tycoon, and Star Wars. 
-    // Retest these titles if you make a change here. 
-    for(int aff=0;aff<2;++aff){
-      gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
-      gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
-    }
     uint16_t dispcnt = gba->ppu.dispcnt_pipeline[0];
     int bg_mode = SB_BFE(dispcnt,0,3);
     // From Mirei: Affine registers are only incremented when bg_mode is not 0
@@ -1607,22 +1589,35 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
           uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
           int mos_y = SB_BFE(mos_reg,4,4)+1;
           if((lcd_y%mos_y)==0){
-            gba->ppu.aff[aff].internal_bgx+=b*mos_y;
-            gba->ppu.aff[aff].internal_bgy+=d*mos_y;
+            gba->ppu.aff[aff].render_bgx+=b*mos_y;
+            gba->ppu.aff[aff].render_bgy+=d*mos_y;
           }
         }else{
-          gba->ppu.aff[aff].internal_bgx+=b;
-          gba->ppu.aff[aff].internal_bgy+=d;
+          gba->ppu.aff[aff].render_bgx+=b;
+          gba->ppu.aff[aff].render_bgy+=d;
         }
-        if(!gba->ppu.aff[aff].cpu_wrote_affine){
-          gba->ppu.aff[aff].render_bgy = gba->ppu.aff[aff].internal_bgy;
-          gba->ppu.aff[aff].render_bgx = gba->ppu.aff[aff].internal_bgx;
-        }
-        gba->ppu.aff[aff].cpu_wrote_affine=false;
       }
     }
   }
-  uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
+  bool reload_ref_points = lcd_x==GBA_LCD_HBLANK_END|| (lcd_y==0&&lcd_x==0);
+  if(reload_ref_points){
+    //Latch BGX and BGY registers
+    for(int aff=0;aff<2;++aff){
+      if(gba->ppu.aff[aff].wrote_bgx||(lcd_y==0&&lcd_x==0)){
+        gba->ppu.aff[aff].render_bgx = gba_io_read32(gba,GBA_BG2X+(aff)*0x10);
+        gba->ppu.aff[aff].render_bgx = SB_BFE(gba->ppu.aff[aff].render_bgx,0,28);
+        gba->ppu.aff[aff].render_bgx = ((int32_t)(gba->ppu.aff[aff].render_bgx<<4))>>4;
+        gba->ppu.aff[aff].wrote_bgx  = false; 
+      }
+      if(gba->ppu.aff[aff].wrote_bgy||(lcd_y==0&&lcd_x==0)){
+        gba->ppu.aff[aff].render_bgy = gba_io_read32(gba,GBA_BG2Y+(aff)*0x10);
+        gba->ppu.aff[aff].render_bgy = SB_BFE(gba->ppu.aff[aff].render_bgy,0,28);
+        gba->ppu.aff[aff].render_bgy = ((int32_t)(gba->ppu.aff[aff].render_bgy<<4))>>4;
+        gba->ppu.aff[aff].wrote_bgy  = false; 
+      }
+    }
+  }
+  uint16_t dispcnt = gba_io_read16(gba,GBA_DISPCNT);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
   int forced_blank = SB_BFE(dispcnt,7,1);
@@ -2792,9 +2787,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
   gba_tick_rtc(gba);
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;
-  static int last_tick =0;
   while(true){
-    int ticks = gba->activate_dmas? gba_tick_dma(gba,last_tick) :0;
+    int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
+    if(!ticks&&gba->residual_dma_ticks){ticks=gba->residual_dma_ticks;gba->residual_dma_ticks=0;}
     if(!ticks){
       uint16_t int_if = gba_io_read16(gba,GBA_IF);
       gba->cpu.i_cycles=0;
@@ -2806,7 +2801,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
         arm7_process_interrupts(&gba->cpu, int_if);
       }
       arm7_exec_instruction(&gba->cpu);
-      last_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
+      gba->last_cpu_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
       if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
     }
     gba_tick_sio(gba);
@@ -2826,7 +2821,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
     }
     gba_tick_audio(gba, emu,delta_t);
+    bool last_activate_dmas =gba->activate_dmas;
     for(int t = 0;t<ticks;++t){
+      if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;ticks=gba->last_cpu_tick=t+1;}
       gba_tick_interrupts(gba);
       gba_tick_timers(gba);
       gba_tick_ppu(gba,emu->render_frame);
