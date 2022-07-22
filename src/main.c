@@ -544,6 +544,8 @@ void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emul
     stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-abs_frames+i]= fps;
 }
 void se_draw_emu_stats(){
+
+  igText("SkyEmu %s",PROJECT_VERSION);
   se_emulator_stats_t *stats = &gui_state.emu_stats;
   double curr_time = se_time();
   double fps_render = 1.0/(curr_time-stats->last_render_time);
@@ -2549,6 +2551,7 @@ void se_load_settings(){
   }
 }
 static void init(void) {
+  printf("SkyEmu %s\n",PROJECT_VERSION);
   gui_state.overlay_open= true;
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());

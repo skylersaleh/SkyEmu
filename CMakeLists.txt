@@ -143,6 +143,31 @@ else()
 endif()
 target_link_libraries(sokol PUBLIC cimgui)
 target_include_directories(sokol INTERFACE src/sokol)
+
+find_package(Git)
+
+if(GIT_EXECUTABLE)
+  # Generate a git-describe version string from Git repository tags
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --match "v*"
+    WORKING_DIRECTORY src
+    OUTPUT_VARIABLE GIT_DESCRIBE_VERSION
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(PROJECT_VERSION ${GIT_DESCRIBE_VERSION})
+  endif()
+endif()
+
+# Final fallback: Just use a bogus version string that is semantically older
+# than anything else and spit out a warning to the developer.
+if(NOT DEFINED PROJECT_VERSION)
+  set(PROJECT_VERSION "(Modified Local Build)")
+  message(WARNING "Failed to determine PROJECT_VERSION from Git tags. Using default version \"${PROJECT_VERSION}\".")
+endif()
+add_definitions(-DPROJECT_VERSION="${PROJECT_VERSION}")
+
 if(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
     add_executable(${PROJECT_NAME} WIN32 src/main.c ${APP_ICON_RESOURCE_WINDOWS})
