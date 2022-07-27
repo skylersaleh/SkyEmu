@@ -149,24 +149,46 @@ find_package(Git)
 if(GIT_EXECUTABLE)
   # Generate a git-describe version string from Git repository tags
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --match "v*"
-    WORKING_DIRECTORY src
-    OUTPUT_VARIABLE GIT_DESCRIBE_VERSION
+    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
     RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
   if(NOT GIT_DESCRIBE_ERROR_CODE)
-    set(PROJECT_VERSION ${GIT_DESCRIBE_VERSION})
+    set(GIT_COMMIT_HASH ${GIT_DESCRIBE})
+  endif()
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(GIT_BRANCH ${GIT_DESCRIBE})
+  endif()
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --exact-match --tags
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(GIT_TAG ${GIT_DESCRIBE})
   endif()
 endif()
 
 # Final fallback: Just use a bogus version string that is semantically older
 # than anything else and spit out a warning to the developer.
-if(NOT DEFINED PROJECT_VERSION)
-  set(PROJECT_VERSION "(Modified Local Build)")
-  message(WARNING "Failed to determine PROJECT_VERSION from Git tags. Using default version \"${PROJECT_VERSION}\".")
+if(NOT DEFINED GIT_COMMIT_HASH)
+  set(GIT_COMMIT_HASH "(Modified Local Build)")
+  message(WARNING "Failed to determine GIT_COMMIT_HASH from Git tags. Using default version \"${GIT_COMMIT_HASH}\".")
 endif()
-add_definitions(-DPROJECT_VERSION="${PROJECT_VERSION}")
+add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
+add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
+add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
 if(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")

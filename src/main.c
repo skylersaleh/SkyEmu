@@ -544,8 +544,6 @@ void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emul
     stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-abs_frames+i]= fps;
 }
 void se_draw_emu_stats(){
-
-  igText("SkyEmu %s",PROJECT_VERSION);
   se_emulator_stats_t *stats = &gui_state.emu_stats;
   double curr_time = se_time();
   double fps_render = 1.0/(curr_time-stats->last_render_time);
@@ -625,6 +623,15 @@ void se_draw_emu_stats(){
   igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
   snprintf(label_tmp,128,"Audio Watchdog Triggered %d Times", gui_state.audio_watchdog_triggered);
   igText(label_tmp);
+
+  igText(ICON_FK_INFO_CIRCLE " Build Info");
+  igSeparator();
+  igText("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
+  igText("Commit Hash:");
+  igPushItemWidth(-1);
+  igInputText("##COMMIT_HASH",GIT_COMMIT_HASH,sizeof(GIT_COMMIT_HASH),ImGuiInputTextFlags_ReadOnly,NULL,NULL);
+  igPopItemWidth();
+
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
@@ -2551,7 +2558,7 @@ void se_load_settings(){
   }
 }
 static void init(void) {
-  printf("SkyEmu %s\n",PROJECT_VERSION);
+  printf("SkyEmu %s\n",GIT_COMMIT_HASH);
   gui_state.overlay_open= true;
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
