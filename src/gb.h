@@ -291,7 +291,7 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
     return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
-    if(!gb->cart.ram_write_enable)return 0xff;
+    if(!gb->cart.ram_write_enable||gb->cart.ram_size==0)return 0xff;
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
     if(gb->cart.mbc_type==SB_MBC_MBC1){
       ram_addr_off = SB_BFE(addr,0,13);
@@ -360,7 +360,7 @@ static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value;
     return;
   }else if(addr>=0xA000&&addr<=0xBfff){
-    if(gb->cart.ram_write_enable){
+    if(gb->cart.ram_write_enable&&gb->cart.ram_size){
       int ram_addr_off  = SB_BFE(addr,0,13);
       if(gb->cart.mbc_type==SB_MBC_MBC1){
         if(gb->cart.bank_mode)ram_addr_off|= SB_BFE(gb->cart.mapped_ram_bank,0,2)<<13;
@@ -466,7 +466,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     if((value&(1<<3))&&gb->cart.has_rumble)gb->cart.rumble=true;
     //MBC3 rombank select
     //TODO implement other mappers
-    if(gb->cart.mbc_type!=SB_MBC_MBC1)value %= (gb->cart.ram_size/0x2000);
+    if(gb->cart.mbc_type!=SB_MBC_MBC1&&gb->cart.ram_size)value %= (gb->cart.ram_size/0x2000);
     else value%=4;
     gb->cart.mapped_ram_bank = value;
     return;
