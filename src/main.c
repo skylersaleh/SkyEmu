@@ -149,6 +149,7 @@ typedef struct {
     int audio_watchdog_timer; 
     int audio_watchdog_triggered; 
     bool block_touchscreen;
+    bool test_runner_mode;
 } gui_state_t;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -161,7 +162,9 @@ static const char* se_get_pref_path(){
 #ifdef EMSCRIPTEN
   return "/offline/";
 #else
-  return SDL_GetPrefPath("Sky","SkyEmu");
+  static const char* cached_pref_path=NULL;
+  if(cached_pref_path==NULL)cached_pref_path=SDL_GetPrefPath("Sky","SkyEmu");
+  return cached_pref_path;
 #endif
 }
 
@@ -620,6 +623,15 @@ void se_draw_emu_stats(){
   igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
   snprintf(label_tmp,128,"Audio Watchdog Triggered %d Times", gui_state.audio_watchdog_triggered);
   igText(label_tmp);
+
+  igText(ICON_FK_INFO_CIRCLE " Build Info");
+  igSeparator();
+  igText("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
+  igText("Commit Hash:");
+  igPushItemWidth(-1);
+  igInputText("##COMMIT_HASH",GIT_COMMIT_HASH,sizeof(GIT_COMMIT_HASH),ImGuiInputTextFlags_ReadOnly,NULL,NULL);
+  igPopItemWidth();
+
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
@@ -805,7 +817,7 @@ static void se_reset_core(){
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
-  char save_file[4096]; 
+  char save_file[SB_FILE_PATH_SIZE]; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
   sb_breakup_path(filename,&base, &c, &ext);
@@ -816,15 +828,16 @@ void se_load_rom(const char *filename){
       }
       return;
     }
-    snprintf(save_file,4096,"/offline/%s.sav",c);
+    snprintf(save_file,SB_FILE_PATH_SIZE,"/offline/%s.sav",c);
 #else
-    snprintf(save_file,4096,"%s/%s.sav",base, c);
+    se_join_path(save_file, SB_FILE_PATH_SIZE, base, c, ".sav");
 #endif
 
   if(emu_state.rom_loaded){
     if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
     else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
   }
+  memset(&core,0,sizeof(core));
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
   if(gba_load_rom(&core.gba, filename,save_file)){
@@ -837,8 +850,10 @@ void se_load_rom(const char *filename){
     emu_state.system = SYSTEM_NDS;
     emu_state.rom_loaded = true; 
   }
-  if(emu_state.rom_loaded==false)printf("ERROR: Unknown ROM type: %s\n", filename);
-  else{
+  if(emu_state.rom_loaded==false){
+    printf("ERROR: Unknown ROM type: %s\n", filename);
+    emu_state.run_mode= SB_MODE_PAUSE;
+  }else{
     emu_state.run_mode= SB_MODE_RESET;
     se_game_info_t * recent_games=gui_state.recently_loaded_games;
     //Create a copy in case file name comes from one of these slots that will be modified. 
@@ -897,7 +912,16 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static void se_emulate_single_frame(){
-  if(emu_state.system == SYSTEM_GB)sb_tick(&emu_state,&core.gb);
+  if(emu_state.system == SYSTEM_GB){
+    if(gui_state.test_runner_mode){
+      uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
+      for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
+    }else{
+      uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+      for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
+    }
+    sb_tick(&emu_state,&core.gb);
+  }
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds);
   
@@ -1125,6 +1149,8 @@ void se_reset_joy(sb_joy_t*joy){
 }
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
+  sg_image *image = se_get_image();
+  if(!image||!data){return; }
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
   if(has_alpha==false){
@@ -1160,8 +1186,6 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
     .data=              im_data,
   };
 
-  sg_image *image = se_get_image();
-  if(!image)return; 
   *image =  sg_make_image(&desc);
   float dpi_scale = se_dpi_scale();
   unsigned tint = opacity*0xff;
@@ -2272,7 +2296,7 @@ static void frame(void) {
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
   ImGuiStyle* style = igGetStyle();
-  if (igBeginMainMenuBar())
+  if (gui_state.test_runner_mode==false&&igBeginMainMenuBar())
   {
     int orig_x = igGetCursorPosX();
     igSetCursorPosX((width/se_dpi_scale())-100);
@@ -2447,13 +2471,13 @@ static void frame(void) {
    ImFontAtlas_Build(atlas);
 
     static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
-    ImFontConfig config=*ImFontConfig_ImFontConfig();
-    config.MergeMode = true;
-    config.GlyphMinAdvanceX = 13.0f;
+    ImFontConfig* config=ImFontConfig_ImFontConfig();
+    config->MergeMode = true;
+    config->GlyphMinAdvanceX = 13.0f;
     ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
-      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),&config,icons_ranges);
+      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),config,icons_ranges);
     int built = 0;
- 
+    ImFontConfig_destroy(config);
 
     unsigned char* font_pixels;
     int font_width, font_height;
@@ -2537,6 +2561,7 @@ void se_load_settings(){
   }
 }
 static void init(void) {
+  printf("SkyEmu %s\n",GIT_COMMIT_HASH);
   gui_state.overlay_open= true;
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
@@ -2626,6 +2651,22 @@ static void event(const sapp_event* ev) {
 sapp_desc sokol_main(int argc, char* argv[]) {
   emu_state.cmd_line_arg_count =argc;
   emu_state.cmd_line_args =argv;
+  int width = 1280;
+  int height = 800;
+  if(argc>2&&strcmp("run_gb_test",argv[1])==0){
+    gui_state.test_runner_mode=true;
+    emu_state.cmd_line_arg_count =argc-1;
+    emu_state.cmd_line_args =argv+1;
+    width = SB_LCD_W;
+    height= SB_LCD_H;
+  }
+  if(argc>2&&strcmp("run_gba_test",argv[1])==0){
+    gui_state.test_runner_mode=true;
+    emu_state.cmd_line_arg_count =argc-1;
+    emu_state.cmd_line_args =argv+1;
+    width = GBA_LCD_W;
+    height= GBA_LCD_H;
+  } 
   #if defined(EMSCRIPTEN)
     em_init_fs();  
   #endif
@@ -2635,8 +2676,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
       .cleanup_cb = cleanup,
       .event_cb = event,
       .window_title = "SkyEmu",
-      .width = 1280,
-      .height = 800,
+      .width = width,
+      .height = height,
       .enable_dragndrop = true,
       .enable_clipboard =true,
       .high_dpi = true,

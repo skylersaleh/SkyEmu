@@ -143,6 +143,53 @@ else()
 endif()
 target_link_libraries(sokol PUBLIC cimgui)
 target_include_directories(sokol INTERFACE src/sokol)
+
+find_package(Git)
+
+if(GIT_EXECUTABLE)
+  # Generate a git-describe version string from Git repository tags
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(GIT_COMMIT_HASH ${GIT_DESCRIBE})
+  endif()
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(GIT_BRANCH ${GIT_DESCRIBE})
+  endif()
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --exact-match --tags
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_DESCRIBE
+    RESULT_VARIABLE GIT_DESCRIBE_ERROR_CODE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if(NOT GIT_DESCRIBE_ERROR_CODE)
+    set(GIT_TAG ${GIT_DESCRIBE})
+  endif()
+endif()
+
+# Final fallback: Just use a bogus version string that is semantically older
+# than anything else and spit out a warning to the developer.
+if(NOT DEFINED GIT_COMMIT_HASH)
+  set(GIT_COMMIT_HASH "(Modified Local Build)")
+  message(WARNING "Failed to determine GIT_COMMIT_HASH from Git tags. Using default version \"${GIT_COMMIT_HASH}\".")
+endif()
+add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
+add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
+add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
+
 if(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
     add_executable(${PROJECT_NAME} WIN32 src/main.c ${APP_ICON_RESOURCE_WINDOWS})

@@ -42,3 +42,12 @@ jobs:
           folder: build/bin # The folder the action should deploy.
           force: false
           clean: false
+      - name: Deploy to dev site 🚀
+        if: github.ref == 'refs/heads/dev'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: build/bin # The folder the action should deploy.
+          target-folder: branch/dev
+          force: false
+          clean: false

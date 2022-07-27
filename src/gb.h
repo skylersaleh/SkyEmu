@@ -3,6 +3,7 @@
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
+#define SB_IO_SERIAL_CTRL 0xff02
 #define SB_IO_DIV         0xff04
 #define SB_IO_TIMA        0xff05
 #define SB_IO_TMA         0xff06
@@ -86,14 +87,20 @@ mmio_reg_t gb_io_reg_desc[]={
     { 1, 1, "Input: Left  or B        (0=Pressed) (Read Only)"},
     { 0, 1, "Input: Right or A        (0=Pressed) (Read Only)"},
   }},       
-  { SB_IO_SERIAL_BYTE, "SERIAL_BYTE", { 
+  { SB_IO_SERIAL_CTRL, "SERIAL_CTRL", { 
     { 7, 1, "Transfer Start Flag (0=No transfer is in progress or requested, 1=Transfer in progress, or requested)"},
     { 1, 1, "Clock Speed (0=Normal, 1=Fast) ** CGB Mode Only **"},
     { 0, 1, "Shift Clock (0=External Clock, 1=Internal Clock)"},
   }},  
-  { SB_IO_DIV, "DIV", { 0 }},          
-  { SB_IO_TIMA, "TIMA", { 0 }},         
-  { SB_IO_TMA, "TMA", { 0 }},          
+  { SB_IO_DIV, "DIV", { 
+    { 0 ,8, "Div Value"},
+  }},          
+  { SB_IO_TIMA, "TIMA", { 
+    { 0 ,8, "Timer Value"},
+  }},         
+  { SB_IO_TMA, "TMA", { 
+    { 0 ,8, "Timer Modulo"},
+  }},          
   { SB_IO_TAC, "TAC", { 
     { 2 ,1, "Timer Enable"},
     { 0, 2, "Clock Divider (0: Clk/1024 1: Clk/16 2: Clk/64 3: Clk/256)"}
@@ -264,18 +271,33 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
-  if(addr>=0x4000&&addr<=0x7fff){
-    int bank = gb->cart.mapped_rom_bank;
-    bank %= (gb->cart.rom_size)/0x4000;
-    if(bank ==0 && gb->cart.mbc_type!= SB_MBC_MBC5)bank = 1;
-    unsigned int bank_off = 0x4000*(bank);
-    return gb->cart.data[addr-0x4000+bank_off];
+  if(addr>=0x0000&&addr<=0x3fff){
+    int cart_addr = SB_BFE(addr,0,14);
+    if(gb->cart.bank_mode&&gb->cart.mbc_type==SB_MBC_MBC1){
+      cart_addr|=SB_BFE(gb->cart.mapped_ram_bank,0,2)<<19;
+    }
+    cart_addr%= (gb->cart.rom_size);
+    return gb->cart.data[cart_addr];
+  }else if(addr>=0x4000&&addr<=0x7fff){
+    int cart_addr = SB_BFE(addr,0,14);
+    cart_addr|=(gb->cart.mapped_rom_bank)<<14;
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      cart_addr|=SB_BFE(gb->cart.mapped_ram_bank,0,2)<<19;
+    }
+    cart_addr%= (gb->cart.rom_size);
+    return gb->cart.data[cart_addr];
   }else if(addr>=0x8000&&addr<=0x9fff){
     uint8_t vbank =sb_read8_direct(gb,SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;
     uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
     return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
+    if(!gb->cart.ram_write_enable||gb->cart.ram_size==0)return 0xff;
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      ram_addr_off = SB_BFE(addr,0,13);
+      if(gb->cart.bank_mode)ram_addr_off|= SB_BFE(gb->cart.mapped_ram_bank,0,2)<<13;
+    }
+    ram_addr_off%=gb->cart.ram_size;
     return gb->cart.ram_data[ram_addr_off];
   }else if(addr>=0xD000&&addr<=0xDfff){
     int bank =gb->mem.data[SB_IO_GBC_SVBK]%SB_WRAM_NUM_BANKS;
@@ -287,6 +309,22 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     addr =addr - 0xe000 + 0xc000;
   }
   return gb->mem.data[addr];
+}
+uint8_t sb_io_or_mask(int addr){
+  if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
+    uint8_t audio_reg_mask_table[]={
+      0x80,0x3F,0x00,0xFF,0xBF, // NR10-NR15
+      0xFF,0x3F,0x00,0xFF,0xBF, // NR20-NR25
+      0x7F,0xFF,0x9F,0xFF,0xBF, // NR30-NR35
+      0xFF,0xFF,0x00,0x00,0xBF, // NR40-NR45
+      0x00,0x00,0x70,           // NR50-NR52
+      0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,// Wave RAM
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    };
+    return audio_reg_mask_table[addr-SB_IO_AUD1_TONE_SWEEP];
+  }
+  return 0; 
 }
 uint8_t sb_read8(sb_gb_t *gb, int addr) {
   //if(addr == 0xff44)return 0x90;
@@ -304,6 +342,7 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
       uint8_t d= sb_read8_direct(gb,addr);
       return d|0xfe;
     }
+    return sb_read8_direct(gb,addr)|sb_io_or_mask(addr);
   }
   return sb_read8_direct(gb,addr);
 }
@@ -321,10 +360,15 @@ static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
     gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value;
     return;
   }else if(addr>=0xA000&&addr<=0xBfff){
-    if(gb->cart.ram_write_enable){
-      int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
+    if(gb->cart.ram_write_enable&&gb->cart.ram_size){
+      int ram_addr_off  = SB_BFE(addr,0,13);
+      if(gb->cart.mbc_type==SB_MBC_MBC1){
+        if(gb->cart.bank_mode)ram_addr_off|= SB_BFE(gb->cart.mapped_ram_bank,0,2)<<13;
+      }else ram_addr_off|= gb->cart.mapped_ram_bank<<13;
+      ram_addr_off%=gb->cart.ram_size;
       gb->cart.ram_data[ram_addr_off]=value;
       gb->cart.ram_is_dirty = true;
+      //printf("RAM WRITE: MEM[%04x, %04x] = %02x B:%d BM:%d\n",addr,ram_addr_off,value, gb->cart.mapped_ram_bank,gb->cart.bank_mode);
     }
     return;
   }else if(addr>=0xD000&&addr<=0xDfff){
@@ -389,36 +433,52 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
       }
     }else if(addr == SB_IO_DIV){
-      value = 0; //All writes reset the div timer
-      sb_store8(gb,SB_IO_TIMA,0);//TIMA and DIV are the same counter
+      gb->timers.total_clock_ticks = 0;
     }else if(addr == SB_IO_SERIAL_BYTE){
       printf("%c",(char)value);
-    } else if (addr == SB_IO_SOUND_ON_OFF){
-      uint8_t d= sb_read8_direct(gb,addr);
-      value = (d&0x7f)|(value&0x80);
+    }else if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
+      gb->audio.regs_written = true;
+      if(addr==SB_IO_SOUND_ON_OFF){
+        value&=0xf0;
+        value|=sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf;
+      }
     }
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
+    return;
   }else if(addr >= 0x2000 && addr <=0x3fff){
     //MBC3 rombank select
-    if(addr>=0x3000&& gb->cart.mbc_type==SB_MBC_MBC5){
-      gb->cart.mapped_rom_bank&=0xff;
-      gb->cart.mapped_rom_bank|= (int)(value&1)<<8;
-    }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;;
+    switch(gb->cart.mbc_type){
+      case SB_MBC_MBC1: gb->cart.mapped_rom_bank=value%32; if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC2: gb->cart.mapped_rom_bank=value%16; if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC3: gb->cart.mapped_rom_bank=value%256;if(!gb->cart.mapped_rom_bank)gb->cart.mapped_rom_bank=1;break;
+      case SB_MBC_MBC5: 
+      case SB_MBC_MBC7: 
+        if(addr>=0x3000){
+          gb->cart.mapped_rom_bank&=0xff;
+          gb->cart.mapped_rom_bank|= (int)(value&1)<<8;
+        }else gb->cart.mapped_rom_bank=(gb->cart.mapped_rom_bank&0x100)|value;
+      break;
+    }    
     return;
   }else if(addr >= 0x4000 && addr <=0x5fff){
     gb->cart.rumble = false;
     if((value&(1<<3))&&gb->cart.has_rumble)gb->cart.rumble=true;
     //MBC3 rombank select
     //TODO implement other mappers
-    value %= (gb->cart.ram_size/0x2000);
+    if(gb->cart.mbc_type!=SB_MBC_MBC1&&gb->cart.ram_size)value %= (gb->cart.ram_size/0x2000);
+    else value%=4;
     gb->cart.mapped_ram_bank = value;
     return;
   }else if (addr>=0xfe00 && addr<=0xfe9f ){
     //OAM cannot be written to in mode 2 and 3
     int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=2) return;            
-  } else if (addr>=0x8000 && addr <=0x9fff){
+  } else if(addr>=0x6000&&addr<=0x7fff){
+    if(gb->cart.mbc_type==SB_MBC_MBC1){
+      gb->cart.bank_mode = SB_BFE(value,0,1);
+    }
+  }else if (addr>=0x8000 && addr <=0x9fff){
     //VRAM cannot be writen to in mode 3
     int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=3) return;            
@@ -463,6 +523,13 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
 
   if(0 == (data & (1<<4))) data |= data_dir;
   if(0 == (data & (1<<5))) data |= data_action;
+
+  switch(SB_BFE(data,4,2)){
+    case 0: data|=data_dir|data_action; break;
+    case 1: data|=data_action; break;
+    case 2: data|=data_dir; break;
+    case 3: data|=0xf; break;
+  }
 
   gb->mem.data[SB_IO_JOYPAD] = data;
 
@@ -626,11 +693,9 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
     else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
     color_id = SB_BFE(palette,2*(color_id&0x3),2);
 
-    const uint32_t palette_dmg_green[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
-
-    *r = palette_dmg_green[color_id*3+0];
-    *g = palette_dmg_green[color_id*3+1];
-    *b = palette_dmg_green[color_id*3+2];
+    *r = gb->dmg_palette[color_id*3+0];
+    *g = gb->dmg_palette[color_id*3+1];
+    *b = gb->dmg_palette[color_id*3+2];
   }else if(gb->model == SB_GBC){
 
     int palette = SB_BFE(color_id,2,6);
@@ -791,36 +856,33 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks){
   uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
   bool tima_enable = SB_BFE(tac, 2, 1);
   int clk_sel = SB_BFE(tac, 0, 2);
-  gb->timers.clocks_till_div_inc -=delta_clocks;
-  int period = 4*1024*1024/16384;
-  while(gb->timers.clocks_till_div_inc<=0){
-    gb->timers.clocks_till_div_inc += period;
 
-    uint8_t d = sb_read8_direct(gb, SB_IO_DIV);
-    sb_store8_direct(gb, SB_IO_DIV, d+1);
-  }
-  if(tima_enable)gb->timers.clocks_till_tima_inc -=delta_clocks;
-  period =0;
+  int tma_bit = 0; 
   switch(clk_sel){
-    case 0: period = 1024; break;
-    case 1: period = 16; break;
-    case 2: period = 64; break;
-    case 3: period = 256; break;
+    case 0: tma_bit = 9;break; //4khz
+    case 1: tma_bit = 3;break; //256khz
+    case 2: tma_bit = 5;break; //64Khz
+    case 3: tma_bit = 7;break; //16Khz
   }
-  while(gb->timers.clocks_till_tima_inc<=0){
-    gb->timers.clocks_till_tima_inc += period;
-
-    uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
-    // Trigger timer interrupt
-    if(d == 255){
-      uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      i_flag |= 1<<2;
-      sb_store8_direct(gb, SB_IO_INTER_F, i_flag);
-      d = sb_read8_direct(gb,SB_IO_TMA);
-
-    }else d +=1;
-    sb_store8_direct(gb, SB_IO_TIMA, d);
+  for(int i=0;i<delta_clocks;++i){
+    uint16_t curr = gb->timers.total_clock_ticks;
+    uint16_t next = curr+1;
+    gb->timers.total_clock_ticks=next;
+    bool tick_tima = SB_BFE(curr,tma_bit,1)&tima_enable;
+    if(tick_tima==false&&gb->timers.last_tick_tima==true){
+      uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
+      // Trigger timer interrupt
+      if(d == 255){
+        uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+        i_flag |= 1<<2;
+        sb_store8_direct(gb, SB_IO_INTER_F, i_flag);
+        d = sb_read8_direct(gb,SB_IO_TMA);
+      }else d +=1;
+      sb_store8_direct(gb, SB_IO_TIMA, d);
+    }
+    gb->timers.last_tick_tima = tick_tima;
   }
+  sb_store8_direct(gb, SB_IO_DIV, SB_BFE(gb->timers.total_clock_ticks,8,8));
 }
 int sb_update_dma(sb_gb_t *gb){
 
@@ -948,9 +1010,36 @@ void sb_reset(sb_gb_t* gb){
   gb->mem.data[0xFF4B] = 0x00; // WX
   gb->mem.data[0xFFFF] = 0x00; // IE
 
-  gb->timers.clocks_till_div_inc=0;
-  gb->timers.clocks_till_tima_inc=0;
+  gb->timers.total_clock_ticks = 0; 
   gb->cart.mapped_rom_bank=1;
+  gb->cart.mapped_ram_bank=0;
+  gb->cart.ram_write_enable=false;
+  gb->cart.bank_mode = false; 
+}
+static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
+  //Just a stub for now;
+  uint8_t siocnt= sb_read8_direct(gb,SB_IO_SERIAL_CTRL);
+  bool active = SB_BFE(siocnt,7,1);
+  if(active){
+    if(gb->serial.last_active==false){
+      gb->serial.last_active =true;
+      gb->serial.ticks_to_complete=4*1024*1024/1024;
+      bool fast_clock = SB_BFE(siocnt,1,1)&&gb->model == SB_GBC;
+      if(fast_clock)gb->serial.ticks_to_complete/=2;
+    }
+    bool internal_clock = SB_BFE(siocnt,0,1);
+    if(internal_clock)gb->serial.ticks_to_complete-=delta_cycles;
+    if(gb->serial.ticks_to_complete<=0){
+      siocnt&=0x7f;
+      sb_store8_direct(gb,SB_IO_SERIAL_CTRL,siocnt);
+      sb_store8_direct(gb,SB_IO_SERIAL_BYTE,0xff);
+      uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
+      i_flag |= (1<<3);
+      sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
+      active =false;
+    }
+  }
+  gb->serial.last_active =active; 
 }
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
   gb->lcd.framebuffer = emu->core_temp_storage; 
@@ -989,7 +1078,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
           if(masked_interupt & (1<<i)){trigger_interrupt = i;break;}
         }
       }
-      gb->cpu.prefix_op = false;
       cpu_delta_cycles = 4;
       bool call_interrupt = false;
       if(trigger_interrupt!=-1&&request_speed_switch==false){
@@ -1021,13 +1109,18 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
         int operand2 = sb_load_operand(gb,inst.op_src2);
 
         unsigned pc_before_inst = gb->cpu.pc;
+        gb->cpu.prefix_op = false;
         inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb->cpu.prefix_op==true)i--;
 
         unsigned next_op = sb_read8(gb,gb->cpu.pc);
         if(gb->cpu.prefix_op)next_op+=256;
         sb_instr_t next_inst = sb_decode_table[next_op];
-        cpu_delta_cycles = 4*(gb->cpu.pc==pc_before_inst? next_inst.mcycles : next_inst.mcycles+inst.mcycles_branch_taken-inst.mcycles);
+        cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1)+(next_inst.mcycles-1));
+        gb->cpu.branch_taken=false;
+        if(gb->cpu.prefix_op){
+          cpu_delta_cycles = 4*(next_inst.mcycles-1);
+        }
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
         sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
@@ -1038,8 +1131,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
     int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
     delta_cycles_after_speed+= dma_delta_cycles;
     bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
-    sb_update_timers(gb,cpu_delta_cycles+dma_delta_cycles*2);
-
+    sb_update_timers(gb,dma_delta_cycles?dma_delta_cycles:cpu_delta_cycles);
+    sb_tick_sio(gb,delta_cycles_after_speed);
     rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
     total_cylces+=delta_cycles_after_speed;
     double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
@@ -1088,6 +1181,7 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
   size_t bytes = 0;
   uint8_t *data = sb_load_file_data(file_path, &bytes);
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
+  if(!data)return false;
   printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
   for (size_t i = 0; i < bytes; ++i) {
     gb->cart.data[i] = data[i];
@@ -1188,9 +1282,6 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   static double current_sim_time = 0;
   static double current_sample_generated_time = 0;
 
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  current_sim_time +=delta_time;
-  if(current_sample_generated_time >current_sim_time)return; 
   current_sample_generated_time -= (int)(current_sim_time);
   current_sim_time -= (int)(current_sim_time);
 
@@ -1204,7 +1295,40 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   static float capacitor_l = 0.0;
 
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+  if(gb->audio.regs_written){
+    gb->audio.regs_written = false; 
+    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF);
+    bool master_enable = SB_BFE(nrf_52,7,1);
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+    if(!master_enable){
+      nrf_52&=0xf0;
+      for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
+        sb_store8_direct(gb,i,0);
+      }
+      for(int i=0;i<4;++i){
+        length_t[i]=1e10;
+      }
+    }else{
+      for(int i=0;i<4;++i){
+        uint8_t freq_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI+i*5);
+        if(SB_BFE(freq_hi,7,1)){
+          length_t[i] = 0;
+          chan_t[i]=0;
+          nrf_52|=1<<i;
+          if(i==3)lfsr4 = 0x7FFF;
+        }
+        sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
+      }
+    }
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+  }
 
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  current_sim_time +=delta_time;
+  if(current_sample_generated_time >current_sim_time)return; 
+  int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF);
+  bool master_enable = SB_BFE(nrf_52,7,1);
+  if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
   uint8_t freq_sweep1 = sb_read8_direct(gb, SB_IO_AUD1_TONE_SWEEP);
   float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
@@ -1212,7 +1336,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   //float freq_sweep_n1 = 131072./(2048-SB_BFE(freq_sweep1, 0,3));
   float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
   if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
-  //if(freq_sweep_time_mul1==0)freq_sweep_time_mul1=1.0e6;
+  if(freq_sweep_time_mul1==0)freq_sweep_time_mul1=1.0e6;
   uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
   uint8_t freq1_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ);
   uint8_t freq1_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI);
@@ -1223,10 +1347,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume_env[0] = compute_vol_env_slope(vol_env1);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   length[0] = (64.-SB_BFE(length_duty1,0,6))/256.;
-  if(SB_BFE(freq1_hi,7,1)){length_t[0] = 0;}
   if(SB_BFE(freq1_hi,6,1)==0){length[0] = 1.0e9;}
-  freq1_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI,freq1_hi);
 
   uint8_t length_duty2 = sb_read8_direct(gb, SB_IO_AUD2_LENGTH_DUTY);
   uint8_t freq2_lo = sb_read8_direct(gb,SB_IO_AUD2_FREQ);
@@ -1238,11 +1359,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume_env[1] = compute_vol_env_slope(vol_env2);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
   length[1] = (64.-SB_BFE(length_duty2,0,6))/256.;
-
-  if(SB_BFE(freq2_hi,7,1)){ length_t[1]=0;}
   if(SB_BFE(freq2_hi,6,1)==0){length[1] = 1.0e9;}
-  freq2_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD2_FREQ_HI,freq2_hi);
 
   uint8_t power3 = sb_read8_direct(gb,SB_IO_AUD3_POWER);
   uint8_t length3_dat = sb_read8_direct(gb,SB_IO_AUD3_LENGTH);
@@ -1255,10 +1372,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   length[2] = (256.-length3_dat)/256.;
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
-  if(SB_BFE(freq3_hi,7,1)){length_t[2]=0.f;}
   if(SB_BFE(freq3_hi,6,1)==0){length[2] = 1.0e9;}
-  freq3_hi &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD3_FREQ_HI,freq3_hi);
 
   uint8_t length_duty4 = sb_read8_direct(gb, SB_IO_AUD4_LENGTH);
   uint8_t counter4 = sb_read8_direct(gb, SB_IO_AUD4_COUNTER);
@@ -1271,14 +1385,9 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   volume[3] = SB_BFE(vol_env4,4,4)/15.f;
   volume_env[3] = compute_vol_env_slope(vol_env4);
   length[3] = (64.-SB_BFE(length_duty4,0,6))/256.;
-  if(SB_BFE(counter4,7,1)){
-    length_t[3] = 0;
-    lfsr4 = 0x7FFF;
-  }
+  
   if(SB_BFE(counter4,6,1)==0){length[3] = 1.0e9;}
   bool sevenBit4 = SB_BFE(poly4,3,1);
-  counter4 &=0x7f;
-  sb_store8_direct(gb, SB_IO_AUD4_COUNTER,counter4);
 
   uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
@@ -1295,10 +1404,16 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     //Advance each channel    
+    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
     freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
     for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
-    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
-    for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
+    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+    for(int i=0;i<4;++i){
+      bool active = length_t[i]<length[i];
+      nrf_52|=active<<i;
+      if(!active){volume[i]=0;volume_env[i]=0;}
+    }
+    sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
 
     //Generate new noise value if needed
     if(chan_t[3]>=1.0) {
@@ -1322,7 +1437,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
     v[2]=1.0; //Wave channel doesn't have a volume envelop 
 
-	//Lookup wave table value
+	  //Lookup wave table value
     unsigned wav_samp = ((unsigned)(chan_t[2]*32))%32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     int offset = (wav_samp&1)? 0:4;
@@ -1339,8 +1454,10 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     float sample_volume_l = 0;
     float sample_volume_r = 0;
     for(int i=0;i<4;++i){
-      sample_volume_l+=channels[i]*chan_l[i];
-      sample_volume_r+=channels[i]*chan_r[i];
+      float l = channels[i]*chan_l[i];
+      float r = channels[i]*chan_r[i];
+      if(l>=-2.&&l<=2)sample_volume_l+=l;
+      if(r>=-2.&&r<=2)sample_volume_r+=r;
     }
     
     sample_volume_l*=0.25;
