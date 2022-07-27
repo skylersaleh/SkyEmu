@@ -850,8 +850,10 @@ void se_load_rom(const char *filename){
     emu_state.system = SYSTEM_NDS;
     emu_state.rom_loaded = true; 
   }
-  if(emu_state.rom_loaded==false)printf("ERROR: Unknown ROM type: %s\n", filename);
-  else{
+  if(emu_state.rom_loaded==false){
+    printf("ERROR: Unknown ROM type: %s\n", filename);
+    emu_state.run_mode= SB_MODE_PAUSE;
+  }else{
     emu_state.run_mode= SB_MODE_RESET;
     se_game_info_t * recent_games=gui_state.recently_loaded_games;
     //Create a copy in case file name comes from one of these slots that will be modified. 
@@ -1148,7 +1150,7 @@ void se_reset_joy(sb_joy_t*joy){
 
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
   sg_image *image = se_get_image();
-  if(!image){return; }
+  if(!image||!data){return; }
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
   if(has_alpha==false){
