@@ -837,6 +837,7 @@ void se_load_rom(const char *filename){
     if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
     else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
   }
+  memset(&core,0,sizeof(core));
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
   if(gba_load_rom(&core.gba, filename,save_file)){

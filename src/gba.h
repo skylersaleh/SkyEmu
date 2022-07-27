@@ -2913,6 +2913,7 @@ void gba_reset(gba_t*gba){
   if(gba->cpu.log_cmp_file){fclose(gba->cpu.log_cmp_file);gba->cpu.log_cmp_file=NULL;};
   gba->cpu.log_cmp_file =se_load_log_file(gba->cart.save_file_path, "log.bin");
   gba->cpu.executed_instructions+=2;
+  gba->audio.current_sample_generated_time=gba->audio.current_sim_time=0;
 }
 
 #endif
