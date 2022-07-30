@@ -762,6 +762,7 @@ typedef struct gba_t{
   int active_if_pipe_stages; 
   int last_cpu_tick;
   int residual_dma_ticks; 
+  bool stop_mode; 
 } gba_t; 
 
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
@@ -1381,7 +1382,10 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     //Only BIOS can update Post Flag and haltcnt
     if(gba->cpu.registers[15]<0x4000){
       //Writes to haltcnt halt the CPU
-      if(word_mask&0xff00)gba->cpu.wait_for_interrupt = true;
+      if(word_mask&0xff00){
+        if(word_data&0x8000)gba->stop_mode = true;
+        gba->cpu.wait_for_interrupt = true;
+      }
       uint32_t data = gba_io_read32(gba,address_u32);
       //POST can only be initialized once, then other writes are dropped. 
       if((word_mask&0xff)&&(data&0xff))word_mask&=~0xff;
@@ -2037,14 +2041,16 @@ static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
   bool irq_enable = SB_BFE(keycnt,14,1);
   bool irq_condition = SB_BFE(keycnt,15,1);//[0: any key, 1: all keys]
   int if_bit = 0;
-  if(irq_enable){
+  if(irq_enable||gba->stop_mode){
     uint16_t pressed = SB_BFE(reg_value,0,10)^0x3ff;
     uint16_t mask = SB_BFE(keycnt,0,10);
 
     if(irq_condition&&((pressed&mask)==mask))if_bit|= 1<<GBA_INT_KEYPAD;
     if(!irq_condition&&((pressed&mask)!=0))if_bit|= 1<<GBA_INT_KEYPAD;
 
-    if(if_bit&&!gba->prev_key_interrupt){
+    if(if_bit)gba->stop_mode=false;
+
+    if(if_bit&&!gba->prev_key_interrupt&&irq_enable){
       gba_send_interrupt(gba,4,if_bit);
       gba->prev_key_interrupt = true;
     }else gba->prev_key_interrupt = false;
@@ -2828,7 +2834,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
       gba_tick_timers(gba);
       gba_tick_ppu(gba,emu->render_frame);
     }
-    if(SB_UNLIKELY(gba->ppu.has_hit_vblank))break;
+    if(SB_UNLIKELY(gba->ppu.has_hit_vblank||gba->stop_mode))break;
   } 
   emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1);        
 }
