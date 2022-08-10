@@ -192,6 +192,8 @@ add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
 set(SKYEMU_SRC src/main.c src/stb.c)
 
+include_directories(${SDL2_INCLUDE_DIRS})
+
 if(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
     add_executable(${PROJECT_NAME} WIN32 ${SKYEMU_SRC} ${APP_ICON_RESOURCE_WINDOWS})
