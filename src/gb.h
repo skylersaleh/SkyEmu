@@ -1,5 +1,4 @@
 
-#include "sb_instr_tables.h"
 
 #define SB_IO_JOYPAD      0xff00
 #define SB_IO_SERIAL_BYTE 0xff01
@@ -265,6 +264,162 @@ mmio_reg_t gb_io_reg_desc[]={
     { 4, 1, "Joypad   Interrupt Enable" },
   }},     
 };
+
+typedef struct {
+  // Registers
+  uint16_t af, bc, de, hl, sp, pc;
+  bool interrupt_enable;
+  bool deferred_interrupt_enable;
+  bool wait_for_interrupt; 
+  bool prefix_op;
+  bool trigger_breakpoint; 
+  int last_inter_f; 
+  bool branch_taken;
+} sb_gb_cpu_t;
+
+typedef struct {
+  uint8_t data[65536];
+  uint8_t wram[SB_WRAM_NUM_BANKS*SB_WRAM_BANK_SIZE];
+} sb_gb_mem_t;
+
+typedef struct {
+  uint8_t *data;
+  uint8_t ram_data[MAX_CARTRIDGE_RAM]; 
+  char title[17];
+  bool game_boy_color;
+  bool ram_write_enable;
+  bool ram_is_dirty; 
+  uint8_t type;
+  uint8_t mbc_type; 
+  uint8_t mapped_ram_bank;
+  unsigned mapped_rom_bank;
+  int rom_size;
+  int ram_size;
+  bool rumble;
+  bool has_rumble; 
+  bool bank_mode; //MBC1
+} sb_gb_cartridge_t;
+
+typedef struct{
+  unsigned int scanline_cycles;
+  unsigned int curr_scanline;
+  unsigned int curr_window_scanline;
+  uint8_t *framebuffer;
+  uint8_t vram[SB_VRAM_BANK_SIZE*SB_VRAM_NUM_BANKS];
+  uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
+  bool in_hblank; //Used for HDMA
+  bool wy_eq_ly;
+  bool last_frame_ppu_disabled;
+} sb_lcd_ppu_t;
+typedef struct{
+  bool in_hblank; 
+  bool active;
+  int bytes_transferred;
+  bool oam_dma_active;
+  int oam_bytes_transferred; 
+  bool hdma; 
+} sb_dma_t;
+
+typedef struct{
+  uint32_t total_clock_ticks; 
+  bool tima_written;
+  bool last_tick_tima;
+} sb_timer_t;
+typedef struct{
+  bool regs_written; 
+}sb_audio_t;
+typedef struct{
+  uint32_t ticks_to_complete; 
+  bool last_active;
+}sb_serial_t;
+typedef struct{
+  uint32_t bess_version; 
+  uint16_t af, bc, de, hl, sp, pc;
+  uint16_t interrupt_enable;
+  uint16_t cart_bank_mode; 
+  uint32_t data_seg; 
+  uint32_t wram_seg;
+  uint32_t vram_seg;
+  uint32_t palette_seg; 
+  uint32_t mapped_rom_bank;
+  uint32_t mapped_ram_bank;
+}sb_gb_bess_info_t;
+
+typedef struct {
+  sb_gb_cartridge_t cart;
+  sb_gb_cpu_t cpu;
+  sb_gb_mem_t mem;
+  sb_lcd_ppu_t lcd;
+  sb_timer_t timers;
+  sb_dma_t dma; 
+  sb_audio_t audio;
+  sb_serial_t serial;
+  sb_gb_bess_info_t bess;
+  int model; 
+  uint8_t dmg_palette[4*3];
+} sb_gb_t;  
+
+typedef struct{
+  uint8_t rom[MAX_CARTRIDGE_SIZE];
+  uint8_t framebuffer[SB_LCD_H*SB_LCD_W*3];
+ } gb_scratch_t; 
+
+// Return offset to bess structure
+static uint32_t sb_save_best_effort_state(sb_gb_t* gb){
+  sb_gb_bess_info_t bess;
+  gb->bess.bess_version = 1; 
+  gb->bess.af = gb->cpu.af;
+  gb->bess.bc = gb->cpu.bc;
+  gb->bess.de = gb->cpu.de;
+  gb->bess.hl = gb->cpu.hl;
+  gb->bess.sp = gb->cpu.sp;
+  gb->bess.pc = gb->cpu.pc;
+  gb->bess.interrupt_enable = gb->cpu.interrupt_enable;
+
+  gb->bess.data_seg = ((uint8_t*)gb->mem.data)-(uint8_t*)gb;
+  gb->bess.wram_seg = ((uint8_t*)gb->mem.wram)-(uint8_t*)gb;
+  gb->bess.vram_seg = ((uint8_t*)gb->lcd.vram)-(uint8_t*)gb;
+  gb->bess.palette_seg = ((uint8_t*)gb->lcd.color_palettes)-(uint8_t*)gb;
+  gb->bess.mapped_ram_bank = gb->cart.mapped_ram_bank;
+  gb->bess.mapped_rom_bank = gb->cart.mapped_rom_bank;
+  gb->bess.cart_bank_mode = gb->cart.bank_mode;
+
+  return ((uint8_t*)&gb->bess)-(uint8_t*)gb; 
+}
+static bool sb_load_best_effort_state(sb_gb_t* gb, uint8_t *save_state_data, uint32_t size, uint32_t bess_offset){
+  if(bess_offset+sizeof(sb_gb_bess_info_t)>size)return false;
+  sb_gb_bess_info_t * bess = (sb_gb_bess_info_t*)(save_state_data+bess_offset);
+
+  if(bess->bess_version!=1)return false; 
+  if(bess->data_seg+sizeof(gb->mem.data) > size) return false;  
+  if(bess->wram_seg+sizeof(gb->mem.wram) > size) return false;  
+  if(bess->vram_seg+sizeof(gb->lcd.vram) > size) return false;  
+  if(bess->palette_seg+sizeof(gb->lcd.color_palettes) > size) return false;  
+
+  gb->cpu.af = bess->af;  
+  gb->cpu.bc = bess->bc;  
+  gb->cpu.de = bess->de;  
+  gb->cpu.hl = bess->hl;  
+  gb->cpu.sp = bess->sp;  
+  gb->cpu.pc = bess->pc;  
+  gb->cpu.interrupt_enable = bess->interrupt_enable;
+
+  memcpy(gb->mem.data,save_state_data+bess->data_seg,sizeof(gb->mem.data));
+  memcpy(gb->mem.wram,save_state_data+bess->wram_seg,sizeof(gb->mem.wram));
+  memcpy(gb->lcd.vram,save_state_data+bess->vram_seg,sizeof(gb->lcd.vram));
+  memcpy(gb->lcd.color_palettes,save_state_data+bess->palette_seg,sizeof(gb->lcd.color_palettes));
+
+  gb->cart.mapped_ram_bank = bess->mapped_ram_bank;
+  gb->cart.mapped_rom_bank = bess->mapped_rom_bank;
+  gb->cart.bank_mode = bess->cart_bank_mode;
+
+  return true; 
+}
+
+typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
+
+//Include down here because of dependence on sb_gb_t /*TODO: refactor this*/
+#include "sb_instr_tables.h"
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
@@ -950,72 +1105,6 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
   }
 
 }
-void sb_reset(sb_gb_t* gb){
-  memset(&gb->cpu, 0, sizeof(gb->cpu));
-  memset(&gb->dma, 0, sizeof(gb->dma));
-  memset(&gb->timers, 0, sizeof(gb->timers));
-  memset(&gb->lcd, 0, sizeof(gb->lcd));
-  memset(&gb->mem.wram, 0, sizeof(gb->mem.wram));
-  //Zero out memory
-  for(int i=0x8000;i<=0xffff;++i)gb->mem.data[i]=0;
-  gb->cpu.pc = 0x100;
-
-  gb->cpu.af=0x01B0;
-  gb->model = SB_GB;
-  if(gb->cart.game_boy_color){
-    gb->model = SB_GBC;
-  }
-  if(gb->model == SB_GBC){
-    gb->cpu.af|=0x11<<8;
-  }
-  gb->cpu.bc=0x0013;
-  gb->cpu.de=0x00D8;
-  gb->cpu.hl=0x014D;
-  gb->cpu.sp=0xFFFE;
-
-  gb->mem.data[0xFF05] = 0x00; // TIMA
-  gb->mem.data[0xFF06] = 0x00; // TMA
-  gb->mem.data[0xFF07] = 0x00; // TAC
-  /*
-  gb->mem.data[0xFF10] = 0x80; // NR10
-  gb->mem.data[0xFF11] = 0xBF; // NR11
-  gb->mem.data[0xFF12] = 0xF3; // NR12
-  gb->mem.data[0xFF14] = 0xBF; // NR14
-  gb->mem.data[0xFF16] = 0x3F; // NR21
-  gb->mem.data[0xFF17] = 0x00; // NR22
-  gb->mem.data[0xFF19] = 0xBF; // NR24
-  */
-  gb->mem.data[0xFF1A] = 0x7F; // NR30
-  gb->mem.data[0xFF1B] = 0xFF; // NR31
-  gb->mem.data[0xFF1C] = 0x9F; // NR32
-  gb->mem.data[0xFF1E] = 0xBF; // NR34
-  /*
-  gb->mem.data[0xFF20] = 0xFF; // NR41
-  gb->mem.data[0xFF21] = 0x00; // NR42
-  gb->mem.data[0xFF22] = 0x00; // NR43
-  gb->mem.data[0xFF23] = 0xBF; // NR44
-  gb->mem.data[0xFF24] = 0x77; // NR50
-  */
-  gb->mem.data[0xFF25] = 0xF3; // NR51
-  gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
-  gb->mem.data[0xFF40] = 0x91; // LCDC
-  gb->mem.data[0xFF42] = 0x00; // SCY
-  gb->mem.data[0xFF43] = 0x00; // SCX
-  gb->mem.data[0xFF44] = 0x90; // SCX
-  gb->mem.data[0xFF45] = 0x00; // LYC
-  gb->mem.data[0xFF47] = 0xFC; // BGP
-  gb->mem.data[0xFF48] = 0xFF; // OBP0
-  gb->mem.data[0xFF49] = 0xFF; // OBP1
-  gb->mem.data[0xFF4A] = 0x00; // WY
-  gb->mem.data[0xFF4B] = 0x00; // WX
-  gb->mem.data[0xFFFF] = 0x00; // IE
-
-  gb->timers.total_clock_ticks = 0; 
-  gb->cart.mapped_rom_bank=1;
-  gb->cart.mapped_ram_bank=0;
-  gb->cart.ram_write_enable=false;
-  gb->cart.bank_mode = false; 
-}
 static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   //Just a stub for now;
   uint8_t siocnt= sb_read8_direct(gb,SB_IO_SERIAL_CTRL);
@@ -1041,8 +1130,9 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   }
   gb->serial.last_active =active; 
 }
-void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb){
-  gb->lcd.framebuffer = emu->core_temp_storage; 
+void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
+  gb->lcd.framebuffer = scratch->framebuffer; 
+  gb->cart.data = scratch->rom; 
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=6000000;
   int frames_to_draw = 1;
@@ -1175,7 +1265,7 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
   y += sb_polyblep(t2,dt);
   return y;
 }
-static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, const char* save_file){
+static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch, const char* file_path, const char* save_file){
   if(!sb_path_has_file_ext(file_path,".gb") && 
      !sb_path_has_file_ext(file_path,".gbc")) return false; 
   size_t bytes = 0;
@@ -1183,9 +1273,15 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
   if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
   if(!data)return false;
   printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
+
+  memset(gb, 0, sizeof(sb_gb_t));
+  memset(scratch, 0, sizeof(gb_scratch_t));
+  gb->cart.data = scratch->rom; 
+
   for (size_t i = 0; i < bytes; ++i) {
     gb->cart.data[i] = data[i];
   }
+  sb_free_file_data(data);
   for(size_t i = 0; i< 32*1024;++i)gb->mem.data[i] = gb->cart.data[i];
   // Copy Header
   for (int i = 0; i < 11; ++i) {
@@ -1246,7 +1342,6 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
     case 0x54: gb->cart.rom_size = 1.5 * 1024 * 1024; break;
     default: gb->cart.rom_size = 32 * 1024; break;
   }
-
   switch (gb->cart.data[0x149]) {
     case 0x0: gb->cart.ram_size = 0; break;
     case 0x1: gb->cart.ram_size = 2*1024; break;
@@ -1256,12 +1351,61 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu,const char* file_path, 
     case 0x5: gb->cart.ram_size = 64 * 1024; break;
     default: gb->cart.ram_size = 0; break;
   }
+  gb->cpu.pc = 0x100;
+  gb->cpu.af=0x01B0;
+  gb->model = SB_GB;
+  if(gb->cart.game_boy_color){
+    gb->model = SB_GBC;
+  }
+  if(gb->model == SB_GBC){
+    gb->cpu.af|=0x11<<8;
+  }
+  gb->cpu.bc=0x0013;
+  gb->cpu.de=0x00D8;
+  gb->cpu.hl=0x014D;
+  gb->cpu.sp=0xFFFE;
+
+  gb->mem.data[0xFF05] = 0x00; // TIMA
+  gb->mem.data[0xFF06] = 0x00; // TMA
+  gb->mem.data[0xFF07] = 0x00; // TAC
+  /*
+  gb->mem.data[0xFF10] = 0x80; // NR10
+  gb->mem.data[0xFF11] = 0xBF; // NR11
+  gb->mem.data[0xFF12] = 0xF3; // NR12
+  gb->mem.data[0xFF14] = 0xBF; // NR14
+  gb->mem.data[0xFF16] = 0x3F; // NR21
+  gb->mem.data[0xFF17] = 0x00; // NR22
+  gb->mem.data[0xFF19] = 0xBF; // NR24
+  */
+  gb->mem.data[0xFF1A] = 0x7F; // NR30
+  gb->mem.data[0xFF1B] = 0xFF; // NR31
+  gb->mem.data[0xFF1C] = 0x9F; // NR32
+  gb->mem.data[0xFF1E] = 0xBF; // NR34
+  /*
+  gb->mem.data[0xFF20] = 0xFF; // NR41
+  gb->mem.data[0xFF21] = 0x00; // NR42
+  gb->mem.data[0xFF22] = 0x00; // NR43
+  gb->mem.data[0xFF23] = 0xBF; // NR44
+  gb->mem.data[0xFF24] = 0x77; // NR50
+  */
+  gb->mem.data[0xFF25] = 0xF3; // NR51
+  gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
+  gb->mem.data[0xFF40] = 0x91; // LCDC
+  gb->mem.data[0xFF42] = 0x00; // SCY
+  gb->mem.data[0xFF43] = 0x00; // SCX
+  gb->mem.data[0xFF44] = 0x90; // SCX
+  gb->mem.data[0xFF45] = 0x00; // LYC
+  gb->mem.data[0xFF47] = 0xFC; // BGP
+  gb->mem.data[0xFF48] = 0xFF; // OBP0
+  gb->mem.data[0xFF49] = 0xFF; // OBP1
+  gb->mem.data[0xFF4A] = 0x00; // WY
+  gb->mem.data[0xFF4B] = 0x00; // WX
+  gb->mem.data[0xFFFF] = 0x00; // IE
+  gb->cart.mapped_rom_bank=1;
+
   emu->run_mode = SB_MODE_RESET;
   emu->rom_loaded = true;
-  sb_free_file_data(data);
 
-  strncpy(gb->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
-  gb->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
   data = sb_load_file_data(save_file, &bytes);
   if(data){
     if(bytes!=gb->cart.ram_size){
