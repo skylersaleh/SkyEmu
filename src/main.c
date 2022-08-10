@@ -32,13 +32,15 @@
 #include "karla.h"
 #include "forkawesome.h"
 #include "IconsForkAwesome.h"
+#define STBI_ONLY_PNG
+#include "stb_image.h"
+#include "stb_image_write.h"
 
 #ifdef USE_TINY_FILE_DIALOGS
 #include "tinyfiledialogs.h"
 #endif
 
 #include "SDL.h"
-
 
 #define SE_HAT_MASK (1<<16)
 #define SE_JOY_POS_MASK (1<<17)
@@ -152,11 +154,64 @@ typedef struct {
     bool test_runner_mode;
 } gui_state_t;
 
+#define SE_REWIND_BUFFER_SIZE (1024*1024)
+#define SE_REWIND_SEGMENT_SIZE 64
+#define SE_LAST_DELTA_IN_TX (1<<31)
+
+#define SE_NUM_SAVE_STATES 4
+#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*3)
+
+//TODO: Clean this up to use unions...
+sb_emu_state_t emu_state = {.pc_breakpoint = -1};
+#define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
+typedef union{
+  sb_gb_t gb;
+  gba_t gba;  
+  nds_t nds;
+  // Raw data padded out to 64B to make rewind efficient
+  uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))/SE_REWIND_SEGMENT_SIZE+1];
+}se_core_state_t;
+typedef union{
+  gba_scratch_t gba;
+  gb_scratch_t gb; 
+  nds_scratch_t nds;
+}se_core_scratch_t;
+
+typedef struct{
+  uint32_t offset; 
+  uint64_t data[SE_REWIND_SEGMENT_SIZE/8];
+}se_core_delta_t;
+typedef struct{
+  se_core_delta_t deltas[SE_REWIND_BUFFER_SIZE];
+  uint32_t size;
+  uint32_t index; 
+  bool first_push; 
+  se_core_state_t last_core; 
+}se_core_rewind_buffer_t;
+typedef struct{
+  uint8_t screenshot[SE_MAX_SCREENSHOT_SIZE];
+  int32_t screenshot_width; 
+  int32_t screenshot_height; 
+  int32_t system;
+  int32_t valid; //0: invalid, 1: Valid (Perfect Save State) 2: Valid (BESS restore)
+  se_core_state_t state;
+}se_save_state_t; 
+typedef struct{
+  char name[39];
+  char build[41];
+  uint32_t bess_offset;
+  uint32_t system;
+  uint8_t padding[20];
+}se_emu_id;
+
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, int index);
+static uint32_t se_save_best_effort_state(se_core_state_t* state);
+static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
+static size_t se_get_core_size();
 
 static const char* se_get_pref_path(){
 #ifdef EMSCRIPTEN
@@ -300,45 +355,9 @@ const char* se_keycode_to_string(int keycode){
   }
 }
 
-#define SE_REWIND_BUFFER_SIZE (1024*1024)
-#define SE_REWIND_SEGMENT_SIZE 64
-#define SE_LAST_DELTA_IN_TX (1<<31)
-
-#define SE_NUM_SAVE_STATES 4
-#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*3)
-
-//TODO: Clean this up to use unions...
-sb_emu_state_t emu_state = {.pc_breakpoint = -1};
-#define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
-typedef union{
-  sb_gb_t gb;
-  gba_t gba;  
-  nds_t nds;
-  // Raw data padded out to 64B to make rewind efficient
-  uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))/SE_REWIND_SEGMENT_SIZE+1];
-}se_core_state_t;
-
-typedef struct{
-  uint32_t offset; 
-  uint64_t data[SE_REWIND_SEGMENT_SIZE/8];
-}se_core_delta_t;
-typedef struct{
-  se_core_delta_t deltas[SE_REWIND_BUFFER_SIZE];
-  uint32_t size;
-  uint32_t index; 
-  bool first_push; 
-  se_core_state_t last_core; 
-}se_core_rewind_buffer_t;
-typedef struct{
-  se_core_state_t state;
-  uint8_t screenshot[SE_MAX_SCREENSHOT_SIZE];
-  int screenshot_width; 
-  int screenshot_height; 
-  int system;
-  bool valid;
-}se_save_state_t; 
 
 se_core_state_t core;
+se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 
@@ -404,7 +423,140 @@ void se_rewind_state_single_tick(se_core_state_t* core, se_core_rewind_buffer_t*
 void se_reset_rewind_buffer(se_core_rewind_buffer_t* rewind){
   rewind->index = rewind->size = 0; 
   rewind->first_push = false;
+}
+se_emu_id se_get_emu_id(){
+  se_emu_id emu_id={0};
+  strncpy(emu_id.name,"SkyEmu",sizeof(emu_id.name));
+  strncpy(emu_id.build,GIT_COMMIT_HASH,sizeof(emu_id.build));
+  return emu_id;
+}
+void se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
+ 
+  se_emu_id emu_id=se_get_emu_id();
+  emu_id.bess_offset = se_save_best_effort_state(&save_state->state);
+  emu_id.system = save_state->system;
+  printf("Bess offset: %d\n",emu_id.bess_offset);
+  size_t save_state_size = se_get_core_size();
+  size_t net_save_state_size = sizeof(emu_id)+save_state_size;
+  int screenshot_size = save_state->screenshot_width*save_state->screenshot_height;
 
+  int scale = 1; 
+  while(screenshot_size*scale*scale<net_save_state_size)scale++;
+
+  uint8_t *imdata = malloc(scale*scale*screenshot_size*4);
+  uint8_t *emu_id_dat = (uint8_t*)&emu_id;
+  uint8_t *save_state_dat = (uint8_t*)&(save_state->state);
+  for(int y=0;y<save_state->screenshot_height*scale;++y){
+    for(int x=0;x<save_state->screenshot_width*scale;++x){
+      int px = x/scale;
+      int py = y/scale;
+      int p = (px+py*save_state->screenshot_width);
+      uint8_t r = save_state->screenshot[p*3+0];
+      uint8_t g = save_state->screenshot[p*3+1];
+      uint8_t b = save_state->screenshot[p*3+2];
+      uint8_t a = 0xff; 
+      int p_out = x+y*save_state->screenshot_width*scale;
+      uint8_t data =0; 
+      if(p_out<sizeof(emu_id))data = emu_id_dat[p_out];
+      else if(p_out-sizeof(emu_id)<save_state_size) data = save_state_dat[p_out-sizeof(emu_id)];
+
+      r&=0xfC;
+      g&=0xfC;
+      b&=0xfC;
+      a&=0xfC;
+
+      r|= SB_BFE(data,0,2);
+      g|= SB_BFE(data,2,2);
+      b|= SB_BFE(data,4,2);
+      a|= SB_BFE(data,6,2);
+      imdata[p_out*4+0]=r;
+      imdata[p_out*4+1]=g;
+      imdata[p_out*4+2]=b;
+      imdata[p_out*4+3]=a;
+    }
+  }
+  char png_path[SB_FILE_PATH_SIZE];
+  snprintf(png_path,SB_FILE_PATH_SIZE,"%s.png",filename);
+  stbi_write_png(png_path, save_state->screenshot_width*scale, save_state->screenshot_height*scale, 4, imdata, 0);
+  free(imdata);
+}
+bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id emu_id, se_save_state_t* state){
+  state->state = core;
+  printf("Attempting BESS Restore\n");
+  if(sizeof(emu_id)>data_size)return false; 
+  size_t save_state_size = data_size-sizeof(emu_id);
+  uint8_t *data = state_data +sizeof(emu_id);
+  bool valid = se_load_best_effort_state(&(state->state),data, save_state_size, emu_id.bess_offset);
+  printf("Valid:%d\n",valid);
+  if(!valid){
+    state->screenshot_width=1;
+    state->screenshot_height=1;
+    state->screenshot[0] = 0; 
+    state->screenshot[1] = 0; 
+    state->screenshot[2] = 0; 
+  }
+  return valid; 
+}
+void se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
+  save_state->valid = false;
+  char png_path[SB_FILE_PATH_SIZE];
+  snprintf(png_path,SB_FILE_PATH_SIZE,"%s.png",filename);
+
+  int im_w, im_h, im_c; 
+  uint8_t *imdata = stbi_load(png_path, &im_w, &im_h, &im_c, 4);
+  if(!imdata)return; 
+
+  uint8_t *data = malloc(im_w*im_h);
+  size_t data_size = im_w*im_h;
+  for(int i=0;i<data_size;++i){
+    uint8_t d = 0;
+    d |= SB_BFE(imdata[i*4+0],0,2)<<0;
+    d |= SB_BFE(imdata[i*4+1],0,2)<<2;
+    d |= SB_BFE(imdata[i*4+2],0,2)<<4;
+    d |= SB_BFE(imdata[i*4+3],0,2)<<6;
+    data[i]=d;
+  }
+  int downscale= 1; 
+  while((im_w/downscale)*(im_h/downscale)*3>=sizeof(save_state->screenshot))downscale++;
+  save_state->screenshot_width=im_w/downscale;
+  save_state->screenshot_height=im_h/downscale;
+  for(int y=0;y<im_h;y+=downscale){
+    for(int x=0;x<im_w;x+=downscale){
+      int p1 = x+y*im_w;
+      int p2 = x/downscale+(y/downscale)*save_state->screenshot_width;
+      for(int i=0;i<3;++i)save_state->screenshot[p2*3+i]= imdata[p1*4+i];
+    }
+  }
+  
+  stbi_image_free(imdata);
+
+  bool valid = data_size<sizeof(se_emu_id);
+
+  if(sizeof(se_emu_id)<data_size){
+
+    se_emu_id emu_id=se_get_emu_id();
+    se_emu_id comp_id = *(se_emu_id*)data;
+    bool bess= false; 
+    if(memcmp(&comp_id.name,&emu_id.name,sizeof(emu_id.name))){
+      printf("ERROR: Save state:%s has non-matching emu-name:%s\n",filename, emu_id.name);
+      bess=true; 
+    }
+    if(memcmp(&comp_id.build,&emu_id.build,sizeof(emu_id.build))){
+      printf("ERROR: Save state:%s has non-matching emu-build:%s\n",filename, emu_id.build);
+      bess=true; 
+    }
+    save_state->system = comp_id.system;
+    if(!bess&&se_get_core_size()+sizeof(se_emu_id)<=data_size){
+      memcpy(&(save_state->state), data+sizeof(se_emu_id), se_get_core_size());
+      save_state->valid = 1; 
+    }else if(se_bess_state_restore(data, data_size,comp_id, save_state)){
+      save_state->valid = 2;
+    }
+    
+    if(save_state->valid)printf("Loaded save state:%s\n",filename);
+    else printf("Failed to load state from file:%s\n",filename);
+  }
+  free(data);
 }
 double se_time(){
   static uint64_t base_time=0;
@@ -808,16 +960,10 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
 // Used for file loading dialogs
 static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
 
-static void se_reset_core(){
-  if(emu_state.system == SYSTEM_GB)sb_reset(&core.gb);
-  else if(emu_state.system == SYSTEM_GBA)gba_reset(&core.gba);
-  else if(emu_state.system == SYSTEM_NDS)nds_reset(&core.nds);
-}
-
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
-  char save_file[SB_FILE_PATH_SIZE]; 
+  char *save_file=emu_state.save_file_path; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
   sb_breakup_path(filename,&base, &c, &ext);
@@ -828,25 +974,26 @@ void se_load_rom(const char *filename){
       }
       return;
     }
-    snprintf(save_file,SB_FILE_PATH_SIZE,"/offline/%s.sav",c);
+    snprintf(emu_state.save_data_base_path, SB_FILE_PATH_SIZE,"/offline/%s", c);
 #else
-    se_join_path(save_file, SB_FILE_PATH_SIZE, base, c, ".sav");
+    se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
 #endif
+  snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
 
   if(emu_state.rom_loaded){
-    if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds);
-    else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba);
+    if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds, &scratch.nds);
+    else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba,&scratch.gba);
   }
   memset(&core,0,sizeof(core));
   printf("Loading ROM: %s\n", filename); 
   emu_state.rom_loaded = false; 
-  if(gba_load_rom(&core.gba, filename,save_file)){
+  if(gba_load_rom(&core.gba, &scratch.gba,filename,save_file)){
     emu_state.system = SYSTEM_GBA;
     emu_state.rom_loaded = true;
-  }else if(sb_load_rom(&core.gb, &emu_state,filename,save_file)){
+  }else if(sb_load_rom(&core.gb, &emu_state,&scratch.gb,filename,save_file)){
     emu_state.system = SYSTEM_GB;
     emu_state.rom_loaded = true; 
-  }else if(nds_load_rom(&core.nds,filename,save_file)){
+  }else if(nds_load_rom(&core.nds,&scratch.nds,filename,save_file)){
     emu_state.system = SYSTEM_NDS;
     emu_state.rom_loaded = true; 
   }
@@ -871,15 +1018,23 @@ void se_load_rom(const char *filename){
     }
     se_save_recent_games_list();
   }
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    char save_state_path[SB_FILE_PATH_SIZE];
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,i);
+    se_load_state_from_disk(save_states+i,save_state_path);
+  }
   return; 
+}
+static void se_reset_core(){
+  se_load_rom(gui_state.recently_loaded_games[0].path);
 }
 static bool se_sync_save_to_disk(){
   bool saved = false;
   if(emu_state.system== SYSTEM_GB){
     if(core.gb.cart.ram_is_dirty){
       saved=true;
-      if(sb_save_file_data(core.gb.cart.save_file_path,core.gb.cart.ram_data,core.gb.cart.ram_size)){
-      }else printf("Failed to write out save file: %s\n",core.gb.cart.save_file_path);
+      if(sb_save_file_data(emu_state.save_file_path,core.gb.cart.ram_data,core.gb.cart.ram_size)){
+      }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
       core.gb.cart.ram_is_dirty=false;
     }
   }else if(emu_state.system ==SYSTEM_GBA){
@@ -896,13 +1051,24 @@ static bool se_sync_save_to_disk(){
       }
       if(size){
         saved =true;
-        if(sb_save_file_data(core.gba.cart.save_file_path,core.gba.mem.cart_backup,size)){
-        }else printf("Failed to write out save file: %s\n",core.gba.cart.save_file_path);
+        if(sb_save_file_data(emu_state.save_file_path,core.gba.mem.cart_backup,size)){
+        }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
       }
       core.gba.cart.backup_is_dirty=false;
     }
   }
   return saved;
+}
+//Returns offset into savestate where bess info can be found
+static uint32_t se_save_best_effort_state(se_core_state_t* state){
+  if(emu_state.system==SYSTEM_GB)return sb_save_best_effort_state(&state->gb);
+  if(emu_state.system==SYSTEM_GBA)return gba_save_best_effort_state(&state->gba);
+  return -1; 
+}
+static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset){
+  if(emu_state.system==SYSTEM_GB)return sb_load_best_effort_state(&state->gb,save_state_data,size,bess_offset);
+  if(emu_state.system==SYSTEM_GBA)return gba_load_best_effort_state(&state->gba,save_state_data,size,bess_offset);
+  return false;
 }
 static double se_get_sim_fps(){
   double sim_fps=1.0;
@@ -910,6 +1076,12 @@ static double se_get_sim_fps(){
   else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
   else if(emu_state.system == SYSTEM_NDS) sim_fps = 59.727;
   return sim_fps;
+}
+static size_t se_get_core_size(){
+  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb);
+  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba);
+  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds);
+  return 0; 
 }
 static void se_emulate_single_frame(){
   if(emu_state.system == SYSTEM_GB){
@@ -920,10 +1092,10 @@ static void se_emulate_single_frame(){
       uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
       for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
     }
-    sb_tick(&emu_state,&core.gb);
+    sb_tick(&emu_state,&core.gb, &scratch.gb);
   }
-  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba);
-  else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds);
+  else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba, &scratch.gba);
+  else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
   
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
@@ -1151,6 +1323,8 @@ void se_reset_joy(sb_joy_t*joy){
 void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha,float opacity){
   sg_image *image = se_get_image();
   if(!image||!data){return; }
+  if(im_width<=0)im_width=1;
+  if(im_height<=0)im_height=1;
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
   if(has_alpha==false){
@@ -1859,7 +2033,7 @@ void se_update_frame() {
     double sim_time_increment = 1./sim_fps/emu_state.step_frames;
     bool unlocked_mode = emu_state.step_frames<0;
     double curr_time = se_time();
-    if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment*2;
+    if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment;
     if(unlocked_mode){
       sim_time_increment=0;
       max_frames_per_tick=1000;
@@ -2202,6 +2376,7 @@ void se_draw_menu_panel(){
     int slot_w = (win_w-style->FramePadding.x)*0.5;
     int slot_h = 64; 
     if(i%2)igSameLine(0,style->FramePadding.x);
+
     igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
     ImVec2 screen_p;
     igGetCursorScreenPos(&screen_p);
@@ -2211,8 +2386,15 @@ void se_draw_menu_panel(){
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
     igText("Save Slot %d",i);
-    if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state(&core, save_states+i);
-    if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state(&core, save_states+i);
+    if(igButton("Capture",(ImVec2){button_w,0})){
+      se_capture_state(&core, save_states+i);
+      char save_state_path[SB_FILE_PATH_SIZE];
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,i);
+      se_save_state_to_disk(save_states+i,save_state_path);
+    }
+    if(save_states[i].valid){
+      if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state(&core, save_states+i);
+    }
     if(save_states[i].valid){
       float w_scale = 1.0;
       float h_scale = 1.0;
@@ -2225,16 +2407,23 @@ void se_draw_menu_panel(){
       screen_h*=h_scale;
       screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
       screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
-
+   
       se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
                     screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), false);
-
+      if(save_states[i].valid==2){
+        igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
+        igButton(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
+        se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
+      }
     }else{
       screen_h*=0.85;
       screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
       screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
       ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
       ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+      ImVec2 anchor;
+      igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
+      igText(ICON_FK_BAN);
     }
     igEndChildFrame();
   }

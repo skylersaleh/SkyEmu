@@ -621,7 +621,7 @@ mmio_reg_t gba_io_reg_desc[]={
 #define GBA_REQ_WRITE 0x80
 
 typedef struct {     
-  uint8_t bios[16*1024];
+  uint8_t *bios;
   uint8_t wram0[256*1024];
   uint8_t wram1[32*1024];
   uint8_t io[1024];
@@ -655,8 +655,6 @@ typedef struct {
 } gba_mem_t;
 
 typedef struct {
-  char title[13];
-  char save_file_path[SB_FILE_PATH_SIZE];  
   unsigned rom_size; 
   uint8_t backup_type;
   bool backup_is_dirty;
@@ -735,6 +733,20 @@ typedef struct{
   int ticks_till_transfer_done; 
   bool last_active; 
 }gba_sio_t; 
+
+typedef struct{
+  uint32_t bess_version; 
+  uint32_t cpu_registers[37];
+  uint32_t wram0_seg;
+  uint32_t wram1_seg;
+  uint32_t io_seg;
+  uint32_t palette_seg;
+  uint32_t vram_seg;
+  uint32_t oam_seg;
+  uint32_t cart_backup_seg;
+  uint16_t timer_reload_values[4];
+  uint32_t padding[18];
+}gba_bess_info_t;
 typedef struct gba_t{
   gba_mem_t mem;
   arm7_t cpu;
@@ -744,6 +756,7 @@ typedef struct gba_t{
   gba_rtc_t rtc;
   gba_dma_t dma[4]; 
   gba_sio_t sio; 
+  gba_bess_info_t bess;
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -764,6 +777,59 @@ typedef struct gba_t{
   int residual_dma_ticks; 
   bool stop_mode; 
 } gba_t; 
+
+typedef struct{
+  uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
+  uint8_t bios[16*1024];
+  uint8_t *rom; 
+  FILE * log_cmp_file; 
+  bool skip_bios_intro;
+  char save_file_path[SB_FILE_PATH_SIZE];  
+}gba_scratch_t;
+
+static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt);
+static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr);
+static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data);
+
+//Returns offset into savestate where bess info can be found
+static uint32_t gba_save_best_effort_state(gba_t* gba){
+  gba->bess.bess_version = 1; 
+  for(int i=0;i<37;++i)gba->bess.cpu_registers[i]=gba->cpu.registers[i];
+
+  gba->bess.wram0_seg = ((uint8_t*)gba->mem.wram0)-(uint8_t*)gba;
+  gba->bess.wram1_seg = ((uint8_t*)gba->mem.wram1)-(uint8_t*)gba;
+  gba->bess.io_seg = ((uint8_t*)gba->mem.io)-(uint8_t*)gba;
+  gba->bess.palette_seg = ((uint8_t*)gba->mem.palette)-(uint8_t*)gba;
+  gba->bess.vram_seg = ((uint8_t*)gba->mem.vram)-(uint8_t*)gba;
+  gba->bess.oam_seg = ((uint8_t*)gba->mem.oam)-(uint8_t*)gba;
+  gba->bess.cart_backup_seg = ((uint8_t*)gba->mem.cart_backup)-(uint8_t*)gba;
+  for(int i=0;i<4;++i)gba->bess.timer_reload_values[i]=gba->timers[i].reload_value;
+  return ((uint8_t*)&gba->bess)-(uint8_t*)(gba); 
+}
+static bool gba_load_best_effort_state(gba_t* gba,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset){
+  if(bess_offset+sizeof(gba_bess_info_t)>size)return false;
+  gba_bess_info_t * bess = (gba_bess_info_t*)(save_state_data+bess_offset);
+  if(bess->bess_version!=1)return false; 
+  if(bess->wram0_seg+sizeof(gba->mem.wram0) > size) return false; 
+  if(bess->wram1_seg+sizeof(gba->mem.wram1) > size) return false;  
+  if(bess->io_seg+sizeof(gba->mem.io) > size) return false;  
+  if(bess->palette_seg+sizeof(gba->mem.palette) > size) return false;  
+  if(bess->vram_seg+sizeof(gba->mem.vram) > size) return false;  
+  if(bess->oam_seg+sizeof(gba->mem.oam) > size) return false;  
+  if(bess->cart_backup_seg+sizeof(gba->mem.cart_backup) > size) return false; 
+  for(int i=0;i<37;++i)gba->cpu.registers[i]=bess->cpu_registers[i];
+  memcpy(gba->mem.wram0,save_state_data+bess->wram0_seg,sizeof(gba->mem.wram0));
+  memcpy(gba->mem.wram1,save_state_data+bess->wram1_seg,sizeof(gba->mem.wram1));
+  memcpy(gba->mem.io,save_state_data+bess->io_seg,sizeof(gba->mem.io));
+  memcpy(gba->mem.palette,save_state_data+bess->palette_seg,sizeof(gba->mem.palette));
+  memcpy(gba->mem.vram,save_state_data+bess->vram_seg,sizeof(gba->mem.vram));
+  memcpy(gba->mem.oam,save_state_data+bess->oam_seg,sizeof(gba->mem.oam));
+  memcpy(gba->mem.cart_backup,save_state_data+bess->cart_backup_seg,sizeof(gba->mem.cart_backup));
+  for(int i=0;i<4;++i)gba->timers[i].pending_reload_value=gba->timers[i].reload_value=bess->timer_reload_values[i];
+
+  gba_recompute_waitstate_table(gba,gba_read32(gba, GBA_WAITCNT));
+  return true; 
+}
 
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
 static FORCE_INLINE void gba_tick_timers(gba_t* gba);
@@ -1191,8 +1257,7 @@ static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t 
   gba_store8((gba_t*)user_data,address,data);
 }
 // Try to load a GBA rom, return false on invalid rom
-bool gba_load_rom(gba_t* gba, const char * filename, const char* save_file);
-void gba_reset(gba_t*gba);
+bool gba_load_rom(gba_t* gba, gba_scratch_t *scratch, const char * filename, const char* save_file);
  
 static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int req_type){
   uint32_t *ret = &gba->mem.openbus_word;
@@ -1458,38 +1523,39 @@ int gba_search_rom_for_backup_string(gba_t* gba){
   }
   return btype; 
 }
-void gba_unload(gba_t*gba){
+void gba_unload(gba_t*gba,gba_scratch_t *scratch){
   printf("Unloading GBA\n");
-  if(gba->mem.cart_rom)sb_free_file_data(gba->mem.cart_rom);
-  gba->mem.cart_rom=NULL;
+  if(scratch->rom)sb_free_file_data(scratch->rom);
+  scratch->rom=NULL;
+  if(scratch->log_cmp_file)fclose(scratch->log_cmp_file);
+  scratch->log_cmp_file=NULL;
 }
-bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
+bool gba_load_rom(gba_t* gba, gba_scratch_t *scratch, const char* filename, const char* save_file){
+  memset(gba,0,sizeof(gba_t));
+  memset(scratch,0,sizeof(gba_scratch_t));
+  if(!sb_path_has_file_ext(filename, ".gba"))return false; 
 
-  if(!sb_path_has_file_ext(filename, ".gba")){
-    return false; 
-  }
   size_t bytes = 0;                                                       
-  uint8_t *data = sb_load_file_data(filename, &bytes);
-  if(!data)return false;
+  gba->mem.cart_rom=scratch->rom = sb_load_file_data(filename, &bytes);
+  if(!scratch->rom)return false;
   if(bytes>32*1024*1024){
     printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
-    sb_free_file_data(gba->mem.cart_rom);
+    sb_free_file_data(scratch->rom);
     return false;
   }  
 
-  strncpy(gba->cart.save_file_path,save_file,SB_FILE_PATH_SIZE);
-  gba->cart.save_file_path[SB_FILE_PATH_SIZE-1]=0;
-
-  gba_reset(gba);
-  gba->mem.cart_rom=data;
+  gba->mem.bios=scratch->bios;
+  bool loaded_bios= se_load_bios_file("GBA BIOS", save_file, "gba_bios.bin", scratch->bios,16*1024);
+  if(!loaded_bios){
+    memcpy(scratch->bios,gba_bios_bin,sizeof(gba_bios_bin));
+    scratch->skip_bios_intro=true;
+  }
   gba->cart.rom_size = bytes; 
-
-  memcpy(gba->cart.title,gba->mem.cart_rom+0x0A0,12);
-  gba->cart.title[12]=0;
+  gba->mem.cart_rom = scratch->rom;
 
   gba->cart.backup_type = gba_search_rom_for_backup_string(gba);
 
-  data = sb_load_file_data(save_file,&bytes);
+  uint8_t*data = sb_load_file_data(save_file,&bytes);
   if(data){
     printf("Loaded save file: %s, bytes: %zu\n",save_file,bytes);
     if(bytes>=128*1024)bytes=128*1024;
@@ -1508,6 +1574,61 @@ bool gba_load_rom(gba_t* gba, const char* filename, const char* save_file){
     gba->mem.flash_chip_id[1]=0x13;
     gba->mem.flash_chip_id[0]=0x62;
   }
+
+  gba->cpu = arm7_init(gba);
+  
+  for(int bg = 2;bg<4;++bg){
+    gba_io_store16(gba,GBA_BG2PA+(bg-2)*0x10,1<<8);
+    gba_io_store16(gba,GBA_BG2PB+(bg-2)*0x10,0<<8);
+    gba_io_store16(gba,GBA_BG2PC+(bg-2)*0x10,0<<8);
+    gba_io_store16(gba,GBA_BG2PD+(bg-2)*0x10,1<<8);
+  }
+  gba_store16(gba,0x04000088,512);
+  gba_store32(gba,0x040000DC,0x84000000);
+  gba_recompute_waitstate_table(gba,0);
+  gba_recompute_mmio_mask_table(gba);
+
+  if(scratch->skip_bios_intro){
+    printf("No GBA bios using bundled bios\n");
+    memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
+    const uint32_t initial_regs[37]={
+      0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,0x3007f00,0x0000000,0x8000000,
+      0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x3007fa0,0x0,0x3007fe0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,
+    };
+    for(int i=0;i<37;++i)gba->cpu.registers[i]=initial_regs[i];
+    const uint32_t initial_mmio_writes[]={
+      0x4000000,0x80,
+      0x4000004,0x7e0000,
+      0x4000020,0x100,
+      0x4000024,0x1000000,
+      0x4000030,0x100,
+      0x4000034,0x1000000,
+      0x4000080,0xe0000,
+      0x4000084,0xf,
+      0x4000088,0x200,
+      0x4000100,0xff8a,
+      0x4000130,0x3ff,
+      0x4000134,0x8000,
+      0x4000300,0x1,
+    };
+    for(int i=0;i<sizeof(initial_mmio_writes)/sizeof(uint32_t);i+=2){
+      uint32_t addr=initial_mmio_writes[i+0];
+      uint32_t data=initial_mmio_writes[i+1];
+      arm7_write32(gba, addr,data);
+    }
+    gba_store32(gba,GBA_IE,0x1);
+    gba_store16(gba,GBA_DISPCNT,0x9140);
+  }else{
+    gba->cpu.registers[PC]  = 0x0000000; 
+    gba->cpu.registers[CPSR]= 0x000000d3; 
+  }
+  if(gba->cpu.log_cmp_file){fclose(gba->cpu.log_cmp_file);gba->cpu.log_cmp_file=NULL;};
+  gba->cpu.log_cmp_file =se_load_log_file(scratch->save_file_path, "log.bin");
+  gba->cpu.executed_instructions+=2;
+  gba->audio.current_sample_generated_time=gba->audio.current_sim_time=0;
   return true; 
 }  
     
@@ -2788,8 +2909,21 @@ void gba_tick_rtc(gba_t*gba){
   gba->rtc.year  = gba_bin_to_bcd(tm->tm_year%100);
   gba->rtc.day_of_week=gba_bin_to_bcd(tm->tm_wday);
 }
-void gba_tick(sb_emu_state_t* emu, gba_t* gba){
-  gba->framebuffer=emu->core_temp_storage; 
+void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
+  gba->framebuffer = scratch->framebuffer;
+  gba->mem.bios    = scratch->bios;
+  gba->mem.cart_rom= scratch->rom;
+  gba->cpu.log_cmp_file = scratch->log_cmp_file;
+  gba->cpu.read8 = arm7_read8;
+  gba->cpu.read16 = arm7_read16;
+  gba->cpu.read32 = arm7_read32;
+  gba->cpu.read16_seq = arm7_read16_seq;
+  gba->cpu.read32_seq = arm7_read32_seq;
+  gba->cpu.write8 = arm7_write8;
+  gba->cpu.write16 = arm7_write16;
+  gba->cpu.write32 = arm7_write32;
+  gba->cpu.user_data=gba;
+
   gba_tick_rtc(gba);
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;
@@ -2837,89 +2971,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba){
     if(SB_UNLIKELY(gba->ppu.has_hit_vblank||gba->stop_mode))break;
   } 
   emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1);        
-}
-
-void gba_reset(gba_t*gba){
-  memset(&gba->mem.io,0,sizeof(gba->mem.io));
-  memset(&gba->mem.vram,0,sizeof(gba->mem.vram));
-  memset(&gba->mem.palette,0,sizeof(gba->mem.palette));
-  memset(&gba->mem.wram0,0,sizeof(gba->mem.wram0));
-  memset(&gba->mem.wram1,0,sizeof(gba->mem.wram1));
-  memset(&gba->ppu,0,sizeof(gba->ppu));
-  memset(&gba->dma,0,sizeof(gba->dma)*4);
-
-  gba->cpu = arm7_init(gba);
-  gba->cpu.read8 = arm7_read8;
-  gba->cpu.read16 = arm7_read16;
-  gba->cpu.read32 = arm7_read32;
-  gba->cpu.read16_seq = arm7_read16_seq;
-  gba->cpu.read32_seq = arm7_read32_seq;
-  gba->cpu.write8 = arm7_write8;
-  gba->cpu.write16 = arm7_write16;
-  gba->cpu.write32 = arm7_write32;
-
-  gba->mem.openbus_word = 0;
-  
-  for(int bg = 2;bg<4;++bg){
-    gba_io_store16(gba,GBA_BG2PA+(bg-2)*0x10,1<<8);
-    gba_io_store16(gba,GBA_BG2PB+(bg-2)*0x10,0<<8);
-    gba_io_store16(gba,GBA_BG2PC+(bg-2)*0x10,0<<8);
-    gba_io_store16(gba,GBA_BG2PD+(bg-2)*0x10,1<<8);
-  }
-  //gba_store32(gba,GBA_DISPCNT,0xe92d0000);
-  gba_store16(gba,0x04000088,512);
-  gba_store32(gba,0x040000DC,0x84000000);
-  gba_recompute_waitstate_table(gba,0);
-  gba_recompute_mmio_mask_table(gba);
-  gba->activate_dmas=false;
-  gba->deferred_timer_ticks=0;
-  gba->cart.in_chip_id_mode=false; 
-  gba->cart.flash_state=0;
-  gba->cart.flash_bank=0; 
-
-  bool loaded_bios= se_load_bios_file("GBA BIOS", gba->cart.save_file_path, "gba_bios.bin", gba->mem.bios,16*1024);
-  
-  if(!loaded_bios){
-    printf("No GBA bios using bundled bios\n");
-    memcpy(gba->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
-    const uint32_t initial_regs[37]={
-      0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-      0x0,0x0,0x0,0x0,0x0,0x3007f00,0x0000000,0x8000000,
-      0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-      0x3007fa0,0x0,0x3007fe0,0x0,0x0,0x0,0x0,0x0,
-      0x0,0x0,0x0,0x0,0x0,
-    };
-    for(int i=0;i<37;++i)gba->cpu.registers[i]=initial_regs[i];
-    const uint32_t initial_mmio_writes[]={
-      0x4000000,0x80,
-      0x4000004,0x7e0000,
-      0x4000020,0x100,
-      0x4000024,0x1000000,
-      0x4000030,0x100,
-      0x4000034,0x1000000,
-      0x4000080,0xe0000,
-      0x4000084,0xf,
-      0x4000088,0x200,
-      0x4000100,0xff8a,
-      0x4000130,0x3ff,
-      0x4000134,0x8000,
-      0x4000300,0x1,
-    };
-    for(int i=0;i<sizeof(initial_mmio_writes)/sizeof(uint32_t);i+=2){
-      uint32_t addr=initial_mmio_writes[i+0];
-      uint32_t data=initial_mmio_writes[i+1];
-      arm7_write32(gba, addr,data);
-    }
-    gba_store32(gba,GBA_IE,0x1);
-    gba_store16(gba,GBA_DISPCNT,0x9140);
-  }else{
-    gba->cpu.registers[PC]  = 0x0000000; 
-    gba->cpu.registers[CPSR]= 0x000000d3; 
-  }
-  if(gba->cpu.log_cmp_file){fclose(gba->cpu.log_cmp_file);gba->cpu.log_cmp_file=NULL;};
-  gba->cpu.log_cmp_file =se_load_log_file(gba->cart.save_file_path, "log.bin");
-  gba->cpu.executed_instructions+=2;
-  gba->audio.current_sample_generated_time=gba->audio.current_sim_time=0;
 }
 
 #endif

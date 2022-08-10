@@ -109,6 +109,15 @@ typedef struct{
   uint32_t read_ptr;
   uint32_t write_ptr;
 }sb_ring_buffer_t;
+static FORCE_INLINE uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
+  if(buff->read_ptr>SB_AUDIO_RING_BUFFER_SIZE){
+    buff->write_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
+    buff->read_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
+  }
+  uint32_t v = (buff->write_ptr-buff->read_ptr);
+  v= v%SB_AUDIO_RING_BUFFER_SIZE;
+  return v;
+}
 typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
@@ -133,6 +142,8 @@ typedef struct {
   //or rewind buffers
   uint8_t core_temp_storage[1024*1024];
   uint32_t frames_since_rewind_push;
+  char save_data_base_path[SB_FILE_PATH_SIZE];
+  char save_file_path[SB_FILE_PATH_SIZE]; 
 } sb_emu_state_t;
 typedef struct{
   uint32_t addr;
@@ -143,98 +154,6 @@ typedef struct{
     const char* name; 
   } bits[32]; 
 }mmio_reg_t; 
-typedef struct {
-  // Registers
-  uint16_t af, bc, de, hl, sp, pc;
-  bool interrupt_enable;
-  bool deferred_interrupt_enable;
-  bool wait_for_interrupt; 
-  bool prefix_op;
-  bool trigger_breakpoint; 
-  int last_inter_f; 
-  bool branch_taken;
-} sb_gb_cpu_t;
-
-typedef struct {
-  uint8_t data[65536];
-  uint8_t wram[SB_WRAM_NUM_BANKS*SB_WRAM_BANK_SIZE];
-} sb_gb_mem_t;
-
-typedef struct {
-  uint8_t data[MAX_CARTRIDGE_SIZE];
-  uint8_t ram_data[MAX_CARTRIDGE_RAM]; 
-  char title[17];
-  char save_file_path[SB_FILE_PATH_SIZE]; 
-  bool game_boy_color;
-  bool ram_write_enable;
-  bool ram_is_dirty; 
-  uint8_t type;
-  uint8_t mbc_type; 
-  uint8_t mapped_ram_bank;
-  unsigned mapped_rom_bank;
-  int rom_size;
-  int ram_size;
-  bool rumble;
-  bool has_rumble; 
-  bool bank_mode; //MBC1
-} sb_gb_cartridge_t;
-
-typedef struct{
-  unsigned int scanline_cycles;
-  unsigned int curr_scanline;
-  unsigned int curr_window_scanline;
-  uint8_t *framebuffer;
-  uint8_t vram[SB_VRAM_BANK_SIZE*SB_VRAM_NUM_BANKS];
-  uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
-  bool in_hblank; //Used for HDMA
-  bool wy_eq_ly;
-  bool last_frame_ppu_disabled;
-} sb_lcd_ppu_t;
-typedef struct{
-  bool in_hblank; 
-  bool active;
-  int bytes_transferred;
-  bool oam_dma_active;
-  int oam_bytes_transferred; 
-  bool hdma; 
-} sb_dma_t;
-
-typedef struct{
-  uint32_t total_clock_ticks; 
-  bool tima_written;
-  bool last_tick_tima;
-} sb_timer_t;
-
-static FORCE_INLINE uint32_t sb_ring_buffer_size(sb_ring_buffer_t* buff){
-  if(buff->read_ptr>SB_AUDIO_RING_BUFFER_SIZE){
-    buff->write_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
-    buff->read_ptr-=SB_AUDIO_RING_BUFFER_SIZE;
-  }
-  uint32_t v = (buff->write_ptr-buff->read_ptr);
-  v= v%SB_AUDIO_RING_BUFFER_SIZE;
-  return v;
-}
-typedef struct{
-  bool regs_written; 
-}sb_audio_t;
-typedef struct{
-  uint32_t ticks_to_complete; 
-  bool last_active;
-}sb_serial_t;
-typedef struct {
-  sb_gb_cartridge_t cart;
-  sb_gb_cpu_t cpu;
-  sb_gb_mem_t mem;
-  sb_lcd_ppu_t lcd;
-  sb_timer_t timers;
-  sb_dma_t dma; 
-  sb_audio_t audio;
-  sb_serial_t serial;
-  int model; 
-  uint8_t dmg_palette[4*3];
-} sb_gb_t;  
-
-typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
 
 static inline float sb_random_float(float min, float max){
   float v = rand()/(float)RAND_MAX;
