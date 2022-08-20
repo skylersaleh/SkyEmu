@@ -1496,7 +1496,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
   };
   sg_apply_bindings(&bind);
   sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(lcd_params));
-  //sg_apply_uniforms(SG_SHADERSTAGE_FS, 0, SG_RANGE_REF(lcd_params));
+  sg_apply_uniforms(SG_SHADERSTAGE_FS, 0, SG_RANGE_REF(lcd_params));
   int verts = 6;
   sg_draw(0, verts, 1);
   
