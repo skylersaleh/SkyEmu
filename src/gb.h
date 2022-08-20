@@ -422,7 +422,7 @@ typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2
 #include "sb_instr_tables.h"
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
-void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b,float color_correction_strength);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
@@ -839,7 +839,7 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
   if(bg_to_oam_priority)color_id|= 1<<8;
   return color_id;
 }
-void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b, float color_correction_strength){
   uint8_t palette = 0;
   if(gb->model == SB_GB){
     int pal_id = SB_BFE(color_id,2,6);
@@ -871,12 +871,12 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
     if(R>960)R=960;
     if(G>960)G=960;
     if(B>960)B=960;
-    *r = R >> 2;
-    *g = G >> 2;
-    *b = B >> 2;
+    *r = (R >> 2)*color_correction_strength+(tr*8*(1.0-color_correction_strength));
+    *g = (G >> 2)*color_correction_strength+(tg*8*(1.0-color_correction_strength));
+    *b = (B >> 2)*color_correction_strength+(tb*8*(1.0-color_correction_strength));
   }
 }
-void sb_draw_scanline(sb_gb_t*gb){
+void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
   bool master_priority = true;
@@ -991,17 +991,22 @@ void sb_draw_scanline(sb_gb_t*gb){
 
       }
     }
-    sb_lookup_palette_color(gb,color_id,&r,&g,&b);
-    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+0] = r;
-    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+1] = g;
-    gb->lcd.framebuffer[(x+(y)*SB_LCD_W)*3+2] = b;
+    sb_lookup_palette_color(gb,color_id,&r,&g,&b,emu->color_correction_strength);
+
+    float ghost_coef = 0.5;
+    if(gb->model != SB_GB)ghost_coef= 0.2;
+    ghost_coef*=emu->screen_ghosting_strength;
+    int p =(x+(y)*SB_LCD_W)*3;
+    gb->lcd.framebuffer[p+0] = r*(1.0-ghost_coef)+gb->lcd.framebuffer[p+0]*ghost_coef+0.5;
+    gb->lcd.framebuffer[p+1] = g*(1.0-ghost_coef)+gb->lcd.framebuffer[p+1]*ghost_coef+0.5;
+    gb->lcd.framebuffer[p+2] = b*(1.0-ghost_coef)+gb->lcd.framebuffer[p+2]*ghost_coef+0.5;
   }
   if(rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
 }
-static FORCE_INLINE bool sb_update_lcd(sb_gb_t* gb, int delta_cycles, bool draw){
+static FORCE_INLINE bool sb_update_lcd(sb_gb_t* gb, int delta_cycles, bool draw,sb_emu_state_t* emu){
   bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
   if(new_scanline){
-    if(draw)sb_draw_scanline(gb);
+    if(draw)sb_draw_scanline(gb,emu);
     uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
     if(y+1==SB_LCD_H)return true;
   }
@@ -1220,7 +1225,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
     sb_update_oam_dma(gb,cpu_delta_cycles);
     int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
     delta_cycles_after_speed+= dma_delta_cycles;
-    bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame);
+    bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame,emu);
     sb_update_timers(gb,dma_delta_cycles?dma_delta_cycles:cpu_delta_cycles);
     sb_tick_sio(gb,delta_cycles_after_speed);
     rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;

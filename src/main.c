@@ -41,6 +41,7 @@
 #endif
 
 #include "SDL.h"
+#include "lcd_shaders.h"
 
 #define SE_HAT_MASK (1<<16)
 #define SE_JOY_POS_MASK (1<<17)
@@ -109,7 +110,14 @@ typedef struct{
   uint32_t draw_debug_menu;
   float volume; 
   uint32_t light_mode; 
-  uint32_t padding[253];
+  uint32_t settings_file_version; 
+  uint32_t gb_palette[4];
+  float ghosting;
+  float color_correction;
+  uint32_t integer_scaling; 
+  uint32_t screen_shader; //0: pixels, 1: lcd, 2: lcd+subpixels, 3: upscale
+  uint32_t screen_rotation; //0: No rotation, 1: Rotate Left, 2: Rotate Right, 3: Upside Down
+  uint32_t padding[243];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -152,6 +160,9 @@ typedef struct {
     int audio_watchdog_triggered; 
     bool block_touchscreen;
     bool test_runner_mode;
+    sg_shader lcd_prog;
+    sg_buffer quad_vb;
+    sg_pipeline lcd_pipeline;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -205,6 +216,7 @@ typedef struct{
 }se_emu_id;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation, bool has_alpha);
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad);
 void se_reset_save_states();
@@ -1089,8 +1101,12 @@ static void se_emulate_single_frame(){
       uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
       for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
     }else{
-      uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
-      for(int i=0;i<12;++i)core.gb.dmg_palette[i]=palette[i];
+      for(int i=0;i<4;++i){
+        uint32_t v = gui_state.settings.gb_palette[i];
+        core.gb.dmg_palette[i*3+0]=SB_BFE(v,0,8);
+        core.gb.dmg_palette[i*3+1]=SB_BFE(v,8,8);
+        core.gb.dmg_palette[i*3+2]=SB_BFE(v,16,8);
+      }
     }
     sb_tick(&emu_state,&core.gb, &scratch.gb);
   }
@@ -1120,31 +1136,46 @@ static void se_draw_emulated_system_screen(){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
 
+  float native_w = SB_LCD_W;
+  float native_h = SB_LCD_H;
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
-  if(emu_state.system==SYSTEM_GBA){
-    lcd_aspect= GBA_LCD_H/(float)GBA_LCD_W;
-  }else if(emu_state.system==SYSTEM_NDS){
-    lcd_aspect= NDS_LCD_H*2/(float)NDS_LCD_W;
-  }
-  // Square Screen
+  if(emu_state.system==SYSTEM_GBA){native_w = GBA_LCD_W; native_h = GBA_LCD_H;}
+  else if(emu_state.system==SYSTEM_NDS){native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;}
+
+  float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
+
+  lcd_aspect= native_h/native_w;
+
   float scr_w = igGetWindowWidth();
   float scr_h = igGetWindowHeight();
   float height = scr_h;
   float extra_space=0;
-  if(scr_w*lcd_aspect>height){
+  float render_w = native_w;
+  float render_h = native_h;
+  switch(gui_state.settings.screen_rotation){
+    case 1: case 3:
+      render_w = native_h;
+      render_h = native_w;
+  }
+  float render_aspect = render_h/render_w; 
+
+  float render_scale =1;
+  if(scr_w*render_aspect>height){
     //Too wide
-    extra_space = scr_w-height/lcd_aspect;
+    extra_space = scr_w-height/render_aspect;
     //lcd_rect = (Rectangle){extra_space*0.5, panel_height, height/lcd_aspect,height};
     lcd_render_x = extra_space*0.5;
-    lcd_render_w = scr_h/lcd_aspect;
-    lcd_render_h = height;
+    render_scale = height/render_h;
   }else{
     //Too tall
-    extra_space = height-scr_w*lcd_aspect;
+    extra_space = height-scr_w*render_aspect;
     lcd_render_y = extra_space*0.5;
-    lcd_render_w = scr_w;
-    lcd_render_h = scr_w*lcd_aspect;
+    render_scale = scr_w/render_w;
   }
+
+  lcd_render_w = native_w*render_scale;
+  lcd_render_h = native_h*render_scale;
+
 
   int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
@@ -1158,17 +1189,35 @@ static void se_draw_emulated_system_screen(){
       controller_y_pad=(height-lcd_render_h-controller_h-lcd_render_y)*0.25;
     }
   }
+  if(gui_state.settings.integer_scaling){
+    float old_w = lcd_render_w;
+    float old_h = lcd_render_h;
+    lcd_render_h = ((int)((lcd_render_h)/native_h))*native_h;
+    lcd_render_w = ((int)((lcd_render_w)/native_w))*native_w;
+    lcd_render_x+=(old_w-lcd_render_w)*0.5;
+    lcd_render_y+=(old_h-lcd_render_h)*0.5;
+  }
   ImVec2 v;
   igGetWindowPos(&v);
-  lcd_render_x+=v.x*se_dpi_scale();
-  lcd_render_y+=v.y*se_dpi_scale();
+  lcd_render_x=v.x*se_dpi_scale()+scr_w*0.5;
+  lcd_render_y=v.y*se_dpi_scale()+scr_h*0.5;
   if(emu_state.system==SYSTEM_GBA){
-    se_draw_image(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+    se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
   }else if (emu_state.system==SYSTEM_NDS){
-    se_draw_image(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h*0.5,false);
-    se_draw_image(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x,lcd_render_y+lcd_render_h*0.5, lcd_render_w, lcd_render_h*0.5,false);
+    float p[4]={
+      0,-lcd_render_h*0.25,
+      0,lcd_render_h*0.25
+    };
+    for(int i=0;i<2;++i){
+      float x = p[i*2+0];
+      float y = p[i*2+1];
+      p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+      p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+    }
+    se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
+    se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,false);
   }else if (emu_state.system==SYSTEM_GB){
-    se_draw_image(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,false);
+    se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
   }
   if(!gui_state.block_touchscreen)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad);
 }
@@ -1373,6 +1422,87 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
     tint);
   if(has_alpha==false)free(rgba8_data);
 }
+
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation, bool has_alpha){
+  sg_image *image = se_get_image();
+  if(!image||!data){return; }
+  if(im_width<=0)im_width=1;
+  if(im_height<=0)im_height=1;
+  sg_image_data im_data={0};
+  uint8_t * rgba8_data = data;
+  if(has_alpha==false){
+    rgba8_data= malloc(im_width*im_height*4);
+    for(int i=0;i<im_width*im_height;++i){
+      rgba8_data[i*4+0]= data[i*3+0];
+      rgba8_data[i*4+1]= data[i*3+1];
+      rgba8_data[i*4+2]= data[i*3+2];
+      rgba8_data[i*4+3]= 255; 
+    }
+  }
+  im_data.subimage[0][0].ptr = rgba8_data;
+  im_data.subimage[0][0].size = im_width*im_height*4; 
+  sg_image_desc desc={
+    .type=              SG_IMAGETYPE_2D,
+    .render_target=     false,
+    .width=             im_width,
+    .height=            im_height,
+    .num_slices=        1,
+    .num_mipmaps=       1,
+    .usage=             SG_USAGE_IMMUTABLE,
+    .pixel_format=      SG_PIXELFORMAT_RGBA8,
+    .sample_count=      1,
+    .min_filter=        SG_FILTER_NEAREST,
+    .mag_filter=        SG_FILTER_NEAREST,
+    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+    .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+    .max_anisotropy=    1,
+    .min_lod=           0.0f,
+    .max_lod=           1e9f,
+    .data=              im_data,
+  };
+
+  *image =  sg_make_image(&desc);
+  float dpi_scale = se_dpi_scale();
+
+  ImGuiIO* io = igGetIO();
+
+  const int fb_width = (int) (io->DisplaySize.x * dpi_scale);
+  const int fb_height = (int) (io->DisplaySize.y * dpi_scale);
+  sg_apply_viewport(0, 0, fb_width, fb_height, true);
+  sg_apply_scissor_rect(0, 0, fb_width, fb_height, true);
+
+  sg_apply_pipeline(gui_state.lcd_pipeline);
+  lcd_params_t lcd_params={
+    .display_size[0] = fb_width,
+    .display_size[1] = fb_height,
+    .render_off[0] = x, 
+    .render_off[1] = y, 
+    .render_size[0]= render_width,
+    .render_size[1]= render_height,
+    .emu_lcd_size[0]= im_width,
+    .emu_lcd_size[1]= im_height,
+    .display_mode = gui_state.settings.screen_shader,
+    .render_scale_x[0] = cos(rotation),
+    .render_scale_x[1] = sin(rotation),
+    .render_scale_y[0] = -sin(rotation),
+    .render_scale_y[1] = cos(rotation),
+    .lcd_is_grayscale = emu_state.system == SYSTEM_GB&& core.gb.model ==SB_GB,
+  };
+  sg_bindings bind={
+    .vertex_buffers[0] = gui_state.quad_vb,
+    .fs_images[0] = *image
+  };
+  sg_apply_bindings(&bind);
+  sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(lcd_params));
+  //sg_apply_uniforms(SG_SHADERSTAGE_FS, 0, SG_RANGE_REF(lcd_params));
+  int verts = 6;
+  sg_draw(0, verts, 1);
+  
+  if(has_alpha==false)free(rgba8_data);
+}
+
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){
   se_draw_image_opacity(data,im_width,im_height,x,y,render_width,render_height,has_alpha,1.0);
 }
@@ -2018,6 +2148,9 @@ void se_update_frame() {
       se_emscripten_flush_fs();
     }
   }
+
+  emu_state.screen_ghosting_strength = gui_state.settings.ghosting;
+  emu_state.color_correction_strength = gui_state.settings.color_correction;
   const int frames_per_rewind_state = 8; 
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
@@ -2363,6 +2496,12 @@ void se_draw_controller_config(gui_state_t* gui){
   if(SDL_JoystickHasRumble(cont->sdl_joystick)){igText("Rumble Supported");
   }else igText("Rumble Not Supported");
 }
+void se_reset_default_gb_palette(){
+  uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
+  for(int i=0;i<4;++i){
+    gui_state.settings.gb_palette[i]=palette[i*3]|(palette[i*3+1]<<8)|(palette[i*3+2]<<16);
+  }
+}
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   igText(ICON_FK_FLOPPY_O " Save States");
@@ -2427,6 +2566,45 @@ void se_draw_menu_panel(){
     }
     igEndChildFrame();
   }
+  igText(ICON_FK_DESKTOP " Display Settings");
+  igSeparator();
+  int v = gui_state.settings.screen_shader;
+  igPushItemWidth(-1);
+  igText("Screen Shader");igSameLine(win_w*0.4,0);
+  igComboStr("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Sharp Upscale\0Smooth Upscale (xBRZ)\0",0);
+  gui_state.settings.screen_shader=v;
+  v = gui_state.settings.screen_rotation;
+  igText("Screen Rotation");igSameLine(win_w*0.4,0);
+  igComboStr("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
+  gui_state.settings.screen_rotation=v;
+  igText("Color Correction");igSameLine(win_w*0.4,0);
+  igSliderFloat("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f",ImGuiSliderFlags_AlwaysClamp);
+  igPopItemWidth();
+  {
+    bool b = gui_state.settings.ghosting;
+    igCheckbox("Screen Ghosting", &b);
+    gui_state.settings.ghosting=b;
+  }
+  bool b = gui_state.settings.integer_scaling;
+  igCheckbox("Force Integer Scaling", &b);
+  gui_state.settings.integer_scaling = b;
+  igText("Game Boy Color Palette");
+  for(int i=0;i<4;++i){
+    char buff[60];
+    snprintf(buff,60,"GB Palette %d",i);
+    float color[3]; 
+    uint32_t col = gui_state.settings.gb_palette[i];
+    color[0]= SB_BFE(col,0,8)/255.;
+    color[1]= SB_BFE(col,8,8)/255.;
+    color[2]= SB_BFE(col,16,8)/255.;
+    igColorEdit3(buff,color,ImGuiColorEditFlags_None);
+    col = (((int)(color[0]*255))&0xff);
+    col |= (((int)(color[1]*255))&0xff)<<8;
+    col |= (((int)(color[2]*255))&0xff)<<16;
+    gui_state.settings.gb_palette[i]=col;
+  }
+  if(igButton("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
+
   igText(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
@@ -2471,6 +2649,7 @@ static void se_init_audio(){
 }
 
 static void frame(void) {
+
   sb_poll_controller_input(&emu_state.joy);
   se_poll_sdl();
   const int width = sapp_width();
@@ -2478,6 +2657,7 @@ static void frame(void) {
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
   gui_state.screen_width=width;
   gui_state.screen_height=height;
+  sg_begin_default_pass(&gui_state.pass_action, width, height);
   simgui_new_frame(width, height, delta_time);
   float menu_height = 0; 
   if(gui_state.last_light_mode_setting!=gui_state.settings.light_mode)se_imgui_theme();
@@ -2627,7 +2807,7 @@ static void frame(void) {
   igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
   igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0});
-  igPushStyleColorVec4(ImGuiCol_WindowBg, (ImVec4){0,0,0,1.});
+  igPushStyleColorVec4(ImGuiCol_WindowBg, (ImVec4){0,0,0,0.});
 
   igBegin("Screen", 0,ImGuiWindowFlags_NoDecoration
     |ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -2648,7 +2828,6 @@ static void frame(void) {
 
   /*=== UI CODE ENDS HERE ===*/
 
-  sg_begin_default_pass(&gui_state.pass_action, width, height);
   simgui_render();
   sg_end_pass();
   static bool init=false;
@@ -2742,9 +2921,21 @@ void se_load_settings(){
   {
     char settings_path[SB_FILE_PATH_SIZE];
     snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
-    if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){
+    if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){gui_state.settings.settings_file_version=-1;}
+    int max_settings_version_supported =1;
+    if(gui_state.settings.settings_file_version>max_settings_version_supported){
       gui_state.settings.volume=0.8;
       gui_state.settings.draw_debug_menu = false; 
+      gui_state.settings.settings_file_version = 0;
+    }
+    if(gui_state.settings.settings_file_version<1){
+      gui_state.settings.settings_file_version=1; 
+      se_reset_default_gb_palette();
+      gui_state.settings.ghosting = 1.0;
+      gui_state.settings.color_correction=1.0;
+      gui_state.settings.integer_scaling=false;
+      gui_state.settings.screen_shader=3;
+      gui_state.settings.screen_rotation=0;
     }
     gui_state.last_saved_settings=gui_state.settings;
   }
@@ -2765,13 +2956,55 @@ static void init(void) {
   se_imgui_theme();
   // initial clear color
   gui_state.pass_action = (sg_pass_action) {
-      .colors[0] = { .action = SG_ACTION_CLEAR, .value = { 0.0f, 0.0f, 0.0f, 1.0 } }
+      .colors[0] = { .action = SG_ACTION_CLEAR, .value={0,0,0,1} }
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }
+
+  sg_push_debug_group("LCD Shader Init");
+
+  gui_state.lcd_prog = sg_make_shader(lcdprog_shader_desc(sg_query_backend()));
+  /* pipeline object for imgui rendering */
+  sg_pipeline_desc pip_desc={0};
+  pip_desc.layout.buffers[0].stride = 16;
+  {
+      sg_vertex_attr_desc* attr = &pip_desc.layout.attrs[0];
+      attr->offset =0;
+      attr->format = SG_VERTEXFORMAT_FLOAT2;
+  }
+  {
+      sg_vertex_attr_desc* attr = &pip_desc.layout.attrs[1];
+      attr->offset = 8;
+      attr->format = SG_VERTEXFORMAT_FLOAT2;
+  }
+  pip_desc.shader = gui_state.lcd_prog;
+  pip_desc.index_type = SG_INDEXTYPE_NONE;
+  pip_desc.colors[0].blend.enabled = false;
+  pip_desc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+  pip_desc.colors[0].blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+  pip_desc.label = "lcd-pipeline";
+  gui_state.lcd_pipeline = sg_make_pipeline(&pip_desc);
+  printf("Built pipeline: %d\n",gui_state.lcd_pipeline.id);
+  static float quad_verts[6*4]={
+    0,0, 0,0,
+    1,0, 1,0,
+    1,1, 1,1,
+
+    1,1, 1,1,
+    0,1, 0,1,
+    0,0, 0,0,
+  };
+
+  sg_buffer_desc vb_desc={
+    .usage     = SG_USAGE_IMMUTABLE,
+    .data.size =sizeof(quad_verts),
+    .data.ptr  = quad_verts
+  };
+  gui_state.quad_vb = sg_make_buffer(&vb_desc);
+  sg_pop_debug_group();
 }
 static void cleanup(void) {
   simgui_shutdown();

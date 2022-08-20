@@ -144,6 +144,8 @@ typedef struct {
   uint32_t frames_since_rewind_push;
   char save_data_base_path[SB_FILE_PATH_SIZE];
   char save_file_path[SB_FILE_PATH_SIZE]; 
+  float screen_ghosting_strength;  //0 = off 1 = full strength
+  float color_correction_strength; //0 = off 1 = full strength
 } sb_emu_state_t;
 typedef struct{
   uint32_t addr;

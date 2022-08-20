@@ -38,3 +38,7 @@ build*
 *.swo 
 *.swn
 .vscode
+*.air
+*.dia
+*.metal
+*.metallib
