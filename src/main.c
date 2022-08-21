@@ -216,7 +216,7 @@ typedef struct{
 }se_emu_id;
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
-void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation, bool has_alpha);
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation);
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad);
 void se_reset_save_states();
@@ -1149,7 +1149,6 @@ static void se_draw_emulated_system_screen(){
   float scr_w = igGetWindowWidth();
   float scr_h = igGetWindowHeight();
   float height = scr_h;
-  float extra_space=0;
   float render_w = native_w;
   float render_h = native_h;
   switch(gui_state.settings.screen_rotation){
@@ -1161,32 +1160,24 @@ static void se_draw_emulated_system_screen(){
 
   float render_scale =1;
   if(scr_w*render_aspect>height){
-    //Too wide
-    extra_space = scr_w-height/render_aspect;
-    //lcd_rect = (Rectangle){extra_space*0.5, panel_height, height/lcd_aspect,height};
-    lcd_render_x = extra_space*0.5;
     render_scale = height/render_h;
   }else{
-    //Too tall
-    extra_space = height-scr_w*render_aspect;
-    lcd_render_y = extra_space*0.5;
     render_scale = scr_w/render_w;
   }
 
   lcd_render_w = native_w*render_scale;
   lcd_render_h = native_h*render_scale;
-
+  render_w*=render_scale;
+  render_h*=render_scale;
 
   int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
   if(gui_state.last_touch_time>=0){
-    lcd_render_y = 0;
-    if(controller_h+lcd_render_h<height){
-      controller_h = fmin(height-lcd_render_h,scr_w);
-    }
-    if(controller_h+lcd_render_h<height){
-      lcd_render_y+=(height-lcd_render_h-controller_h)*0.33;
-      controller_y_pad=(height-lcd_render_h-controller_h-lcd_render_y)*0.25;
+    lcd_render_y = -(height-render_h)*0.9*0.5;
+    if(controller_h+render_h<height){
+      float off = (height-render_h-controller_h)*0.33;
+      lcd_render_y+=off;
+      controller_y_pad=(height-render_h-controller_h-off)*0.25;
     }
   }
   if(gui_state.settings.integer_scaling){
@@ -1194,15 +1185,13 @@ static void se_draw_emulated_system_screen(){
     float old_h = lcd_render_h;
     lcd_render_h = ((int)((lcd_render_h)/native_h))*native_h;
     lcd_render_w = ((int)((lcd_render_w)/native_w))*native_w;
-    lcd_render_x+=(old_w-lcd_render_w)*0.5;
-    lcd_render_y+=(old_h-lcd_render_h)*0.5;
   }
   ImVec2 v;
   igGetWindowPos(&v);
-  lcd_render_x=v.x*se_dpi_scale()+scr_w*0.5;
-  lcd_render_y=v.y*se_dpi_scale()+scr_h*0.5;
+  lcd_render_x+=v.x*se_dpi_scale()+scr_w*0.5;
+  lcd_render_y+=v.y*se_dpi_scale()+scr_h*0.5;
   if(emu_state.system==SYSTEM_GBA){
-    se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
+    se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
   }else if (emu_state.system==SYSTEM_NDS){
     float p[4]={
       0,-lcd_render_h*0.25,
@@ -1214,10 +1203,10 @@ static void se_draw_emulated_system_screen(){
       p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
       p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
     }
-    se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
-    se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,false);
+    se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
+    se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
   }else if (emu_state.system==SYSTEM_GB){
-    se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
+    se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
   }
   if(!gui_state.block_touchscreen)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad);
 }
@@ -1423,22 +1412,13 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
   if(has_alpha==false)free(rgba8_data);
 }
 
-void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation, bool has_alpha){
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation){
   sg_image *image = se_get_image();
   if(!image||!data){return; }
   if(im_width<=0)im_width=1;
   if(im_height<=0)im_height=1;
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
-  if(has_alpha==false){
-    rgba8_data= malloc(im_width*im_height*4);
-    for(int i=0;i<im_width*im_height;++i){
-      rgba8_data[i*4+0]= data[i*3+0];
-      rgba8_data[i*4+1]= data[i*3+1];
-      rgba8_data[i*4+2]= data[i*3+2];
-      rgba8_data[i*4+3]= 255; 
-    }
-  }
   im_data.subimage[0][0].ptr = rgba8_data;
   im_data.subimage[0][0].size = im_width*im_height*4; 
   sg_image_desc desc={
@@ -1499,8 +1479,6 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
   sg_apply_uniforms(SG_SHADERSTAGE_FS, 0, SG_RANGE_REF(lcd_params));
   int verts = 6;
   sg_draw(0, verts, 1);
-  
-  if(has_alpha==false)free(rgba8_data);
 }
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha){

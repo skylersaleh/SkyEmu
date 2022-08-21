@@ -781,7 +781,7 @@ typedef struct gba_t{
 } gba_t; 
 
 typedef struct{
-  uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*3];
+  uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*4];
   uint8_t bios[16*1024];
   uint8_t *rom; 
   FILE * log_cmp_file; 
@@ -2140,9 +2140,9 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
 
     //Color correction inspired by higan algorithm
     if(gba->ppu.color_correction_strength){
-      float crp = pow(r/31.,3.7);
-      float cgp = pow(g/31.,3.7);
-      float cbp = pow(b/31.,3.7);
+      float crp = powf(r/31.,3.7);
+      float cgp = powf(g/31.,3.7);
+      float cbp = powf(b/31.,3.7);
 
       float subpixel_bleed = 0.1;
 
@@ -2150,9 +2150,9 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       float cg = (subpixel_bleed*crp + cgp + subpixel_bleed*cbp)/(1.0+subpixel_bleed*2);
       float cb = (subpixel_bleed*cgp+cbp)/(1.0+subpixel_bleed);
 
-      cr = pow(cr,1.0/2.2)*255;
-      cg = pow(cg,1.0/2.2)*255;
-      cb = pow(cb,1.0/2.2)*255;
+      cr = powf(cr,1.0/2.2)*255;
+      cg = powf(cg,1.0/2.2)*255;
+      cb = powf(cb,1.0/2.2)*255;
 
       if(cr>255)cr=255;
       if(cg>255)cg=255;
@@ -2170,7 +2170,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       g*=7;
       b*=7;
     }
-    int p = (lcd_x+lcd_y*240)*3;
+    int p = (lcd_x+lcd_y*240)*4;
     float screen_blend_factor = 0.3*gba->ppu.ghosting_strength;
     gba->framebuffer[p+0] = r*(1.0-screen_blend_factor)+gba->framebuffer[p+0]*screen_blend_factor;
     gba->framebuffer[p+1] = g*(1.0-screen_blend_factor)+gba->framebuffer[p+1]*screen_blend_factor;

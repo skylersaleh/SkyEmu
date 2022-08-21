@@ -2070,8 +2070,8 @@ typedef struct{
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
 
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*3];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*3];
+  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
   uint64_t current_clock;
 } nds_t; 
 
@@ -3810,7 +3810,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           break; 
       }
     }
-    int p = (lcd_x+lcd_y*NDS_LCD_W)*3;
+    int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
     float screen_blend_factor = 0.7;
     uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
     bool display_flip = SB_BFE(powcnt1,15,1);

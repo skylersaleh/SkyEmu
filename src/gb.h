@@ -361,7 +361,7 @@ typedef struct {
 
 typedef struct{
   uint8_t rom[MAX_CARTRIDGE_SIZE];
-  uint8_t framebuffer[SB_LCD_H*SB_LCD_W*3];
+  uint8_t framebuffer[SB_LCD_H*SB_LCD_W*4];
  } gb_scratch_t; 
 
 // Return offset to bess structure
@@ -996,7 +996,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
     float ghost_coef = 0.5;
     if(gb->model != SB_GB)ghost_coef= 0.2;
     ghost_coef*=emu->screen_ghosting_strength;
-    int p =(x+(y)*SB_LCD_W)*3;
+    int p =(x+(y)*SB_LCD_W)*4;
     gb->lcd.framebuffer[p+0] = r*(1.0-ghost_coef)+gb->lcd.framebuffer[p+0]*ghost_coef+0.5;
     gb->lcd.framebuffer[p+1] = g*(1.0-ghost_coef)+gb->lcd.framebuffer[p+1]*ghost_coef+0.5;
     gb->lcd.framebuffer[p+2] = b*(1.0-ghost_coef)+gb->lcd.framebuffer[p+2]*ghost_coef+0.5;
