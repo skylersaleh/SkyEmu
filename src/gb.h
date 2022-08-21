@@ -327,6 +327,7 @@ typedef struct{
 } sb_timer_t;
 typedef struct{
   bool regs_written; 
+  uint8_t curr_wave_data;
 }sb_audio_t;
 typedef struct{
   uint32_t ticks_to_complete; 
@@ -496,6 +497,11 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
     }else if (addr == SB_IO_GBC_VBK){
       uint8_t d= sb_read8_direct(gb,addr);
       return d|0xfe;
+    }else if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
+      bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
+      if(wave_active){
+        return gb->audio.curr_wave_data;
+      }
     }
     return sb_read8_direct(gb,addr)|sb_io_or_mask(addr);
   }
@@ -596,6 +602,10 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       if(addr==SB_IO_SOUND_ON_OFF){
         value&=0xf0;
         value|=sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf;
+      }
+      if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
+        bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
+        if(wave_active)return;
       }
     }
   }else if(addr >= 0x0000 && addr <=0x1fff){
@@ -1579,6 +1589,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 	  //Lookup wave table value
     unsigned wav_samp = ((unsigned)(chan_t[2]*32))%32;
     int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
+    gb->audio.curr_wave_data = dat;
     int offset = (wav_samp&1)? 0:4;
     dat = ((dat>>offset)&0xf)>>channel3_shift;
     int wav_offset = 8>>channel3_shift; 
