@@ -49,10 +49,12 @@
 
 #define SB_IO_LCD_WY      0xff4A
 #define SB_IO_LCD_WX      0xff4B
+#define SB_IO_GBC_KEY0    0xFF4C
 
 #define SB_IO_GBC_SPEED_SWITCH 0xff4d
 #define SB_IO_GBC_VBK     0xff4f
 
+#define SB_IO_BIOS_BANK   0xff50
 #define SB_IO_DMA_SRC_HI  0xff51
 #define SB_IO_DMA_SRC_LO  0xff52
 #define SB_IO_DMA_DST_HI  0xff53
@@ -233,7 +235,10 @@ mmio_reg_t gb_io_reg_desc[]={
     { 0,2, "Color for index 0" },
   }},     
   { SB_IO_LCD_WY, "LCD_WY", { 0 }},       
-  { SB_IO_LCD_WX, "LCD_WX", { 0 }},       
+  { SB_IO_LCD_WX, "LCD_WX", { 0 }},    
+  { SB_IO_GBC_KEY0, "GBC KEY0", {
+    {0, 1, "DMG Mode (0=Normal, 1=DMG Compatible)"}
+  }},   
   { SB_IO_GBC_SPEED_SWITCH, "GBC_SPEED_SWITCH", { 
     { 7,1, "Current Speed     (0=Normal, 1=Double) (Read Only)"},
     { 0,1, "Prepare Speed Switch (0=No, 1=Prepare) (Read/Write)"},
@@ -241,6 +246,9 @@ mmio_reg_t gb_io_reg_desc[]={
   { SB_IO_GBC_VBK, "GBC_VBK", { 
     {0,1, "VRAM Bank Sel"}
   }},      
+  { SB_IO_BIOS_BANK, "BIOS_BANK", { 
+    {0,8, "BANK VALUE"}
+  }}, 
   { SB_IO_DMA_SRC_HI, "DMA_SRC_HI", { 0 }},   
   { SB_IO_DMA_SRC_LO, "DMA_SRC_LO", { 0 }},   
   { SB_IO_DMA_DST_HI, "DMA_DST_HI", { 0 }},   
@@ -358,11 +366,13 @@ typedef struct {
   sb_gb_bess_info_t bess;
   int model; 
   uint8_t dmg_palette[4*3];
+  uint8_t* bios; 
 } sb_gb_t;  
 
 typedef struct{
   uint8_t rom[MAX_CARTRIDGE_SIZE];
   uint8_t framebuffer[SB_LCD_H*SB_LCD_W*4];
+  uint8_t bios[2304];
  } gb_scratch_t; 
 
 // Return offset to bess structure
@@ -428,6 +438,9 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x0000&&addr<=0x3fff){
+    if(addr<256||(addr>=512&&addr<2304)){
+      if(!sb_read8_direct(gb,SB_IO_BIOS_BANK))return gb->bios[addr]; 
+    }
     int cart_addr = SB_BFE(addr,0,14);
     if(gb->cart.bank_mode&&gb->cart.mbc_type==SB_MBC_MBC1){
       cart_addr|=SB_BFE(gb->cart.mapped_ram_bank,0,2)<<19;
@@ -605,9 +618,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       }
       if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
         bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
-        if(wave_active)return;
+        //if(wave_active)return;
       }
-    }
+    }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_direct(gb,SB_IO_BIOS_BANK);}
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
     return;
@@ -864,6 +877,15 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   }else if(gb->model == SB_GBC){
 
     int palette = SB_BFE(color_id,2,6);
+    if(sb_read8_direct(gb,SB_IO_GBC_KEY0)){
+      uint8_t pal_map= 0; 
+      int pal_id = SB_BFE(color_id,2,6);
+      if(pal_id==SB_BACKG_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_BGP);
+      else if(pal_id==SB_OBJ1_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_OBP1);
+      else pal_map = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
+      color_id = SB_BFE(pal_map,2*(color_id&0x3),2);
+    }
+
     int entry= palette*8+(color_id&0x3)*2;
     uint16_t color = gb->lcd.color_palettes[entry+0];
     color |= ((int)gb->lcd.color_palettes[entry+1])<<8;
@@ -1139,6 +1161,7 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->lcd.framebuffer = scratch->framebuffer; 
   gb->cart.data = scratch->rom; 
+  gb->bios = scratch->bios;
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=6000000;
   int frames_to_draw = 1;
@@ -1299,6 +1322,8 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch,
       SB_BFE(gb->cart.data[0x143], 7, 1) == 1;
   gb->cart.type = gb->cart.data[0x147];
 
+  for(int i=0;i<sizeof(gb->lcd.color_palettes);++i)gb->lcd.color_palettes[i]=0xff;
+
   switch(gb->cart.type){
     case 0: gb->cart.mbc_type = SB_MBC_NO_MBC; break;
 
@@ -1357,60 +1382,11 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch,
     case 0x5: gb->cart.ram_size = 64 * 1024; break;
     default: gb->cart.ram_size = 0; break;
   }
-  gb->cpu.pc = 0x100;
-  gb->cpu.af=0x01B0;
   gb->model = SB_GB;
   if(gb->cart.game_boy_color){
     gb->model = SB_GBC;
   }
-  if(gb->model == SB_GBC){
-    gb->cpu.af|=0x11<<8;
-  }
-  gb->cpu.bc=0x0013;
-  gb->cpu.de=0x00D8;
-  gb->cpu.hl=0x014D;
-  gb->cpu.sp=0xFFFE;
-
-  gb->mem.data[0xFF05] = 0x00; // TIMA
-  gb->mem.data[0xFF06] = 0x00; // TMA
-  gb->mem.data[0xFF07] = 0x00; // TAC
-  /*
-  gb->mem.data[0xFF10] = 0x80; // NR10
-  gb->mem.data[0xFF11] = 0xBF; // NR11
-  gb->mem.data[0xFF12] = 0xF3; // NR12
-  gb->mem.data[0xFF14] = 0xBF; // NR14
-  gb->mem.data[0xFF16] = 0x3F; // NR21
-  gb->mem.data[0xFF17] = 0x00; // NR22
-  gb->mem.data[0xFF19] = 0xBF; // NR24
-  */
-  gb->mem.data[0xFF1A] = 0x7F; // NR30
-  gb->mem.data[0xFF1B] = 0xFF; // NR31
-  gb->mem.data[0xFF1C] = 0x9F; // NR32
-  gb->mem.data[0xFF1E] = 0xBF; // NR34
-  /*
-  gb->mem.data[0xFF20] = 0xFF; // NR41
-  gb->mem.data[0xFF21] = 0x00; // NR42
-  gb->mem.data[0xFF22] = 0x00; // NR43
-  gb->mem.data[0xFF23] = 0xBF; // NR44
-  gb->mem.data[0xFF24] = 0x77; // NR50
-  */
-  gb->mem.data[0xFF25] = 0xF3; // NR51
-  gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
-  gb->mem.data[0xFF40] = 0x91; // LCDC
-  gb->mem.data[0xFF42] = 0x00; // SCY
-  gb->mem.data[0xFF43] = 0x00; // SCX
-  gb->mem.data[0xFF44] = 0x90; // SCX
-  gb->mem.data[0xFF45] = 0x00; // LYC
-  gb->mem.data[0xFF47] = 0xFC; // BGP
-  gb->mem.data[0xFF48] = 0xFF; // OBP0
-  gb->mem.data[0xFF49] = 0xFF; // OBP1
-  gb->mem.data[0xFF4A] = 0x00; // WY
-  gb->mem.data[0xFF4B] = 0x00; // WX
-  gb->mem.data[0xFFFF] = 0x00; // IE
   gb->cart.mapped_rom_bank=1;
-
-  emu->run_mode = SB_MODE_RESET;
-  emu->rom_loaded = true;
 
   data = sb_load_file_data(save_file, &bytes);
   if(data){
@@ -1426,6 +1402,69 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch,
     printf("Could not find save file: %s\n",save_file);
     memset(gb->cart.ram_data,0,MAX_CARTRIDGE_RAM);
   }
+  bool loaded_bios = false; 
+  if(gb->model==SB_GB){
+    loaded_bios= se_load_bios_file("GBC BIOS", save_file, "gbc_bios.bin", scratch->bios,2304);
+    if(loaded_bios){
+      gb->model=SB_GBC;
+    }
+    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG0 BIOS", save_file, "dmg0_rom.bin", scratch->bios,256);
+    if(!loaded_bios) loaded_bios= se_load_bios_file("GB BIOS", save_file, "gb_bios.bin", scratch->bios,256);
+  }else if(gb->model==SB_GBC){
+    loaded_bios= se_load_bios_file("GBC BIOS", save_file, "gbc_bios.bin", scratch->bios,2304);
+  }
+  if(loaded_bios){
+    gb->cpu.pc = 0; 
+  }else{
+    sb_store8_direct(gb,SB_IO_BIOS_BANK,1);
+    gb->cpu.pc = 0x100;
+    gb->cpu.af=0x01B0;
+    gb->cpu.bc=0x0013;
+    gb->cpu.de=0x00D8;
+    gb->cpu.hl=0x014D;
+    gb->cpu.sp=0xFFFE;
+    if(gb->model == SB_GBC){
+      gb->cpu.af|=0x11<<8;
+    }
+
+    gb->mem.data[0xFF05] = 0x00; // TIMA
+    gb->mem.data[0xFF06] = 0x00; // TMA
+    gb->mem.data[0xFF07] = 0x00; // TAC
+    /*
+    gb->mem.data[0xFF10] = 0x80; // NR10
+    gb->mem.data[0xFF11] = 0xBF; // NR11
+    gb->mem.data[0xFF12] = 0xF3; // NR12
+    gb->mem.data[0xFF14] = 0xBF; // NR14
+    gb->mem.data[0xFF16] = 0x3F; // NR21
+    gb->mem.data[0xFF17] = 0x00; // NR22
+    gb->mem.data[0xFF19] = 0xBF; // NR24
+    */
+    gb->mem.data[0xFF1A] = 0x7F; // NR30
+    gb->mem.data[0xFF1B] = 0xFF; // NR31
+    gb->mem.data[0xFF1C] = 0x9F; // NR32
+    gb->mem.data[0xFF1E] = 0xBF; // NR34
+    /*
+    gb->mem.data[0xFF20] = 0xFF; // NR41
+    gb->mem.data[0xFF21] = 0x00; // NR42
+    gb->mem.data[0xFF22] = 0x00; // NR43
+    gb->mem.data[0xFF23] = 0xBF; // NR44
+    gb->mem.data[0xFF24] = 0x77; // NR50
+    */
+    gb->mem.data[0xFF25] = 0xF3; // NR51
+    gb->mem.data[0xFF26] = 0xF1; // $F0-SGB ; NR52
+    gb->mem.data[0xFF40] = 0x91; // LCDC
+    gb->mem.data[0xFF42] = 0x00; // SCY
+    gb->mem.data[0xFF43] = 0x00; // SCX
+    gb->mem.data[0xFF44] = 0x90; // SCX
+    gb->mem.data[0xFF45] = 0x00; // LYC
+    gb->mem.data[0xFF47] = 0xFC; // BGP
+    gb->mem.data[0xFF48] = 0xFF; // OBP0
+    gb->mem.data[0xFF49] = 0xFF; // OBP1
+    gb->mem.data[0xFF4A] = 0x00; // WY
+    gb->mem.data[0xFF4B] = 0x00; // WX
+    gb->mem.data[0xFFFF] = 0x00; // IE
+  }
+  
   return true; 
 }
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
