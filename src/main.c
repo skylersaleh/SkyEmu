@@ -1104,13 +1104,22 @@ typedef struct{
 }se_lcd_info_t;
 se_lcd_info_t se_get_lcd_info(){
   if(emu_state.system==SYSTEM_GB){
-    return (se_lcd_info_t){
-      .red_color  ={26./32,0./32.,6./32.},
-      .green_color={4./32,24/32.,4./32.},
-      .blue_color ={2./32,8./32,22./32},
-      .gamma = 2.2,
-      .is_grayscale = core.gb.model==SB_GB
-    };
+    if(core.gb.model==SB_GBC){
+      return (se_lcd_info_t){
+        .red_color  ={26./32,0./32.,6./32.},
+        .green_color={4./32,24/32.,4./32.},
+        .blue_color ={2./32,8./32,22./32},
+        .gamma = 2.2,
+      };
+    }else{
+      return (se_lcd_info_t){
+        .red_color  ={1,0,0},
+        .green_color={0,1,0},
+        .blue_color ={0,0,1},
+        .gamma = 2.2,
+        .is_grayscale = true
+      };
+    }
   }else if(emu_state.system == SYSTEM_GBA){
     return (se_lcd_info_t){
       .red_color  ={1,0.05,0.0},
