@@ -620,7 +620,8 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
         //if(wave_active)return;
       }
-    }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_direct(gb,SB_IO_BIOS_BANK);}
+    }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_direct(gb,SB_IO_BIOS_BANK);
+    }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_direct(gb,SB_IO_BIOS_BANK))return;}
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
     return;
@@ -877,7 +878,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   }else if(gb->model == SB_GBC){
 
     int palette = SB_BFE(color_id,2,6);
-    if(sb_read8_direct(gb,SB_IO_GBC_KEY0)){
+    if(sb_read8_direct(gb,SB_IO_GBC_KEY0)==0x4){
       uint8_t pal_map= 0; 
       int pal_id = SB_BFE(color_id,2,6);
       if(pal_id==SB_BACKG_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_BGP);

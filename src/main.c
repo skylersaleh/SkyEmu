@@ -170,7 +170,7 @@ typedef struct {
 #define SE_LAST_DELTA_IN_TX (1<<31)
 
 #define SE_NUM_SAVE_STATES 4
-#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*3)
+#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
@@ -463,9 +463,9 @@ void se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
       int px = x/scale;
       int py = y/scale;
       int p = (px+py*save_state->screenshot_width);
-      uint8_t r = save_state->screenshot[p*3+0];
-      uint8_t g = save_state->screenshot[p*3+1];
-      uint8_t b = save_state->screenshot[p*3+2];
+      uint8_t r = save_state->screenshot[p*4+0];
+      uint8_t g = save_state->screenshot[p*4+1];
+      uint8_t b = save_state->screenshot[p*4+2];
       uint8_t a = 0xff; 
       int p_out = x+y*save_state->screenshot_width*scale;
       uint8_t data =0; 
@@ -506,6 +506,7 @@ bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id
     state->screenshot[0] = 0; 
     state->screenshot[1] = 0; 
     state->screenshot[2] = 0; 
+    state->screenshot[3] = 255; 
   }
   return valid; 
 }
@@ -529,14 +530,15 @@ void se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
     data[i]=d;
   }
   int downscale= 1; 
-  while((im_w/downscale)*(im_h/downscale)*3>=sizeof(save_state->screenshot))downscale++;
+  while((im_w/downscale)*(im_h/downscale)*4>=sizeof(save_state->screenshot))downscale++;
   save_state->screenshot_width=im_w/downscale;
   save_state->screenshot_height=im_h/downscale;
   for(int y=0;y<im_h;y+=downscale){
     for(int x=0;x<im_w;x+=downscale){
       int p1 = x+y*im_w;
       int p2 = x/downscale+(y/downscale)*save_state->screenshot_width;
-      for(int i=0;i<3;++i)save_state->screenshot[p2*3+i]= imdata[p1*4+i];
+      for(int i=0;i<3;++i)save_state->screenshot[p2*4+i]= imdata[p1*4+i];
+      save_state->screenshot[p2*4+3]=0xff;
     }
   }
   
@@ -1160,17 +1162,18 @@ static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_he
   if(emu_state.system==SYSTEM_GBA){
     *out_width = GBA_LCD_W;
     *out_height = GBA_LCD_H;
-    memcpy(output_buffer,core.gba.framebuffer,GBA_LCD_W*GBA_LCD_H*3);
+    memcpy(output_buffer,core.gba.framebuffer,GBA_LCD_W*GBA_LCD_H*4);
   }else if (emu_state.system==SYSTEM_NDS){
     *out_width = NDS_LCD_W;
     *out_height = NDS_LCD_H*2;
-    memcpy(output_buffer,core.nds.framebuffer_top,NDS_LCD_W*NDS_LCD_H*3);
-    memcpy(output_buffer+NDS_LCD_W*NDS_LCD_H*3,core.nds.framebuffer_bottom,NDS_LCD_W*NDS_LCD_H*3);
+    memcpy(output_buffer,core.nds.framebuffer_top,NDS_LCD_W*NDS_LCD_H*4);
+    memcpy(output_buffer+NDS_LCD_W*NDS_LCD_H*4,core.nds.framebuffer_bottom,NDS_LCD_W*NDS_LCD_H*4);
   }else if (emu_state.system==SYSTEM_GB){
     *out_width = SB_LCD_W;
     *out_height = SB_LCD_H;
-    memcpy(output_buffer,core.gb.lcd.framebuffer,SB_LCD_W*SB_LCD_H*3);
+    memcpy(output_buffer,core.gb.lcd.framebuffer,SB_LCD_W*SB_LCD_H*4);
   }
+  for(int i=3;i<SE_MAX_SCREENSHOT_SIZE;i+=4)output_buffer[i]=0xff;
 }
 static void se_draw_emulated_system_screen(){
   int lcd_render_x = 0, lcd_render_y = 0; 
@@ -2572,7 +2575,7 @@ void se_draw_menu_panel(){
       screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
    
       se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
-                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), false);
+                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
       if(save_states[i].valid==2){
         igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
         igButton(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
