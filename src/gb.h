@@ -1437,11 +1437,10 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
   if(gb->audio.regs_written){
     gb->audio.regs_written = false; 
-    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF);
+    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf0;
     bool master_enable = SB_BFE(nrf_52,7,1);
     sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
     if(!master_enable){
-      nrf_52&=0xf0;
       for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
         sb_store8_direct(gb,i,0);
       }
