@@ -422,7 +422,7 @@ typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2
 #include "sb_instr_tables.h"
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
-void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b,float color_correction_strength);
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
@@ -839,7 +839,7 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
   if(bg_to_oam_priority)color_id|= 1<<8;
   return color_id;
 }
-void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b, float color_correction_strength){
+void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   uint8_t palette = 0;
   if(gb->model == SB_GB){
     int pal_id = SB_BFE(color_id,2,6);
@@ -862,18 +862,9 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b, flo
     int tg = SB_BFE(color,5,5);
     int tb = SB_BFE(color,10,5);
 
-    // Color correction algorithm from Near's article
-
-    // https://near.sh/articles/video/color-emulation
-    int R = (tr * 26 + tg *  4 + tb *  2);
-    int G = (         tg * 24 + tb *  8);
-    int B = (tr *  6 + tg *  4 + tb * 22);
-    if(R>960)R=960;
-    if(G>960)G=960;
-    if(B>960)B=960;
-    *r = (R >> 2)*color_correction_strength+(tr*8*(1.0-color_correction_strength));
-    *g = (G >> 2)*color_correction_strength+(tg*8*(1.0-color_correction_strength));
-    *b = (B >> 2)*color_correction_strength+(tb*8*(1.0-color_correction_strength));
+    *r = tr*8;
+    *g = tg*8;
+    *b = tb*8;
   }
 }
 void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
@@ -991,7 +982,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
 
       }
     }
-    sb_lookup_palette_color(gb,color_id,&r,&g,&b,emu->color_correction_strength);
+    sb_lookup_palette_color(gb,color_id,&r,&g,&b);
 
     float ghost_coef = 0.5;
     if(gb->model != SB_GB)ghost_coef= 0.2;

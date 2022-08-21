@@ -1095,6 +1095,37 @@ static size_t se_get_core_size(){
   else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds);
   return 0; 
 }
+typedef struct{
+  float red_color[3];
+  float green_color[3];
+  float blue_color[3];
+  float gamma; 
+  bool is_grayscale;
+}se_lcd_info_t;
+se_lcd_info_t se_get_lcd_info(){
+  if(emu_state.system==SYSTEM_GB){
+    return (se_lcd_info_t){
+      .red_color  ={26./32,0./32.,6./32.},
+      .green_color={4./32,24/32.,4./32.},
+      .blue_color ={2./32,8./32,22./32},
+      .gamma = 2.2,
+      .is_grayscale = core.gb.model==SB_GB
+    };
+  }else if(emu_state.system == SYSTEM_GBA){
+    return (se_lcd_info_t){
+      .red_color  ={1,0.05,0.0},
+      .green_color={0.05,1,0.05},
+      .blue_color ={0,0.05,1.0},
+      .gamma = 3.7
+    };
+  }
+  return (se_lcd_info_t){
+    .red_color  ={1,0,0},
+    .green_color={0,1,0},
+    .blue_color ={0,0,1},
+    .gamma = 2.2
+  };
+}
 static void se_emulate_single_frame(){
   if(emu_state.system == SYSTEM_GB){
     if(gui_state.test_runner_mode){
@@ -1454,6 +1485,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
   sg_apply_scissor_rect(0, 0, fb_width, fb_height, true);
 
   sg_apply_pipeline(gui_state.lcd_pipeline);
+  se_lcd_info_t lcd_info=se_get_lcd_info();
   lcd_params_t lcd_params={
     .display_size[0] = fb_width,
     .display_size[1] = fb_height,
@@ -1468,8 +1500,14 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     .render_scale_x[1] = sin(rotation),
     .render_scale_y[0] = -sin(rotation),
     .render_scale_y[1] = cos(rotation),
-    .lcd_is_grayscale = emu_state.system == SYSTEM_GB&& core.gb.model ==SB_GB,
+    .lcd_is_grayscale = lcd_info.is_grayscale,
+    .input_gamma = lcd_info.gamma,
+    .red_color = {lcd_info.red_color[0],lcd_info.red_color[1],lcd_info.red_color[2]},
+    .green_color = {lcd_info.green_color[0],lcd_info.green_color[1],lcd_info.green_color[2]},
+    .blue_color = {lcd_info.blue_color[0],lcd_info.blue_color[1],lcd_info.blue_color[2]},
+    .color_correction_strength=gui_state.settings.color_correction
   };
+
   sg_bindings bind={
     .vertex_buffers[0] = gui_state.quad_vb,
     .fs_images[0] = *image
@@ -2128,7 +2166,6 @@ void se_update_frame() {
   }
 
   emu_state.screen_ghosting_strength = gui_state.settings.ghosting;
-  emu_state.color_correction_strength = gui_state.settings.color_correction;
   const int frames_per_rewind_state = 8; 
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;

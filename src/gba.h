@@ -697,7 +697,6 @@ typedef struct{
   uint16_t dispcnt_pipeline[3];
   int fast_forward_ticks;
   float ghosting_strength;
-  float color_correction_strength;
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -2138,43 +2137,11 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     gba->first_target_buffer[lcd_x] = backdrop_col;
     gba->second_target_buffer[lcd_x] = backdrop_col;
 
-    //Color correction inspired by higan algorithm
-    if(gba->ppu.color_correction_strength){
-      float crp = powf(r/31.,3.7);
-      float cgp = powf(g/31.,3.7);
-      float cbp = powf(b/31.,3.7);
-
-      float subpixel_bleed = 0.1;
-
-      float cr = (crp + subpixel_bleed*cgp)/(1.000+subpixel_bleed);
-      float cg = (subpixel_bleed*crp + cgp + subpixel_bleed*cbp)/(1.0+subpixel_bleed*2);
-      float cb = (subpixel_bleed*cgp+cbp)/(1.0+subpixel_bleed);
-
-      cr = powf(cr,1.0/2.2)*255;
-      cg = powf(cg,1.0/2.2)*255;
-      cb = powf(cb,1.0/2.2)*255;
-
-      if(cr>255)cr=255;
-      if(cg>255)cg=255;
-      if(cb>255)cb=255;
-
-      if(cr<0)cr=0;
-      if(cg<0)cg=0;
-      if(cb<0)cb=0;
-
-      r = r*(1.0-gba->ppu.color_correction_strength)*7.+cr*gba->ppu.color_correction_strength;
-      g = g*(1.0-gba->ppu.color_correction_strength)*7.+cg*gba->ppu.color_correction_strength;
-      b = b*(1.0-gba->ppu.color_correction_strength)*7.+cb*gba->ppu.color_correction_strength;
-    }else{
-      r*=7;
-      g*=7;
-      b*=7;
-    }
     int p = (lcd_x+lcd_y*240)*4;
     float screen_blend_factor = 0.3*gba->ppu.ghosting_strength;
-    gba->framebuffer[p+0] = r*(1.0-screen_blend_factor)+gba->framebuffer[p+0]*screen_blend_factor;
-    gba->framebuffer[p+1] = g*(1.0-screen_blend_factor)+gba->framebuffer[p+1]*screen_blend_factor;
-    gba->framebuffer[p+2] = b*(1.0-screen_blend_factor)+gba->framebuffer[p+2]*screen_blend_factor;  
+    gba->framebuffer[p+0] = r*8*(1.0-screen_blend_factor)+gba->framebuffer[p+0]*screen_blend_factor;
+    gba->framebuffer[p+1] = g*8*(1.0-screen_blend_factor)+gba->framebuffer[p+1]*screen_blend_factor;
+    gba->framebuffer[p+2] = b*8*(1.0-screen_blend_factor)+gba->framebuffer[p+2]*screen_blend_factor;  
   }
 }
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
@@ -2964,7 +2931,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
-  gba->ppu.color_correction_strength = emu->color_correction_strength;
   while(true){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
     if(!ticks&&gba->residual_dma_ticks){ticks=gba->residual_dma_ticks;gba->residual_dma_ticks=0;}

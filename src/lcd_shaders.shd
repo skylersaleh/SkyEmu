@@ -12,6 +12,11 @@ uniform lcd_params {
     vec2 emu_lcd_size;
     float display_mode;
     float lcd_is_grayscale;
+    float color_correction_strength;
+    vec3 red_color;
+    vec3 green_color;
+    vec3 blue_color;
+    float input_gamma;
 };
 in vec2 position;
 in vec2 texcoord0;
@@ -36,6 +41,11 @@ uniform lcd_params_fs {
     vec2 emu_lcd_size;
     float display_mode;
     float lcd_is_grayscale;
+    float color_correction_strength;
+    vec3 red_color;
+    vec3 green_color;
+    vec3 blue_color;
+    float input_gamma;
 };
 precision highp float;
 precision highp int;
@@ -51,6 +61,16 @@ bool cmp_colors3(vec4 c1, vec4 c2, vec4 c3){
 }
 bool cmp_colors2(vec4 c1, vec4 c2){
     return distance(c1.xyz,c2.xyz)<0.3;
+}
+
+vec4 sample_color_correct(vec2 uv){
+    vec4 orig_color = texture(tex, uv);
+    vec3 color = pow(orig_color.rgb,vec3(input_gamma));
+    color.rgb = color.r*red_color+color.g*green_color+color.b*blue_color;
+    color.rgb= pow(color.rgb,vec3(1.0/2.2));
+    color = clamp(color,0.,1.);
+    orig_color.rgb=mix(orig_color.rgb,color,color_correction_strength);
+    return orig_color;
 }
 #define INCLUDE_XBRZ
 
@@ -125,7 +145,7 @@ float get_left_ratio(vec2 center, vec2 origin, vec2 direction, vec2 scale)
 #define eq(a,b)  (a == b)
 #define neq(a,b) (a != b)
 
-#define P(x,y) texture(Source, coord + SourceSize.zw * vec2(x, y)).rgb
+#define P(x,y) sample_color_correct(coord + SourceSize.zw * vec2(x, y)).rgb
 
 vec4 xbrz()
 {
@@ -337,7 +357,7 @@ bool nomatch(vec4 v[9]){
            !cmp_colors(v[4],v[6])&&!cmp_colors(v[4],v[7])&&!cmp_colors(v[4],v[8]);
 }
 void main() {
-  vec4 val = texture(tex, uv);
+  vec4 val = sample_color_correct(uv);
   frag_color = val;
   float smooth_width = emu_lcd_size.x/render_size.x*2;
   vec2 pix_sub = fract(uv*emu_lcd_size+smooth_width*0.5);
@@ -351,10 +371,10 @@ void main() {
     vec2 residual = fract(uv*emu_lcd_size.xy-0.5);
     ip/=emu_lcd_size.xy;
 
-    v[0] = texture(tex, ip);
-    v[1] = texture(tex, ip+vec2(1.0,0.0)/emu_lcd_size);
-    v[2] = texture(tex, ip+vec2(0.0,1.0)/emu_lcd_size);
-    v[3] = texture(tex, ip+vec2(1.0,1.0)/emu_lcd_size);
+    v[0] = sample_color_correct(ip);
+    v[1] = sample_color_correct(ip+vec2(1.0,0.0)/emu_lcd_size);
+    v[2] = sample_color_correct(ip+vec2(0.0,1.0)/emu_lcd_size);
+    v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
     vec2 alpha = smoothstep(0.5-smooth_width*0.5,0.5+smooth_width*0.5,residual);
     frag_color = mix(mix(v[0],v[1],alpha.x),mix(v[2],v[3],alpha.x),alpha.y);
   }else if(mode==1){
@@ -363,10 +383,10 @@ void main() {
     vec2 ip = floor(uv*emu_lcd_size.xy-0.5);
     ip/=emu_lcd_size.xy;
 
-    v[0] = texture(tex, ip);
-    v[1] = texture(tex, ip+vec2(1.0,0.0)/emu_lcd_size);
-    v[2] = texture(tex, ip+vec2(0.0,1.0)/emu_lcd_size);
-    v[3] = texture(tex, ip+vec2(1.0,1.0)/emu_lcd_size);
+    v[0] = sample_color_correct(ip);
+    v[1] = sample_color_correct(ip+vec2(1.0,0.0)/emu_lcd_size);
+    v[2] = sample_color_correct(ip+vec2(0.0,1.0)/emu_lcd_size);
+    v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
     frag_color = mix(mix(v[0],v[1],pix_sub.x),mix(v[2],v[3],pix_sub.x),pix_sub.y);
   }else if(mode==2){
     float rgb_factor = 1.0-(smoothstep(0.0,0.0+smooth_width,pix_sub.y)-smoothstep(0.15,0.15+smooth_width,pix_sub.y));    
@@ -379,10 +399,10 @@ void main() {
         vec2 pix_sub2 = fract(ip+0.5);
         ip/=emu_lcd_size.xy;
 
-        v[0] = texture(tex, ip);
-        v[1] = texture(tex, ip+vec2(1.0,0.0)/emu_lcd_size);
-        v[2] = texture(tex, ip+vec2(0.0,1.0)/emu_lcd_size);
-        v[3] = texture(tex, ip+vec2(1.0,1.0)/emu_lcd_size);
+        v[0] = sample_color_correct(ip);
+        v[1] = sample_color_correct(ip+vec2(1.0,0.0)/emu_lcd_size);
+        v[2] = sample_color_correct(ip+vec2(0.0,1.0)/emu_lcd_size);
+        v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
         bilin = bilinear(v[0],v[1],v[2],v[3],pix_sub2);
         frag_color.rgb*=2.0-rgb_factor;
         frag_color = mix(frag_color, bilin, 0.3);
@@ -415,7 +435,7 @@ void main() {
             vec2 ip_samp=ip+0.5/emu_lcd_size;
             ip_samp.y+= (y-1)*1.0/emu_lcd_size.y;
             ip_samp.x+= (x-1)*1.0/emu_lcd_size.x;
-            v[y*3+x] = texture(tex, ip_samp);
+            v[y*3+x] = sample_color_correct(ip_samp);
         }
     }
     frag_color = vec4(0.,0.,0,1.0);
