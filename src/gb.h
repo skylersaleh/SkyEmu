@@ -318,6 +318,7 @@ typedef struct{
   bool in_hblank; //Used for HDMA
   bool wy_eq_ly;
   bool last_frame_ppu_disabled;
+  bool last_stat_interrupt;
 } sb_lcd_ppu_t;
 typedef struct{
   bool in_hblank; 
@@ -826,36 +827,34 @@ static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
     bool oam_interrupt = SB_BFE(stat, 5,1);
     bool vblank_interrupt = SB_BFE(stat, 4,1);
     bool hblank_interrupt = SB_BFE(stat, 3,1);
+
+    bool curr_stat_interrupt = false; 
     if(ly==SB_LCD_H&&old_ly!=SB_LCD_H){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(ly==SB_LCD_H&&old_ly!=SB_LCD_H&& vblank_interrupt){
+    if(ly==SB_LCD_H&& vblank_interrupt){
       //vblank-stat Interrupt
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
+      curr_stat_interrupt=true;
     }
     if(ly >= SB_LCD_H) {mode = 1; new_scanline = false;}
     if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
     if(ly == lyc) mode|=0x4;
 
-    if((old_mode & 0x4)==0 && (mode&0x4)==4 && lyc_eq_ly_interrupt){
-      //LCD-stat Interrupt
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
-    }
-    if((((old_mode&0x3)!=2 && (mode&0x3) == 0x2)||((old_mode&0x3)!=1 && (mode&0x3) == 0x1)) && oam_interrupt){
+    if((mode&0x4)==4 && lyc_eq_ly_interrupt)curr_stat_interrupt=true;
+    if(((mode&0x3) == 0x2)&& oam_interrupt){
       //oam-stat Interrupt
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
+      curr_stat_interrupt=true;
     }
 
-    if((old_mode&0x3)!=0 && (mode&0x3) == 0x0 && hblank_interrupt){
-      //hblank-stat Interrupt
+    if((mode&0x3) == 0x0 && hblank_interrupt)curr_stat_interrupt=true;
+    if(curr_stat_interrupt&&!gb->lcd.last_stat_interrupt){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
+    gb->lcd.last_stat_interrupt = curr_stat_interrupt;
+
   }
   gb->lcd.in_hblank = (mode&0x3)==0;
   stat = (stat&0xf8) | mode;

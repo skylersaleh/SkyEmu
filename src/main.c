@@ -1507,7 +1507,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     .render_size[1]= render_height,
     .emu_lcd_size[0]= im_width,
     .emu_lcd_size[1]= im_height,
-    .display_mode = gui_state.settings.screen_shader,
+    .display_mode = gui_state.test_runner_mode?0:gui_state.settings.screen_shader,
     .render_scale_x[0] = cos(rotation),
     .render_scale_x[1] = sin(rotation),
     .render_scale_y[0] = -sin(rotation),
@@ -1517,7 +1517,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     .red_color = {lcd_info.red_color[0],lcd_info.red_color[1],lcd_info.red_color[2]},
     .green_color = {lcd_info.green_color[0],lcd_info.green_color[1],lcd_info.green_color[2]},
     .blue_color = {lcd_info.blue_color[0],lcd_info.blue_color[1],lcd_info.blue_color[2]},
-    .color_correction_strength=gui_state.settings.color_correction
+    .color_correction_strength=gui_state.test_runner_mode?0:gui_state.settings.color_correction
   };
 
   sg_bindings bind={
@@ -2194,6 +2194,7 @@ void se_update_frame() {
     bool unlocked_mode = emu_state.step_frames<0;
     double curr_time = se_time();
     if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment;
+    if(gui_state.test_runner_mode)unlocked_mode=true;
     if(unlocked_mode){
       sim_time_increment=0;
       max_frames_per_tick=1000;
