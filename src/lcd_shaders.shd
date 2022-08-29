@@ -359,7 +359,7 @@ bool nomatch(vec4 v[9]){
 void main() {
   vec4 val = sample_color_correct(uv);
   frag_color = val;
-  float smooth_width = emu_lcd_size.x/render_size.x*2;
+  float smooth_width = emu_lcd_size.x/render_size.x;
   vec2 pix_sub = fract(uv*emu_lcd_size+smooth_width*0.5);
   int mode = int(display_mode+0.5);
 
@@ -368,7 +368,7 @@ void main() {
   if(mode==0){
     vec4 v[4];
     vec2 ip = floor(uv*emu_lcd_size.xy-0.5);
-    vec2 residual = fract(uv*emu_lcd_size.xy-0.5);
+    vec2 residual = fract(uv*emu_lcd_size.xy+0.5);
     ip/=emu_lcd_size.xy;
 
     v[0] = sample_color_correct(ip);
