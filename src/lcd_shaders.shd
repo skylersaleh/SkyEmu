@@ -409,7 +409,7 @@ void main() {
     }else frag_color.rgb*=rgb_factor;
     frag_color = mix(frag_color, val,clamp(smooth_width,0.,1.));
   }else if(mode==3){
-    float expansion = 0.2;
+    float expansion = 0.15;
     float r_factor = smoothstep(0,smooth_width,pix_sub.x)-smoothstep(0.33-smooth_width+expansion,0.33+expansion,pix_sub.x);
     float g_factor = smoothstep(0.33-expansion*0.5,0.33+smooth_width-expansion*0.5,pix_sub.x)-smoothstep(0.66-smooth_width+expansion*0.5,0.66+expansion*0.5,pix_sub.x);
     float b_factor = smoothstep(0.66-expansion,0.66+smooth_width-expansion,pix_sub.x)-smoothstep(1.0-smooth_width,1.0,pix_sub.x);
