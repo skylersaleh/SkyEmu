@@ -835,7 +835,7 @@ static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(ly==SB_LCD_H&& vblank_interrupt){
+    if(vblank_interrupt){
       //vblank-stat Interrupt
       curr_stat_interrupt=true;
     }
