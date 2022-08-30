@@ -30,6 +30,7 @@
 #define SB_IO_AUD4_VOL_ENV      0xff21
 #define SB_IO_AUD4_POLY         0xff22
 #define SB_IO_AUD4_COUNTER      0xff23
+#define SB_IO_MASTER_VOLUME     0xff24
 #define SB_IO_SOUND_OUTPUT_SEL  0xff25
 
 #define SB_IO_SOUND_ON_OFF      0xff26
@@ -890,7 +891,8 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
 
   bool bg_to_oam_priority=false;
   tile_bg_palette = SB_BACKG_PALETTE;
-  if(gb->model==SB_GBC){
+  //Only enable GB functionality if in GBC mode
+  if(gb->model==SB_GBC&&sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4){
     uint8_t attr = sb_read_vram(gb, tile_base+tile_offset,1);
 
     bg_to_oam_priority = SB_BFE(attr,7,1);
@@ -939,6 +941,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
       else if(pal_id==SB_OBJ1_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_OBP1);
       else pal_map = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
       color_id = SB_BFE(pal_map,2*(color_id&0x3),2);
+      palette=pal_id==SB_BACKG_PALETTE?0:8;
     }
 
     int entry= palette*8+(color_id&0x3)*2;
@@ -958,7 +961,8 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
   bool master_priority = true;
-  if(gb->model == SB_GBC){
+  bool gbc_mode = gb->model == SB_GBC&&sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4;
+  if(gbc_mode){
     // This bit has a different meaning in GBC mode
     master_priority = draw_bg_win;
     draw_bg_win = true;
@@ -1041,7 +1045,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
         int tile_sprite_palette =0;
 
         int palette = SB_BFE(attr,4,1)!=0?SB_OBJ1_PALETTE:SB_OBJ0_PALETTE;
-        if(gb->model==SB_GBC){
+        if(gbc_mode){
           tile_d_vram_bank = SB_BFE(attr, 3,1);
           palette = SB_BFE(attr, 0,3)+8;
         }
@@ -1720,6 +1724,10 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   bool sevenBit4 = SB_BFE(poly4,3,1);
   if(r4==0)r4=0.5;
 
+  uint8_t master_vol = sb_read8_direct(gb,SB_IO_MASTER_VOLUME);
+  float master_left = SB_BFE(master_vol,4,3)/7.;
+  float master_right = SB_BFE(master_vol,0,3)/7.;
+
   uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
   int chan_l[4];int chan_r[4];
@@ -1785,7 +1793,9 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     
     sample_volume_l*=0.25;
     sample_volume_r*=0.25;
-     
+    sample_volume_l*=master_left;
+    sample_volume_r*=master_right;
+
     const float lowpass_coef = 0.999;
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
     emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
