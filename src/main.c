@@ -16,6 +16,7 @@
 #include "nds.h"
 #include "gb.h"
 #include "capstone/include/capstone/capstone.h"
+#include "miniz.h"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -973,7 +974,22 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
 
 // Used for file loading dialogs
 static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
-
+static const int rom_file_type[] = { SYSTEM_GB, SYSTEM_NDS, SYSTEM_GB, SYSTEM_NDS};
+void se_load_rom_from_emu_state(sb_emu_state_t*emu){
+  if(!emu->rom_data)return;
+  printf("Loading: %s\n",emu_state.rom_path);
+  emu_state.rom_loaded = false; 
+  if(gba_load_rom(emu, &core.gba, &scratch.gba)){
+    emu->system = SYSTEM_GBA;
+    emu->rom_loaded = true;
+  }else if(sb_load_rom(emu,&core.gb,&scratch.gb)){
+    emu->system = SYSTEM_GB;
+    emu->rom_loaded = true; 
+  }else if(nds_load_rom(emu,&core.nds,&scratch.nds)){
+    emu->system = SYSTEM_NDS;
+    emu->rom_loaded = true; 
+  }
+}
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
@@ -993,23 +1009,53 @@ void se_load_rom(const char *filename){
     se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
 #endif
   snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
+  strncpy(emu_state.rom_path, filename, sizeof(emu_state.rom_path));
 
   if(emu_state.rom_loaded){
     if(emu_state.system==SYSTEM_NDS)nds_unload(&core.nds, &scratch.nds);
     else if(emu_state.system==SYSTEM_GBA)gba_unload(&core.gba,&scratch.gba);
   }
+  if(emu_state.rom_data){
+    free(emu_state.rom_data);
+    emu_state.rom_data = NULL;
+    emu_state.rom_size = 0; 
+    emu_state.rom_loaded=false;
+  }
   memset(&core,0,sizeof(core));
   printf("Loading ROM: %s\n", filename); 
-  emu_state.rom_loaded = false; 
-  if(gba_load_rom(&core.gba, &scratch.gba,filename,save_file)){
-    emu_state.system = SYSTEM_GBA;
-    emu_state.rom_loaded = true;
-  }else if(sb_load_rom(&core.gb, &emu_state,&scratch.gb,filename,save_file)){
-    emu_state.system = SYSTEM_GB;
-    emu_state.rom_loaded = true; 
-  }else if(nds_load_rom(&core.nds,&scratch.nds,filename,save_file)){
-    emu_state.system = SYSTEM_NDS;
-    emu_state.rom_loaded = true; 
+
+  if(sb_path_has_file_ext(filename,".zip")){
+    printf("Loading Zip:%s \n",filename);
+    mz_zip_archive zip = {0};
+    mz_zip_zero_struct(&zip);
+    if(mz_zip_reader_init_file(&zip, filename, 0)){
+      size_t total_files = mz_zip_reader_get_num_files(&zip);
+      for(size_t i=0;i<total_files;++i){
+        char file_name_buff[SB_FILE_PATH_SIZE];
+        bool success= true;
+        mz_zip_reader_get_filename(&zip, i, file_name_buff, SB_FILE_PATH_SIZE);
+        file_name_buff[SB_FILE_PATH_SIZE-1]=0;
+        mz_zip_archive_file_stat stat={0};
+        success&= mz_zip_reader_file_stat(&zip,i, &stat);
+        success&= !stat.m_is_directory;
+        emu_state.rom_data = NULL;
+        emu_state.rom_size = 0; 
+        snprintf(emu_state.rom_path,sizeof(emu_state.rom_path),"%s/%s",filename,file_name_buff);
+        if(success){
+          emu_state.rom_size = stat.m_uncomp_size;
+          emu_state.rom_data = (uint8_t*)malloc(emu_state.rom_size);
+          success&= mz_zip_reader_extract_to_mem(&zip,i,emu_state.rom_data, emu_state.rom_size,0);
+          if(!success)free(emu_state.rom_data);
+        }
+        if(success)se_load_rom_from_emu_state(&emu_state);
+        if(emu_state.rom_loaded)break;
+      }
+      mz_zip_reader_end(&zip);
+    }else printf("Failed to load zip: %s\n",filename);
+
+  }else{
+    emu_state.rom_data = sb_load_file_data(emu_state.rom_path, &emu_state.rom_size);
+    se_load_rom_from_emu_state(&emu_state);
   }
   if(emu_state.rom_loaded==false){
     printf("ERROR: Unknown ROM type: %s\n", filename);
@@ -2230,7 +2276,6 @@ void se_update_frame() {
 
     }
   }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
-  emu_state.avg_frame_time = 1.0/se_fps_counter(emu_state.frame);
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   emu_state.prev_frame_joy = emu_state.joy; 
   se_reset_joy(&emu_state.joy);

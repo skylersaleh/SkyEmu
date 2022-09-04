@@ -123,15 +123,12 @@ typedef struct {
   int step_instructions; // Number of instructions to advance while stepping
   int step_frames; 
   int pc_breakpoint;     // PC to run until
-  int panel_mode;
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
   sb_joy_t prev_frame_joy;  //Used for tracking button press changes in a frame 
-
   int frame;
   bool render_frame;
-  double avg_frame_time; 
   sb_ring_buffer_t audio_ring_buff;
   float audio_channel_output[6];
   float mix_l_volume, mix_r_volume;
@@ -140,11 +137,13 @@ typedef struct {
   char** cmd_line_args;
   //Temporary storage for use by cores that persists across frames but not in save states
   //or rewind buffers
-  uint8_t core_temp_storage[1024*1024];
   uint32_t frames_since_rewind_push;
   char save_data_base_path[SB_FILE_PATH_SIZE];
   char save_file_path[SB_FILE_PATH_SIZE]; 
   float screen_ghosting_strength;  //0 = off 1 = full strength
+  size_t rom_size;
+  uint8_t *rom_data;
+  char rom_path[SB_FILE_PATH_SIZE]; 
 } sb_emu_state_t;
 typedef struct{
   uint32_t addr;

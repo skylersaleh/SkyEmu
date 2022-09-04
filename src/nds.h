@@ -1917,8 +1917,6 @@ typedef struct{
   uint8_t nds9_bios[4*1024];
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[256*1024];
-  uint8_t *card_data;
-  size_t card_size;
 }nds_scratch_t; 
 
 typedef struct {
@@ -2746,7 +2744,7 @@ static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t 
 
 
 // Try to load a GBA rom, return false on invalid rom
-bool nds_load_rom(nds_t* nds, nds_scratch_t* scratch, const char * filename, const char* save_file);
+bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds, nds_scratch_t* scratch);
 void nds_reset(nds_t*nds);
  
 static void nds_recompute_mmio_mask_table(nds_t* nds){
@@ -2818,32 +2816,27 @@ void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t 
     if(rom_offset+i<nds->mem.card_size) nds7_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
-bool nds_load_rom(nds_t* nds,nds_scratch_t*scratch, const char* filename, const char* save_file){
-  if(!sb_path_has_file_ext(filename, ".nds")){
-    return false; 
-  }
-  size_t bytes = 0;                                                       
-  uint8_t *data = sb_load_file_data(filename, &bytes);
-  if(bytes>512*1024*1024){
-    printf("ROMs with sizes >512MB (%zu bytes) are too big for the NDS\n",bytes); 
+bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
+  if(!sb_path_has_file_ext(emu->rom_path, ".nds"))return false; 
+
+  if(emu->rom_size>512*1024*1024){
+    printf("ROMs with sizes >512MB (%zu bytes) are too big for the NDS\n",emu->rom_size); 
     return false;
   }  
-  if(bytes<1024){
-    printf("ROMs with sizes <1024B (%zu bytes) are too small for the NDS\n",bytes); 
+  if(emu->rom_size<1024){
+    printf("ROMs with sizes <1024B (%zu bytes) are too small for the NDS\n",emu->rom_size); 
     return false;
   }
 
-  strncpy(nds->save_file_path,save_file,SB_FILE_PATH_SIZE);
+  strncpy(nds->save_file_path,emu->save_file_path,SB_FILE_PATH_SIZE);
   nds->save_file_path[SB_FILE_PATH_SIZE-1]=0;
   memset(&nds->mem,0,sizeof(nds->mem));
 
-  nds->mem.card_data=data;
-  nds->mem.card_size=bytes;
+  nds->mem.card_data=emu->rom_data;
+  nds->mem.card_size=emu->rom_size;
 
-  memcpy(&nds->card,data,sizeof(nds_card_t));
+  memcpy(&nds->card,emu->rom_data,sizeof(nds_card_t));
   nds->card.title[11]=0;
-  nds->mem.card_data=data;
-  nds->mem.card_size = bytes;
 
   nds->arm7 = arm7_init(nds);
   nds->arm9 = arm7_init(nds);
@@ -2866,9 +2859,6 @@ bool nds_load_rom(nds_t* nds,nds_scratch_t*scratch, const char* filename, const 
   loaded_bios&= se_load_bios_file("NDS7 BIOS", nds->save_file_path, "nds7.bin", scratch->nds7_bios,sizeof(scratch->nds7_bios));
   loaded_bios&= se_load_bios_file("NDS9 BIOS", nds->save_file_path, "nds9.bin", scratch->nds9_bios,sizeof(scratch->nds9_bios));
   loaded_bios&= se_load_bios_file("NDS Firmware", nds->save_file_path, "firmware.bin", scratch->firmware,sizeof(scratch->firmware));
-
-  scratch->card_data=nds->mem.card_data;
-  scratch->card_size=nds->mem.card_size;
 
   if(!loaded_bios){
     printf("FATAL: Failed to load required bios\n");
@@ -2972,7 +2962,6 @@ static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
   if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
   if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
   printf("Unloading DS data\n");
-  if(scratch->card_data){sb_free_file_data(scratch->card_data);scratch->card_data=NULL;}
 }
 uint32_t nds_sqrt_u64(uint64_t value){
   uint32_t res = 0;
@@ -4262,8 +4251,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->mem.nds7_bios=scratch->nds7_bios;
   nds->mem.nds9_bios=scratch->nds9_bios;
   nds->mem.firmware=scratch->firmware;
-  nds->mem.card_data = scratch->card_data;
-  nds->mem.card_size = scratch->card_size;
+  nds->mem.card_data = emu->rom_data;
+  nds->mem.card_size = emu->rom_size;
 
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);

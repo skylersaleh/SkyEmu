@@ -190,7 +190,7 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/stb.c)
+set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c)
 
 include_directories(${SDL2_INCLUDE_DIRS})
 

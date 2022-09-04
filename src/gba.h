@@ -782,7 +782,6 @@ typedef struct gba_t{
 typedef struct{
   uint8_t framebuffer[GBA_LCD_W*GBA_LCD_H*4];
   uint8_t bios[16*1024];
-  uint8_t *rom; 
   FILE * log_cmp_file; 
   bool skip_bios_intro;
   char save_file_path[SB_FILE_PATH_SIZE];  
@@ -1258,7 +1257,7 @@ static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t 
   gba_store8((gba_t*)user_data,address,data);
 }
 // Try to load a GBA rom, return false on invalid rom
-bool gba_load_rom(gba_t* gba, gba_scratch_t *scratch, const char * filename, const char* save_file);
+bool gba_load_rom(sb_emu_state_t*emu,gba_t* gba, gba_scratch_t *scratch);
  
 static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int req_type){
   uint32_t *ret = &gba->mem.openbus_word;
@@ -1526,44 +1525,39 @@ int gba_search_rom_for_backup_string(gba_t* gba){
 }
 void gba_unload(gba_t*gba,gba_scratch_t *scratch){
   printf("Unloading GBA\n");
-  if(scratch->rom)sb_free_file_data(scratch->rom);
-  scratch->rom=NULL;
   if(scratch->log_cmp_file)fclose(scratch->log_cmp_file);
   scratch->log_cmp_file=NULL;
 }
-bool gba_load_rom(gba_t* gba, gba_scratch_t *scratch, const char* filename, const char* save_file){
+bool gba_load_rom(sb_emu_state_t*emu,gba_t* gba, gba_scratch_t *scratch){
   memset(gba,0,sizeof(gba_t));
   memset(scratch,0,sizeof(gba_scratch_t));
-  if(!sb_path_has_file_ext(filename, ".gba"))return false; 
+  if(!sb_path_has_file_ext(emu->rom_path, ".gba"))return false; 
 
-  size_t bytes = 0;                                                       
-  gba->mem.cart_rom=scratch->rom = sb_load_file_data(filename, &bytes);
-  if(!scratch->rom)return false;
-  if(bytes>32*1024*1024){
-    printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",bytes); 
-    sb_free_file_data(scratch->rom);
+  if(emu->rom_size>32*1024*1024){
+    printf("ROMs with sizes >32MB (%zu bytes) are too big for the GBA\n",emu->rom_size); 
     return false;
   }  
 
   gba->mem.bios=scratch->bios;
-  bool loaded_bios= se_load_bios_file("GBA BIOS", save_file, "gba_bios.bin", scratch->bios,16*1024);
+  bool loaded_bios= se_load_bios_file("GBA BIOS", emu->save_file_path, "gba_bios.bin", scratch->bios,16*1024);
   if(!loaded_bios){
     memcpy(scratch->bios,gba_bios_bin,sizeof(gba_bios_bin));
     scratch->skip_bios_intro=true;
   }
-  gba->cart.rom_size = bytes; 
-  gba->mem.cart_rom = scratch->rom;
+  gba->cart.rom_size = emu->rom_size; 
+  gba->mem.cart_rom = emu->rom_data;
 
   gba->cart.backup_type = gba_search_rom_for_backup_string(gba);
 
-  uint8_t*data = sb_load_file_data(save_file,&bytes);
+  size_t bytes=0;
+  uint8_t*data = sb_load_file_data(emu->save_file_path,&bytes);
   if(data){
-    printf("Loaded save file: %s, bytes: %zu\n",save_file,bytes);
+    printf("Loaded save file: %s, bytes: %zu\n",emu->save_file_path,bytes);
     if(bytes>=128*1024)bytes=128*1024;
     memcpy(gba->mem.cart_backup, data, bytes);
     sb_free_file_data(data);
   }else{
-    printf("Could not find save file: %s\n",save_file);
+    printf("Could not find save file: %s\n",emu->save_file_path);
     for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0;
   }
 
@@ -2915,7 +2909,7 @@ void gba_tick_rtc(gba_t*gba){
 void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->framebuffer = scratch->framebuffer;
   gba->mem.bios    = scratch->bios;
-  gba->mem.cart_rom= scratch->rom;
+  gba->mem.cart_rom= emu->rom_data;
   gba->cpu.log_cmp_file = scratch->log_cmp_file;
   gba->cpu.read8 = arm7_read8;
   gba->cpu.read16 = arm7_read16;

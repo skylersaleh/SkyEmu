@@ -400,7 +400,6 @@ typedef struct {
 } sb_gb_t;  
 
 typedef struct{
-  uint8_t rom[MAX_CARTRIDGE_SIZE];
   uint8_t framebuffer[SB_LCD_H*SB_LCD_W*4];
   uint8_t bios[2304];
  } gb_scratch_t; 
@@ -1223,7 +1222,7 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
 }
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->lcd.framebuffer = scratch->framebuffer; 
-  gb->cart.data = scratch->rom; 
+  gb->cart.data = emu->rom_data; 
   gb->bios = scratch->bios;
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=6000000;
@@ -1357,23 +1356,13 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
   y += sb_polyblep(t2,dt);
   return y;
 }
-static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch, const char* file_path, const char* save_file){
-  if(!sb_path_has_file_ext(file_path,".gb") && 
-     !sb_path_has_file_ext(file_path,".gbc")) return false; 
-  size_t bytes = 0;
-  uint8_t *data = sb_load_file_data(file_path, &bytes);
-  if(bytes+1>MAX_CARTRIDGE_SIZE)bytes = MAX_CARTRIDGE_SIZE;
-  if(!data)return false;
-  printf("Loaded File: %s, %zu bytes\n", file_path, bytes);
-
+static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
+  if(!sb_path_has_file_ext(emu->rom_path,".gb") && 
+     !sb_path_has_file_ext(emu->rom_path,".gbc")) return false; 
+  if(emu->rom_size+1>MAX_CARTRIDGE_SIZE)return false;
   memset(gb, 0, sizeof(sb_gb_t));
   memset(scratch, 0, sizeof(gb_scratch_t));
-  gb->cart.data = scratch->rom; 
-
-  for (size_t i = 0; i < bytes; ++i) {
-    gb->cart.data[i] = data[i];
-  }
-  sb_free_file_data(data);
+  gb->cart.data = emu->rom_data;
   for(size_t i = 0; i< 32*1024;++i)gb->mem.data[i] = gb->cart.data[i];
   // Copy Header
   for (int i = 0; i < 11; ++i) {
@@ -1450,8 +1439,8 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch,
     gb->model = SB_GBC;
   }
   gb->cart.mapped_rom_bank=1;
-
-  data = sb_load_file_data(save_file, &bytes);
+  size_t bytes =0;
+  uint8_t*data = sb_load_file_data(emu->save_file_path, &bytes);
   if(data){
     if(bytes!=gb->cart.ram_size){
       printf("Warning save file size(%zu) doesn't match size expected(%d) for the cartridge type", bytes, gb->cart.ram_size);
@@ -1462,19 +1451,19 @@ static bool sb_load_rom(sb_gb_t* gb, sb_emu_state_t* emu, gb_scratch_t* scratch,
     memcpy(gb->cart.ram_data, data, bytes);
     sb_free_file_data(data);
   }else{
-    printf("Could not find save file: %s\n",save_file);
+    printf("Could not find save file: %s\n",emu->save_file_path);
     memset(gb->cart.ram_data,0,MAX_CARTRIDGE_RAM);
   }
   bool loaded_bios = false; 
   if(gb->model==SB_GB){
-    loaded_bios= se_load_bios_file("GBC BIOS", save_file, "gbc_bios.bin", scratch->bios,2304);
+    loaded_bios= se_load_bios_file("GBC BIOS", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
     if(loaded_bios){
       gb->model=SB_GBC;
     }
-    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG0 BIOS", save_file, "dmg0_rom.bin", scratch->bios,256);
-    if(!loaded_bios) loaded_bios= se_load_bios_file("GB BIOS", save_file, "gb_bios.bin", scratch->bios,256);
+    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG0 BIOS", emu->save_file_path, "dmg0_rom.bin", scratch->bios,256);
+    if(!loaded_bios) loaded_bios= se_load_bios_file("GB BIOS", emu->save_file_path, "gb_bios.bin", scratch->bios,256);
   }else if(gb->model==SB_GBC){
-    loaded_bios= se_load_bios_file("GBC BIOS", save_file, "gbc_bios.bin", scratch->bios,2304);
+    loaded_bios= se_load_bios_file("GBC BIOS", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
   }
   if(loaded_bios){
     gb->cpu.pc = 0; 
