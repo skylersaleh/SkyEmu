@@ -973,8 +973,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
 /////////////////////////////////
 
 // Used for file loading dialogs
-static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds"};
-static const int rom_file_type[] = { SYSTEM_GB, SYSTEM_NDS, SYSTEM_GB, SYSTEM_NDS};
+static const char* valid_rom_file_types[] = { "*.gb", "*.gba","*.gbc" ,"*.nds","*.zip"};
 void se_load_rom_from_emu_state(sb_emu_state_t*emu){
   if(!emu->rom_data)return;
   printf("Loading: %s\n",emu_state.rom_path);
@@ -2043,10 +2042,10 @@ void se_load_rom_overlay(bool visible){
       return input.matches('#fileInput:hover');
     });
   #endif 
-  const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba)";
+  const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba, .zip)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
   #ifdef EMSCRIPTEN
-  prompt1 = "Load ROM(.gb, .gbc, .gba), save(.sav), or GBA bios (gba_bios.bin) from file";
+  prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
   prompt2 = "You can also drag & drop a ROM/save file to load it";
   #endif
 
