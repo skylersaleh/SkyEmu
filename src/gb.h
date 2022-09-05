@@ -284,6 +284,7 @@ typedef struct {
   bool trigger_breakpoint; 
   int last_inter_f; 
   bool branch_taken;
+  bool halt_bug; 
 } sb_gb_cpu_t;
 
 typedef struct {
@@ -523,7 +524,7 @@ uint8_t sb_io_or_mask(int addr){
       0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
     };
     return audio_reg_mask_table[addr-SB_IO_AUD1_TONE_SWEEP];
-  }
+  }else if(addr==SB_IO_INTER_F)return 0xE0;
   return 0; 
 }
 uint8_t sb_read8(sb_gb_t *gb, int addr) {
@@ -1240,7 +1241,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       cpu_delta_cycles=4;
       int pc = gb->cpu.pc;
       unsigned op = sb_read8(gb,gb->cpu.pc);
-
+      if(gb->cpu.halt_bug)gb->cpu.pc--;
+      gb->cpu.halt_bug = false;
       bool request_speed_switch= false;
       if(gb->model == SB_GBC){
         unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
@@ -1293,6 +1295,16 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
         gb->cpu.prefix_op = false;
         inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb->cpu.prefix_op==true)i--;
+
+        if(gb->cpu.wait_for_interrupt){
+          uint8_t ie = sb_read8_direct(gb,SB_IO_INTER_EN);
+          uint8_t i_flag = gb->cpu.last_inter_f;
+          uint8_t masked_interupt = ie&i_flag&0x1f;
+          if(masked_interupt&&!gb->cpu.interrupt_enable){
+            gb->cpu.wait_for_interrupt=false;
+            gb->cpu.halt_bug =true;
+          }
+        }
 
         unsigned next_op = sb_read8(gb,gb->cpu.pc);
         if(gb->cpu.prefix_op)next_op+=256;
