@@ -1202,6 +1202,12 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
  if(gb->dma.oam_dma_active){
     uint16_t dma_src = ((int)sb_read8_direct(gb,SB_IO_OAM_DMA))<<8u;
     uint16_t dma_dst = 0xfe00;
+    // From CasualPokePlayer:
+    // in most cases echo ram is only E000-FDFF. 
+    // oam dma is one of the exceptions here which have the entire E000-FFFF
+    // region as echo ram for dma source
+    if(dma_src==0xfe00)dma_src=0xde00;
+    else if(dma_src==0xff00)dma_src=0xdf00;
 
     while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
       uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
