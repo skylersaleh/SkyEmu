@@ -1241,8 +1241,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       cpu_delta_cycles=4;
       int pc = gb->cpu.pc;
       unsigned op = sb_read8(gb,gb->cpu.pc);
-      if(gb->cpu.halt_bug)gb->cpu.pc--;
-      gb->cpu.halt_bug = false;
       bool request_speed_switch= false;
       if(gb->model == SB_GBC){
         unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
@@ -1288,6 +1286,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       if(call_interrupt==false&&gb->cpu.wait_for_interrupt==false){
         sb_instr_t inst = sb_decode_table[op];
         gb->cpu.pc+=inst.length;
+        if(gb->cpu.halt_bug)gb->cpu.pc--;
+        gb->cpu.halt_bug = false;
         int operand1 = sb_load_operand(gb,inst.op_src1);
         int operand2 = sb_load_operand(gb,inst.op_src2);
 
@@ -1305,18 +1305,21 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
             gb->cpu.halt_bug =true;
           }
         }
-
-        unsigned next_op = sb_read8(gb,gb->cpu.pc);
-        if(gb->cpu.prefix_op)next_op+=256;
-        sb_instr_t next_inst = sb_decode_table[next_op];
-        cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1)+(next_inst.mcycles-1));
+        cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1));
         gb->cpu.branch_taken=false;
-        if(gb->cpu.prefix_op){
-          cpu_delta_cycles = 4*(next_inst.mcycles-1);
-        }
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
         sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
+      }
+      if(trigger_interrupt!=-1)gb->cpu.wait_for_interrupt=false;
+      if(!gb->cpu.wait_for_interrupt){
+        unsigned next_op = sb_read8(gb,gb->cpu.pc);
+        if(gb->cpu.prefix_op)next_op+=256;
+        sb_instr_t next_inst = sb_decode_table[next_op];
+        cpu_delta_cycles+= (next_inst.mcycles-1)*4;
+        if(gb->cpu.prefix_op){
+          cpu_delta_cycles -=4;
+        }
       }
       gb->cpu.last_inter_f = sb_read8_direct(gb,SB_IO_INTER_F);
     }
