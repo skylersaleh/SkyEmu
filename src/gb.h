@@ -511,7 +511,11 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   }
   return gb->mem.data[addr];
 }
-uint8_t sb_io_or_mask(int addr){
+bool sb_gbc_enable(sb_gb_t*gb){
+  return (sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4||!sb_read8_direct(gb,SB_IO_BIOS_BANK))&&gb->model==SB_GBC;
+}
+uint8_t sb_io_or_mask(sb_gb_t* gb, int addr){
+  bool gbc_en = sb_gbc_enable(gb);
   if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
     uint8_t audio_reg_mask_table[]={
       0x80,0x3F,0x00,0xFF,0xBF, // NR10-NR15
@@ -525,6 +529,18 @@ uint8_t sb_io_or_mask(int addr){
     };
     return audio_reg_mask_table[addr-SB_IO_AUD1_TONE_SWEEP];
   }else if(addr==SB_IO_INTER_F)return 0xE0;
+  else if (addr==SB_IO_LCD_STAT)return 0x80;
+  else if (addr==SB_IO_TAC)return 0xf8;
+  else if (addr==SB_IO_SERIAL_CTRL)return 0x7e;
+  else if (addr==SB_IO_JOYPAD)return 0xc0;
+  else if(addr==0xFF03||addr==0xFF08||addr==0xFF09||addr==0xFF0A||
+          addr==0xFF0B||addr==0xFF0C||addr==0xFF0D||addr==0xFF0E||
+          addr==0xFF15||addr==0xFF1F||addr==0xFF27||addr==0xFF28||
+          addr==0xFF29||
+          (addr>=0xff4c&&addr<=0xff7f&&!gbc_en)||
+          (addr>=0xff71&&addr<=0xff7f&&gbc_en)){
+    return 0xff;
+  }
   return 0; 
 }
 uint8_t sb_read8(sb_gb_t *gb, int addr) {
@@ -541,14 +557,14 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
       return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
     }else if (addr == SB_IO_GBC_VBK){
       uint8_t d= sb_read8_direct(gb,addr);
-      return d|0xfe;
+      return d|0xfe|sb_io_or_mask(gb,addr);
     }else if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
       bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
       if(wave_active){
         return gb->audio.curr_wave_data;
       }
     }
-    return sb_read8_direct(gb,addr)|sb_io_or_mask(addr);
+    return sb_read8_direct(gb,addr)|sb_io_or_mask(gb,addr);
   }
   return sb_read8_direct(gb,addr);
 }
@@ -596,6 +612,7 @@ static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
 }
 void sb_store8(sb_gb_t *gb, int addr, int value) {
   if(addr>=0xff00){
+    if(!sb_gbc_enable(gb) &&addr>=0xff4C&&addr<=0xff7f&&addr!=SB_IO_BIOS_BANK)return;
     if(addr == SB_IO_DMA_SRC_LO ||addr == SB_IO_DMA_DST_LO){
       value&=~0xf;
     } else if(addr == SB_IO_DMA_MODE_LEN){
@@ -866,7 +883,6 @@ static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
 }
-
 // Returns info about the pixel in the tile map packed into a 32bit integer
 // ret[1:0] = color_id
 // ret[7:2] = palette_id
@@ -892,7 +908,7 @@ uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mod
   bool bg_to_oam_priority=false;
   tile_bg_palette = SB_BACKG_PALETTE;
   //Only enable GB functionality if in GBC mode
-  if(gb->model==SB_GBC&&sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4){
+  if(sb_gbc_enable(gb)){
     uint8_t attr = sb_read_vram(gb, tile_base+tile_offset,1);
 
     bg_to_oam_priority = SB_BFE(attr,7,1);
@@ -934,7 +950,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   }else if(gb->model == SB_GBC){
 
     int palette = SB_BFE(color_id,2,6);
-    if(sb_read8_direct(gb,SB_IO_GBC_KEY0)==0x4){
+    if(!sb_gbc_enable(gb)){
       uint8_t pal_map= 0; 
       int pal_id = SB_BFE(color_id,2,6);
       if(pal_id==SB_BACKG_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_BGP);
@@ -961,7 +977,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
   bool master_priority = true;
-  bool gbc_mode = gb->model == SB_GBC&&sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4;
+  bool gbc_mode = sb_gbc_enable(gb);
   if(gbc_mode){
     // This bit has a different meaning in GBC mode
     master_priority = draw_bg_win;
@@ -1030,7 +1046,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
         int xc = sb_read8_direct(gb, sprite_base+1)-8;
 
         int x_sprite = 7-(x-xc);
-        int prior = gb->model==SB_GBC?0 : xc;
+        int prior = !sb_gbc_enable(gb)?0 : xc;
 
         if(prior_sprite<=prior) continue;
         //Check if the sprite is hit
@@ -1204,7 +1220,7 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
     if(gb->serial.last_active==false){
       gb->serial.last_active =true;
       gb->serial.ticks_to_complete=4*1024*1024/1024;
-      bool fast_clock = SB_BFE(siocnt,1,1)&&gb->model == SB_GBC;
+      bool fast_clock = SB_BFE(siocnt,1,1)&&sb_gbc_enable(gb);
       if(fast_clock)gb->serial.ticks_to_complete/=2;
     }
     bool internal_clock = SB_BFE(siocnt,0,1);
@@ -1242,7 +1258,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       int pc = gb->cpu.pc;
       unsigned op = sb_read8(gb,gb->cpu.pc);
       bool request_speed_switch= false;
-      if(gb->model == SB_GBC){
+      if(sb_gbc_enable(gb)){
         unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
         double_speed = SB_BFE(speed, 7, 1);
         request_speed_switch = SB_BFE(speed, 0, 1);
