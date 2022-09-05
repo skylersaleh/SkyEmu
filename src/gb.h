@@ -1046,7 +1046,7 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
         int xc = sb_read8_direct(gb, sprite_base+1)-8;
 
         int x_sprite = 7-(x-xc);
-        int prior = !sb_gbc_enable(gb)?0 : xc;
+        int prior = sb_gbc_enable(gb)?0 : xc;
 
         if(prior_sprite<=prior) continue;
         //Check if the sprite is hit
@@ -1214,7 +1214,7 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
       sb_store8(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
       gb->dma.oam_bytes_transferred++;
     }
-    if(gb->dma.oam_bytes_transferred==0xA0)gb->dma.oam_dma_active=false;
+    if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
   }
 
 }
