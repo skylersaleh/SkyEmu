@@ -80,6 +80,8 @@
 #define SB_MBC_MBC6 6
 #define SB_MBC_MBC7 7
 
+#define SB_SPRITES_PER_SCANLINE 40
+
 mmio_reg_t gb_io_reg_desc[]={
   { SB_IO_JOYPAD, "JOYPAD", { 
     { 5, 1, "Select Action buttons    (0=Select)"},
@@ -319,8 +321,13 @@ typedef struct{
   uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
   bool in_hblank; //Used for HDMA
   bool wy_eq_ly;
-  bool last_frame_ppu_disabled;
   bool last_stat_interrupt;
+  bool rendered_part_of_window;
+  int render_sprites[SB_SPRITES_PER_SCANLINE];
+  uint8_t render_sprites_data[SB_SPRITES_PER_SCANLINE][4];
+  bool finished_frame;
+  int sprite_index;
+  bool render_frame; 
 } sb_lcd_ppu_t;
 typedef struct{
   bool in_hblank; 
@@ -467,6 +474,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
 static void sb_tick_frame_seq(sb_frame_sequencer_t* seq);
 static void sb_process_audio_writes(sb_gb_t* gb); 
+void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y);
 
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x0000&&addr<=0x3fff){
@@ -512,7 +520,7 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   return gb->mem.data[addr];
 }
 bool sb_gbc_enable(sb_gb_t*gb){
-  return (sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4||!sb_read8_direct(gb,SB_IO_BIOS_BANK))&&gb->model==SB_GBC;
+  return (gb->mem.data[SB_IO_GBC_KEY0]!=0x4||!gb->mem.data[SB_IO_BIOS_BANK])&&gb->model==SB_GBC;
 }
 uint8_t sb_io_or_mask(sb_gb_t* gb, int addr){
   bool gbc_en = sb_gbc_enable(gb);
@@ -788,97 +796,121 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
 
 }
 
-
-static FORCE_INLINE bool sb_update_lcd_status(sb_gb_t* gb, int delta_cycles){
+static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
   uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT);
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   uint8_t ly  = gb->lcd.curr_scanline;
   uint8_t old_ly = ly;
   uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
-  int mode = 0;
+  int mode = stat&0x7;
   bool new_scanline = false;
   if(!enable){
     gb->lcd.scanline_cycles = 0;
     gb->lcd.curr_scanline = 0;
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
-    gb->lcd.last_frame_ppu_disabled = true;
     gb->lcd.in_hblank=true;
+    sb_store8_direct(gb, SB_IO_LCD_STAT,stat&~3);
     ly = 0;
   }else{
-
     const int mode2_clks= 80;
     // TODO: mode 3 is 10 cycles longer for every sprite intersected
-    const int mode3_clks = 168;
-    const int mode0_clks = 208;
+    const int mode3_clks = SB_LCD_W;
     const int scanline_dots = 456;
+    const int mode0_clks = scanline_dots-mode2_clks-mode3_clks;
 
-    gb->lcd.scanline_cycles +=delta_cycles;
+    gb->lcd.scanline_cycles +=1;
     if(gb->lcd.scanline_cycles>=scanline_dots){
-      gb->lcd.scanline_cycles-=scanline_dots;
+      gb->lcd.scanline_cycles=0;
+      new_scanline=true;
+    }
+
+    if(gb->lcd.scanline_cycles<mode2_clks)mode = 2;
+    else if(gb->lcd.scanline_cycles<mode3_clks+mode2_clks) mode =3;
+    else mode =0;
+    int old_mode = stat&0x7;
+   
+    int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+    if(ly==wy)gb->lcd.wy_eq_ly = true;
+    if(new_scanline){
       ly+=1;
       gb->lcd.curr_scanline += 1;
-    }
-
-    if(ly>153){
-      ly = 0;
-      gb->lcd.curr_scanline=0;
-      gb->lcd.curr_window_scanline = 0;
-      gb->lcd.wy_eq_ly=false;
-      gb->lcd.last_frame_ppu_disabled = false;
-    }
-
-    if(gb->lcd.scanline_cycles<=mode2_clks)mode = 2;
-    else if(gb->lcd.scanline_cycles<=mode3_clks+mode2_clks) mode =3;
-    else mode =0;
-
-    int old_mode = stat&0x7;
-    if((old_mode&0x3)!=0&&(mode&0x3)==0)new_scanline=!gb->lcd.last_frame_ppu_disabled;
-
-
-    if(new_scanline){
-      int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
-      if(ly==wy)gb->lcd.wy_eq_ly = true;
+      if(ly>153){
+        ly = 0;
+        gb->lcd.curr_scanline=0;
+        gb->lcd.wy_eq_ly=false;
+        gb->lcd.curr_window_scanline = 0;
+      }
+      if(gb->lcd.rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
+      gb->lcd.rendered_part_of_window = false;
+      if(ly==SB_LCD_H)gb->lcd.finished_frame=true;
+    }    
+    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
+    if(ly >= SB_LCD_H) {mode = 1;}
+    if(gb->lcd.render_frame){
+      if(mode==2){
+        int clock_num = gb->lcd.scanline_cycles;
+        if(clock_num==0){
+          for(int i=0;i<SB_SPRITES_PER_SCANLINE;++i)gb->lcd.render_sprites[i]=-1;
+          gb->lcd.sprite_index = 0; 
+        }
+        if(clock_num%2){
+          uint8_t y = gb->lcd.curr_scanline;
+          const int num_sprites= 40;
+          int oam_table_offset = 0xfe00;
+          uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+          bool draw_sprite = SB_BFE(ctrl,1,1)==1;
+          bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
+          int sprite_h = sprite8x16 ? 16: 8;
+          int sprite_id = clock_num/2;
+          int sprite_base = oam_table_offset+sprite_id*4;
+          int yc = (int)sb_read8_direct(gb, sprite_base+0)-16;
+          int xc = (int)sb_read8_direct(gb, sprite_base+1)-16;
+          if(yc<=y && yc+sprite_h>y&& gb->lcd.sprite_index<SB_SPRITES_PER_SCANLINE&&sprite_id<num_sprites&&draw_sprite){
+            gb->lcd.render_sprites[gb->lcd.sprite_index]=sprite_id;
+            for(int i=0;i<4;++i){
+              gb->lcd.render_sprites_data[gb->lcd.sprite_index][i]=sb_read8_direct(gb, sprite_base+i);
+            }
+            gb->lcd.sprite_index++;
+          }
+        }
+      }
+      if(mode ==3&&gb->lcd.curr_scanline<SB_LCD_H){
+        int x = gb->lcd.scanline_cycles-mode2_clks-8;
+        if(x<SB_LCD_W&&x>=0){
+          sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
+        }
+      }
     }
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
-    bool oam_interrupt = SB_BFE(stat, 5,1);
-    bool vblank_interrupt = SB_BFE(stat, 4,1);
-    bool hblank_interrupt = SB_BFE(stat, 3,1);
+    bool oam_interrupt       = SB_BFE(stat, 5,1);
+    bool vblank_interrupt    = SB_BFE(stat, 4,1);
+    bool hblank_interrupt    = SB_BFE(stat, 3,1);
 
     bool curr_stat_interrupt = false; 
-    if(ly==SB_LCD_H&&old_ly!=SB_LCD_H){
+    if(ly>=SB_LCD_H&&old_ly<SB_LCD_H){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
-    if(vblank_interrupt){
-      //vblank-stat Interrupt
-      curr_stat_interrupt=true;
-    }
-    if(ly >= SB_LCD_H) {mode = 1; new_scanline = false;}
-    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
+
     if(ly == lyc) mode|=0x4;
 
-    if((mode&0x4)==4 && lyc_eq_ly_interrupt)curr_stat_interrupt=true;
-    if(((mode&0x3) == 0x2)&& oam_interrupt){
-      //oam-stat Interrupt
-      curr_stat_interrupt=true;
-    }
-
-    if((mode&0x3) == 0x0 && hblank_interrupt)curr_stat_interrupt=true;
+    if(ly>=SB_LCD_H  && vblank_interrupt)    curr_stat_interrupt=true;
+    if((mode&0x4)==4 && lyc_eq_ly_interrupt) curr_stat_interrupt=true;
+    if((mode&0x3)==2 && oam_interrupt)       curr_stat_interrupt=true;
+    if((mode&0x3)==0 && hblank_interrupt)    curr_stat_interrupt=true;
     if(curr_stat_interrupt&&!gb->lcd.last_stat_interrupt){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
     gb->lcd.last_stat_interrupt = curr_stat_interrupt;
-
+    stat = (stat&0xf8) | mode|0x80;
+    sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
   }
   gb->lcd.in_hblank = (mode&0x3)==0;
-  stat = (stat&0xf8) | mode;
-  sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
-  sb_store8_direct(gb, SB_IO_LCD_LY, ly);
-  return new_scanline;
+  sb_store8_direct(gb, SB_IO_LCD_LY, ly);;
 }
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
@@ -973,7 +1005,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
     *b = tb*8;
   }
 }
-void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
+void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
   bool master_priority = true;
@@ -987,129 +1019,96 @@ void sb_draw_scanline(sb_gb_t*gb,sb_emu_state_t* emu){
   bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
   int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;
   int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;
-  bool window_enable = SB_BFE(ctrl,5,1)==1;
-  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
+  bool window_enable        = SB_BFE(ctrl,5,1)==1;
+  int win_tile_map_base     = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
 
   int oam_table_offset = 0xfe00;
-  uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
   int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
   int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
   int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
   int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
 
   if(!gb->lcd.wy_eq_ly)window_enable = false;
-  int sprite_h = sprite8x16 ? 16: 8;
-  enum{sprites_per_scanline = 10};
   // HW only draws first 10 sprites that touch a scanline
-  int render_sprites[sprites_per_scanline];
-  int sprite_index=0;
+  const int bytes_per_tile = 2*8;
+  int color_id=0;
 
-  for(int i=0;i<sprites_per_scanline;++i)render_sprites[i]=-1;
-  const int num_sprites= 40;
-  for(int i=0;i<num_sprites;++i){
-    int sprite_base = oam_table_offset+i*4;
-    int yc = sb_read8_direct(gb, sprite_base+0)-16;
-    int xc = sb_read8_direct(gb, sprite_base+1)-16;
-    if(yc<=y && yc+sprite_h>y&& sprite_index<sprites_per_scanline){
-      render_sprites[sprite_index++]=i;
+  bool background_priority= false;
+
+  if(draw_bg_win){
+    int px = x+ sx;
+    int py = y+ sy;
+    color_id = sb_lookup_tile(gb,px,py,bg_tile_map_base,bg_win_tile_data_mode);
+  }
+  if(window_enable && draw_bg_win){
+    int px = x-wx;
+    if(px>=0){
+      int py = gb->lcd.curr_window_scanline;
+      gb->lcd.rendered_part_of_window = true;
+      color_id = sb_lookup_tile(gb,px,py,win_tile_map_base,bg_win_tile_data_mode);
     }
   }
+  if(draw_sprite){
+    int prior_sprite = 256;
+    for(int i=0;i<SB_SPRITES_PER_SCANLINE;++i){
+      int sprite = gb->lcd.render_sprites[i];
+      if(sprite==-1)break;
+      int xc = gb->lcd.render_sprites_data[i][1]-8;
 
-  bool rendered_part_of_window = false;
-  for(int x = 0; x < SB_LCD_W; ++x){
+      int x_sprite = 7-(x-xc);
+      int prior = sb_gbc_enable(gb)?0 : xc;
 
-    const int bytes_per_tile = 2*8;
-    int r=0,g=0,b=0;
-    int color_id=0;
+      if(prior_sprite<=prior) continue;
+      //Check if the sprite is hit
+      if(x_sprite>=8 || x_sprite<0) continue;
 
-    bool background_priority= false;
+      int yc = gb->lcd.render_sprites_data[i][0]-16;
+      int y_sprite = y-yc;
 
-    if(draw_bg_win){
-      int px = x+ sx;
-      int py = y+ sy;
-      color_id = sb_lookup_tile(gb,px,py,bg_tile_map_base,bg_win_tile_data_mode);
-    }
-     if(window_enable && draw_bg_win){
-      int px = x-wx;
-      if(px>=0){
-        int py = gb->lcd.curr_window_scanline;
-        rendered_part_of_window = true;
-        color_id = sb_lookup_tile(gb,px,py,win_tile_map_base,bg_win_tile_data_mode);
+      int tile = gb->lcd.render_sprites_data[i][2];
+      int attr = gb->lcd.render_sprites_data[i][3];
+      int tile_d_vram_bank = 0;
+      int tile_sprite_palette =0;
+
+      int palette = SB_BFE(attr,4,1)!=0?SB_OBJ1_PALETTE:SB_OBJ0_PALETTE;
+      if(gbc_mode){
+        tile_d_vram_bank = SB_BFE(attr, 3,1);
+        palette = SB_BFE(attr, 0,3)+8;
       }
+      if(sprite8x16)tile &=0xfe;
+
+      bool x_flip = SB_BFE(attr,5,1);
+      bool y_flip = SB_BFE(attr,6,1);
+      bool bg_win_on_top = SB_BFE(attr,7,1);
+
+      if(x_flip)x_sprite = 7-x_sprite;
+      if(y_flip)y_sprite = (sprite8x16? 15 : 7)-y_sprite;
+
+      int byte_tile_data_off = 0x8000 + (((uint8_t)(tile))*bytes_per_tile);
+      byte_tile_data_off+=y_sprite*2;
+
+      uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
+      uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
+
+      int cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
+      if((bg_win_on_top||(SB_BFE(color_id,8,1)))&&master_priority){
+        if((color_id&0x3)==0&&cid!=0){color_id = cid | (palette<<2); prior_sprite =prior;}
+      }else if(cid!=0){color_id = cid | (palette<<2); prior_sprite=prior;}
     }
-    if(draw_sprite){
-      int prior_sprite = 256;
-      for(int i=0;i<sprites_per_scanline;++i){
-        int sprite = render_sprites[i];
-        if(sprite==-1)break;
-        int sprite_base = oam_table_offset+sprite*4;
-        int xc = sb_read8_direct(gb, sprite_base+1)-8;
-
-        int x_sprite = 7-(x-xc);
-        int prior = sb_gbc_enable(gb)?0 : xc;
-
-        if(prior_sprite<=prior) continue;
-        //Check if the sprite is hit
-        if(x_sprite>=8 || x_sprite<0) continue;
-
-        int yc = sb_read8_direct(gb, sprite_base+0)-16;
-        int y_sprite = y-yc;
-
-        int tile = sb_read8_direct(gb, sprite_base+2);
-        int attr = sb_read8_direct(gb, sprite_base+3);
-        int tile_d_vram_bank = 0;
-        int tile_sprite_palette =0;
-
-        int palette = SB_BFE(attr,4,1)!=0?SB_OBJ1_PALETTE:SB_OBJ0_PALETTE;
-        if(gbc_mode){
-          tile_d_vram_bank = SB_BFE(attr, 3,1);
-          palette = SB_BFE(attr, 0,3)+8;
-        }
-        if(sprite8x16)tile &=0xfe;
-
-        bool x_flip = SB_BFE(attr,5,1);
-        bool y_flip = SB_BFE(attr,6,1);
-        bool bg_win_on_top = SB_BFE(attr,7,1);
-
-
-        if(x_flip)x_sprite = 7-x_sprite;
-        if(y_flip)y_sprite = (sprite8x16? 15 : 7)-y_sprite;
-
-
-        int byte_tile_data_off = 0x8000 + (((uint8_t)(tile))*bytes_per_tile);
-        byte_tile_data_off+=y_sprite*2;
-
-        uint8_t data1 = sb_read_vram(gb, byte_tile_data_off,tile_d_vram_bank);
-        uint8_t data2 = sb_read_vram(gb, byte_tile_data_off+1,tile_d_vram_bank);
-
-        int cid = (SB_BFE(data1,x_sprite,1)+SB_BFE(data2,x_sprite,1)*2);
-        if((bg_win_on_top||(SB_BFE(color_id,8,1)))&&master_priority){
-          if((color_id&0x3)==0&&cid!=0){color_id = cid | (palette<<2); prior_sprite =prior;}
-        }else if(cid!=0){color_id = cid | (palette<<2); prior_sprite=prior;}
-
-      }
-    }
-    sb_lookup_palette_color(gb,color_id,&r,&g,&b);
-
-    float ghost_coef = 0.5;
-    if(gb->model != SB_GB)ghost_coef= 0.2;
-    ghost_coef*=emu->screen_ghosting_strength;
-    int p =(x+(y)*SB_LCD_W)*4;
-    gb->lcd.framebuffer[p+0] = r*(1.0-ghost_coef)+gb->lcd.framebuffer[p+0]*ghost_coef+0.5;
-    gb->lcd.framebuffer[p+1] = g*(1.0-ghost_coef)+gb->lcd.framebuffer[p+1]*ghost_coef+0.5;
-    gb->lcd.framebuffer[p+2] = b*(1.0-ghost_coef)+gb->lcd.framebuffer[p+2]*ghost_coef+0.5;
   }
-  if(rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
+  int r=0,g=0,b=0;
+  sb_lookup_palette_color(gb,color_id,&r,&g,&b);
+
+  float ghost_coef = 0.5;
+  if(gb->model != SB_GB)ghost_coef= 0.2;
+  ghost_coef*=emu->screen_ghosting_strength;
+  int p =(x+(y)*SB_LCD_W)*4;
+  gb->lcd.framebuffer[p+0] = r*(1.0-ghost_coef)+gb->lcd.framebuffer[p+0]*ghost_coef+0.5;
+  gb->lcd.framebuffer[p+1] = g*(1.0-ghost_coef)+gb->lcd.framebuffer[p+1]*ghost_coef+0.5;
+  gb->lcd.framebuffer[p+2] = b*(1.0-ghost_coef)+gb->lcd.framebuffer[p+2]*ghost_coef+0.5;
+
 }
-static FORCE_INLINE bool sb_update_lcd(sb_gb_t* gb, int delta_cycles, bool draw,sb_emu_state_t* emu){
-  bool new_scanline = sb_update_lcd_status(gb, delta_cycles);
-  if(new_scanline){
-    if(draw)sb_draw_scanline(gb,emu);
-    uint8_t y = sb_read8_direct(gb, SB_IO_LCD_LY);
-    if(y+1==SB_LCD_H)return true;
-  }
-  return false;
-}
+
 void sb_update_timers(sb_gb_t* gb, int delta_clocks, bool double_speed){
   uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
   bool tima_enable = SB_BFE(tac, 2, 1);
@@ -1211,7 +1210,7 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 
     while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
       uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
-      sb_store8(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+      sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
       gb->dma.oam_bytes_transferred++;
     }
     if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
@@ -1243,6 +1242,18 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   }
   gb->serial.last_active =active; 
 }
+void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
+  unsigned speed = sb_read8_direct(gb,SB_IO_GBC_SPEED_SWITCH);
+  bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
+  for(int i=0;i<cycles;++i){
+    sb_update_oam_dma(gb,double_speed?2:1);
+    sb_update_lcd(emu,gb);
+    sb_update_timers(gb,double_speed?2:1, double_speed);
+  }
+  sb_tick_sio(gb,cycles);
+  double delta_t = ((double)cycles)/(4*1024*1024);
+  sb_process_audio(gb,emu,delta_t);
+}
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->lcd.framebuffer = scratch->framebuffer; 
   gb->cart.data = emu->rom_data; 
@@ -1253,7 +1264,8 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
 
   int total_cylces = 0; 
   int rumble_cycles= 0; 
-
+  gb->lcd.finished_frame =false;
+  gb->lcd.render_frame = emu->render_frame;
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
     sb_update_joypad_io_reg(emu, gb);
@@ -1345,24 +1357,18 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       }
       gb->cpu.last_inter_f = sb_read8_direct(gb,SB_IO_INTER_F);
     }
-    sb_update_oam_dma(gb,cpu_delta_cycles);
     int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
     delta_cycles_after_speed+= dma_delta_cycles;
-    bool vblank = sb_update_lcd(gb,delta_cycles_after_speed,emu->render_frame,emu);
-    sb_update_timers(gb,dma_delta_cycles?dma_delta_cycles:cpu_delta_cycles, double_speed);
-    sb_tick_sio(gb,delta_cycles_after_speed);
     rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
     total_cylces+=delta_cycles_after_speed;
-    double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
-    //sb_push_save_state(gb);
+    sb_tick_components(emu,gb,delta_cycles_after_speed);
 
     if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
       gb->cpu.trigger_breakpoint = false;
       emu->run_mode = SB_MODE_PAUSE;
       break;
     }
-    sb_process_audio(gb,emu,delta_t);
-    if(vblank){break;}
+    if(gb->lcd.finished_frame){break;}
   }
   emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
 }

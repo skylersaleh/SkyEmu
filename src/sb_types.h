@@ -66,6 +66,7 @@
 
 #define SB_GB 0 
 #define SB_GBC 1 
+#define SB_GBC_GB_BACK_COMPAT 2
 
 #define SE_BIND_KEYBOARD 0
 #define SE_BIND_KEY 1
