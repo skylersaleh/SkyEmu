@@ -80,7 +80,7 @@
 #define SB_MBC_MBC6 6
 #define SB_MBC_MBC7 7
 
-#define SB_SPRITES_PER_SCANLINE 40
+#define SB_SPRITES_PER_SCANLINE 10
 
 mmio_reg_t gb_io_reg_desc[]={
   { SB_IO_JOYPAD, "JOYPAD", { 
