@@ -876,7 +876,7 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
           }
         }
       }
-      if(mode ==3&&gb->lcd.curr_scanline<SB_LCD_H){
+      if(gb->lcd.curr_scanline<SB_LCD_H){
         int x = gb->lcd.scanline_cycles-mode2_clks-8;
         if(x<SB_LCD_W&&x>=0){
           sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
