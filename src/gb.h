@@ -327,6 +327,7 @@ typedef struct{
   uint8_t render_sprites_data[SB_SPRITES_PER_SCANLINE][4];
   bool finished_frame;
   int sprite_index;
+  bool render_frame; 
 } sb_lcd_ppu_t;
 typedef struct{
   bool in_hblank; 
@@ -519,7 +520,7 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   return gb->mem.data[addr];
 }
 bool sb_gbc_enable(sb_gb_t*gb){
-  return (sb_read8_direct(gb,SB_IO_GBC_KEY0)!=0x4||!sb_read8_direct(gb,SB_IO_BIOS_BANK))&&gb->model==SB_GBC;
+  return (gb->mem.data[SB_IO_GBC_KEY0]!=0x4||!gb->mem.data[SB_IO_BIOS_BANK])&&gb->model==SB_GBC;
 }
 uint8_t sb_io_or_mask(sb_gb_t* gb, int addr){
   bool gbc_en = sb_gbc_enable(gb);
@@ -703,7 +704,6 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       int reg = (addr-SB_IO_AUD1_TONE_SWEEP)%5;
     }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_direct(gb,SB_IO_BIOS_BANK);
     }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_direct(gb,SB_IO_BIOS_BANK))return;}
-    else if(addr==SB_IO_LCD_LYC){printf("Set LYC=%d\n",value);}
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
     return;
@@ -803,7 +803,7 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
   uint8_t old_ly = ly;
   uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
-  int mode = 0;
+  int mode = stat&0x7;
   bool new_scanline = false;
   if(!enable){
     gb->lcd.scanline_cycles = 0;
@@ -811,76 +811,76 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
     gb->lcd.in_hblank=true;
+    sb_store8_direct(gb, SB_IO_LCD_STAT,stat&~3);
     ly = 0;
   }else{
     const int mode2_clks= 80;
     // TODO: mode 3 is 10 cycles longer for every sprite intersected
-    const int mode3_clks = 168;
-    const int mode0_clks = 208;
+    const int mode3_clks = SB_LCD_W;
     const int scanline_dots = 456;
+    const int mode0_clks = scanline_dots-mode2_clks-mode3_clks;
 
     gb->lcd.scanline_cycles +=1;
     if(gb->lcd.scanline_cycles>=scanline_dots){
       gb->lcd.scanline_cycles=0;
-      ly+=1;
-      gb->lcd.curr_scanline += 1;
       new_scanline=true;
-      if(ly>153){
-        ly = 0;
-        gb->lcd.curr_scanline=0;
-        gb->lcd.wy_eq_ly=false;
-        gb->lcd.scanline_cycles=0;
-      }
-      if(ly>=SB_LCD_H){
-        gb->lcd.rendered_part_of_window=false;
-        gb->lcd.curr_window_scanline = 0;
-      }
     }
 
     if(gb->lcd.scanline_cycles<mode2_clks)mode = 2;
     else if(gb->lcd.scanline_cycles<mode3_clks+mode2_clks) mode =3;
     else mode =0;
-    if(ly >= SB_LCD_H) {mode = 1; new_scanline = false;}
     int old_mode = stat&0x7;
+   
     int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
-    if(ly>=wy)gb->lcd.wy_eq_ly = true;
+    if(ly==wy)gb->lcd.wy_eq_ly = true;
     if(new_scanline){
+      ly+=1;
+      gb->lcd.curr_scanline += 1;
+      if(ly>153){
+        ly = 0;
+        gb->lcd.curr_scanline=0;
+        gb->lcd.wy_eq_ly=false;
+        gb->lcd.curr_window_scanline = 0;
+      }
       if(gb->lcd.rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
       gb->lcd.rendered_part_of_window = false;
-      if(ly+1==SB_LCD_H)gb->lcd.finished_frame=true;
+      if(ly==SB_LCD_H)gb->lcd.finished_frame=true;
     }    
-
-    if(mode==2&&gb->lcd.curr_scanline<SB_LCD_H){
-      int clock_num = gb->lcd.scanline_cycles;
-      if(clock_num==0){
-        for(int i=0;i<SB_SPRITES_PER_SCANLINE;++i)gb->lcd.render_sprites[i]=-1;
-        gb->lcd.sprite_index = 0; 
-      }
-      if(clock_num%2){
-        uint8_t y = gb->lcd.curr_scanline;
-        const int num_sprites= 40;
-        int oam_table_offset = 0xfe00;
-        uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
-        bool draw_sprite = SB_BFE(ctrl,1,1)==1||1;
-        bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
-        int sprite_h = sprite8x16 ? 16: 8;
-        int sprite_id = clock_num/2;
-        int sprite_base = oam_table_offset+sprite_id*4;
-        int yc = (int)sb_read8_direct(gb, sprite_base+0)-16;
-        int xc = (int)sb_read8_direct(gb, sprite_base+1)-16;
-        if(yc<=y && yc+sprite_h>y&& gb->lcd.sprite_index<SB_SPRITES_PER_SCANLINE&&sprite_id<num_sprites&&draw_sprite){
-          gb->lcd.render_sprites[gb->lcd.sprite_index]=sprite_id;
-          for(int i=0;i<4;++i){
-            gb->lcd.render_sprites_data[gb->lcd.sprite_index][i]=sb_read8_direct(gb, sprite_base+i);
+    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
+    if(ly >= SB_LCD_H) {mode = 1;}
+    if(gb->lcd.render_frame){
+      if(mode==2){
+        int clock_num = gb->lcd.scanline_cycles;
+        if(clock_num==0){
+          for(int i=0;i<SB_SPRITES_PER_SCANLINE;++i)gb->lcd.render_sprites[i]=-1;
+          gb->lcd.sprite_index = 0; 
+        }
+        if(clock_num%2){
+          uint8_t y = gb->lcd.curr_scanline;
+          const int num_sprites= 40;
+          int oam_table_offset = 0xfe00;
+          uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+          bool draw_sprite = SB_BFE(ctrl,1,1)==1;
+          bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
+          int sprite_h = sprite8x16 ? 16: 8;
+          int sprite_id = clock_num/2;
+          int sprite_base = oam_table_offset+sprite_id*4;
+          int yc = (int)sb_read8_direct(gb, sprite_base+0)-16;
+          int xc = (int)sb_read8_direct(gb, sprite_base+1)-16;
+          if(yc<=y && yc+sprite_h>y&& gb->lcd.sprite_index<SB_SPRITES_PER_SCANLINE&&sprite_id<num_sprites&&draw_sprite){
+            gb->lcd.render_sprites[gb->lcd.sprite_index]=sprite_id;
+            for(int i=0;i<4;++i){
+              gb->lcd.render_sprites_data[gb->lcd.sprite_index][i]=sb_read8_direct(gb, sprite_base+i);
+            }
+            gb->lcd.sprite_index++;
           }
-          gb->lcd.sprite_index++;
         }
       }
-    }
-    if(mode ==3&&gb->lcd.curr_scanline<SB_LCD_H){
-      int x = gb->lcd.scanline_cycles-mode2_clks-8;
-      if(x<SB_LCD_W&&x>=0){
-        sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
+      if(mode ==3&&gb->lcd.curr_scanline<SB_LCD_H){
+        int x = gb->lcd.scanline_cycles-mode2_clks-8;
+        if(x<SB_LCD_W&&x>=0){
+          sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
+        }
       }
     }
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
@@ -889,30 +889,28 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     bool hblank_interrupt    = SB_BFE(stat, 3,1);
 
     bool curr_stat_interrupt = false; 
-    if(ly==SB_LCD_H&&old_ly!=SB_LCD_H){
+    if(ly>=SB_LCD_H&&old_ly<SB_LCD_H){
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
+
     if(ly == lyc) mode|=0x4;
 
-    //if(ly>=SB_LCD_H  && vblank_interrupt)    curr_stat_interrupt=true;
+    if(ly>=SB_LCD_H  && vblank_interrupt)    curr_stat_interrupt=true;
     if((mode&0x4)==4 && lyc_eq_ly_interrupt) curr_stat_interrupt=true;
-    //if((mode&0x3)==2 && oam_interrupt)       curr_stat_interrupt=true;
-    //if((mode&0x3)==0 && hblank_interrupt)    curr_stat_interrupt=true;
+    if((mode&0x3)==2 && oam_interrupt)       curr_stat_interrupt=true;
+    if((mode&0x3)==0 && hblank_interrupt)    curr_stat_interrupt=true;
     if(curr_stat_interrupt&&!gb->lcd.last_stat_interrupt){
-            int x = gb->lcd.scanline_cycles-mode2_clks-8;
-            int y = gb->lcd.curr_scanline;
-      printf("Stat interrupt: %d, %d\n",x,y);
       uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
       sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
     gb->lcd.last_stat_interrupt = curr_stat_interrupt;
+    stat = (stat&0xf8) | mode|0x80;
+    sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
   }
   gb->lcd.in_hblank = (mode&0x3)==0;
-  stat = (stat&0xf8) | mode;
-  sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
-  sb_store8_direct(gb, SB_IO_LCD_LY, ly);
+  sb_store8_direct(gb, SB_IO_LCD_LY, ly);;
 }
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
@@ -1212,7 +1210,7 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 
     while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
       uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
-      sb_store8(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+      sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
       gb->dma.oam_bytes_transferred++;
     }
     if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
@@ -1245,19 +1243,18 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   gb->serial.last_active =active; 
 }
 void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
-  unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
+  unsigned speed = sb_read8_direct(gb,SB_IO_GBC_SPEED_SWITCH);
   bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
   for(int i=0;i<cycles;++i){
     sb_update_oam_dma(gb,double_speed?2:1);
     sb_update_lcd(emu,gb);
     sb_update_timers(gb,double_speed?2:1, double_speed);
-    sb_tick_sio(gb,1);
   }
+  sb_tick_sio(gb,cycles);
   double delta_t = ((double)cycles)/(4*1024*1024);
   sb_process_audio(gb,emu,delta_t);
 }
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
-  printf("Begin Frame\n");
   gb->lcd.framebuffer = scratch->framebuffer; 
   gb->cart.data = emu->rom_data; 
   gb->bios = scratch->bios;
@@ -1268,6 +1265,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   int total_cylces = 0; 
   int rumble_cycles= 0; 
   gb->lcd.finished_frame =false;
+  gb->lcd.render_frame = emu->render_frame;
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
     sb_update_joypad_io_reg(emu, gb);
@@ -1299,11 +1297,6 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       bool call_interrupt = false;
       if(trigger_interrupt!=-1&&request_speed_switch==false){
         if(gb->cpu.interrupt_enable){
-          printf("Call interrupt: %d ly:%d lyc:%d stat:%02x\n",trigger_interrupt,
-            sb_read8(gb,SB_IO_LCD_LY),
-            sb_read8(gb,SB_IO_LCD_LYC),
-            sb_read8(gb,SB_IO_LCD_STAT)
-            );
           gb->cpu.interrupt_enable = false;
           gb->cpu.deferred_interrupt_enable = false;
           int interrupt_address = (trigger_interrupt*0x8)+0x40;
