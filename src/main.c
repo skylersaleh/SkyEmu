@@ -2281,6 +2281,9 @@ void se_update_frame() {
   se_draw_emulated_system_screen();
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
   if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
+  for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
+    if(gui_state.touch_points[i].active)gui_state.last_touch_time = se_time();
+  }
 }
 void se_imgui_theme()
 {
@@ -3139,7 +3142,6 @@ static void event(const sapp_event* ev) {
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
     }
-    gui_state.last_touch_time=se_time();
   }
 }
 sapp_desc sokol_main(int argc, char* argv[]) {
