@@ -476,10 +476,13 @@ static void sb_tick_frame_seq(sb_frame_sequencer_t* seq);
 static void sb_process_audio_writes(sb_gb_t* gb); 
 void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y);
 
+static FORCE_INLINE uint8_t sb_read8_io(sb_gb_t*gb, int addr){return gb->mem.data[addr];}
+static FORCE_INLINE void sb_store8_io(sb_gb_t*gb, int addr, int value){gb->mem.data[addr]=value;}
+
 static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   if(addr>=0x0000&&addr<=0x3fff){
     if(addr<256||(addr>=512&&addr<2304)){
-      if(!sb_read8_direct(gb,SB_IO_BIOS_BANK))return gb->bios[addr]; 
+      if(!sb_read8_io(gb,SB_IO_BIOS_BANK))return gb->bios[addr]; 
     }
     int cart_addr = SB_BFE(addr,0,14);
     if(gb->cart.bank_mode&&gb->cart.mbc_type==SB_MBC_MBC1){
@@ -496,7 +499,7 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     cart_addr%= (gb->cart.rom_size);
     return gb->cart.data[cart_addr];
   }else if(addr>=0x8000&&addr<=0x9fff){
-    uint8_t vbank =sb_read8_direct(gb,SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;
+    uint8_t vbank =sb_read8_io(gb,SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;
     uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
     return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
@@ -556,18 +559,18 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
   if(addr >=0xff00){
     if(addr == SB_IO_GBC_BCPD){
-      uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+      uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
       return gb->lcd.color_palettes[index];
     }else if(addr == SB_IO_GBC_OCPD){
-      uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+      uint8_t ocps = sb_read8_io(gb, SB_IO_GBC_OCPS);
       uint8_t index = SB_BFE(ocps,0,6);
       return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
     }else if (addr == SB_IO_GBC_VBK){
       uint8_t d= sb_read8_direct(gb,addr);
       return d|0xfe|sb_io_or_mask(gb,addr);
     }else if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
-      bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
+      bool wave_active = SB_BFE(sb_read8_io(gb,SB_IO_SOUND_ON_OFF),2,1);
       if(wave_active){
         return gb->audio.curr_wave_data;
       }
@@ -586,7 +589,7 @@ void sb_unmap_ram(sb_gb_t*gb){
 }
 static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   if(addr>=0x8000&&addr<=0x9fff){
-    uint8_t vbank =sb_read8_direct(gb, SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;;
+    uint8_t vbank =sb_read8_io(gb, SB_IO_GBC_VBK)%SB_VRAM_NUM_BANKS;;
     gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000]=value;
     return;
   }else if(addr>=0xA000&&addr<=0xBfff){
@@ -636,32 +639,32 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         gb->dma.hdma = (value&0x80)!=0;
         gb->dma.in_hblank = false;
         value&=0x7f;
-        uint16_t dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
-                    ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
-        uint16_t dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
-                    ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
+        uint16_t dma_src = sb_read8_io(gb,SB_IO_DMA_SRC_LO)|
+                    ((int)sb_read8_io(gb,SB_IO_DMA_SRC_HI)<<8u);
+        uint16_t dma_dst = sb_read8_io(gb,SB_IO_DMA_DST_LO)|
+                    ((int)sb_read8_io(gb,SB_IO_DMA_DST_HI)<<8u);
       }
     }
     if(addr == SB_IO_OAM_DMA){
       gb->dma.oam_dma_active=true;
       gb->dma.oam_bytes_transferred=0;
     }else if(addr == SB_IO_GBC_BCPD){
-      uint8_t bcps = sb_read8_direct(gb, SB_IO_GBC_BCPS);
+      uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
       bool autoindex = SB_BFE(bcps,7,1);
       gb->lcd.color_palettes[index] = value;
       if(autoindex){
         index++;
-        sb_store8_direct(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
+        sb_store8_io(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
       }
     }else if(addr == SB_IO_GBC_OCPD){
-      uint8_t ocps = sb_read8_direct(gb, SB_IO_GBC_OCPS);
+      uint8_t ocps = sb_read8_io(gb, SB_IO_GBC_OCPS);
       uint8_t index = SB_BFE(ocps,0,6);
       bool autoindex = SB_BFE(ocps,7,1);
       gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
       if(autoindex){
         index++;
-        sb_store8_direct(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
+        sb_store8_io(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
       }
     }else if(addr == SB_IO_DIV){
       gb->timers.total_clock_ticks = 0;
@@ -673,10 +676,10 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       gb->audio.regs_written = true;
       if(addr==SB_IO_SOUND_ON_OFF){
         value&=0xf0;
-        value|=sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf;
+        value|=sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf;
       }
       if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
-        bool wave_active = SB_BFE(sb_read8_direct(gb,SB_IO_SOUND_ON_OFF),2,1);
+        bool wave_active = SB_BFE(sb_read8_io(gb,SB_IO_SOUND_ON_OFF),2,1);
         if(wave_active)return;
       }
       if(addr==SB_IO_AUD1_LENGTH_DUTY||addr==SB_IO_AUD2_LENGTH_DUTY||addr==SB_IO_AUD3_LENGTH||addr==SB_IO_AUD4_LENGTH){
@@ -696,14 +699,14 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
                 addr==SB_IO_AUD2_FREQ||addr==SB_IO_AUD2_FREQ_HI||
                 addr==SB_IO_AUD3_FREQ||addr==SB_IO_AUD3_FREQ_HI
               ){
-        uint8_t freq_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ+i*5);
-        uint8_t freq_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI+i*5);
+        uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+        uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
         seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
       }
       int ch = (addr-SB_IO_AUD1_TONE_SWEEP)/5;
       int reg = (addr-SB_IO_AUD1_TONE_SWEEP)%5;
-    }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_direct(gb,SB_IO_BIOS_BANK);
-    }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_direct(gb,SB_IO_BIOS_BANK))return;}
+    }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_io(gb,SB_IO_BIOS_BANK);
+    }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_io(gb,SB_IO_BIOS_BANK))return;}
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
     return;
@@ -733,7 +736,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     return;
   }else if (addr>=0xfe00 && addr<=0xfe9f ){
     //OAM cannot be written to in mode 2 and 3
-    int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
+    int stat = sb_read8_io(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=2) return;            
   } else if(addr>=0x6000&&addr<=0x7fff){
     if(gb->cart.mbc_type==SB_MBC_MBC1){
@@ -741,7 +744,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     }
   }else if (addr>=0x8000 && addr <=0x9fff){
     //VRAM cannot be writen to in mode 3
-    int stat = sb_read8_direct(gb, SB_IO_LCD_STAT)&0x3;
+    int stat = sb_read8_io(gb, SB_IO_LCD_STAT)&0x3;
     if(stat>=3) return;            
   }
   sb_store8_direct(gb,addr,value);
@@ -797,11 +800,11 @@ void sb_update_joypad_io_reg(sb_emu_state_t* state, sb_gb_t*gb){
 }
 
 static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
-  uint8_t stat = sb_read8_direct(gb, SB_IO_LCD_STAT);
-  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  uint8_t stat = sb_read8_io(gb, SB_IO_LCD_STAT);
+  uint8_t ctrl = sb_read8_io(gb, SB_IO_LCD_CTRL);
   uint8_t ly  = gb->lcd.curr_scanline;
   uint8_t old_ly = ly;
-  uint8_t lyc = sb_read8_direct(gb, SB_IO_LCD_LYC);
+  uint8_t lyc = sb_read8_io(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
   int mode = stat&0x7;
   bool new_scanline = false;
@@ -811,7 +814,7 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
     gb->lcd.in_hblank=true;
-    sb_store8_direct(gb, SB_IO_LCD_STAT,stat&~3);
+    sb_store8_io(gb, SB_IO_LCD_STAT,stat&~3);
     ly = 0;
   }else{
     const int mode2_clks= 80;
@@ -831,7 +834,7 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     else mode =0;
     int old_mode = stat&0x7;
    
-    int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+    int wy = sb_read8_io(gb, SB_IO_LCD_WY);
     if(ly==wy)gb->lcd.wy_eq_ly = true;
     if(new_scanline){
       ly+=1;
@@ -859,18 +862,18 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
           uint8_t y = gb->lcd.curr_scanline;
           const int num_sprites= 40;
           int oam_table_offset = 0xfe00;
-          uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+          uint8_t ctrl = sb_read8_io(gb, SB_IO_LCD_CTRL);
           bool draw_sprite = SB_BFE(ctrl,1,1)==1;
           bool sprite8x16  = SB_BFE(ctrl,2,1)==1;
           int sprite_h = sprite8x16 ? 16: 8;
           int sprite_id = clock_num/2;
           int sprite_base = oam_table_offset+sprite_id*4;
-          int yc = (int)sb_read8_direct(gb, sprite_base+0)-16;
-          int xc = (int)sb_read8_direct(gb, sprite_base+1)-16;
+          int yc = (int)sb_read8_io(gb, sprite_base+0)-16;
+          int xc = (int)sb_read8_io(gb, sprite_base+1)-16;
           if(yc<=y && yc+sprite_h>y&& gb->lcd.sprite_index<SB_SPRITES_PER_SCANLINE&&sprite_id<num_sprites&&draw_sprite){
             gb->lcd.render_sprites[gb->lcd.sprite_index]=sprite_id;
             for(int i=0;i<4;++i){
-              gb->lcd.render_sprites_data[gb->lcd.sprite_index][i]=sb_read8_direct(gb, sprite_base+i);
+              gb->lcd.render_sprites_data[gb->lcd.sprite_index][i]=sb_read8_io(gb, sprite_base+i);
             }
             gb->lcd.sprite_index++;
           }
@@ -890,9 +893,9 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
 
     bool curr_stat_interrupt = false; 
     if(ly>=SB_LCD_H&&old_ly<SB_LCD_H){
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+      uint8_t inter_flag = sb_read8_io(gb, SB_IO_INTER_F);
       //V-BLANK Interrupt
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<0));
+      sb_store8_io(gb, SB_IO_INTER_F, inter_flag| (1<<0));
     }
 
     if(ly == lyc) mode|=0x4;
@@ -902,15 +905,15 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     if((mode&0x3)==2 && oam_interrupt)       curr_stat_interrupt=true;
     if((mode&0x3)==0 && hblank_interrupt)    curr_stat_interrupt=true;
     if(curr_stat_interrupt&&!gb->lcd.last_stat_interrupt){
-      uint8_t inter_flag = sb_read8_direct(gb, SB_IO_INTER_F);
-      sb_store8_direct(gb, SB_IO_INTER_F, inter_flag| (1<<1));
+      uint8_t inter_flag = sb_read8_io(gb, SB_IO_INTER_F);
+      sb_store8_io(gb, SB_IO_INTER_F, inter_flag| (1<<1));
     }
     gb->lcd.last_stat_interrupt = curr_stat_interrupt;
     stat = (stat&0xf8) | mode|0x80;
-    sb_store8_direct(gb, SB_IO_LCD_STAT, stat);
+    sb_store8_io(gb, SB_IO_LCD_STAT, stat);
   }
   gb->lcd.in_hblank = (mode&0x3)==0;
-  sb_store8_direct(gb, SB_IO_LCD_LY, ly);;
+  sb_store8_io(gb, SB_IO_LCD_LY, ly);;
 }
 uint8_t sb_read_vram(sb_gb_t*gb, int cpu_address, int bank){
   return gb->lcd.vram[bank*SB_VRAM_BANK_SIZE+cpu_address-0x8000];
@@ -971,9 +974,9 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   uint8_t palette = 0;
   if(gb->model == SB_GB){
     int pal_id = SB_BFE(color_id,2,6);
-    if(pal_id==SB_BACKG_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_BGP);
-    else if(pal_id==SB_OBJ1_PALETTE)palette = sb_read8_direct(gb, SB_IO_PPU_OBP1);
-    else palette = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
+    if(pal_id==SB_BACKG_PALETTE)palette = sb_read8_io(gb, SB_IO_PPU_BGP);
+    else if(pal_id==SB_OBJ1_PALETTE)palette = sb_read8_io(gb, SB_IO_PPU_OBP1);
+    else palette = color_id ==0 ? 0 : sb_read8_io(gb, SB_IO_PPU_OBP0);
     color_id = SB_BFE(palette,2*(color_id&0x3),2);
 
     *r = gb->dmg_palette[color_id*3+0];
@@ -985,9 +988,9 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
     if(!sb_gbc_enable(gb)){
       uint8_t pal_map= 0; 
       int pal_id = SB_BFE(color_id,2,6);
-      if(pal_id==SB_BACKG_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_BGP);
-      else if(pal_id==SB_OBJ1_PALETTE)pal_map = sb_read8_direct(gb, SB_IO_PPU_OBP1);
-      else pal_map = color_id ==0 ? 0 : sb_read8_direct(gb, SB_IO_PPU_OBP0);
+      if(pal_id==SB_BACKG_PALETTE)pal_map = sb_read8_io(gb, SB_IO_PPU_BGP);
+      else if(pal_id==SB_OBJ1_PALETTE)pal_map = sb_read8_io(gb, SB_IO_PPU_OBP1);
+      else pal_map = color_id ==0 ? 0 : sb_read8_io(gb, SB_IO_PPU_OBP0);
       color_id = SB_BFE(pal_map,2*(color_id&0x3),2);
       palette=pal_id==SB_BACKG_PALETTE?0:8;
     }
@@ -1006,7 +1009,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b){
   }
 }
 void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
-  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  uint8_t ctrl = sb_read8_io(gb, SB_IO_LCD_CTRL);
   bool draw_bg_win     = SB_BFE(ctrl,0,1)==1;
   bool master_priority = true;
   bool gbc_mode = sb_gbc_enable(gb);
@@ -1023,10 +1026,10 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   int win_tile_map_base     = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
 
   int oam_table_offset = 0xfe00;
-  int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
-  int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
-  int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
-  int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
+  int wx = sb_read8_io(gb, SB_IO_LCD_WX)-7;
+  int wy = sb_read8_io(gb, SB_IO_LCD_WY);
+  int sx = sb_read8_io(gb, SB_IO_LCD_SX);
+  int sy = sb_read8_io(gb, SB_IO_LCD_SY);
 
   if(!gb->lcd.wy_eq_ly)window_enable = false;
   // HW only draws first 10 sprites that touch a scanline
@@ -1110,7 +1113,7 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
 }
 
 void sb_update_timers(sb_gb_t* gb, int delta_clocks, bool double_speed){
-  uint8_t tac = sb_read8_direct(gb, SB_IO_TAC);
+  uint8_t tac = sb_read8_io(gb, SB_IO_TAC);
   bool tima_enable = SB_BFE(tac, 2, 1);
   int clk_sel = SB_BFE(tac, 0, 2);
 
@@ -1129,35 +1132,35 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks, bool double_speed){
     bool tick_tima = SB_BFE(curr,tma_bit,1)&tima_enable;
     bool tick_seq = SB_BFE(curr,seq_bit,1);
     if(tick_tima==false&&gb->timers.last_tick_tima==true){
-      uint8_t d = sb_read8_direct(gb, SB_IO_TIMA);
+      uint8_t d = sb_read8_io(gb, SB_IO_TIMA);
       // Trigger timer interrupt
       if(d == 255){
-        uint8_t i_flag = sb_read8_direct(gb, SB_IO_INTER_F);
+        uint8_t i_flag = sb_read8_io(gb, SB_IO_INTER_F);
         i_flag |= 1<<2;
-        sb_store8_direct(gb, SB_IO_INTER_F, i_flag);
-        d = sb_read8_direct(gb,SB_IO_TMA);
+        sb_store8_io(gb, SB_IO_INTER_F, i_flag);
+        d = sb_read8_io(gb,SB_IO_TMA);
       }else d +=1;
-      sb_store8_direct(gb, SB_IO_TIMA, d);
+      sb_store8_io(gb, SB_IO_TIMA, d);
     }
     if(tick_seq&&!gb->timers.last_tick_seq)sb_tick_frame_seq(&gb->audio.sequencer);
     gb->timers.last_tick_seq = tick_seq;
     gb->timers.last_tick_tima = tick_tima;
   }
-  sb_store8_direct(gb, SB_IO_DIV, SB_BFE(gb->timers.total_clock_ticks,8,8));
+  sb_store8_io(gb, SB_IO_DIV, SB_BFE(gb->timers.total_clock_ticks,8,8));
 }
 int sb_update_dma(sb_gb_t *gb){
 
   int delta_cycles = 0;
   if(gb->dma.active){
     unsigned bytes_transferred = 0;
-    uint16_t dma_src = sb_read8_direct(gb,SB_IO_DMA_SRC_LO)|
-                    ((int)sb_read8_direct(gb,SB_IO_DMA_SRC_HI)<<8u);
-    uint16_t dma_dst = sb_read8_direct(gb,SB_IO_DMA_DST_LO)|
-                    ((int)sb_read8_direct(gb,SB_IO_DMA_DST_HI)<<8u);
+    uint16_t dma_src = sb_read8_io(gb,SB_IO_DMA_SRC_LO)|
+                    ((int)sb_read8_io(gb,SB_IO_DMA_SRC_HI)<<8u);
+    uint16_t dma_dst = sb_read8_io(gb,SB_IO_DMA_DST_LO)|
+                    ((int)sb_read8_io(gb,SB_IO_DMA_DST_HI)<<8u);
     dma_src&=0xfff0;
     dma_dst&=0x1ff0;
     dma_dst|=0x8000;
-    uint8_t dma_mode_length = sb_read8_direct(gb,SB_IO_DMA_MODE_LEN);
+    uint8_t dma_mode_length = sb_read8_io(gb,SB_IO_DMA_MODE_LEN);
 
     int len = (SB_BFE(dma_mode_length, 0,7));
     bool hdma_mode = gb->dma.hdma;
@@ -1173,10 +1176,10 @@ int sb_update_dma(sb_gb_t *gb){
           dma_dst++;
           bytes_transferred+=1;
         }
-        sb_store8_direct(gb,SB_IO_DMA_SRC_LO,SB_BFE(dma_src,0,8));
-        sb_store8_direct(gb,SB_IO_DMA_SRC_HI,SB_BFE(dma_src,8,8));
-        sb_store8_direct(gb,SB_IO_DMA_DST_LO,SB_BFE(dma_dst,0,8));
-        sb_store8_direct(gb,SB_IO_DMA_DST_HI,SB_BFE(dma_dst,8,8));
+        sb_store8_io(gb,SB_IO_DMA_SRC_LO,SB_BFE(dma_src,0,8));
+        sb_store8_io(gb,SB_IO_DMA_SRC_HI,SB_BFE(dma_src,8,8));
+        sb_store8_io(gb,SB_IO_DMA_DST_LO,SB_BFE(dma_dst,0,8));
+        sb_store8_io(gb,SB_IO_DMA_DST_HI,SB_BFE(dma_dst,8,8));
         len--;           
         if(hdma_mode)break;
       }
@@ -1190,7 +1193,7 @@ int sb_update_dma(sb_gb_t *gb){
         new_mode = 0xff;
       }
       if(!gb->dma.active)new_mode|=0x80;
-      sb_store8_direct(gb,SB_IO_DMA_MODE_LEN,new_mode);
+      sb_store8_io(gb,SB_IO_DMA_MODE_LEN,new_mode);
     }
     gb->dma.in_hblank = gb->lcd.in_hblank;
     delta_cycles+= bytes_transferred/2;
@@ -1199,7 +1202,7 @@ int sb_update_dma(sb_gb_t *gb){
 }
 void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
  if(gb->dma.oam_dma_active){
-    uint16_t dma_src = ((int)sb_read8_direct(gb,SB_IO_OAM_DMA))<<8u;
+    uint16_t dma_src = ((int)sb_read8_io(gb,SB_IO_OAM_DMA))<<8u;
     uint16_t dma_dst = 0xfe00;
     // From CasualPokePlayer:
     // in most cases echo ram is only E000-FDFF. 
@@ -1210,7 +1213,7 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 
     while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
       uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
-      sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+      sb_store8_io(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
       gb->dma.oam_bytes_transferred++;
     }
     if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
@@ -1219,7 +1222,7 @@ void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
 }
 static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   //Just a stub for now;
-  uint8_t siocnt= sb_read8_direct(gb,SB_IO_SERIAL_CTRL);
+  uint8_t siocnt= sb_read8_io(gb,SB_IO_SERIAL_CTRL);
   bool active = SB_BFE(siocnt,7,1);
   if(active){
     if(gb->serial.last_active==false){
@@ -1232,18 +1235,18 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
     if(internal_clock)gb->serial.ticks_to_complete-=delta_cycles;
     if(gb->serial.ticks_to_complete<=0){
       siocnt&=0x7f;
-      sb_store8_direct(gb,SB_IO_SERIAL_CTRL,siocnt);
-      sb_store8_direct(gb,SB_IO_SERIAL_BYTE,0xff);
-      uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
+      sb_store8_io(gb,SB_IO_SERIAL_CTRL,siocnt);
+      sb_store8_io(gb,SB_IO_SERIAL_BYTE,0xff);
+      uint8_t i_flag = sb_read8_io(gb,SB_IO_INTER_F);
       i_flag |= (1<<3);
-      sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
+      sb_store8_io(gb,SB_IO_INTER_F,i_flag);
       active =false;
     }
   }
   gb->serial.last_active =active; 
 }
 void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
-  unsigned speed = sb_read8_direct(gb,SB_IO_GBC_SPEED_SWITCH);
+  unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
   bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
   for(int i=0;i<cycles;++i){
     sb_update_oam_dma(gb,double_speed?2:1);
@@ -1286,7 +1289,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       int trigger_interrupt = -1;
       // TODO: Can interrupts trigger between prefix ops and the second byte?
       if(gb->cpu.prefix_op==false){
-        uint8_t ie = sb_read8_direct(gb,SB_IO_INTER_EN);
+        uint8_t ie = sb_read8_io(gb,SB_IO_INTER_EN);
         uint8_t i_flag = gb->cpu.last_inter_f;
         uint8_t masked_interupt = ie&i_flag&0x1f;
         for(int i=0;i<5;++i){
@@ -1305,9 +1308,9 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
           call_interrupt=true;
         }
         if(call_interrupt){
-          uint8_t i_flag = sb_read8_direct(gb,SB_IO_INTER_F);
+          uint8_t i_flag = sb_read8_io(gb,SB_IO_INTER_F);
           i_flag &= ~(1<<trigger_interrupt);
-          sb_store8_direct(gb,SB_IO_INTER_F,i_flag);
+          sb_store8_io(gb,SB_IO_INTER_F,i_flag);
         }
         gb->cpu.wait_for_interrupt = false;
       }
@@ -1331,7 +1334,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
         if(gb->cpu.prefix_op==true)i--;
 
         if(gb->cpu.wait_for_interrupt){
-          uint8_t ie = sb_read8_direct(gb,SB_IO_INTER_EN);
+          uint8_t ie = sb_read8_io(gb,SB_IO_INTER_EN);
           uint8_t i_flag = gb->cpu.last_inter_f;
           uint8_t masked_interupt = ie&i_flag&0x1f;
           if(masked_interupt&&!gb->cpu.interrupt_enable){
@@ -1356,7 +1359,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
           cpu_delta_cycles -=4;
         }
       }
-      gb->cpu.last_inter_f = sb_read8_direct(gb,SB_IO_INTER_F);
+      gb->cpu.last_inter_f = sb_read8_io(gb,SB_IO_INTER_F);
     }
     int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
     delta_cycles_after_speed+= dma_delta_cycles;
@@ -1512,7 +1515,7 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
   if(loaded_bios){
     gb->cpu.pc = 0; 
   }else{
-    sb_store8_direct(gb,SB_IO_BIOS_BANK,1);
+    sb_store8_io(gb,SB_IO_BIOS_BANK,1);
     gb->cpu.pc = 0x100;
     gb->cpu.af=0x01B0;
     gb->cpu.bc=0x0013;
@@ -1633,11 +1636,11 @@ static void sb_process_audio_writes(sb_gb_t* gb){
   sb_frame_sequencer_t* seq = &gb->audio.sequencer;
   if(gb->audio.regs_written){
     gb->audio.regs_written = false; 
-    int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+    int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
     bool master_enable = SB_BFE(nrf_52,7,1);
     if(!master_enable){
       for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
-        sb_store8_direct(gb,i,0);
+        sb_store8_io(gb,i,0);
       }
       for(int i=0;i<4;++i){
         seq->active[i]=false;
@@ -1646,21 +1649,21 @@ static void sb_process_audio_writes(sb_gb_t* gb){
         seq->length[i]=0;
       }
     }else{
-      uint8_t freq_sweep1 = sb_read8_direct(gb, SB_IO_AUD1_TONE_SWEEP);
+      uint8_t freq_sweep1 = sb_read8_io(gb, SB_IO_AUD1_TONE_SWEEP);
       seq->sweep_period=SB_BFE(freq_sweep1, 4, 3);
       seq->sweep_shift=SB_BFE(freq_sweep1, 0, 3);
       seq->sweep_direction= SB_BFE(freq_sweep1, 3,1)? -1. : 1; 
       for(int i=0;i<4;++i){
         bool prev_length_en = seq->use_length[i];
-        uint8_t freq_hi = sb_read8_direct(gb,SB_IO_AUD1_FREQ_HI+i*5);
+        uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
         seq->use_length[i]= SB_BFE(freq_hi,6,1);
-        uint8_t vol_env = sb_read8_direct(gb,SB_IO_AUD1_VOL_ENV+i*5);
+        uint8_t vol_env = sb_read8_io(gb,SB_IO_AUD1_VOL_ENV+i*5);
         if(i==2){
-          bool power = SB_BFE(sb_read8_direct(gb,SB_IO_AUD3_POWER),7,1);
+          bool power = SB_BFE(sb_read8_io(gb,SB_IO_AUD3_POWER),7,1);
           seq->powered[i]=power;
         }
         if(i!=0){
-          uint8_t freq_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ+i*5);
+          uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
           seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
         }
         if(i==2){
@@ -1672,8 +1675,8 @@ static void sb_process_audio_writes(sb_gb_t* gb){
         }
         bool triggered = SB_BFE(freq_hi,7,1);
         if(triggered){
-          uint8_t length_duty = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY+i*5);
-          uint8_t freq_lo = sb_read8_direct(gb,SB_IO_AUD1_FREQ+i*5);
+          uint8_t length_duty = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY+i*5);
+          uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
           seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
           seq->volume[i] = SB_BFE(vol_env,4,4);
          
@@ -1711,7 +1714,7 @@ static void sb_process_audio_writes(sb_gb_t* gb){
             }
           }
         }
-        sb_store8_direct(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
+        sb_store8_io(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
       }
     }
   }
@@ -1726,13 +1729,13 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
   if(gb->audio.regs_written){sb_process_audio_writes(gb);}
   sb_frame_sequencer_t* seq = &audio->sequencer;
-  int nrf_52 = sb_read8_direct(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
   for(int i=0;i<4;++i){
     seq->active[i]&=seq->powered[i];
     bool active = seq->active[i];
     nrf_52|=active<<i;
   }
-  sb_store8_direct(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+  sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
 
   if(delta_time>1.0/60.)delta_time = 1.0/60.;
   audio->current_sim_time +=delta_time;
@@ -1741,27 +1744,27 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
   if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
 
-  uint8_t length_duty1 = sb_read8_direct(gb, SB_IO_AUD1_LENGTH_DUTY);
+  uint8_t length_duty1 = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
-  uint8_t length_duty2 = sb_read8_direct(gb, SB_IO_AUD2_LENGTH_DUTY);
+  uint8_t length_duty2 = sb_read8_io(gb, SB_IO_AUD2_LENGTH_DUTY);
   float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
 
-  uint8_t power3 = sb_read8_direct(gb,SB_IO_AUD3_POWER);
-  uint8_t vol_env3 = sb_read8_direct(gb,SB_IO_AUD3_VOL);
+  uint8_t power3 = sb_read8_io(gb,SB_IO_AUD3_POWER);
+  uint8_t vol_env3 = sb_read8_io(gb,SB_IO_AUD3_VOL);
   int channel3_shift = SB_BFE(vol_env3,5,2)-1;
   if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
 
-  uint8_t poly4 = sb_read8_direct(gb,SB_IO_AUD4_POLY);
+  uint8_t poly4 = sb_read8_io(gb,SB_IO_AUD4_POLY);
   float r4 = SB_BFE(poly4,0,3);
   uint8_t s4 = SB_BFE(poly4,4,4);
   bool sevenBit4 = SB_BFE(poly4,3,1);
   if(r4==0)r4=0.5;
 
-  uint8_t master_vol = sb_read8_direct(gb,SB_IO_MASTER_VOLUME);
+  uint8_t master_vol = sb_read8_io(gb,SB_IO_MASTER_VOLUME);
   float master_left = SB_BFE(master_vol,4,3)/7.;
   float master_right = SB_BFE(master_vol,0,3)/7.;
 
-  uint8_t chan_sel = sb_read8_direct(gb,SB_IO_SOUND_OUTPUT_SEL);
+  uint8_t chan_sel = sb_read8_io(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
   int chan_l[4];int chan_r[4];
   for(int i=0;i<4;++i){
@@ -1802,7 +1805,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
 	  //Lookup wave table value
     unsigned wav_samp = ((unsigned)(seq->chan_t[2]*32))%32;
-    int dat =sb_read8_direct(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
+    int dat =sb_read8_io(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
     gb->audio.curr_wave_data = dat;
     int offset = (wav_samp&1)? 0:4;
     dat = ((dat>>offset)&0xf)>>channel3_shift;
