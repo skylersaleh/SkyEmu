@@ -335,6 +335,7 @@ typedef struct{
   int bytes_transferred;
   bool oam_dma_active;
   int oam_bytes_transferred; 
+  uint32_t oam_dma_activate_fifo;
   bool hdma; 
 } sb_dma_t;
 
@@ -519,6 +520,9 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
   }else if(addr>=0xe000 && addr<=0xfdff){
     //Echo Ram
     addr =addr - 0xe000 + 0xc000;
+  }else if(addr>=0xfe00&&addr<=0xfe9f){
+    //OAM not accessible during OAM DMA. 
+    if(gb->dma.oam_dma_active)return 0xff;
   }
   return gb->mem.data[addr];
 }
@@ -557,6 +561,7 @@ uint8_t sb_io_or_mask(sb_gb_t* gb, int addr){
 uint8_t sb_read8(sb_gb_t *gb, int addr) {
   //if(addr == 0xff44)return 0x90;
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
+  //Only high ram is accessible during oam_dma
   if(addr >=0xff00){
     if(addr == SB_IO_GBC_BCPD){
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
@@ -646,8 +651,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       }
     }
     if(addr == SB_IO_OAM_DMA){
-      gb->dma.oam_dma_active=true;
-      gb->dma.oam_bytes_transferred=0;
+      gb->dma.oam_dma_activate_fifo|=1<<(2);
     }else if(addr == SB_IO_GBC_BCPD){
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
@@ -1198,22 +1202,31 @@ int sb_update_dma(sb_gb_t *gb){
   return delta_cycles;
 }
 void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
- if(gb->dma.oam_dma_active){
-    uint16_t dma_src = ((int)sb_read8_io(gb,SB_IO_OAM_DMA))<<8u;
-    uint16_t dma_dst = 0xfe00;
-    // From CasualPokePlayer:
-    // in most cases echo ram is only E000-FDFF. 
-    // oam dma is one of the exceptions here which have the entire E000-FFFF
-    // region as echo ram for dma source
-    if(dma_src==0xfe00)dma_src=0xde00;
-    else if(dma_src==0xff00)dma_src=0xdf00;
-
-    while(delta_cycles--&&gb->dma.oam_bytes_transferred<0xA0){
-      uint8_t data = sb_read8(gb,dma_src+gb->dma.oam_bytes_transferred);
-      sb_store8_io(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
-      gb->dma.oam_bytes_transferred++;
+  delta_cycles/=4;
+  uint16_t dma_src = ((int)sb_read8_io(gb,SB_IO_OAM_DMA))<<8u;
+  uint16_t dma_dst = 0xfe00;
+  // From CasualPokePlayer:
+  // in most cases echo ram is only E000-FDFF. 
+  // oam dma is one of the exceptions here which have the entire E000-FFFF
+  // region as echo ram for dma source
+  if(dma_src==0xfe00)dma_src=0xde00;
+  else if(dma_src==0xff00)dma_src=0xdf00;
+  for(int i=0;i<delta_cycles;i++){
+    if(gb->dma.oam_dma_activate_fifo){
+      if(gb->dma.oam_dma_activate_fifo&1){
+        gb->dma.oam_dma_active=true;
+        gb->dma.oam_bytes_transferred=0; 
+      }
+      gb->dma.oam_dma_activate_fifo>>=1;
     }
-    if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
+    if(gb->dma.oam_dma_active){
+      if(gb->dma.oam_bytes_transferred<0xA0){
+        uint8_t data = sb_read8_direct(gb,dma_src+gb->dma.oam_bytes_transferred);
+        sb_store8_direct(gb,dma_dst+gb->dma.oam_bytes_transferred,data);
+        gb->dma.oam_bytes_transferred++;
+      }
+      if(gb->dma.oam_bytes_transferred>=0xA0)gb->dma.oam_dma_active=false;
+    }
   }
 
 }
@@ -1245,8 +1258,8 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
 void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
   unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
   bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
+  sb_update_oam_dma(gb,(double_speed?2:1)*cycles);
   for(int i=0;i<cycles;++i){
-    sb_update_oam_dma(gb,double_speed?2:1);
     sb_update_lcd(emu,gb);
   }
   sb_update_timers(gb,(double_speed?2:1)*cycles, double_speed);
