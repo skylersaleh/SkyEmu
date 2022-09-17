@@ -2796,8 +2796,6 @@ static void frame(void) {
     if(emu_state.run_mode==SB_MODE_PAUSE)toggle_labels[2]=ICON_FK_PLAY;
     int next_toggle_id = -1; 
 
-    if(curr->inputs[SE_KEY_EMU_PAUSE] && !prev->inputs[SE_KEY_EMU_PAUSE])next_toggle_id = 2; 
-
     if(emu_state.run_mode!=SB_MODE_PAUSE){
       if(curr->inputs[SE_KEY_EMU_REWIND] && !prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 1;
       if(!curr->inputs[SE_KEY_EMU_REWIND] && prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 2;
@@ -2809,7 +2807,6 @@ static void frame(void) {
       //Don't pause a game that is already running at normal speed. 
       if(curr_toggle==2 &&next_toggle_id==2)next_toggle_id=-1;
     }
-
 
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
@@ -2828,6 +2825,12 @@ static void frame(void) {
       case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
       case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
     }
+
+    if(curr->inputs[SE_KEY_EMU_PAUSE] && !prev->inputs[SE_KEY_EMU_PAUSE]){
+      if(emu_state.run_mode!=SB_MODE_RUN){emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=1;}
+      else emu_state.run_mode = SB_MODE_PAUSE;
+    }
+
     igPopItemWidth();
     
     
