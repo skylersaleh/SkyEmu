@@ -1251,8 +1251,8 @@ void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
   for(int i=0;i<cycles;++i){
     sb_update_oam_dma(gb,double_speed?2:1);
     sb_update_lcd(emu,gb);
-    sb_update_timers(gb,double_speed?2:1, double_speed);
   }
+  sb_update_timers(gb,(double_speed?2:1)*cycles, double_speed);
   sb_tick_sio(gb,cycles);
   double delta_t = ((double)cycles)/(4*1024*1024);
   sb_process_audio(gb,emu,delta_t);
