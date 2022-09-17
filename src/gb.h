@@ -1053,17 +1053,14 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   }
   if(draw_sprite){
     int prior_sprite = 256;
-    for(int i=0;i<SB_SPRITES_PER_SCANLINE;++i){
+    for(int i=0;i<gb->lcd.sprite_index;++i){
       int sprite = gb->lcd.render_sprites[i];
-      if(sprite==-1)break;
       int xc = gb->lcd.render_sprites_data[i][1]-8;
 
       int x_sprite = 7-(x-xc);
       int prior = sb_gbc_enable(gb)?0 : xc;
-
-      if(prior_sprite<=prior) continue;
       //Check if the sprite is hit
-      if(x_sprite>=8 || x_sprite<0) continue;
+      if(prior_sprite<=prior||x_sprite>=8 || x_sprite<0) continue;
 
       int yc = gb->lcd.render_sprites_data[i][0]-16;
       int y_sprite = y-yc;
