@@ -1403,7 +1403,7 @@ float sb_bandlimited_square(float t, float duty_cycle,float dt){
 static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
   if(!sb_path_has_file_ext(emu->rom_path,".gb") && 
      !sb_path_has_file_ext(emu->rom_path,".gbc")) return false; 
-  if(emu->rom_size+1>MAX_CARTRIDGE_SIZE)return false;
+  if(emu->rom_size>MAX_CARTRIDGE_SIZE)return false;
   memset(gb, 0, sizeof(sb_gb_t));
   memset(scratch, 0, sizeof(gb_scratch_t));
   gb->cart.data = emu->rom_data;
