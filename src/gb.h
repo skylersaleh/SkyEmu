@@ -845,9 +845,9 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
       if(gb->lcd.rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
       gb->lcd.rendered_part_of_window = false;
       if(ly==SB_LCD_H)gb->lcd.finished_frame=true;
-    }    
+    }
+    if(ly >= SB_LCD_H) {mode = 1;}    
     if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
-    if(ly >= SB_LCD_H) {mode = 1;}
     if(gb->lcd.render_frame){
       if(mode==2){
         int clock_num = gb->lcd.scanline_cycles;
@@ -1344,6 +1344,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
         sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
+        cpu_delta_cycles=0;
       }
       if(trigger_interrupt!=-1)gb->cpu.wait_for_interrupt=false;
       if(!gb->cpu.wait_for_interrupt){
