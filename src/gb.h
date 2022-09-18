@@ -321,8 +321,8 @@ typedef struct{
   uint8_t color_palettes[SB_PPU_BG_COLOR_PALETTES+SB_PPU_SPRITE_COLOR_PALETTES];
   bool in_hblank; //Used for HDMA
   bool wy_eq_ly;
+  bool window_active; 
   bool last_stat_interrupt;
-  bool rendered_part_of_window;
   int render_sprites[SB_SPRITES_PER_SCANLINE];
   uint8_t render_sprites_data[SB_SPRITES_PER_SCANLINE][4];
   bool finished_frame;
@@ -810,6 +810,8 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
   uint8_t old_ly = ly;
   uint8_t lyc = sb_read8_io(gb, SB_IO_LCD_LYC);
   bool enable = SB_BFE(ctrl,7,1)==1;
+  bool window_enable        = SB_BFE(ctrl,5,1)==1;
+
   int mode = stat&0x7;
   bool new_scanline = false;
   if(!enable){
@@ -818,6 +820,7 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
     gb->lcd.in_hblank=true;
+    gb->lcd.window_active=false;
     sb_store8_io(gb, SB_IO_LCD_STAT,stat&~3);
     ly = 0;
   }else{
@@ -839,8 +842,10 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
     int old_mode = stat&0x7;
    
     int wy = sb_read8_io(gb, SB_IO_LCD_WY);
-    if(ly==wy)gb->lcd.wy_eq_ly = true;
     if(new_scanline){
+
+      if(gb->lcd.window_active)gb->lcd.curr_window_scanline+=1;
+      gb->lcd.window_active=false;
       ly+=1;
       gb->lcd.curr_scanline += 1;
       if(ly>153){
@@ -849,12 +854,9 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
         gb->lcd.wy_eq_ly=false;
         gb->lcd.curr_window_scanline = 0;
       }
-      if(gb->lcd.rendered_part_of_window)gb->lcd.curr_window_scanline+=1;
-      gb->lcd.rendered_part_of_window = false;
       if(ly==SB_LCD_H)gb->lcd.finished_frame=true;
     }
     if(ly >= SB_LCD_H) {mode = 1;}    
-    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
     if(gb->lcd.render_frame){
       if(mode==2){
         int clock_num = gb->lcd.scanline_cycles;
@@ -886,10 +888,13 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
       if(gb->lcd.curr_scanline<SB_LCD_H){
         int x = gb->lcd.scanline_cycles-mode2_clks-8;
         if(x<SB_LCD_W&&x>=0){
+          if(ly==wy&&!gb->lcd.wy_eq_ly&&window_enable) gb->lcd.wy_eq_ly = true;
           sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
         }
       }
     }
+    if(ly==153&& gb->lcd.scanline_cycles>=4){ly = 0;}
+
     bool lyc_eq_ly_interrupt = SB_BFE(stat, 6,1);
     bool oam_interrupt       = SB_BFE(stat, 5,1);
     bool vblank_interrupt    = SB_BFE(stat, 4,1);
@@ -1035,7 +1040,6 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   int sx = sb_read8_io(gb, SB_IO_LCD_SX);
   int sy = sb_read8_io(gb, SB_IO_LCD_SY);
 
-  if(!gb->lcd.wy_eq_ly)window_enable = false;
   // HW only draws first 10 sprites that touch a scanline
   const int bytes_per_tile = 2*8;
   int color_id=0;
@@ -1043,16 +1047,17 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   bool background_priority= false;
 
   if(draw_bg_win){
-    int px = x+ sx;
-    int py = y+ sy;
-    color_id = sb_lookup_tile(gb,px,py,bg_tile_map_base,bg_win_tile_data_mode);
-  }
-  if(window_enable && draw_bg_win){
-    int px = x-wx;
-    if(px>=0){
-      int py = gb->lcd.curr_window_scanline;
-      gb->lcd.rendered_part_of_window = true;
-      color_id = sb_lookup_tile(gb,px,py,win_tile_map_base,bg_win_tile_data_mode);
+    gb->lcd.window_active|= window_enable&&gb->lcd.wy_eq_ly&&x>wx;
+    if(gb->lcd.window_active){
+      int px = x-wx;
+      if(px>=0){
+        int py = gb->lcd.curr_window_scanline;
+        color_id = sb_lookup_tile(gb,px,py,win_tile_map_base,bg_win_tile_data_mode);
+      }
+    }else{
+      int px = x+ sx;
+      int py = y+ sy;
+      color_id = sb_lookup_tile(gb,px,py,bg_tile_map_base,bg_win_tile_data_mode);
     }
   }
   if(draw_sprite){
