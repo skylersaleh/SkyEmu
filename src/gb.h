@@ -322,12 +322,13 @@ typedef struct{
   bool in_hblank; //Used for HDMA
   bool wy_eq_ly;
   bool window_active; 
+  bool latched_window_enable;
   bool last_stat_interrupt;
   int render_sprites[SB_SPRITES_PER_SCANLINE];
   uint8_t render_sprites_data[SB_SPRITES_PER_SCANLINE][4];
   bool finished_frame;
   int sprite_index;
-  bool render_frame; 
+  bool render_frame;
 } sb_lcd_ppu_t;
 typedef struct{
   bool in_hblank; 
@@ -846,14 +847,17 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
 
       if(gb->lcd.window_active)gb->lcd.curr_window_scanline+=1;
       gb->lcd.window_active=false;
+      int old_ly = ly;
       ly+=1;
       gb->lcd.curr_scanline += 1;
       if(ly>153){
         ly = 0;
+        old_ly=0;
         gb->lcd.curr_scanline=0;
         gb->lcd.wy_eq_ly=false;
         gb->lcd.curr_window_scanline = 0;
       }
+      gb->lcd.latched_window_enable=window_enable;
       if(ly==SB_LCD_H)gb->lcd.finished_frame=true;
     }
     if(ly >= SB_LCD_H) {mode = 1;}    
@@ -887,8 +891,11 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
       }
       if(gb->lcd.curr_scanline<SB_LCD_H){
         int x = gb->lcd.scanline_cycles-mode2_clks-8;
+        //This is intenentionally not latched for: 007 - The World is Not Enough's hud. 
+        //Zen Intergalactic Ninja, Speedy Gonzales, and the Warriors of Might and Magic are also very sensitive
+        //to the behavior of this window. 
+        if(ly==wy&&window_enable) gb->lcd.wy_eq_ly = true;
         if(x<SB_LCD_W&&x>=0){
-          if(ly==wy&&!gb->lcd.wy_eq_ly&&window_enable) gb->lcd.wy_eq_ly = true;
           sb_draw_pixel(emu,gb,x,gb->lcd.curr_scanline);
         }
       }
@@ -1045,9 +1052,8 @@ void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y){
   int color_id=0;
 
   bool background_priority= false;
-
+  gb->lcd.window_active|= gb->lcd.latched_window_enable&&gb->lcd.wy_eq_ly&&x>=wx;
   if(draw_bg_win){
-    gb->lcd.window_active|= window_enable&&gb->lcd.wy_eq_ly&&x>wx;
     if(gb->lcd.window_active){
       int px = x-wx;
       if(px>=0){
