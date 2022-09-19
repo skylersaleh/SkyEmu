@@ -1313,7 +1313,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->cart.data = emu->rom_data; 
   gb->bios = scratch->bios;
   int instructions_to_execute = emu->step_instructions;
-  if(instructions_to_execute==0)instructions_to_execute=6000000;
+  if(instructions_to_execute==0)instructions_to_execute=70224/2;
   int frames_to_draw = 1;
 
   int total_cylces = 0; 
@@ -1425,6 +1425,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       break;
     }
     if(gb->lcd.finished_frame){break;}
+    if(total_cylces>=70224&&emu->step_instructions==0)break;
   }
   emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
 }
