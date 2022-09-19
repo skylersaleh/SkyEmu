@@ -393,6 +393,18 @@ typedef struct{
   uint32_t mapped_rom_bank;
   uint32_t mapped_ram_bank;
 }sb_gb_bess_info_t;
+typedef struct{
+  uint8_t sec;
+  uint8_t min;
+  uint8_t hour;
+  uint16_t day; 
+
+  uint8_t latched_sec;
+  uint8_t latched_min;
+  uint8_t latched_hour;
+  uint16_t latched_day; 
+  bool has_rtc; 
+}sb_rtc_t;
 
 typedef struct {
   sb_gb_cartridge_t cart;
@@ -403,6 +415,7 @@ typedef struct {
   sb_dma_t dma; 
   sb_audio_t audio;
   sb_serial_t serial;
+  sb_rtc_t rtc; 
   sb_gb_bess_info_t bess;
   int model; 
   uint8_t dmg_palette[4*3];
@@ -505,7 +518,17 @@ static FORCE_INLINE uint8_t sb_read8_direct(sb_gb_t *gb, int addr) {
     uint8_t data =gb->lcd.vram[vbank*SB_VRAM_BANK_SIZE+addr-0x8000];
     return data;
   } else if(addr>=0xA000&&addr<=0xBfff){
-    if(!gb->cart.ram_write_enable||gb->cart.ram_size==0)return 0xff;
+    if(!gb->cart.ram_write_enable)return 0xff;
+    if(gb->rtc.has_rtc&&gb->cart.mbc_type==SB_MBC_MBC3){
+      switch(gb->cart.mapped_ram_bank){
+        case 0x08: return gb->rtc.latched_sec;
+        case 0x09: return gb->rtc.latched_min;
+        case 0x0A: return gb->rtc.latched_hour;
+        case 0x0B: return gb->rtc.latched_day&0xff;
+        case 0x0C: return SB_BFE(gb->rtc.latched_day,8,1);
+      }
+    }
+    if(gb->cart.ram_size==0)return 0xff;
     int ram_addr_off = 0x2000*gb->cart.mapped_ram_bank+(addr-0xA000);
     if(gb->cart.mbc_type==SB_MBC_MBC1){
       ram_addr_off = SB_BFE(addr,0,13);
@@ -584,14 +607,6 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
     return sb_read8_direct(gb,addr)|sb_io_or_mask(gb,addr);
   }
   return sb_read8_direct(gb,addr);
-}
-void sb_unmap_ram(sb_gb_t*gb){
-  int old_bank_off = 0x2000*gb->cart.mapped_ram_bank;
-  if(gb->cart.ram_is_dirty){
-    for(int i= 0; i<0x2000;++i){
-      gb->cart.ram_data[old_bank_off+i]=gb->mem.data[0xA000+i];
-    }
-  }
 }
 static FORCE_INLINE void sb_store8_direct(sb_gb_t *gb, int addr, int value) {
   if(addr>=0x8000&&addr<=0x9fff){
@@ -735,8 +750,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     if((value&(1<<3))&&gb->cart.has_rumble)gb->cart.rumble=true;
     //MBC3 rombank select
     //TODO implement other mappers
-    if(gb->cart.mbc_type!=SB_MBC_MBC1&&gb->cart.ram_size)value %= (gb->cart.ram_size/0x2000);
-    else value%=4;
+    if(gb->cart.mbc_type!=SB_MBC_MBC1&&gb->cart.ram_size){
+      if(gb->cart.mbc_type!=SB_MBC_MBC3)value %= (gb->cart.ram_size/0x2000);
+    }else value%=4;
     gb->cart.mapped_ram_bank = value;
     return;
   }else if (addr>=0xfe00 && addr<=0xfe9f ){
@@ -746,6 +762,12 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
   } else if(addr>=0x6000&&addr<=0x7fff){
     if(gb->cart.mbc_type==SB_MBC_MBC1){
       gb->cart.bank_mode = SB_BFE(value,0,1);
+    }
+    if(gb->cart.mbc_type==SB_MBC_MBC3&&gb->rtc.has_rtc&&SB_BFE(value,0,1)){
+      gb->rtc.latched_sec = gb->rtc.sec;
+      gb->rtc.latched_min = gb->rtc.min;
+      gb->rtc.latched_hour= gb->rtc.hour;
+      gb->rtc.latched_day = gb->rtc.day;
     }
   }else if (addr>=0x8000 && addr <=0x9fff){
     //VRAM cannot be writen to in mode 3
@@ -1278,6 +1300,14 @@ void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
   double delta_t = ((double)cycles)/(4*1024*1024);
   sb_process_audio(gb,emu,delta_t);
 }
+void gb_tick_rtc(sb_gb_t*gb){
+  time_t time_secs= time(NULL);
+  struct tm * tm = localtime(&time_secs);
+  gb->rtc.sec = tm->tm_sec;
+  gb->rtc.min = tm->tm_min;
+  gb->rtc.hour= tm->tm_hour;
+  gb->rtc.day = (tm->tm_wday-1)%7;
+}
 void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->lcd.framebuffer = scratch->framebuffer; 
   gb->cart.data = emu->rom_data; 
@@ -1290,6 +1320,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   int rumble_cycles= 0; 
   gb->lcd.finished_frame =false;
   gb->lcd.render_frame = emu->render_frame;
+  gb_tick_rtc(gb);
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
     sb_update_joypad_io_reg(emu, gb);
@@ -1454,8 +1485,8 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
     case 5:
     case 6: gb->cart.mbc_type = SB_MBC_MBC2; break;
 
-    case 0x0f:
-    case 0x10:
+    case 0x0f: 
+    case 0x10: gb->rtc.has_rtc =true; gb->cart.mbc_type = SB_MBC_MBC3; break;
     case 0x11:
     case 0x12:
     case 0x13: gb->cart.mbc_type = SB_MBC_MBC3; break;
