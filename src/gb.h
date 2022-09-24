@@ -375,7 +375,10 @@ typedef struct{
   float capacitor_l;
   bool regs_written; 
   uint8_t curr_wave_data;
+  uint8_t curr_wave_sample;
   sb_frame_sequencer_t sequencer;
+  uint32_t wave_sample_offset;
+  uint32_t wave_freq_timer; 
 }sb_audio_t;
 typedef struct{
   uint32_t ticks_to_complete; 
@@ -486,7 +489,7 @@ typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2
 
 uint32_t sb_lookup_tile(sb_gb_t* gb, int px, int py, int tile_base, int data_mode);
 void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
-static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time);
+static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time,int cycles);
 static void sb_tick_frame_seq(sb_frame_sequencer_t* seq);
 static void sb_process_audio_writes(sb_gb_t* gb); 
 void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y);
@@ -1299,7 +1302,7 @@ void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
   sb_update_timers(gb,(double_speed?2:1)*cycles, double_speed);
   sb_tick_sio(gb,cycles);
   double delta_t = ((double)cycles)/(4*1024*1024);
-  sb_process_audio(gb,emu,delta_t);
+  sb_process_audio(gb,emu,delta_t,cycles);
 }
 void gb_tick_rtc(sb_gb_t*gb){
   time_t time_secs= time(NULL);
@@ -1736,6 +1739,10 @@ static void sb_process_audio_writes(sb_gb_t* gb){
          
           if(seq->length[i]==0)seq->length[i]=i==2?256:64;
           if(i==3)seq->lfsr4 = 0x7FFF;
+          if(i==2){
+            gb->audio.wave_sample_offset=31;
+            gb->audio.wave_freq_timer=4;
+          }
           seq->env_period_timer[i]=0;
           seq->env_overflow[i]=false;
           seq->chan_t[i]=0;
@@ -1773,7 +1780,7 @@ static void sb_process_audio_writes(sb_gb_t* gb){
     }
   }
 }
-static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time){
+static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time, int cycles){
 
   sb_audio_t* audio = &gb->audio;
   audio->current_sample_generated_time -= (int)(audio->current_sim_time);
@@ -1793,6 +1800,19 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
   if(delta_time>1.0/60.)delta_time = 1.0/60.;
   audio->current_sim_time +=delta_time;
+  for(int i=0;i<cycles;++i){
+    if(audio->wave_freq_timer==0){
+      audio->wave_freq_timer = (2048-seq->frequency[2])*2;
+      audio->wave_sample_offset++;
+      //Lookup wave table value
+      unsigned wav_samp = (audio->wave_sample_offset)%32;
+      int dat =sb_read8_io(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
+      gb->audio.curr_wave_data = dat;
+      int offset = (wav_samp&1)? 0:4;
+      gb->audio.curr_wave_sample = ((dat>>offset)&0xf);
+    };
+    audio->wave_freq_timer--;
+  }
   if(audio->current_sample_generated_time >audio->current_sim_time)return; 
   bool master_enable = SB_BFE(nrf_52,7,1);
   if(!master_enable)return;
@@ -1857,12 +1877,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 	  for(int i=0;i<4;++i)v[i] = seq->active[i]?seq->volume[i]/15.:0;
     v[2] = 1.0;
 
-	  //Lookup wave table value
-    unsigned wav_samp = ((unsigned)(seq->chan_t[2]*32))%32;
-    int dat =sb_read8_io(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
-    gb->audio.curr_wave_data = dat;
-    int offset = (wav_samp&1)? 0:4;
-    dat = ((dat>>offset)&0xf)>>channel3_shift;
+    int dat = gb->audio.curr_wave_sample >>channel3_shift;
     int wav_offset = 8>>channel3_shift; 
     
     float channels[4];
