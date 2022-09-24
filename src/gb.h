@@ -838,7 +838,8 @@ static FORCE_INLINE void sb_update_lcd(sb_emu_state_t*emu,sb_gb_t* gb){
   int mode = stat&0x7;
   bool new_scanline = false;
   if(!enable){
-    gb->lcd.scanline_cycles = 0;
+    //TODO: Starting at 4 here, may indicate a CPU timing bug. But is needed to pass 1-lcd_sync.gb
+    gb->lcd.scanline_cycles = 4;
     gb->lcd.curr_scanline = 0;
     gb->lcd.curr_window_scanline = 0;
     gb->lcd.wy_eq_ly = false;
