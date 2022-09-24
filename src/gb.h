@@ -1183,7 +1183,9 @@ void sb_update_timers(sb_gb_t* gb, int delta_clocks, bool double_speed){
       }else d +=1;
       sb_store8_io(gb, SB_IO_TIMA, d);
     }
-    if(tick_seq&&!gb->timers.last_tick_seq)sb_tick_frame_seq(&gb->audio.sequencer);
+    if(tick_seq&&!gb->timers.last_tick_seq){
+      sb_tick_frame_seq(&gb->audio.sequencer);
+    }
     gb->timers.last_tick_seq = tick_seq;
     gb->timers.last_tick_tima = tick_tima;
   }
@@ -1703,11 +1705,14 @@ static void sb_process_audio_writes(sb_gb_t* gb){
         sb_store8_io(gb,i,0);
       }
       for(int i=0;i<4;++i){
-        seq->active[i]=false;
-        seq->powered[i]=false;
+        if(sb_gbc_enable(gb)||i!=3){
+          seq->active[i]=false;
+          seq->powered[i]=false;
+          seq->length[i]=0;
+        }
         seq->use_length[i]=false;
-        seq->length[i]=0;
       }
+      
     }else{
       uint8_t freq_sweep1 = sb_read8_io(gb, SB_IO_AUD1_TONE_SWEEP);
       seq->sweep_period=SB_BFE(freq_sweep1, 4, 3);
