@@ -703,7 +703,10 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       }
       if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
         bool wave_active = SB_BFE(sb_read8_io(gb,SB_IO_SOUND_ON_OFF),2,1);
-        if(wave_active)return;
+        if(wave_active){
+          //Addr locked to the read pointer when the wave channel is active
+          addr= SB_IO_AUD3_WAVE_BASE+((gb->audio.wave_sample_offset)%32)/2;
+        }
       }
       if(addr==SB_IO_AUD1_LENGTH_DUTY||addr==SB_IO_AUD2_LENGTH_DUTY||addr==SB_IO_AUD3_LENGTH||addr==SB_IO_AUD4_LENGTH){
         uint8_t length_duty = value;
