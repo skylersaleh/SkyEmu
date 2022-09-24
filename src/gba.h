@@ -679,6 +679,7 @@ typedef struct{
   uint32_t latched_transfer;
   int startup_delay; 
   bool activate_audio_dma;
+  bool video_dma_active;
 } gba_dma_t; 
 typedef struct{
   int scan_clock; 
@@ -2247,8 +2248,12 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(!gba->ppu.last_hblank||last_hblank)continue;
           //Video dma starts at scanline 2
-          if(vcount<2)continue;
-          if(vcount==161)dma_repeat=false;
+          if(vcount==0){gba->dma[i].video_dma_active=true;}
+          if(!gba->dma[i].video_dma_active)continue;
+          if(vcount==160){
+            dma_repeat=false;
+            gba->dma[i].video_dma_active=false;
+          }
         }
         
         if(dst_addr_ctl==3){
