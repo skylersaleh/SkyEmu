@@ -695,7 +695,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         sb_store8_io(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
       }
     }else if(addr == SB_IO_DIV){
-      gb->timers.total_clock_ticks = 0;
+      gb->timers.total_clock_ticks = 4;
     }else if(addr == SB_IO_SERIAL_BYTE){
       printf("%c",(char)value);
     }else if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
