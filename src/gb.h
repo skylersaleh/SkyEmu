@@ -592,15 +592,15 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
   if(addr >=0xff00){
     if(addr == SB_IO_GBC_BCPS){
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
-      return bcps|(1<<6);
+      return bcps|(1<<6)|sb_io_or_mask(gb,addr);
     }else if(addr == SB_IO_GBC_BCPD){
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
-      return gb->lcd.color_palettes[index];
+      return gb->lcd.color_palettes[index]|sb_io_or_mask(gb,addr);
     }else if(addr == SB_IO_GBC_OCPD){
       uint8_t ocps = sb_read8_io(gb, SB_IO_GBC_OCPS);
       uint8_t index = SB_BFE(ocps,0,6);
-      return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES];
+      return gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES]|sb_io_or_mask(gb,addr);
     }else if (addr == SB_IO_GBC_VBK){
       uint8_t d= sb_read8_direct(gb,addr);
       return d|0xfe|sb_io_or_mask(gb,addr);
