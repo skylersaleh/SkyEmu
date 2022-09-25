@@ -260,9 +260,15 @@ mmio_reg_t gb_io_reg_desc[]={
     {7, 1, "Mode (0: General 1: HDMA)"},
     {0, 6, "Length*16B"}
   }},  
-  { SB_IO_GBC_BCPS, "GBC_BCPS", { 0 }},     
+  { SB_IO_GBC_BCPS, "GBC_BCPS", {
+    {7, 1, "Auto Increment  (0=Disabled, 1=Increment after Writing)"},
+    {0,6, "Address ($00-3F)"}
+  }},     
   { SB_IO_GBC_BCPD, "GBC_BCPD", { 0 }},     
-  { SB_IO_GBC_OCPS, "GBC_OCPS", { 0 }},     
+  { SB_IO_GBC_OCPS, "GBC_OCPS", {
+    {7, 1, "Auto Increment  (0=Disabled, 1=Increment after Writing)"},
+    {0,6, "Address ($00-3F)"}
+  }},     
   { SB_IO_GBC_OCPD, "GBC_OCPD", { 0 }},     
   { SB_IO_GBC_SVBK, "GBC_SVBK", {
     {0,3, "WRAM Bank Sel"}
@@ -680,16 +686,17 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       bool autoindex = SB_BFE(bcps,7,1);
       //Palette cannot be written to in mode 2 or 3
       int stat = sb_read8_io(gb, SB_IO_LCD_STAT)&0x3;
-      if(stat<2) gb->lcd.color_palettes[index] = value;
+      if(stat!=3) gb->lcd.color_palettes[index] = value;
       if(autoindex){
         index++;
-        sb_store8_io(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
+        sb_store8_io(gb,SB_IO_GBC_BCPS,(index&0x3f)|0xC0);
       }
     }else if(addr == SB_IO_GBC_OCPD){
       uint8_t ocps = sb_read8_io(gb, SB_IO_GBC_OCPS);
       uint8_t index = SB_BFE(ocps,0,6);
       bool autoindex = SB_BFE(ocps,7,1);
-      gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
+      int stat = sb_read8_io(gb, SB_IO_LCD_STAT)&0x3;
+      if(stat!=3) gb->lcd.color_palettes[index+SB_PPU_BG_COLOR_PALETTES] = value;
       if(autoindex){
         index++;
         sb_store8_io(gb,SB_IO_GBC_OCPS,(index&0x3f)|0x80);
@@ -737,7 +744,11 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       int ch = (addr-SB_IO_AUD1_TONE_SWEEP)/5;
       int reg = (addr-SB_IO_AUD1_TONE_SWEEP)%5;
     }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_io(gb,SB_IO_BIOS_BANK);
-    }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_io(gb,SB_IO_BIOS_BANK))return;}
+    }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_io(gb,SB_IO_BIOS_BANK))return;
+    }else if(addr==SB_IO_GBC_SPEED_SWITCH){
+      value&=0x1;
+      value|=sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH)&0xfe;
+    }
   }else if(addr >= 0x0000 && addr <=0x1fff){
     gb->cart.ram_write_enable = (value&0xf)==0xA;
     return;
@@ -1346,7 +1357,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       unsigned op = sb_read8(gb,gb->cpu.pc);
       bool request_speed_switch= false;
       if(sb_gbc_enable(gb)){
-        unsigned speed = sb_read8(gb,SB_IO_GBC_SPEED_SWITCH);
+        unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
         double_speed = SB_BFE(speed, 7, 1);
         request_speed_switch = SB_BFE(speed, 0, 1);
       }
@@ -1412,7 +1423,7 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
         gb->cpu.branch_taken=false;
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
-        sb_store8(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
+        sb_store8_io(gb,SB_IO_GBC_SPEED_SWITCH,double_speed? 0x00: 0x80);
         cpu_delta_cycles=0;
       }
       if(trigger_interrupt!=-1)gb->cpu.wait_for_interrupt=false;
