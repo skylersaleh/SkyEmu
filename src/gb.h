@@ -590,7 +590,10 @@ uint8_t sb_read8(sb_gb_t *gb, int addr) {
   //if(addr == 0xff80)gb->cpu.trigger_breakpoint=true;
   //Only high ram is accessible during oam_dma
   if(addr >=0xff00){
-    if(addr == SB_IO_GBC_BCPD){
+    if(addr == SB_IO_GBC_BCPS){
+      uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
+      return bcps|(1<<6);
+    }else if(addr == SB_IO_GBC_BCPD){
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
       return gb->lcd.color_palettes[index];
@@ -675,7 +678,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
       uint8_t bcps = sb_read8_io(gb, SB_IO_GBC_BCPS);
       uint8_t index = SB_BFE(bcps,0,6);
       bool autoindex = SB_BFE(bcps,7,1);
-      gb->lcd.color_palettes[index] = value;
+      //Palette cannot be written to in mode 2 or 3
+      int stat = sb_read8_io(gb, SB_IO_LCD_STAT)&0x3;
+      if(stat<2) gb->lcd.color_palettes[index] = value;
       if(autoindex){
         index++;
         sb_store8_io(gb,SB_IO_GBC_BCPS,(index&0x3f)|0x80);
