@@ -708,7 +708,6 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
     }else if(addr>=SB_IO_AUD1_TONE_SWEEP&&addr<SB_IO_AUD3_WAVE_BASE+16){
       sb_frame_sequencer_t *seq = &gb->audio.sequencer;
       int i = (addr-SB_IO_AUD1_LENGTH_DUTY)/5;
-      gb->audio.regs_written = true;
       if(addr==SB_IO_SOUND_ON_OFF){
         value&=0xf0;
         value|=sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf;
@@ -741,8 +740,9 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
         uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
         seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
       }
-      int ch = (addr-SB_IO_AUD1_TONE_SWEEP)/5;
-      int reg = (addr-SB_IO_AUD1_TONE_SWEEP)%5;
+      sb_store8_direct(gb,addr,value);
+      sb_process_audio_writes(gb);
+      return;
     }else if(addr==SB_IO_BIOS_BANK){value|= sb_read8_io(gb,SB_IO_BIOS_BANK);
     }else if(addr==SB_IO_GBC_KEY0){if(sb_read8_io(gb,SB_IO_BIOS_BANK))return;
     }else if(addr==SB_IO_GBC_SPEED_SWITCH){
@@ -1719,95 +1719,92 @@ static void sb_tick_frame_seq(sb_frame_sequencer_t* seq){
 }
 static void sb_process_audio_writes(sb_gb_t* gb){
   sb_frame_sequencer_t* seq = &gb->audio.sequencer;
-  if(gb->audio.regs_written){
-    gb->audio.regs_written = false; 
-    int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
-    bool master_enable = SB_BFE(nrf_52,7,1);
-    if(!master_enable){
-      for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
-        sb_store8_io(gb,i,0);
+  int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  bool master_enable = SB_BFE(nrf_52,7,1);
+  if(!master_enable){
+    for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
+      sb_store8_io(gb,i,0);
+    }
+    for(int i=0;i<4;++i){
+      if(sb_gbc_enable(gb)||i!=3){
+        seq->active[i]=false;
+        seq->powered[i]=false;
+        seq->length[i]=0;
       }
-      for(int i=0;i<4;++i){
-        if(sb_gbc_enable(gb)||i!=3){
-          seq->active[i]=false;
-          seq->powered[i]=false;
-          seq->length[i]=0;
-        }
-        seq->use_length[i]=false;
+      seq->use_length[i]=false;
+    }
+    
+  }else{
+    uint8_t freq_sweep1 = sb_read8_io(gb, SB_IO_AUD1_TONE_SWEEP);
+    seq->sweep_period=SB_BFE(freq_sweep1, 4, 3);
+    seq->sweep_shift=SB_BFE(freq_sweep1, 0, 3);
+    seq->sweep_direction= SB_BFE(freq_sweep1, 3,1)? -1. : 1; 
+    for(int i=0;i<4;++i){
+      bool prev_length_en = seq->use_length[i];
+      uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
+      seq->use_length[i]= SB_BFE(freq_hi,6,1);
+      uint8_t vol_env = sb_read8_io(gb,SB_IO_AUD1_VOL_ENV+i*5);
+      if(i==2){
+        bool power = SB_BFE(sb_read8_io(gb,SB_IO_AUD3_POWER),7,1);
+        seq->powered[i]=power;
       }
-      
-    }else{
-      uint8_t freq_sweep1 = sb_read8_io(gb, SB_IO_AUD1_TONE_SWEEP);
-      seq->sweep_period=SB_BFE(freq_sweep1, 4, 3);
-      seq->sweep_shift=SB_BFE(freq_sweep1, 0, 3);
-      seq->sweep_direction= SB_BFE(freq_sweep1, 3,1)? -1. : 1; 
-      for(int i=0;i<4;++i){
-        bool prev_length_en = seq->use_length[i];
-        uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
-        seq->use_length[i]= SB_BFE(freq_hi,6,1);
-        uint8_t vol_env = sb_read8_io(gb,SB_IO_AUD1_VOL_ENV+i*5);
+      if(i!=0){
+        uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+        seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+      }
+      if(i==2){
+        seq->env_direction[i] = 0;
+        seq->env_period[i] = 0;
+      }else{
+        seq->env_direction[i] = (SB_BFE(vol_env,3,1)?1:-1);
+        seq->env_period[i] = SB_BFE(vol_env,0,3);
+      }
+      bool triggered = SB_BFE(freq_hi,7,1);
+      if(triggered){
+        uint8_t length_duty = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY+i*5);
+        uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+        seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+        seq->volume[i] = SB_BFE(vol_env,4,4);
+       
+        if(seq->length[i]==0)seq->length[i]=i==2?256:64;
+        if(i==3)seq->lfsr4 = 0x7FFF;
         if(i==2){
-          bool power = SB_BFE(sb_read8_io(gb,SB_IO_AUD3_POWER),7,1);
-          seq->powered[i]=power;
+          gb->audio.wave_sample_offset=31;
+          gb->audio.wave_freq_timer=4;
         }
-        if(i!=0){
-          uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
-          seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+        seq->env_period_timer[i]=0;
+        seq->env_overflow[i]=false;
+        seq->chan_t[i]=0;
+        seq->active[i]=true;
+        if(i==0){
+          seq->sweep_subtracted=false;
+          seq->sweep_enable = seq->sweep_period||seq->sweep_shift;
+          seq->sweep_timer=seq->sweep_period;
+          if(seq->sweep_timer==0)seq->sweep_timer=8; 
+          if (seq->sweep_shift && sb_compute_next_sweep_freq(seq) > 2047) {
+            seq->active[0] = false;
+          } 
+          seq->sweep_enable = seq->sweep_period>0||seq->sweep_shift>0;
         }
-        if(i==2){
-          seq->env_direction[i] = 0;
-          seq->env_period[i] = 0;
-        }else{
-          seq->env_direction[i] = (SB_BFE(vol_env,3,1)?1:-1);
-          seq->env_period[i] = SB_BFE(vol_env,0,3);
-        }
-        bool triggered = SB_BFE(freq_hi,7,1);
-        if(triggered){
-          uint8_t length_duty = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY+i*5);
-          uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
-          seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
-          seq->volume[i] = SB_BFE(vol_env,4,4);
-         
-          if(seq->length[i]==0)seq->length[i]=i==2?256:64;
-          if(i==3)seq->lfsr4 = 0x7FFF;
-          if(i==2){
-            gb->audio.wave_sample_offset=31;
-            gb->audio.wave_freq_timer=4;
-          }
-          seq->env_period_timer[i]=0;
-          seq->env_overflow[i]=false;
-          seq->chan_t[i]=0;
-          seq->active[i]=true;
-          if(i==0){
-            seq->sweep_subtracted=false;
-            seq->sweep_enable = seq->sweep_period||seq->sweep_shift;
-            seq->sweep_timer=seq->sweep_period;
-            if(seq->sweep_timer==0)seq->sweep_timer=8; 
-            if (seq->sweep_shift && sb_compute_next_sweep_freq(seq) > 2047) {
-              seq->active[0] = false;
-            } 
-            seq->sweep_enable = seq->sweep_period>0||seq->sweep_shift>0;
-          }
-        }
-        if(i==0&&seq->sweep_subtracted&&seq->sweep_direction!=-1){
-          seq->active[0]= false; 
-          seq->sweep_enable = false;
-        }
-        if(seq->use_length[i]&&!prev_length_en){
-          bool second_half_of_length_period = (seq->step_counter&1);
-          if(second_half_of_length_period){
-            if(seq->length[i])seq->length[i]--;
-            if(seq->length[i]==0){
-              if(triggered) seq->length[i]=i==2?255:63;
-              else{
-                seq->active[i]=false;
-                seq->use_length[i]=triggered&&seq->use_length[i];
-              }
+      }
+      if(i==0&&seq->sweep_subtracted&&seq->sweep_direction!=-1){
+        seq->active[0]= false; 
+        seq->sweep_enable = false;
+      }
+      if(seq->use_length[i]&&!prev_length_en){
+        bool second_half_of_length_period = (seq->step_counter&1);
+        if(second_half_of_length_period){
+          if(seq->length[i])seq->length[i]--;
+          if(seq->length[i]==0){
+            if(triggered) seq->length[i]=i==2?255:63;
+            else{
+              seq->active[i]=false;
+              seq->use_length[i]=triggered&&seq->use_length[i];
             }
           }
         }
-        sb_store8_io(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
       }
+      sb_store8_io(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
     }
   }
 }
@@ -1819,7 +1816,6 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
   const static float duty_lookup[]={0.125,0.25,0.5,0.75};
 
-  if(gb->audio.regs_written){sb_process_audio_writes(gb);}
   sb_frame_sequencer_t* seq = &audio->sequencer;
   int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
   for(int i=0;i<4;++i){
