@@ -367,7 +367,7 @@ void main() {
 
  {
     vec4 v[4];
-    vec2 ip = floor(uv*emu_lcd_size.xy-0.5);
+    vec2 ip = floor(uv*emu_lcd_size.xy-0.5)+0.5;
     vec2 residual = fract(uv*emu_lcd_size.xy+0.5);
     ip/=emu_lcd_size.xy;
 
@@ -381,7 +381,7 @@ void main() {
   if(mode==1){
     vec4 v[4];
     pix_sub = fract(uv*emu_lcd_size.xy-0.5);
-    vec2 ip = floor(uv*emu_lcd_size.xy-0.5);
+    vec2 ip = floor(uv*emu_lcd_size.xy-0.5)+0.5;
     ip/=emu_lcd_size.xy;
 
     v[0] = sample_color_correct(ip);
