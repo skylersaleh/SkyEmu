@@ -736,6 +736,7 @@ void sb_store8(sb_gb_t *gb, int addr, int value) {
                 addr==SB_IO_AUD2_FREQ||addr==SB_IO_AUD2_FREQ_HI||
                 addr==SB_IO_AUD3_FREQ||addr==SB_IO_AUD3_FREQ_HI
               ){
+        sb_store8_direct(gb,addr,value);
         uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
         uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
         seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
@@ -1651,6 +1652,9 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
   
   return true; 
 }
+static uint8_t sb_read_wave_ram(sb_gb_t*gb, int index){
+  return sb_read8_io(gb,SB_IO_AUD3_WAVE_BASE+index);
+}
 static int sb_compute_next_sweep_freq(sb_frame_sequencer_t*seq){
   int shift = seq->sweep_shift?seq->sweep_shift:8;
   int32_t increment = (seq->frequency[0] >> shift)*seq->sweep_direction;
@@ -1718,7 +1722,8 @@ static void sb_tick_frame_seq(sb_frame_sequencer_t* seq){
   }
 }
 static void sb_process_audio_writes(sb_gb_t* gb){
-  sb_frame_sequencer_t* seq = &gb->audio.sequencer;
+  sb_audio_t* audio = &gb->audio;
+  sb_frame_sequencer_t* seq = &audio->sequencer;
   int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
   bool master_enable = SB_BFE(nrf_52,7,1);
   if(!master_enable){
@@ -1769,8 +1774,8 @@ static void sb_process_audio_writes(sb_gb_t* gb){
         if(seq->length[i]==0)seq->length[i]=i==2?256:64;
         if(i==3)seq->lfsr4 = 0x7FFF;
         if(i==2){
-          gb->audio.wave_sample_offset=31;
-          gb->audio.wave_freq_timer=4;
+          audio->wave_sample_offset=31;
+          audio->wave_freq_timer=4;
         }
         seq->env_period_timer[i]=0;
         seq->env_overflow[i]=false;
@@ -1811,12 +1816,36 @@ static void sb_process_audio_writes(sb_gb_t* gb){
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time, int cycles){
 
   sb_audio_t* audio = &gb->audio;
+  sb_frame_sequencer_t* seq = &audio->sequencer;
+
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  audio->current_sim_time +=delta_time;
+  #ifdef GBA_AUDIO
+    uint32_t prev_audio_clock = audio->audio_clock;
+    audio->audio_clock+=cycles;
+    cycles = (audio->audio_clock-(prev_audio_clock&~3))/4;
+    uint32_t frame_cycles = (audio->audio_clock-(prev_audio_clock&~32767))/32768;
+    while(frame_cycles--)gba_tick_frame_seq(seq);
+  #endif
+
+  int freq_tim = audio->wave_freq_timer;
+  freq_tim-=cycles;
+  if(freq_tim<0){
+    int wave_inc_count = (-freq_tim-1)/((2048-seq->frequency[2])*2)+1;
+    audio->wave_sample_offset+= wave_inc_count;
+    freq_tim +=(2048-seq->frequency[2])*2*wave_inc_count;
+    unsigned wav_samp = (audio->wave_sample_offset)%32;
+    int dat =sb_read_wave_ram(gb,wav_samp/2);
+    audio->curr_wave_data = dat;
+    int offset = (wav_samp&1)? 0:4;
+    audio->curr_wave_sample = ((dat>>offset)&0xf);
+  }
+  audio->wave_freq_timer=freq_tim;
+  if(audio->current_sample_generated_time >audio->current_sim_time)return; 
+
   audio->current_sample_generated_time -= (int)(audio->current_sim_time);
   audio->current_sim_time -= (int)(audio->current_sim_time);
 
-  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
-
-  sb_frame_sequencer_t* seq = &audio->sequencer;
   int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
   for(int i=0;i<4;++i){
     seq->active[i]&=seq->powered[i];
@@ -1824,27 +1853,11 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     nrf_52|=active<<i;
   }
   sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
-
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  audio->current_sim_time +=delta_time;
-  for(int i=0;i<cycles;++i){
-    if(audio->wave_freq_timer==0){
-      audio->wave_freq_timer = (2048-seq->frequency[2])*2;
-      audio->wave_sample_offset++;
-      //Lookup wave table value
-      unsigned wav_samp = (audio->wave_sample_offset)%32;
-      int dat =sb_read8_io(gb,SB_IO_AUD3_WAVE_BASE+wav_samp/2);
-      gb->audio.curr_wave_data = dat;
-      int offset = (wav_samp&1)? 0:4;
-      gb->audio.curr_wave_sample = ((dat>>offset)&0xf);
-    };
-    audio->wave_freq_timer--;
-  }
-  if(audio->current_sample_generated_time >audio->current_sim_time)return; 
   bool master_enable = SB_BFE(nrf_52,7,1);
   if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
 
+  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
   uint8_t length_duty1 = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY);
   float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
   uint8_t length_duty2 = sb_read8_io(gb, SB_IO_AUD2_LENGTH_DUTY);
@@ -1867,19 +1880,58 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
   uint8_t chan_sel = sb_read8_io(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
-  int chan_l[4];int chan_r[4];
+  float chan_l[6]={0};float chan_r[6]={0};
   for(int i=0;i<4;++i){
     chan_l[i] = SB_BFE(chan_sel,i,1);
     chan_r[i] = SB_BFE(chan_sel,i+4,1);
   }
 
+  #ifdef GBA_AUDIO
+  {
+    uint16_t soundcnt_h = gba_io_read16(gb,GBA_SOUNDCNT_H);
+    //These are type int to allow them to be multiplied to enable/disable
+    uint16_t chan_sel = gba_io_read16(gb,GBA_SOUNDCNT_L);
+    /* soundcnth 
+    0-1   R/W  Sound # 1-4 Volume   (0=25%, 1=50%, 2=100%, 3=Prohibited)
+    2     R/W  DMA Sound A Volume   (0=50%, 1=100%)
+    3     R/W  DMA Sound B Volume   (0=50%, 1=100%)
+    4-7   -    Not used
+    8     R/W  DMA Sound A Enable RIGHT (0=Disable, 1=Enable)
+    9     R/W  DMA Sound A Enable LEFT  (0=Disable, 1=Enable)
+    10    R/W  DMA Sound A Timer Select (0=Timer 0, 1=Timer 1)
+    11    W?   DMA Sound A Reset FIFO   (1=Reset)
+    12    R/W  DMA Sound B Enable RIGHT (0=Disable, 1=Enable)
+    13    R/W  DMA Sound B Enable LEFT  (0=Disable, 1=Enable)
+    14    R/W  DMA Sound B Timer Select (0=Timer 0, 1=Timer 1)
+    15    W?   DMA Sound B Reset FIFO   (1=Reset)*/ 
+    float psg_volume_lookup[4]={0.25,0.5,1.0,0.};
+    float psg_volume = psg_volume_lookup[SB_BFE(soundcnt_h,0,2)]*0.25;
+
+    float r_vol = SB_BFE(chan_sel,0,3)/7.*psg_volume;
+    float l_vol = SB_BFE(chan_sel,4,3)/7.*psg_volume;
+    for(int i=0;i<4;++i){
+      chan_r[i] *= r_vol;
+      chan_l[i] *= l_vol;
+    }
+    // Channel volume for each FIFO
+    for(int i=0;i<2;++i){
+      // Volume
+      chan_r[i+4]=chan_l[i+4]= SB_BFE(soundcnt_h,2+i,1)? 1.0: 0.5;
+      chan_r[i+4]*= SB_BFE(soundcnt_h,8+i*4,1);
+      chan_l[i+4]*= SB_BFE(soundcnt_h,9+i*4,1);
+    }
+    gba_io_store16(gb,GBA_SOUNDCNT_H,soundcnt_h&~((1<<11)|(1<<15)));
+    master_left=master_right=1;
+  }
+  #endif
+
   float freq_hz[4];
   for(int i=0;i<2;++i){freq_hz[i]= 131072./(2048-seq->frequency[i]);}
   freq_hz[2]= (65536.)/(2048-seq->frequency[2]);
   freq_hz[3] = 524288.0/r4/pow(2.0,s4+1);
-  while(gb->audio.current_sample_generated_time < gb->audio.current_sim_time){
+  while(audio->current_sample_generated_time < audio->current_sim_time){
 
-    gb->audio.current_sample_generated_time+=sample_delta_t;
+    audio->current_sample_generated_time+=sample_delta_t;
     
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
@@ -1901,22 +1953,28 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     
     //Compute and clamp Volume Envelopes
     float v[4];
-	  for(int i=0;i<4;++i)v[i] = seq->active[i]?seq->volume[i]/15.:0;
+    for(int i=0;i<4;++i)v[i] = seq->active[i]?seq->volume[i]/15.:0;
     v[2] = 1.0;
 
-    int dat = gb->audio.curr_wave_sample >>channel3_shift;
+    int dat = audio->curr_wave_sample >>channel3_shift;
     int wav_offset = 8>>channel3_shift; 
     
-    float channels[4];
+    float channels[6];
     channels[0] = sb_bandlimited_square(seq->chan_t[0],duty1,sample_delta_t*freq_hz[0])*v[0];
     channels[1] = sb_bandlimited_square(seq->chan_t[1],duty2,sample_delta_t*freq_hz[1])*v[1];
     channels[2] = (dat-wav_offset)/8.;
     channels[3] = ((seq->lfsr4 & 1) * 2.-1.)*v[3];
 
+    #ifdef GBA_AUDIO
+      for(int i=0;i<2;++i)channels[4+i] = audio->fifo[i].data[audio->fifo[i].read_ptr&0x1f]/128.;
+    #else
+      for(int i=0;i<2;++i)channels[4+i] =0;
+    #endif 
+
     //Mix channels
     float sample_volume_l = 0;
     float sample_volume_r = 0;
-    for(int i=0;i<4;++i){
+    for(int i=0;i<6;++i){
       float l = channels[i]*chan_l[i];
       float r = channels[i]*chan_r[i];
       if(l>=-2.&&l<=2)sample_volume_l+=l;
@@ -1932,7 +1990,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
     emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
     
-    for(int i=0;i<4;++i){
+    for(int i=0;i<6;++i){
       emu->audio_channel_output[i] = emu->audio_channel_output[i]*lowpass_coef 
                                   + fabs(channels[i])*(1.0-lowpass_coef); 
     }
@@ -1941,6 +1999,8 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     if(sample_volume_r>1.0)sample_volume_r=1;
     if(sample_volume_l<-1.0)sample_volume_l=-1;
     if(sample_volume_r<-1.0)sample_volume_r=-1;
+    if(!(audio->capacitor_l<2&&audio->capacitor_l>-2))audio->capacitor_l=0;
+    if(!(audio->capacitor_r<2&&audio->capacitor_r>-2))audio->capacitor_r=0;
     float out_l = sample_volume_l-audio->capacitor_l;
     float out_r = sample_volume_r-audio->capacitor_r;
     audio->capacitor_l = (sample_volume_l-out_l)*0.996;

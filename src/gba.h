@@ -707,6 +707,28 @@ typedef struct{
   int startup_delay;
 }gba_timer_t;
 typedef struct{
+  uint32_t step_counter;
+  int32_t length[4];
+  uint32_t volume[4];
+  uint32_t frequency[4];
+  int32_t  env_direction[4]; //1: increase 0: nochange -1: decrease
+  uint32_t env_period[4];
+  uint32_t env_period_timer[4];
+  bool env_overflow[4]; 
+  //Only channel 1
+  uint32_t sweep_period;
+  uint32_t sweep_timer;
+  int32_t  sweep_direction; 
+  uint32_t sweep_shift;
+  bool     sweep_enable;
+  bool     sweep_subtracted;
+  bool use_length[4];
+  bool active[4];
+  bool powered[4];
+  float chan_t[4];
+  uint16_t lfsr4;
+}gba_frame_sequencer_t;
+typedef struct{
   struct{
     int8_t data[64];
     int read_ptr; 
@@ -715,6 +737,13 @@ typedef struct{
   }fifo[2];
   double current_sim_time;
   double current_sample_generated_time;
+  uint16_t wave_freq_timer;
+  uint16_t wave_sample_offset;
+  uint8_t curr_wave_sample;
+  uint8_t curr_wave_data;
+  float capacitor_l,capacitor_r;
+  gba_frame_sequencer_t sequencer;
+  uint32_t audio_clock; 
 }gba_audio_t; 
 typedef struct{
   uint32_t serial_state;
@@ -787,7 +816,8 @@ typedef struct{
   bool skip_bios_intro;
   char save_file_path[SB_FILE_PATH_SIZE];  
 }gba_scratch_t;
-
+static void gba_process_audio_writes(gba_t* gba);
+static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t value);
 static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt);
 static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr);
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data);
@@ -1496,6 +1526,15 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
       gba_store16(gba,GBA_KEYINPUT,(word_data>>16)&0xffff);
     }
     gba_tick_keypad(NULL,gba);
+  }else if(address_u32>=GBA_SOUND1CNT_L&&address_u32<GBA_WAVE_RAM){
+    for(int i=0;i<4;++i){
+      if(word_mask&(0xff<<(i*8))){
+        uint8_t data =gba_audio_process_byte_write(gba,address_u32+i,SB_BFE(word_data,(i*8),8));
+        gba_io_store8(gba,address_u32+i,data);
+      }
+    }
+    gba_process_audio_writes(gba);
+    return true;
   }
   return false;
 }
@@ -2637,265 +2676,557 @@ static FORCE_INLINE void gba_tick_interrupts(gba_t*gba){
     gba->active_if_pipe_stages>>=1;
   }
 }
-static FORCE_INLINE void gba_tick_audio(gba_t *gba, sb_emu_state_t*emu, double delta_time){ 
-  gba->audio.current_sim_time +=delta_time;
-  if(SB_LIKELY(gba->audio.current_sample_generated_time >gba->audio.current_sim_time))return; 
-  //TODO: Move these into a struct
-  static float chan_t[4] = {0,0,0,0};
-  static float length_t[4]={1e6,1e6,1e6,1e6};
-  float freq_hz[4] = {0,0,0,0}, length[4]= {0,0,0,0}, volume[4]={0,0,0,0};
-  float volume_env[4]={0,0,0,0};
-  static uint16_t lfsr4 = 0x7FFF;
 
+// BEGIN GB REUSE CODE SHIM//
+#define sb_compute_next_sweep_freq gba_compute_next_sweep_freq
+#define sb_tick_frame_sweep gba_tick_frame_sweep
+#define sb_tick_frame_seq gba_tick_frame_seq
+#define sb_process_audio_writes gba_process_audio_writes
+#define sb_process_audio gba_tick_audio
+#define sb_frame_sequencer_t gba_frame_sequencer_t
+#define sb_audio_t gba_audio_t
+#define sb_gb_t gba_t
+#define sb_read8_io  gba_audio_read8
+#define sb_store8_io gba_audio_store8
+#define sb_bandlimited_square gba_bandlimited_square
+#define sb_gbc_enable(a) (true)
+#define sb_read_wave_ram gba_read_wave_ram
+#define GBA_AUDIO 1
 
-  gba->audio.current_sample_generated_time -= (int)(gba->audio.current_sim_time);
-  gba->audio.current_sim_time -= (int)(gba->audio.current_sim_time);
+#define SB_IO_AUD1_TONE_SWEEP   0xff10
+#define SB_IO_AUD1_LENGTH_DUTY  0xff11
+#define SB_IO_AUD1_VOL_ENV      0xff12
+#define SB_IO_AUD1_FREQ         0xff13
+#define SB_IO_AUD1_FREQ_HI      0xff14
 
-  static float capacitor_r = 0.0;
-  static float capacitor_l = 0.0;
+#define SB_IO_AUD2_LENGTH_DUTY  0xff16
+#define SB_IO_AUD2_VOL_ENV      0xff17
+#define SB_IO_AUD2_FREQ         0xff18
+#define SB_IO_AUD2_FREQ_HI      0xff19
 
-  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+#define SB_IO_AUD3_POWER        0xff1A
+#define SB_IO_AUD3_LENGTH       0xff1B
+#define SB_IO_AUD3_VOL          0xff1C
+#define SB_IO_AUD3_FREQ         0xff1D
+#define SB_IO_AUD3_FREQ_HI      0xff1E
+#define SB_IO_AUD3_WAVE_BASE    0xff30
 
+#define SB_IO_AUD4_LENGTH       0xff20
+#define SB_IO_AUD4_VOL_ENV      0xff21
+#define SB_IO_AUD4_POLY         0xff22
+#define SB_IO_AUD4_COUNTER      0xff23
+#define SB_IO_MASTER_VOLUME     0xff24
+#define SB_IO_SOUND_OUTPUT_SEL  0xff25
+
+#define SB_IO_SOUND_ON_OFF      0xff26
+
+static int gba_lookup_gb_reg(int gb_reg){
+  switch(gb_reg){
+    case SB_IO_AUD1_TONE_SWEEP  : return GBA_SOUND1CNT_L; 
+    case SB_IO_AUD1_LENGTH_DUTY : return GBA_SOUND1CNT_H; 
+    case SB_IO_AUD1_VOL_ENV     : return GBA_SOUND1CNT_H+1; 
+    case SB_IO_AUD1_FREQ        : return GBA_SOUND1CNT_X; 
+    case SB_IO_AUD1_FREQ_HI     : return GBA_SOUND1CNT_X+1; 
+    case SB_IO_AUD2_LENGTH_DUTY : return GBA_SOUND2CNT_L; 
+    case SB_IO_AUD2_VOL_ENV     : return GBA_SOUND2CNT_L+1; 
+    case SB_IO_AUD2_FREQ        : return GBA_SOUND2CNT_H; 
+    case SB_IO_AUD2_FREQ_HI     : return GBA_SOUND2CNT_H+1; 
+    case SB_IO_AUD3_POWER       : return GBA_SOUND3CNT_L; 
+    case SB_IO_AUD3_LENGTH      : return GBA_SOUND3CNT_H; 
+    case SB_IO_AUD3_VOL         : return GBA_SOUND3CNT_H+1; 
+    case SB_IO_AUD3_FREQ        : return GBA_SOUND3CNT_X; 
+    case SB_IO_AUD3_FREQ_HI     : return GBA_SOUND3CNT_X+1; 
+    case SB_IO_AUD4_LENGTH      : return GBA_SOUND4CNT_L; 
+    case SB_IO_AUD4_VOL_ENV     : return GBA_SOUND4CNT_L+1; 
+    case SB_IO_AUD4_POLY        : return GBA_SOUND4CNT_H; 
+    case SB_IO_AUD4_COUNTER     : return GBA_SOUND4CNT_H+1; 
+    case SB_IO_MASTER_VOLUME    : return GBA_SOUNDCNT_L; 
+    case SB_IO_SOUND_OUTPUT_SEL : return GBA_SOUNDCNT_L+1; 
+    case SB_IO_SOUND_ON_OFF     : return GBA_SOUNDCNT_X; 
+  }
+  printf("Unknown GB register:%04x\n",gb_reg);
+  return 0; 
+}
+static int gba_inverse_lookup_gb_reg(int gb_reg){
+  switch(gb_reg){
+    case GBA_SOUND1CNT_L   : return SB_IO_AUD1_TONE_SWEEP;
+    case GBA_SOUND1CNT_H   : return SB_IO_AUD1_LENGTH_DUTY;
+    case GBA_SOUND1CNT_H+1 : return SB_IO_AUD1_VOL_ENV;
+    case GBA_SOUND1CNT_X   : return SB_IO_AUD1_FREQ;
+    case GBA_SOUND1CNT_X+1 : return SB_IO_AUD1_FREQ_HI;
+    case GBA_SOUND2CNT_L   : return SB_IO_AUD2_LENGTH_DUTY;
+    case GBA_SOUND2CNT_L+1 : return SB_IO_AUD2_VOL_ENV;
+    case GBA_SOUND2CNT_H   : return SB_IO_AUD2_FREQ;
+    case GBA_SOUND2CNT_H+1 : return SB_IO_AUD2_FREQ_HI;
+    case GBA_SOUND3CNT_L   : return SB_IO_AUD3_POWER;
+    case GBA_SOUND3CNT_H   : return SB_IO_AUD3_LENGTH;
+    case GBA_SOUND3CNT_H+1 : return SB_IO_AUD3_VOL;
+    case GBA_SOUND3CNT_X   : return SB_IO_AUD3_FREQ;
+    case GBA_SOUND3CNT_X+1 : return SB_IO_AUD3_FREQ_HI;
+    case GBA_SOUND4CNT_L   : return SB_IO_AUD4_LENGTH;
+    case GBA_SOUND4CNT_L+1 : return SB_IO_AUD4_VOL_ENV;
+    case GBA_SOUND4CNT_H   : return SB_IO_AUD4_POLY;
+    case GBA_SOUND4CNT_H+1 : return SB_IO_AUD4_COUNTER;
+    case GBA_SOUNDCNT_L    : return SB_IO_MASTER_VOLUME;
+    case GBA_SOUNDCNT_L+1  : return SB_IO_SOUND_OUTPUT_SEL;
+    case GBA_SOUNDCNT_X    : return SB_IO_SOUND_ON_OFF;
+  }
+  return 0; 
+}
+static uint8_t gba_audio_read8(gba_t* gba, int addr){
+  return gba_io_read8(gba,gba_lookup_gb_reg(addr));
+}
+
+static void gba_audio_store8(gba_t* gba, int addr, uint8_t data){
+  addr = gba_lookup_gb_reg(addr);
+  if(addr)gba_io_store8(gba,addr,data);
+}
+static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t value){
+  gba_t * gb = gba;
+  sb_frame_sequencer_t *seq = &gba->audio.sequencer;
+  addr = gba_inverse_lookup_gb_reg(addr);
+  int i = (addr-SB_IO_AUD1_LENGTH_DUTY)/5;
+  if(!addr)return value; 
+  if(addr==SB_IO_SOUND_ON_OFF){
+    value&=0xf0;
+    value|=sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf;
+  }
+  if(addr>=SB_IO_AUD3_WAVE_BASE&&addr<SB_IO_AUD3_WAVE_BASE+16){
+    bool wave_active = SB_BFE(sb_read8_io(gb,SB_IO_SOUND_ON_OFF),2,1);
+    if(wave_active){
+      //Addr locked to the read pointer when the wave channel is active
+      addr= SB_IO_AUD3_WAVE_BASE+((gb->audio.wave_sample_offset)%32)/2;
+    }
+  }
+  if(addr==SB_IO_AUD1_LENGTH_DUTY||addr==SB_IO_AUD2_LENGTH_DUTY||addr==SB_IO_AUD3_LENGTH||addr==SB_IO_AUD4_LENGTH){
+    uint8_t length_duty = value;
+    if(i==2) seq->length[i] = 256-SB_BFE(length_duty,0,8);
+    else seq->length[i] = 64-SB_BFE(length_duty,0,6);
+  }else if(addr==SB_IO_AUD1_VOL_ENV||addr==SB_IO_AUD2_VOL_ENV||addr==SB_IO_AUD4_VOL_ENV){
+    bool power = SB_BFE(value,3,5)!=0;
+    seq->powered[i]= power;
+    seq->active[i]&=power;
+    seq->env_direction[i] = (SB_BFE(value,3,1)?1:-1);
+    seq->env_period[i] = SB_BFE(value,0,3);
+    if (seq->env_period[i]== 0 &&!seq->env_overflow[i]) {
+      seq->volume[i] = (seq->volume[i] + 1) & 0xf;
+    }
+  }else if( addr==SB_IO_AUD1_FREQ||addr==SB_IO_AUD1_FREQ_HI||
+            addr==SB_IO_AUD2_FREQ||addr==SB_IO_AUD2_FREQ_HI||
+            addr==SB_IO_AUD3_FREQ||addr==SB_IO_AUD3_FREQ_HI
+          ){
+    sb_store8_io(gb,addr,value);
+    uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+    uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
+    seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+  }
+  return value;
+}
+static uint8_t sb_read_wave_ram(sb_gb_t*gb,int byte){
+  return gba_io_read8(gb,GBA_WAVE_RAM+byte);
+}
+static int sb_compute_next_sweep_freq(sb_frame_sequencer_t*seq){
+  int shift = seq->sweep_shift?seq->sweep_shift:8;
+  int32_t increment = (seq->frequency[0] >> shift)*seq->sweep_direction;
+  int32_t new_frequency = seq->frequency[0]+increment;
+  seq->sweep_subtracted|=seq->sweep_direction==-1;
+  return new_frequency;
+}
+static void sb_tick_frame_sweep(sb_frame_sequencer_t*seq){
+  int32_t new_frequency = sb_compute_next_sweep_freq(seq);
+  if(new_frequency>2047){
+    seq->active[0]=false; 
+    new_frequency = 2047; 
+  }else if(new_frequency<0)new_frequency=0;
+  if(seq->sweep_shift){
+    seq->frequency[0]= new_frequency;
+    new_frequency = sb_compute_next_sweep_freq(seq);
+    if(new_frequency>2047){
+      seq->active[0]=false; 
+      new_frequency = 2047; 
+    }
+  }
+}
+static void sb_tick_frame_seq(sb_frame_sequencer_t* seq){
+  int step = (seq->step_counter++)%8;
+  //Tick sweep
+  if(step==2||step==6){
+    if(seq->active[0]&&seq->sweep_enable){
+      if(seq->sweep_timer>0)seq->sweep_timer--;
+      if(seq->sweep_timer == 0){
+        if(seq->sweep_period > 0){
+          seq->sweep_timer = seq->sweep_period;
+          sb_tick_frame_sweep(seq);
+        }else seq->sweep_timer = 8;
+      }
+    }
+  }
+  //Tick envelope
+  if(step==7){
+    for(int i=0;i<4;++i){
+      if(i==2)continue;
+      if(seq->env_period[i]){
+        if(seq->env_period_timer[i]>0)seq->env_period_timer[i]--;
+        if(seq->env_period_timer[i]==0){
+          seq->env_period_timer[i]=seq->env_period[i];
+          int volume = seq->volume[i];
+          volume+=seq->env_direction[i];
+          if(volume<=0){volume=0;seq->env_overflow[i]=true;}
+          if(volume>0xF){volume=0xF;seq->env_overflow[i]=true;};
+          seq->volume[i]=volume;
+        }
+      }
+    }
+  }
+  if((step%2)==0){
+    //Tick length
+    for(int i=0;i<4;++i){
+      if(!seq->use_length[i])continue;
+      if(seq->length[i]>0)seq->length[i]--;
+      if(seq->length[i]==0){
+        seq->active[i]=false; 
+        seq->length[i] = i==2?256:64; 
+        seq->use_length[i] = false;
+      }
+    }
+  }
+}
+static void sb_process_audio_writes(sb_gb_t* gb){
+  sb_audio_t* audio = &gb->audio;
+  sb_frame_sequencer_t* seq = &audio->sequencer;
+  int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  bool master_enable = SB_BFE(nrf_52,7,1);
+  if(!master_enable){
+    for(int i=SB_IO_AUD1_TONE_SWEEP;i<SB_IO_SOUND_ON_OFF;++i){
+      sb_store8_io(gb,i,0);
+    }
+    for(int i=0;i<4;++i){
+      if(sb_gbc_enable(gb)||i!=3){
+        seq->active[i]=false;
+        seq->powered[i]=false;
+        seq->length[i]=0;
+      }
+      seq->use_length[i]=false;
+    }
+    
+  }else{
+    uint8_t freq_sweep1 = sb_read8_io(gb, SB_IO_AUD1_TONE_SWEEP);
+    seq->sweep_period=SB_BFE(freq_sweep1, 4, 3);
+    seq->sweep_shift=SB_BFE(freq_sweep1, 0, 3);
+    seq->sweep_direction= SB_BFE(freq_sweep1, 3,1)? -1. : 1; 
+    for(int i=0;i<4;++i){
+      bool prev_length_en = seq->use_length[i];
+      uint8_t freq_hi = sb_read8_io(gb,SB_IO_AUD1_FREQ_HI+i*5);
+      seq->use_length[i]= SB_BFE(freq_hi,6,1);
+      uint8_t vol_env = sb_read8_io(gb,SB_IO_AUD1_VOL_ENV+i*5);
+      if(i==2){
+        bool power = SB_BFE(sb_read8_io(gb,SB_IO_AUD3_POWER),7,1);
+        seq->powered[i]=power;
+      }
+      if(i!=0){
+        uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+        seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+      }
+      if(i==2){
+        seq->env_direction[i] = 0;
+        seq->env_period[i] = 0;
+      }else{
+        seq->env_direction[i] = (SB_BFE(vol_env,3,1)?1:-1);
+        seq->env_period[i] = SB_BFE(vol_env,0,3);
+      }
+      bool triggered = SB_BFE(freq_hi,7,1);
+      if(triggered){
+        uint8_t length_duty = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY+i*5);
+        uint8_t freq_lo = sb_read8_io(gb,SB_IO_AUD1_FREQ+i*5);
+        seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
+        seq->volume[i] = SB_BFE(vol_env,4,4);
+       
+        if(seq->length[i]==0)seq->length[i]=i==2?256:64;
+        if(i==3)seq->lfsr4 = 0x7FFF;
+        if(i==2){
+          audio->wave_sample_offset=31;
+          audio->wave_freq_timer=4;
+        }
+        seq->env_period_timer[i]=0;
+        seq->env_overflow[i]=false;
+        seq->chan_t[i]=0;
+        seq->active[i]=true;
+        if(i==0){
+          seq->sweep_subtracted=false;
+          seq->sweep_enable = seq->sweep_period||seq->sweep_shift;
+          seq->sweep_timer=seq->sweep_period;
+          if(seq->sweep_timer==0)seq->sweep_timer=8; 
+          if (seq->sweep_shift && sb_compute_next_sweep_freq(seq) > 2047) {
+            seq->active[0] = false;
+          } 
+          seq->sweep_enable = seq->sweep_period>0||seq->sweep_shift>0;
+        }
+      }
+      if(i==0&&seq->sweep_subtracted&&seq->sweep_direction!=-1){
+        seq->active[0]= false; 
+        seq->sweep_enable = false;
+      }
+      if(seq->use_length[i]&&!prev_length_en){
+        bool second_half_of_length_period = (seq->step_counter&1);
+        if(second_half_of_length_period){
+          if(seq->length[i])seq->length[i]--;
+          if(seq->length[i]==0){
+            if(triggered) seq->length[i]=i==2?255:63;
+            else{
+              seq->active[i]=false;
+              seq->use_length[i]=triggered&&seq->use_length[i];
+            }
+          }
+        }
+      }
+      sb_store8_io(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
+    }
+  }
+}
+static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time, int cycles){
+
+  sb_audio_t* audio = &gb->audio;
+  sb_frame_sequencer_t* seq = &audio->sequencer;
+
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  audio->current_sim_time +=delta_time;
+  #ifdef GBA_AUDIO
+    uint32_t prev_audio_clock = audio->audio_clock;
+    audio->audio_clock+=cycles;
+    cycles = (audio->audio_clock-(prev_audio_clock&~3))/4;
+    uint32_t frame_cycles = (audio->audio_clock-(prev_audio_clock&~32767))/32768;
+    while(frame_cycles--)gba_tick_frame_seq(seq);
+  #endif
+
+  int freq_tim = audio->wave_freq_timer;
+  freq_tim-=cycles;
+  if(freq_tim<0){
+    int wave_inc_count = (-freq_tim-1)/((2048-seq->frequency[2])*2)+1;
+    audio->wave_sample_offset+= wave_inc_count;
+    freq_tim +=(2048-seq->frequency[2])*2*wave_inc_count;
+    unsigned wav_samp = (audio->wave_sample_offset)%32;
+    int dat =sb_read_wave_ram(gb,wav_samp/2);
+    audio->curr_wave_data = dat;
+    int offset = (wav_samp&1)? 0:4;
+    audio->curr_wave_sample = ((dat>>offset)&0xf);
+  }
+  audio->wave_freq_timer=freq_tim;
+  if(audio->current_sample_generated_time >audio->current_sim_time)return; 
+
+  audio->current_sample_generated_time -= (int)(audio->current_sim_time);
+  audio->current_sim_time -= (int)(audio->current_sim_time);
+
+  int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  for(int i=0;i<4;++i){
+    seq->active[i]&=seq->powered[i];
+    bool active = seq->active[i];
+    nrf_52|=active<<i;
+  }
+  sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+  bool master_enable = SB_BFE(nrf_52,7,1);
+  if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
 
-  uint8_t freq_sweep1 = gba_io_read8(gba, GBA_SOUND1CNT_L);
-  float freq_sweep_n1 = SB_BFE(freq_sweep1, 0,3);
-  float freq_sweep_sign1 = SB_BFE(freq_sweep1, 3,1)? -1. : 1;
-  float freq_sweep_time_mul1 = SB_BFE(freq_sweep1, 4, 3)/128.;
+  const static float duty_lookup[]={0.125,0.25,0.5,0.75};
+  uint8_t length_duty1 = sb_read8_io(gb, SB_IO_AUD1_LENGTH_DUTY);
+  float duty1 = duty_lookup[SB_BFE(length_duty1,6,2)];
+  uint8_t length_duty2 = sb_read8_io(gb, SB_IO_AUD2_LENGTH_DUTY);
+  float duty2 = duty_lookup[SB_BFE(length_duty2,6,2)];
 
-  if(SB_BFE(freq_sweep1,0,3)==0){freq_sweep_sign1=0;freq_sweep_time_mul1=0;}
+  uint8_t power3 = sb_read8_io(gb,SB_IO_AUD3_POWER);
+  uint8_t vol_env3 = sb_read8_io(gb,SB_IO_AUD3_VOL);
+  int channel3_shift = SB_BFE(vol_env3,5,2)-1;
+  if(SB_BFE(power3,7,1)==0||channel3_shift==-1)channel3_shift=4;
 
-  float duty[2] = {0,0};
-  uint16_t soundcnt_h = gba_io_read16(gba,GBA_SOUNDCNT_H);
-
-  for(int i=0;i<2;++i){
-    uint16_t soundcnt_h = gba_io_read16(gba, i==0? GBA_SOUND1CNT_H : GBA_SOUND2CNT_L);
-    length[i] = (64.-SB_BFE(soundcnt_h,0,6))/256.;
-    duty[i] = duty_lookup[SB_BFE(soundcnt_h,6,2)];
-    volume_env[i] = gba_compute_vol_env_slope(SB_BFE(soundcnt_h, 8, 3), SB_BFE(soundcnt_h, 11, 1));
-    volume[i] = SB_BFE(soundcnt_h,12,4)/15.f;
-
-    uint16_t soundcnt_x = gba_io_read16(gba, i==0? GBA_SOUND1CNT_X : GBA_SOUND2CNT_H);
-    freq_hz[i] = 131072.0/(2048.-SB_BFE(soundcnt_x,0,11));
-    if(SB_BFE(soundcnt_x,14,1)==0){length[i] = 1.0e9;}
-    if(SB_BFE(soundcnt_x,15,1)){length_t[i] = 0;}
-
-    soundcnt_x&=0x7fff;
-    gba_io_store16(gba, i==0? GBA_SOUND1CNT_X : GBA_SOUND2CNT_H,soundcnt_x);
-
-  }
-
-  /*
-  4000070h - SOUND3CNT_L (NR30) - Channel 3 Stop/Wave RAM select (R/W)
-
-    Bit        Expl.
-    0-4   -    Not used
-    5     R/W  Wave RAM Dimension   (0=One bank/32 digits, 1=Two banks/64 digits)
-    6     R/W  Wave RAM Bank Number (0-1, see below)
-    7     R/W  Sound Channel 3 Off  (0=Stop, 1=Playback)
-    8-15  -    Not used
-
-  The currently selected Bank Number (Bit 6) will be played back, while reading/writing to/from wave RAM will address the other (not selected) bank. When dimension is set to two banks, output will start by replaying the currently selected bank.
-
-  4000072h - SOUND3CNT_H (NR31, NR32) - Channel 3 Length/Volume (R/W)
-
-    Bit        Expl.
-    0-7   W    Sound length; units of (256-n)/256s  (0-255)
-    8-12  -    Not used.
-    13-14 R/W  Sound Volume  (0=Mute/Zero, 1=100%, 2=50%, 3=25%)
-    15    R/W  Force Volume  (0=Use above, 1=Force 75% regardless of above)
-
-  The Length value is used only if Bit 6 in NR34 is set.
-
-  4000074h - SOUND3CNT_X (NR33, NR34) - Channel 3 Frequency/Control (R/W)
-
-    Bit        Expl.
-    0-10  W    Sample Rate; 2097152/(2048-n) Hz   (0-2047)
-    11-13 -    Not used
-    14    R/W  Length Flag  (1=Stop output when length in NR31 expires)
-    15    W    Initial      (1=Restart Sound)
-    16-31 -    Not used
-  */
-  uint16_t sound3cnt_l = gba_io_read8(gba,GBA_SOUND3CNT_L);
-  int wave_sample_entries = SB_BFE(sound3cnt_l,5,1) ? 32: 64;
-  int wave_sample_offset = SB_BFE(sound3cnt_l,6,1)? 0 : 32;
-  volume[2] = SB_BFE(sound3cnt_l,7,1);
-
-  uint16_t sound3cnt_h = gba_io_read16(gba,GBA_SOUND3CNT_H);
-  float volume_lookup[8]={0,1,0.5,0.25,0.75,0.75,0.75,0.75};
-  length[2] = (256.-SB_BFE(sound3cnt_h,0,8))/256.;
-  volume[2]*= volume_lookup[SB_BFE(sound3cnt_h,13,3)];
-
-  uint16_t sound3cnt_x = gba_io_read16(gba,GBA_SOUND3CNT_X);
-  freq_hz[2] = (65536.0)/(2048.-SB_BFE(sound3cnt_x,0,11));
-  if(SB_BFE(sound3cnt_x,14,1)==0){length[2] = 1.0e9;}
-  if(SB_BFE(sound3cnt_x,15,1)){length_t[2] = 0;}
-  sound3cnt_x&=0x7fff;
-  gba_io_store16(gba, GBA_SOUND3CNT_X ,sound3cnt_x);
-
-  uint16_t soundcnt4_l = gba_io_read16(gba, GBA_SOUND4CNT_L);
-  length[3] = (64.-SB_BFE(soundcnt4_l,0,6))/256.;
-  volume_env[3] = gba_compute_vol_env_slope(SB_BFE(soundcnt4_l, 8, 3), SB_BFE(soundcnt4_l, 11, 1));
-  volume[3] = SB_BFE(soundcnt4_l,12,4)/15.f;
-
-  uint16_t soundcnt4_h = gba_io_read16(gba, GBA_SOUND4CNT_H);
-  float r4 = SB_BFE(soundcnt4_h,0,3);
-  bool counter_step = SB_BFE(soundcnt4_h,3,1); //(0=15 bits, 1=7 bits)
-  uint8_t s4 = SB_BFE(soundcnt4_h,4,4);
+  uint8_t poly4 = sb_read8_io(gb,SB_IO_AUD4_POLY);
+  float r4 = SB_BFE(poly4,0,3);
+  uint8_t s4 = SB_BFE(poly4,4,4);
+  bool sevenBit4 = SB_BFE(poly4,3,1);
   if(r4==0)r4=0.5;
-  freq_hz[3] =  524288.0/r4/pow(2.0,s4+1);
-  if(SB_BFE(soundcnt4_l,14,1)==0){length[3] = 1.0e9;}
-  if(SB_BFE(soundcnt4_l,15,1)){
-    length_t[3] = 0;
-  }
-  soundcnt4_h&=0x7fff;
-  gba_io_store16(gba, GBA_SOUND4CNT_H,soundcnt4_h);
 
+  uint8_t master_vol = sb_read8_io(gb,SB_IO_MASTER_VOLUME);
+  float master_left = SB_BFE(master_vol,4,3)/7.;
+  float master_right = SB_BFE(master_vol,0,3)/7.;
 
-
+  uint8_t chan_sel = sb_read8_io(gb,SB_IO_SOUND_OUTPUT_SEL);
   //These are type int to allow them to be multiplied to enable/disable
-  float chan_l[6],chan_r[6];
-  uint16_t chan_sel = gba_io_read16(gba,GBA_SOUNDCNT_L);
-  /* soundcnth 
-  0-1   R/W  Sound # 1-4 Volume   (0=25%, 1=50%, 2=100%, 3=Prohibited)
-  2     R/W  DMA Sound A Volume   (0=50%, 1=100%)
-  3     R/W  DMA Sound B Volume   (0=50%, 1=100%)
-  4-7   -    Not used
-  8     R/W  DMA Sound A Enable RIGHT (0=Disable, 1=Enable)
-  9     R/W  DMA Sound A Enable LEFT  (0=Disable, 1=Enable)
-  10    R/W  DMA Sound A Timer Select (0=Timer 0, 1=Timer 1)
-  11    W?   DMA Sound A Reset FIFO   (1=Reset)
-  12    R/W  DMA Sound B Enable RIGHT (0=Disable, 1=Enable)
-  13    R/W  DMA Sound B Enable LEFT  (0=Disable, 1=Enable)
-  14    R/W  DMA Sound B Timer Select (0=Timer 0, 1=Timer 1)
-  15    W?   DMA Sound B Reset FIFO   (1=Reset)*/ 
-  float psg_volume_lookup[4]={0.25,0.5,1.0,0.};
-  float psg_volume = psg_volume_lookup[SB_BFE(soundcnt_h,0,2)]*0.25;
-
-  float r_vol = SB_BFE(chan_sel,0,3)/7.*psg_volume;
-  float l_vol = SB_BFE(chan_sel,4,3)/7.*psg_volume;
+  float chan_l[6]={0};float chan_r[6]={0};
   for(int i=0;i<4;++i){
-    chan_r[i] = SB_BFE(chan_sel,8+i,1)*r_vol;
-    chan_l[i] = SB_BFE(chan_sel,12+i,1)*l_vol;
+    chan_l[i] = SB_BFE(chan_sel,i,1);
+    chan_r[i] = SB_BFE(chan_sel,i+4,1);
   }
-  // Channel volume for each FIFO
-  for(int i=0;i<2;++i){
-    // Volume
-    chan_r[i+4]=chan_l[i+4]= SB_BFE(soundcnt_h,2+i,1)? 1.0: 0.5;
-    chan_r[i+4]*= SB_BFE(soundcnt_h,8+i*4,1);
-    chan_l[i+4]*= SB_BFE(soundcnt_h,9+i*4,1);
-  }
-  gba_io_store16(gba,GBA_SOUNDCNT_H,soundcnt_h&~((1<<11)|(1<<15)));
 
+  #ifdef GBA_AUDIO
+  {
+    uint16_t soundcnt_h = gba_io_read16(gb,GBA_SOUNDCNT_H);
+    //These are type int to allow them to be multiplied to enable/disable
+    uint16_t chan_sel = gba_io_read16(gb,GBA_SOUNDCNT_L);
+    /* soundcnth 
+    0-1   R/W  Sound # 1-4 Volume   (0=25%, 1=50%, 2=100%, 3=Prohibited)
+    2     R/W  DMA Sound A Volume   (0=50%, 1=100%)
+    3     R/W  DMA Sound B Volume   (0=50%, 1=100%)
+    4-7   -    Not used
+    8     R/W  DMA Sound A Enable RIGHT (0=Disable, 1=Enable)
+    9     R/W  DMA Sound A Enable LEFT  (0=Disable, 1=Enable)
+    10    R/W  DMA Sound A Timer Select (0=Timer 0, 1=Timer 1)
+    11    W?   DMA Sound A Reset FIFO   (1=Reset)
+    12    R/W  DMA Sound B Enable RIGHT (0=Disable, 1=Enable)
+    13    R/W  DMA Sound B Enable LEFT  (0=Disable, 1=Enable)
+    14    R/W  DMA Sound B Timer Select (0=Timer 0, 1=Timer 1)
+    15    W?   DMA Sound B Reset FIFO   (1=Reset)*/ 
+    float psg_volume_lookup[4]={0.25,0.5,1.0,0.};
+    float psg_volume = psg_volume_lookup[SB_BFE(soundcnt_h,0,2)]*0.25;
 
-  /*printf("0R: %d, 0W: %d, 1R: %d, 1W: %d elapsed0: %d elapsed1: %d\n", gba->audio.fifo[0].read_ptr,gba->audio.fifo[0].write_ptr,
-                                             gba->audio.fifo[1].read_ptr,gba->audio.fifo[1].write_ptr,
-                                             gba->timers[0].elapsed_audio_samples,gba->timers[1].elapsed_audio_samples);
-  */
-  
-  float freq1_hz_base = freq_hz[0];
-  uint16_t soundcnt_x = gba_io_read16(gba,GBA_SOUNDCNT_X);
-  bool master_enable = SB_BFE(soundcnt_x,7,1);
-  if(!master_enable){
-    // Reset PSG registers 4000060h..4000081h 
-    for(int i=0x60;i<0x81;++i){
-      gba->mem.io[i]=0;
+    float r_vol = SB_BFE(chan_sel,0,3)/7.*psg_volume;
+    float l_vol = SB_BFE(chan_sel,4,3)/7.*psg_volume;
+    for(int i=0;i<4;++i){
+      chan_r[i] *= r_vol;
+      chan_l[i] *= l_vol;
     }
-    // Shut off all PSG channels
-    for(int i=0;i<4;++i){length_t[i]=2e9;length[i]=0;}
-    // Volume is 0 while everything is shut off. 
-    for(int i=0;i<6;++i)chan_l[i]=chan_r[i]=0;
+    // Channel volume for each FIFO
+    for(int i=0;i<2;++i){
+      // Volume
+      chan_r[i+4]=chan_l[i+4]= SB_BFE(soundcnt_h,2+i,1)? 1.0: 0.5;
+      chan_r[i+4]*= SB_BFE(soundcnt_h,8+i*4,1);
+      chan_l[i+4]*= SB_BFE(soundcnt_h,9+i*4,1);
+    }
+    gba_io_store16(gb,GBA_SOUNDCNT_H,soundcnt_h&~((1<<11)|(1<<15)));
+    master_left=master_right=1;
   }
+  #endif
 
-  while(gba->audio.current_sample_generated_time < gba->audio.current_sim_time){
+  float freq_hz[4];
+  for(int i=0;i<2;++i){freq_hz[i]= 131072./(2048-seq->frequency[i]);}
+  freq_hz[2]= (65536.)/(2048-seq->frequency[2]);
+  freq_hz[3] = 524288.0/r4/pow(2.0,s4+1);
+  while(audio->current_sample_generated_time < audio->current_sim_time){
 
-    gba->audio.current_sample_generated_time+=1.0/SE_AUDIO_SAMPLE_RATE;
+    audio->current_sample_generated_time+=sample_delta_t;
     
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     //Advance each channel    
-    freq_hz[0] = freq1_hz_base*pow((1.+freq_sweep_sign1*pow(2.,-freq_sweep_n1)),length_t[0]/freq_sweep_time_mul1);
-    for(int i=0;i<4;++i)chan_t[i]  +=sample_delta_t*freq_hz[i];
-    for(int i=0;i<4;++i)length_t[i]+=sample_delta_t;
-    for(int i=0;i<4;++i)if(length_t[i]>length[i]){volume[i]=0;volume_env[i]=0;}
-
+    for(int i=0;i<4;++i)seq->chan_t[i]  +=sample_delta_t*freq_hz[i];
     //Generate new noise value if needed
-    if(chan_t[3]>=1.0) {
-      int bit = (lfsr4 ^ (lfsr4 >> 1)) & 1;
-
-      lfsr4 >>= 1;
-      lfsr4 |= bit << 14;
-
-      if (counter_step) {
-        lfsr4 &= ~(1 << 7);
-        lfsr4 |= bit << 6;
+    if(seq->chan_t[3]>=1.0) {
+      int bit = (seq->lfsr4 ^ (seq->lfsr4 >> 1)) & 1;
+      seq->lfsr4 >>= 1;
+      seq->lfsr4 |= bit << 14;
+      if (sevenBit4) {
+        seq->lfsr4 &= ~(1 << 7);
+        seq->lfsr4 |= bit << 6;
       }
     }
     
-    //Loop back
-    for(int i=0;i<4;++i)chan_t[i]-=(int)chan_t[i];
+    //Loopback
+    for(int i=0;i<4;++i) seq->chan_t[i]-=(int)seq->chan_t[i];
     
     //Compute and clamp Volume Envelopes
     float v[4];
-    for(int i=0;i<4;++i)v[i] = volume_env[i]*length_t[i]+volume[i];
-    for(int i=0;i<4;++i)v[i] = v[i]>1.0? 1.0 : (v[i]<0.0? 0.0 : v[i]); 
-    v[2]=volume[2]; //Wave channel doesn't have a volume envelop 
-    
-    //Lookup wave table value TODO: Implement wave table banking
-    unsigned wav_samp = (((unsigned)(chan_t[2]*32))%32);
-    int dat =gba_io_read8(gba,GBA_WAVE_RAM+wav_samp/2);
-    int offset = (wav_samp&1)? 0:4;
-    dat = (dat>>offset)&0xf;
-    
-    float channels[6] = {0,0,0,0,0,0};
-    channels[0] = gba_bandlimited_square(chan_t[0],duty[0],sample_delta_t*freq_hz[0])*v[0];
-    channels[1] = gba_bandlimited_square(chan_t[1],duty[1],sample_delta_t*freq_hz[1])*v[1];
-    channels[2] = (dat)*v[2]/8.;
-    channels[3] = ((lfsr4 & 1))*v[3];
+    for(int i=0;i<4;++i)v[i] = seq->active[i]?seq->volume[i]/15.:0;
+    v[2] = 1.0;
 
-    for(int i=0;i<2;++i)
-      channels[4+i] = gba->audio.fifo[i].data[gba->audio.fifo[i].read_ptr&0x1f]/128.;
+    int dat = audio->curr_wave_sample >>channel3_shift;
+    int wav_offset = 8>>channel3_shift; 
     
+    float channels[6];
+    channels[0] = sb_bandlimited_square(seq->chan_t[0],duty1,sample_delta_t*freq_hz[0])*v[0];
+    channels[1] = sb_bandlimited_square(seq->chan_t[1],duty2,sample_delta_t*freq_hz[1])*v[1];
+    channels[2] = (dat-wav_offset)/8.;
+    channels[3] = ((seq->lfsr4 & 1) * 2.-1.)*v[3];
+
+    #ifdef GBA_AUDIO
+      for(int i=0;i<2;++i)channels[4+i] = audio->fifo[i].data[audio->fifo[i].read_ptr&0x1f]/128.;
+    #else
+      for(int i=0;i<2;++i)channels[4+i] =0;
+    #endif 
+
     //Mix channels
-    
     float sample_volume_l = 0;
     float sample_volume_r = 0;
-    
     for(int i=0;i<6;++i){
       float l = channels[i]*chan_l[i];
       float r = channels[i]*chan_r[i];
-      //These checks are put into place to discard infs/NaNs for robustness for
-      //errors in the above code. 
-      if(l>-2&&l<2)sample_volume_l+=l;
-      if(r>-2&&r<2)sample_volume_r+=r;
+      if(l>=-2.&&l<=2)sample_volume_l+=l;
+      if(r>=-2.&&r<=2)sample_volume_r+=r;
     }
+    
+    sample_volume_l*=0.25;
+    sample_volume_r*=0.25;
+    sample_volume_l*=master_left;
+    sample_volume_r*=master_right;
+
     const float lowpass_coef = 0.999;
+    emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(sample_volume_l)*(1.0-lowpass_coef);
+    emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(sample_volume_r)*(1.0-lowpass_coef); 
     
     for(int i=0;i<6;++i){
       emu->audio_channel_output[i] = emu->audio_channel_output[i]*lowpass_coef 
-                                   + fabs(channels[i]*(chan_l[i]+chan_r[i])*0.5)*(1.0-lowpass_coef); 
+                                  + fabs(channels[i])*(1.0-lowpass_coef); 
     }
     // Clipping
     if(sample_volume_l>1.0)sample_volume_l=1;
     if(sample_volume_r>1.0)sample_volume_r=1;
     if(sample_volume_l<-1.0)sample_volume_l=-1;
     if(sample_volume_r<-1.0)sample_volume_r=-1;
-    float out_l = sample_volume_l;
-    float out_r = sample_volume_r;
+    if(!(audio->capacitor_l<2&&audio->capacitor_l>-2))audio->capacitor_l=0;
+    if(!(audio->capacitor_r<2&&audio->capacitor_r>-2))audio->capacitor_r=0;
+    float out_l = sample_volume_l-audio->capacitor_l;
+    float out_r = sample_volume_r-audio->capacitor_r;
+    audio->capacitor_l = (sample_volume_l-out_l)*0.996;
+    audio->capacitor_r = (sample_volume_r-out_r)*0.996;
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
 
     emu->audio_ring_buff.data[write_entry0] = out_l*32760;
     emu->audio_ring_buff.data[write_entry1] = out_r*32760;
-    uint16_t soundcnt_x = gba_io_read16(gba,GBA_SOUNDCNT_X)&~0xf;
-    //Compute enable flags
-    for(int i=0;i<4;++i){
-      if(length_t[i]<length[i])soundcnt_x|= 1<<i;
-    }
-    gba_io_store16(gba,GBA_SOUNDCNT_X,soundcnt_x);
   }
 }
+
+#undef sb_compute_next_sweep_freq
+#undef sb_tick_frame_sweep
+#undef sb_tick_frame_seq
+#undef sb_process_audio_writes
+#undef sb_process_audio
+#undef sb_frame_sequencer_t
+#undef sb_audio_t
+#undef sb_gb_t
+#undef sb_read8_io 
+#undef sb_store8_io
+#undef sb_bandlimited_square
+#undef sb_gbc_enable
+#undef sb_read_wave_ram
+
+
+
+#undef SB_IO_AUD1_TONE_SWEEP   
+#undef SB_IO_AUD1_LENGTH_DUTY  
+#undef SB_IO_AUD1_VOL_ENV      
+#undef SB_IO_AUD1_FREQ         
+#undef SB_IO_AUD1_FREQ_HI      
+#undef SB_IO_AUD2_LENGTH_DUTY  
+#undef SB_IO_AUD2_VOL_ENV      
+#undef SB_IO_AUD2_FREQ         
+#undef SB_IO_AUD2_FREQ_HI      
+#undef SB_IO_AUD3_POWER        
+#undef SB_IO_AUD3_LENGTH       
+#undef SB_IO_AUD3_VOL          
+#undef SB_IO_AUD3_FREQ         
+#undef SB_IO_AUD3_FREQ_HI      
+#undef SB_IO_AUD3_WAVE_BASE    
+#undef SB_IO_AUD4_LENGTH       
+#undef SB_IO_AUD4_VOL_ENV      
+#undef SB_IO_AUD4_POLY         
+#undef SB_IO_AUD4_COUNTER      
+#undef SB_IO_MASTER_VOLUME     
+#undef SB_IO_SOUND_OUTPUT_SEL  
+#undef SB_IO_SOUND_ON_OFF     
+
+#undef GBA_AUDIO 
+
+// END GB REUSE CODE SHIM//
+
 static uint8_t gba_bin_to_bcd(uint8_t bin){
   bin%=100;
   return (bin%10)|((bin/10)<<4);
@@ -2962,8 +3293,8 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
       gba->ppu.fast_forward_ticks-=fast_forward_ticks;
       ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
       delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
-    }
-    gba_tick_audio(gba, emu,delta_t);
+      gba_tick_audio(gba, emu,delta_t,ticks+fast_forward_ticks);
+    }else gba_tick_audio(gba, emu,delta_t,ticks);
     bool last_activate_dmas =gba->activate_dmas;
     for(int t = 0;t<ticks;++t){
       if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;ticks=gba->last_cpu_tick=t+1;}
