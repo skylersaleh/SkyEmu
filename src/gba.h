@@ -2847,7 +2847,7 @@ static void sb_tick_frame_sweep(sb_frame_sequencer_t*seq){
     }
   }
 }
-static void sb_tick_frame_seq(sb_frame_sequencer_t* seq){
+static void sb_tick_frame_seq(sb_gb_t*gb,sb_frame_sequencer_t* seq){
   int step = (seq->step_counter++)%8;
   //Tick sweep
   if(step==2||step==6){
@@ -2890,6 +2890,13 @@ static void sb_tick_frame_seq(sb_frame_sequencer_t* seq){
       }
     }
   }
+  int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  for(int i=0;i<4;++i){
+    seq->active[i]&=seq->powered[i];
+    bool active = seq->active[i];
+    nrf_52|=active<<i;
+  }
+  sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
 }
 static void sb_process_audio_writes(sb_gb_t* gb){
   sb_audio_t* audio = &gb->audio;
@@ -2982,6 +2989,13 @@ static void sb_process_audio_writes(sb_gb_t* gb){
       sb_store8_io(gb, SB_IO_AUD1_FREQ_HI+i*5,freq_hi&0x7f);
     }
   }
+  nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
+  for(int i=0;i<4;++i){
+    seq->active[i]&=seq->powered[i];
+    bool active = seq->active[i];
+    nrf_52|=active<<i;
+  }
+  sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
 }
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time, int cycles){
 
@@ -2995,7 +3009,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     audio->audio_clock+=cycles;
     cycles = (audio->audio_clock-(prev_audio_clock&~3))/4;
     uint32_t frame_cycles = (audio->audio_clock-(prev_audio_clock&~32767))/32768;
-    while(frame_cycles--)gba_tick_frame_seq(seq);
+    while(frame_cycles--)gba_tick_frame_seq(gb,seq);
   #endif
 
   int freq_tim = audio->wave_freq_timer;
@@ -3011,18 +3025,14 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
     audio->curr_wave_sample = ((dat>>offset)&0xf);
   }
   audio->wave_freq_timer=freq_tim;
-  if(audio->current_sample_generated_time >audio->current_sim_time)return; 
 
   audio->current_sample_generated_time -= (int)(audio->current_sim_time);
   audio->current_sim_time -= (int)(audio->current_sim_time);
 
+  if(audio->current_sample_generated_time >audio->current_sim_time)return; 
+
   int nrf_52 = sb_read8_io(gb,SB_IO_SOUND_ON_OFF)&0xf0;
-  for(int i=0;i<4;++i){
-    seq->active[i]&=seq->powered[i];
-    bool active = seq->active[i];
-    nrf_52|=active<<i;
-  }
-  sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+
   bool master_enable = SB_BFE(nrf_52,7,1);
   if(!master_enable)return;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
