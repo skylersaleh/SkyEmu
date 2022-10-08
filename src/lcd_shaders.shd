@@ -360,7 +360,8 @@ void main() {
   vec4 val = sample_color_correct(uv);
   frag_color = val;
   float smooth_width = emu_lcd_size.x/render_size.x*2;
-  vec2 pix_sub = fract(uv*emu_lcd_size+smooth_width*0.5);
+  float smooth_height = emu_lcd_size.y/render_size.y*2;
+  vec2 pix_sub = fract(uv*emu_lcd_size);
   int mode = int(display_mode+0.5);
 
   if(lcd_is_grayscale>0.5&&mode ==3)mode = 2; 
@@ -411,11 +412,12 @@ void main() {
     frag_color = mix(frag_color, val,clamp(smooth_width,0.,1.));
   }else if(mode==3){
     float expansion = 0.15;
-    float r_factor = smoothstep(0,smooth_width,pix_sub.x)-smoothstep(0.33-smooth_width+expansion,0.33+expansion,pix_sub.x);
-    float g_factor = smoothstep(0.33-expansion*0.5,0.33+smooth_width-expansion*0.5,pix_sub.x)-smoothstep(0.66-smooth_width+expansion*0.5,0.66+expansion*0.5,pix_sub.x);
-    float b_factor = smoothstep(0.66-expansion,0.66+smooth_width-expansion,pix_sub.x)-smoothstep(1.0-smooth_width,1.0,pix_sub.x);
-    float rgb_factor = 1.0-(smoothstep(0.0,0.0+smooth_width,pix_sub.y)-smoothstep(0.15,0.15+smooth_width,pix_sub.y));    
-    rgb_factor = mix(0.66,1.,rgb_factor);
+    float r_factor = smoothstep(0,smooth_width,pix_sub.x)-smoothstep(0.33-smooth_width,0.33+expansion,pix_sub.x);
+    float g_factor = smoothstep(0.33-expansion*0.5,0.33+smooth_width,pix_sub.x)-
+                     smoothstep(0.66-smooth_width,0.66+expansion*0.5,pix_sub.x);
+    float b_factor = smoothstep(0.66-expansion,0.66+smooth_width,pix_sub.x)-smoothstep(1.0-smooth_width,1.0,pix_sub.x);
+    float rgb_factor = smoothstep(0.0,smooth_height,pix_sub.y)-smoothstep(1.0-smooth_height,1.0,pix_sub.y);    
+    rgb_factor = rgb_factor*0.2+0.8;
 
     frag_color.r*=clamp(mix(0.6, 1.0, r_factor)*1.33,0.,1.0)*rgb_factor;
     frag_color.g*=clamp(mix(0.6, 1.0, g_factor)*1.33,0.,1.0)*rgb_factor;
