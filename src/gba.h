@@ -2287,9 +2287,9 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
           uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(!gba->ppu.last_hblank||last_hblank)continue;
           //Video dma starts at scanline 2
-          if(vcount==0){gba->dma[i].video_dma_active=true;}
+          if(vcount==2){gba->dma[i].video_dma_active=true;}
           if(!gba->dma[i].video_dma_active)continue;
-          if(vcount==160){
+          if(vcount==161){
             dma_repeat=false;
             gba->dma[i].video_dma_active=false;
           }
@@ -3307,7 +3307,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
     }else gba_tick_audio(gba, emu,delta_t,ticks);
     bool last_activate_dmas =gba->activate_dmas;
     for(int t = 0;t<ticks;++t){
-      if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;ticks=gba->last_cpu_tick=t+1;}
+      if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;gba->last_cpu_tick=t+1;}
       gba_tick_interrupts(gba);
       gba_tick_timers(gba);
       gba_tick_ppu(gba,emu->render_frame);
