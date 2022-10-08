@@ -416,6 +416,7 @@ typedef struct{
 }sb_rtc_t;
 
 typedef struct {
+  sb_emu_state_t*emu;
   sb_gb_cartridge_t cart;
   sb_gb_cpu_t cpu;
   sb_gb_mem_t mem;
@@ -429,6 +430,8 @@ typedef struct {
   int model; 
   uint8_t dmg_palette[4*3];
   uint8_t* bios; 
+  int32_t rumble_cycles; 
+  int32_t ticked_cycles;
 } sb_gb_t;  
 
 typedef struct{
@@ -489,6 +492,7 @@ static bool sb_load_best_effort_state(sb_gb_t* gb, uint8_t *save_state_data, uin
 }
 
 typedef void (*sb_opcode_impl_t)(sb_gb_t*,int op1,int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask);
+void sb_tick_components(sb_gb_t* gb, int cycles);
 
 //Include down here because of dependence on sb_gb_t /*TODO: refactor this*/
 #include "sb_instr_tables.h"
@@ -1258,7 +1262,10 @@ int sb_update_dma(sb_gb_t *gb){
     gb->dma.in_hblank = gb->lcd.in_hblank;
     delta_cycles+= bytes_transferred/2;
   }
-  return delta_cycles;
+  unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
+  bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
+
+  return double_speed? delta_cycles*2:delta_cycles;
 }
 void sb_update_oam_dma(sb_gb_t* gb, int delta_cycles){
   delta_cycles/=4;
@@ -1314,17 +1321,20 @@ static FORCE_INLINE void sb_tick_sio(sb_gb_t* gb, int delta_cycles){
   }
   gb->serial.last_active =active; 
 }
-void sb_tick_components(sb_emu_state_t* emu, sb_gb_t* gb, int cycles){
+void sb_tick_components(sb_gb_t* gb, int cycles){
   unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
   bool double_speed = SB_BFE(speed, 7, 1)&&sb_gbc_enable(gb);
-  sb_update_oam_dma(gb,(double_speed?2:1)*cycles);
-  for(int i=0;i<cycles;++i){
-    sb_update_lcd(emu,gb);
+  int delta_cycles_after_speed = double_speed ? cycles/2 : cycles;
+  gb->rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
+  gb->ticked_cycles+=delta_cycles_after_speed;
+  sb_update_oam_dma(gb,cycles);
+  for(int i=0;i<delta_cycles_after_speed;++i){
+    sb_update_lcd(gb->emu,gb);
   }
-  sb_update_timers(gb,(double_speed?2:1)*cycles, double_speed);
-  sb_tick_sio(gb,cycles);
-  double delta_t = ((double)cycles)/(4*1024*1024);
-  sb_process_audio(gb,emu,delta_t,cycles);
+  sb_update_timers(gb,cycles, double_speed);
+  sb_tick_sio(gb,delta_cycles_after_speed);
+  double delta_t = ((double)delta_cycles_after_speed)/(4*1024*1024);
+  sb_process_audio(gb,gb->emu,delta_t,delta_cycles_after_speed);
 }
 void gb_tick_rtc(sb_gb_t*gb){
   time_t time_secs= time(NULL);
@@ -1338,31 +1348,29 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
   gb->lcd.framebuffer = scratch->framebuffer; 
   gb->cart.data = emu->rom_data; 
   gb->bios = scratch->bios;
+  gb->emu = emu;
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=70224/2;
   int frames_to_draw = 1;
 
-  int total_cylces = 0; 
-  int rumble_cycles= 0; 
+  gb->ticked_cycles = 0; 
+  gb->rumble_cycles= 0; 
   gb->lcd.finished_frame =false;
   gb->lcd.render_frame = emu->render_frame;
   gb_tick_rtc(gb);
   for(int i=0;i<instructions_to_execute;++i){
     bool double_speed = false;
     sb_update_joypad_io_reg(emu, gb);
-    int dma_delta_cycles = sb_update_dma(gb);
-    int cpu_delta_cycles = 0;
-    if(dma_delta_cycles==0){
+    int cpu_delta_cycles = sb_update_dma(gb);
+    if(cpu_delta_cycles==0){
       cpu_delta_cycles=4;
       int pc = gb->cpu.pc;
-      unsigned op = sb_read8(gb,gb->cpu.pc);
       bool request_speed_switch= false;
       if(sb_gbc_enable(gb)){
         unsigned speed = sb_read8_io(gb,SB_IO_GBC_SPEED_SWITCH);
         double_speed = SB_BFE(speed, 7, 1);
         request_speed_switch = SB_BFE(speed, 0, 1);
       }
-      if(gb->cpu.prefix_op)op+=256;
  
       int trigger_interrupt = -1;
       // TODO: Can interrupts trigger between prefix ops and the second byte?
@@ -1397,16 +1405,20 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
         gb->cpu.deferred_interrupt_enable = false;
         gb->cpu.interrupt_enable = true;
       }
- 
+      
+
       if(call_interrupt==false&&gb->cpu.wait_for_interrupt==false){
+        int prev_cycles = gb->ticked_cycles;
+        unsigned op = sb_read8(gb,gb->cpu.pc);
+        if(gb->cpu.prefix_op)op+=256;
+        sb_tick_components(gb,4);
         sb_instr_t inst = sb_decode_table[op];
         gb->cpu.pc+=inst.length;
         if(gb->cpu.halt_bug)gb->cpu.pc--;
         gb->cpu.halt_bug = false;
-        int operand1 = sb_load_operand(gb,inst.op_src1);
+        int operand1 = inst.impl==sb_ld_impl? 0: sb_load_operand(gb,inst.op_src1);
         int operand2 = sb_load_operand(gb,inst.op_src2);
 
-        unsigned pc_before_inst = gb->cpu.pc;
         gb->cpu.prefix_op = false;
         inst.impl(gb, operand1, operand2,inst.op_src1,inst.op_src2, inst.flag_mask);
         if(gb->cpu.prefix_op==true)i--;
@@ -1420,7 +1432,14 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
             gb->cpu.halt_bug =true;
           }
         }
-        cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1));
+        int d_cycles = gb->ticked_cycles-prev_cycles;
+        int exp_cycles = 4*((gb->cpu.branch_taken? inst.mcycles_branch_taken : inst.mcycles));
+        if(d_cycles!=exp_cycles){
+          printf("Different cycle count for: %s expected: %d got: %d\n", inst.opcode_name, exp_cycles,d_cycles);
+        }
+        //cpu_delta_cycles = 4*((gb->cpu.branch_taken? (inst.mcycles_branch_taken-(inst.mcycles-1)) : 1));
+
+        cpu_delta_cycles=0;
         gb->cpu.branch_taken=false;
       }else if(call_interrupt==false&&gb->cpu.wait_for_interrupt==true && request_speed_switch){
         gb->cpu.wait_for_interrupt = false;
@@ -1428,22 +1447,10 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
         cpu_delta_cycles=0;
       }
       if(trigger_interrupt!=-1)gb->cpu.wait_for_interrupt=false;
-      if(!gb->cpu.wait_for_interrupt){
-        unsigned next_op = sb_read8(gb,gb->cpu.pc);
-        if(gb->cpu.prefix_op)next_op+=256;
-        sb_instr_t next_inst = sb_decode_table[next_op];
-        cpu_delta_cycles+= (next_inst.mcycles-1)*4;
-        if(gb->cpu.prefix_op){
-          cpu_delta_cycles -=4;
-        }
-      }
       gb->cpu.last_inter_f = sb_read8_io(gb,SB_IO_INTER_F);
     }
-    int delta_cycles_after_speed = double_speed ? cpu_delta_cycles/2 : cpu_delta_cycles;
-    delta_cycles_after_speed+= dma_delta_cycles;
-    rumble_cycles+=delta_cycles_after_speed*gb->cart.rumble;
-    total_cylces+=delta_cycles_after_speed;
-    sb_tick_components(emu,gb,delta_cycles_after_speed);
+    
+    sb_tick_components(gb,cpu_delta_cycles);
 
     if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
       gb->cpu.trigger_breakpoint = false;
@@ -1451,9 +1458,9 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
       break;
     }
     if(gb->lcd.finished_frame){break;}
-    if(total_cylces>=70224&&emu->step_instructions==0)break;
+    if(gb->ticked_cycles>=70224&&emu->step_instructions==0)break;
   }
-  emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
+  emu->joy.rumble = (double)gb->rumble_cycles/(double)gb->ticked_cycles;
 }
 float compute_vol_env_slope(uint8_t d){
   int dir = SB_BFE(d,3,1);

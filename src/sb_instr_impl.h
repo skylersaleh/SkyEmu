@@ -53,6 +53,9 @@
 #define SB_OP_U8 43
 #define SB_OP_Z_FLAG 44
 
+#define SB_OP_HL_DEC_INDIRECT_STORE 31
+#define SB_OP_HL_INC_INDIRECT_STORE 32
+
 #define SB_Z_BIT 7U
 #define SB_N_BIT 6U
 #define SB_H_BIT 5U
@@ -105,30 +108,82 @@ int sb_load_operand(sb_gb_t* gb, int operand){
     case SB_OP_AF: { return gb->cpu.af; }
     case SB_OP_B: { return SB_U16_HI(gb->cpu.bc); }
     case SB_OP_BC: { return gb->cpu.bc; }
-    case SB_OP_BC_INDIRECT: { return sb_read8(gb,gb->cpu.bc); }
+    case SB_OP_BC_INDIRECT: { 
+      int dat= sb_read8(gb,gb->cpu.bc);
+      sb_tick_components(gb,4);
+      return dat; 
+    }
     case SB_OP_C: { return SB_U16_LO(gb->cpu.bc); }
     case SB_OP_C_FLAG: { return SB_BFE(gb->cpu.af,SB_C_BIT,1)==1; }
     case SB_OP_D: { return SB_U16_HI(gb->cpu.de); }
     case SB_OP_DE: { return gb->cpu.de; }
-    case SB_OP_DE_INDIRECT: { return sb_read8(gb,gb->cpu.de); }
+    case SB_OP_DE_INDIRECT: { 
+      int dat= sb_read8(gb,gb->cpu.de);
+      sb_tick_components(gb,4);
+      return dat;
+    }
     case SB_OP_E: { return SB_U16_LO(gb->cpu.de); }
-    case SB_OP_FF00_PLUS_C_INDIRECT: { return sb_read16(gb, 0xff00+SB_U16_LO(gb->cpu.bc)); }
-    case SB_OP_FF00_PLUS_U8_INDIRECT: { return sb_read8(gb, 0xff00|sb_read8(gb, gb->cpu.pc-1)); }
+    case SB_OP_FF00_PLUS_C_INDIRECT: { 
+      int data = sb_read16(gb, 0xff00+SB_U16_LO(gb->cpu.bc)); 
+      sb_tick_components(gb,8);
+      return data; 
+    }
+    case SB_OP_FF00_PLUS_U8_INDIRECT: { 
+      int data = 0xff00|sb_read8(gb, gb->cpu.pc-1);
+      sb_tick_components(gb,4);
+      data= sb_read8(gb, data);
+      sb_tick_components(gb,4);
+      return data; 
+    }
     case SB_OP_H: { return SB_U16_HI(gb->cpu.hl); }
     case SB_OP_HL: { return gb->cpu.hl; }
-    case SB_OP_HL_DEC_INDIRECT: { return sb_read8(gb,gb->cpu.hl--); }
-    case SB_OP_HL_INC_INDIRECT: { return sb_read8(gb,gb->cpu.hl++); }
-    case SB_OP_HL_INDIRECT: { return sb_read8(gb,gb->cpu.hl); }
-    case SB_OP_I8: { return (int8_t)sb_read8(gb,gb->cpu.pc-1); }
+    case SB_OP_HL_DEC_INDIRECT: { 
+      int dat= sb_read8(gb,gb->cpu.hl--);
+      sb_tick_components(gb,4);
+      return dat;
+    }
+    case SB_OP_HL_INC_INDIRECT: { 
+      int dat= sb_read8(gb,gb->cpu.hl++);
+      sb_tick_components(gb,4);
+      return dat;
+    }
+    case SB_OP_HL_INDIRECT: { 
+      int dat= sb_read8(gb,gb->cpu.hl);
+      sb_tick_components(gb,4);
+      return dat;
+    }
+    case SB_OP_I8: { 
+      int dat = (int8_t)sb_read8(gb,gb->cpu.pc-1);
+      sb_tick_components(gb,4);
+      return dat;
+    }
     case SB_OP_L: { return SB_U16_LO(gb->cpu.hl); }
     case SB_OP_NC_FLAG: { return SB_BFE(gb->cpu.af,SB_C_BIT,1)==0; }
     case SB_OP_NONE: { return 0; }
     case SB_OP_NZ_FLAG: { return SB_BFE(gb->cpu.af,SB_Z_BIT,1)==0; }
     case SB_OP_SP: { return gb->cpu.sp; }
-    case SB_OP_SP_PLUS_I8: { return gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1); }
-    case SB_OP_U16: { return sb_read16(gb, gb->cpu.pc-2); }
-    case SB_OP_U16_INDIRECT: { return sb_read16(gb, sb_read16(gb, gb->cpu.pc-2)); }
-    case SB_OP_U8: { return sb_read8(gb, gb->cpu.pc-1); }
+    case SB_OP_SP_PLUS_I8: { 
+      int dat = gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1);
+      sb_tick_components(gb,4);
+      return dat;
+    }
+    case SB_OP_U16: { 
+      int data = sb_read16(gb, gb->cpu.pc-2); 
+      sb_tick_components(gb,8);
+      return data;
+    }
+    case SB_OP_U16_INDIRECT: { 
+      int data = sb_read16(gb, gb->cpu.pc-2);
+      sb_tick_components(gb,8);
+      data = sb_read16(gb, data); 
+      sb_tick_components(gb,8);
+      return data;
+    }
+    case SB_OP_U8: { 
+      int data = sb_read8(gb, gb->cpu.pc-1); 
+      sb_tick_components(gb,4);
+      return data;
+    }
     case SB_OP_Z_FLAG: { return SB_BFE(gb->cpu.af,SB_Z_BIT,1)==1; }
   }
   printf("Unhandled read operand %d\n",operand);
@@ -141,28 +196,66 @@ void sb_store_operand(sb_gb_t* gb, int operand, unsigned int value){
     case SB_OP_AF: { gb->cpu.af = value & 0xfff0; return; }
     case SB_OP_B: { SB_U16_HI_SET(gb->cpu.bc,value);return; }
     case SB_OP_BC: { gb->cpu.bc = value; return; }
-    case SB_OP_BC_INDIRECT: { sb_store8(gb,gb->cpu.bc, value); return; }
+    case SB_OP_BC_INDIRECT: { 
+      sb_store8(gb,gb->cpu.bc, value);     
+      sb_tick_components(gb,4);
+      return;
+    }
     case SB_OP_C: { SB_U16_LO_SET(gb->cpu.bc,value);return; }
     case SB_OP_D: { SB_U16_HI_SET(gb->cpu.de,value);return; }
     case SB_OP_DE: { gb->cpu.de = value; return; }
-    case SB_OP_DE_INDIRECT: { sb_store8(gb,gb->cpu.de, value); return; }
+    case SB_OP_DE_INDIRECT: { 
+      sb_store8(gb,gb->cpu.de, value);
+      sb_tick_components(gb,4);
+      return;
+    }
     case SB_OP_E: { SB_U16_LO_SET(gb->cpu.de,value);return; }
     case SB_OP_FF00_PLUS_C_INDIRECT: {
-      sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value); return;
+      sb_store8(gb,0xff00+SB_U16_LO(gb->cpu.bc), value);
+      sb_tick_components(gb,4);
+      return;
     }
     case SB_OP_FF00_PLUS_U8_INDIRECT: {
-      sb_store8(gb,0xff00+sb_read8(gb,gb->cpu.pc-1), value);return;
+      int data = 0xff00+sb_read8(gb,gb->cpu.pc-1);
+      sb_tick_components(gb,4);
+      sb_store8(gb,data, value);
+      sb_tick_components(gb,4);
+      return;
     }
     case SB_OP_H: { SB_U16_HI_SET(gb->cpu.hl,value);return; }
     case SB_OP_HL: { gb->cpu.hl = value; return; }
     //Increments and decrements happen on the operand read
-    case SB_OP_HL_DEC_INDIRECT: { sb_store8(gb,gb->cpu.hl+1, value); return; }
-    case SB_OP_HL_INC_INDIRECT: { sb_store8(gb,gb->cpu.hl-1, value); return;}
-    case SB_OP_HL_INDIRECT: { sb_store8(gb,gb->cpu.hl, value); return;}
+    case SB_OP_HL_DEC_INDIRECT: { 
+      sb_store8(gb,gb->cpu.hl+1, value); 
+      sb_tick_components(gb,4);
+      return;
+    }
+    case SB_OP_HL_INC_INDIRECT: { 
+      sb_store8(gb,gb->cpu.hl-1, value);
+      sb_tick_components(gb,4);
+      return;
+    }
+    case SB_OP_HL_INDIRECT: { 
+      sb_store8(gb,gb->cpu.hl, value);
+      sb_tick_components(gb,4);
+      return;
+    }
     case SB_OP_L: { SB_U16_LO_SET(gb->cpu.hl,value);return; }
     case SB_OP_SP: { gb->cpu.sp = value; return; }
-    case SB_OP_SP_PLUS_I8: { sb_store8(gb,gb->cpu.sp+(int8_t)sb_read8(gb,gb->cpu.pc-1), value); return;}
-    case SB_OP_U16_INDIRECT: { sb_store8(gb,sb_read16(gb, gb->cpu.pc-2), value); return;}
+    case SB_OP_SP_PLUS_I8: {
+      int data =  (int8_t)sb_read8(gb,gb->cpu.pc-1);
+      sb_tick_components(gb,4);
+      sb_store8(gb,gb->cpu.sp+data, value);
+      sb_tick_components(gb,4);
+      return;
+    }
+    case SB_OP_U16_INDIRECT: { 
+      int data = sb_read16(gb, gb->cpu.pc-2);
+      sb_tick_components(gb,8);
+      sb_store8(gb,data, value);
+      sb_tick_components(gb,4);
+      return;
+    }
 
   }
   gb->cpu.trigger_breakpoint=true;
@@ -228,7 +321,10 @@ static void sb_call_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_en
 }
 
 static void sb_callc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1){sb_call_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
+  if(op1){
+    sb_call_impl(gb, op2, 0, 0, 0, flag_mask);
+    sb_tick_components(gb,4);
+  }
 }
 
 static void sb_ccf_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -274,6 +370,12 @@ static void sb_dec_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
   sb_set_flags(gb, flag_mask, (r&0xff)==0,1,((op1&0xf)-1)<0,-1);
   sb_store_operand(gb,op1_enum, r);
 }
+static void sb_dec16_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
+  int r = op1-1;
+  sb_set_flags(gb, flag_mask, (r&0xff)==0,1,((op1&0xf)-1)<0,-1);
+  sb_tick_components(gb,4);
+  sb_store_operand(gb,op1_enum, r);
+}
 
 static void sb_di_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.interrupt_enable = false;
@@ -293,26 +395,41 @@ static void sb_inc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
   sb_set_flags(gb,flag_mask, (r&0xff)==0,0,((op1&0xf)+1)>0xf,-1);
   sb_store_operand(gb,op1_enum, r);
 }
+static void sb_inc16_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
+  int r = op1+1;
+  sb_set_flags(gb,flag_mask, (r&0xff)==0,0,((op1&0xf)+1)>0xf,-1);
+  sb_tick_components(gb,4);
+  sb_store_operand(gb,op1_enum, r);
+}
 
 static void sb_jp_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.pc = op1;
 }
 
 static void sb_jpc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1){sb_jp_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
+  if(op1){
+    sb_jp_impl(gb, op2, 0, 0, 0, flag_mask);
+    sb_tick_components(gb,4);
+  }
 }
 
 static void sb_jr_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.pc += (int8_t)op1;
+  if(op1_enum==SB_OP_I8) sb_tick_components(gb,4);
 }
 
 static void sb_jrc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1){ sb_jr_impl(gb, op2, 0, 0, 0, flag_mask);gb->cpu.branch_taken=true;}
+  if(op1){ 
+    sb_jr_impl(gb, op2, 0, 0, 0, flag_mask);
+  }
 }
 
 static void sb_ld_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   if(op1_enum == SB_OP_U16_INDIRECT && op2_enum==SB_OP_SP){
-    sb_store16(gb, sb_read16(gb, gb->cpu.pc-2), op2);
+    int data = sb_read16(gb, gb->cpu.pc-2);
+    sb_tick_components(gb,8);
+    sb_store16(gb, data, op2);
+    sb_tick_components(gb,8);
   }else if(op1_enum == SB_OP_HL && op2_enum==SB_OP_SP_PLUS_I8){
     sb_store_operand(gb,op1_enum, op2);
     op1 = gb->cpu.sp;
@@ -341,7 +458,9 @@ static void sb_or_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum
 }
 
 static void sb_pop_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  sb_store_operand(gb,op1_enum,sb_read16(gb,gb->cpu.sp));
+  int data = sb_read16(gb,gb->cpu.sp);
+  sb_tick_components(gb,8);
+  sb_store_operand(gb,op1_enum,data);
   gb->cpu.sp+=2;
 }
 
@@ -351,7 +470,9 @@ static void sb_prefix_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_
 
 static void sb_push_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.sp-=2;
+  sb_tick_components(gb,4);
   sb_store16(gb,gb->cpu.sp,op1);
+  sb_tick_components(gb,8);
 }
 
 static void sb_res_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
@@ -361,11 +482,16 @@ static void sb_res_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enu
 
 static void sb_ret_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
   gb->cpu.pc=sb_read16(gb,gb->cpu.sp);
+  sb_tick_components(gb,12);
   gb->cpu.sp+=2;
 }
 
 static void sb_retc_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
-  if(op1){sb_ret_impl(gb, op2, 0, 0, 0,flag_mask);gb->cpu.branch_taken=true;}
+  if(op1){
+    gb->cpu.pc=sb_read16(gb,gb->cpu.sp);
+    gb->cpu.sp+=2;
+  }
+  sb_tick_components(gb,4);
 }
 
 static void sb_reti_impl(sb_gb_t* gb, int op1, int op2, int op1_enum, int op2_enum, const uint8_t * flag_mask){
