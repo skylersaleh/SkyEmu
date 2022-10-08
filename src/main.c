@@ -2646,7 +2646,7 @@ void se_draw_menu_panel(){
   int v = gui_state.settings.screen_shader;
   igPushItemWidth(-1);
   igText("Screen Shader");igSameLine(win_w*0.4,0);
-  igComboStr("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Sharp Upscale\0Smooth Upscale (xBRZ)\0",0);
+  igComboStr("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
   gui_state.settings.screen_shader=v;
   v = gui_state.settings.screen_rotation;
   igText("Screen Rotation");igSameLine(win_w*0.4,0);
@@ -3015,6 +3015,7 @@ void se_load_settings(){
       gui_state.settings.screen_shader=3;
       gui_state.settings.screen_rotation=0;
     }
+    if(gui_state.settings.screen_shader>4)gui_state.settings.screen_shader=4;
     gui_state.last_saved_settings=gui_state.settings;
   }
 }

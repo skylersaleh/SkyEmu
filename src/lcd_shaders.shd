@@ -377,6 +377,8 @@ void main() {
     v[2] = sample_color_correct(ip+vec2(0.0,1.0)/emu_lcd_size);
     v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
     vec2 alpha = smoothstep(0.5-smooth_width*0.5,0.5+smooth_width*0.5,residual);
+    if(fract(render_size.x/emu_lcd_size.x)<0.001)alpha.x=0;
+    if(fract(render_size.y/emu_lcd_size.y)<0.001)alpha.y=0;
     val = frag_color = mix(mix(v[0],v[1],alpha.x),mix(v[2],v[3],alpha.x),alpha.y);
   }
   if(mode==1){
@@ -424,78 +426,7 @@ void main() {
     frag_color.b*=clamp(mix(0.6, 1.0, b_factor)*1.33,0.,1.0)*rgb_factor;
 
     frag_color = mix(frag_color, val,clamp(smooth_width,0.,1.));
-  }else if(mode==4){
-    vec4 v[9];
-    vec2 ip = floor(uv*emu_lcd_size.xy);
-    pix_sub = fract(uv*emu_lcd_size.xy); 
-    ip/=emu_lcd_size.xy;
-    //sample layout:
-    //0 1 2
-    //3 4 5
-    //6 7 8
-    for(int y=0;y<3;++y){
-        for(int x=0;x<3;++x){
-            vec2 ip_samp=ip+0.5/emu_lcd_size;
-            ip_samp.y+= (y-1)*1.0/emu_lcd_size.y;
-            ip_samp.x+= (x-1)*1.0/emu_lcd_size.x;
-            v[y*3+x] = sample_color_correct(ip_samp);
-        }
-    }
-    frag_color = vec4(0.,0.,0,1.0);
-    if(cmp_colors3(v[1],v[4],v[7])||cmp_colors3(v[3],v[4],v[5]))frag_color = v[4];
-   
-    float l = pix_sub.x+pix_sub.y-1;
-    float l2 = pix_sub.x-pix_sub.y;
-    float diag1_dist = abs(l)/sqrt(2);
-    float diag2_dist = abs(l2)/sqrt(2);
-    bool diag = false;
- 
-    float line_thresh = 0.33;
-
-    if(cmp_colors3(v[2],v[4],v[6])&&diag1_dist<line_thresh){diag = true;frag_color = v[4];}
-    if(cmp_colors3(v[0],v[4],v[8])&&diag2_dist<line_thresh){diag = true;frag_color = v[4];}
-    if((cmp_colors(v[1],v[7])||cmp_colors(v[3],v[5]))&&!diag){
-        frag_color = v[4];
-    }else if(!diag){
-        if(cmp_colors(v[1],v[3])&&l<0&&diag1_dist>=line_thresh){v[4] = v[1];}
-        if(cmp_colors(v[5],v[7])&&l>=0&&diag1_dist>=line_thresh){v[4] = v[5];}
-
-        if(cmp_colors(v[1],v[5])&&l2>=0&&diag2_dist>=line_thresh){v[4] = v[1];}
-        if(cmp_colors(v[3],v[7])&&l2<0&&diag2_dist>=line_thresh){v[4] = v[3];}
-        vec4 E0 = cmp_colors(v[3],v[1]) ? v[3] : v[4];
-        vec4 E1 = cmp_colors(v[1],v[5]) ? v[5] : v[4];
-        vec4 E2 = cmp_colors(v[3],v[7]) ? v[3] : v[4];
-        vec4 E3 = cmp_colors(v[7],v[5]) ? v[5] : v[4];
-
-        float diag1_dist = abs(pix_sub.x+pix_sub.y-0.5)/sqrt(2);
-        float diag2_dist = abs(pix_sub.x-pix_sub.y)/sqrt(2);
-
-        vec2 alpha = smoothstep(0.5-smooth_width*0.5,0.5+smooth_width*0.5,pix_sub);
-        alpha =pix_sub;
-        frag_color = mix(mix(E0,E1,alpha.x),mix(E2,E3,alpha.x),alpha.y);
-        
-        if(cmp_colors(E0,E3)&&diag2_dist<line_thresh){diag=true;frag_color = E0;}
-        else if(cmp_colors(E1,E2)&&diag1_dist<line_thresh){diag=true;frag_color = E1;}
-        //frag_color *= 0.5;
-    }
-    if(cmp_colors(v[1],v[3])&&l<0&&diag1_dist>=line_thresh&&diag==false){frag_color = v[1];}
-    if(cmp_colors(v[5],v[7])&&l>=0&&diag1_dist>=line_thresh&&diag==false){frag_color = v[5];}
-
-    if(cmp_colors(v[1],v[5])&&l2>=0&&diag2_dist>=line_thresh&&diag==false){frag_color = v[1];}
-    if(cmp_colors(v[3],v[7])&&l2<0&&diag2_dist>=line_thresh&&diag==false){frag_color = v[3];}
-     /*if(cmp_colors3(v[2],v[4],v[6])){
-        float l = pix_sub.x+pix_sub.y-1;
-        float diag1_dist = abs(l)/sqrt(2);
-        //frag_color = l>0?v[5]:v[3];
-        if(diag1_dist<0.3)frag_color = v[4];
-    }
-    if(cmp_colors3(v[0],v[4],v[8])){
-        float l = pix_sub.x-pix_sub.y;
-        float diag1_dist = abs(l)/sqrt(2);
-        //frag_color = l>0?v[5]:v[3];
-        if(diag1_dist<0.3)frag_color = v[4];
-    }*/
-  }else if(mode==5)frag_color =xbrz();
+  }else if(mode==4)frag_color =xbrz();
 
 }
 @end
