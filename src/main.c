@@ -1369,6 +1369,8 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
   if(!save_state->valid || save_state->system != emu_state.system)return; 
   *core=save_state->state;
+  emu_state.render_frame = true;
+  se_emulate_single_frame();
 }
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
