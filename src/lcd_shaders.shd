@@ -393,8 +393,8 @@ void main() {
     v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
     frag_color = mix(mix(v[0],v[1],pix_sub.x),mix(v[2],v[3],pix_sub.x),pix_sub.y);
   }else if(mode==2){
-    float rgb_factor = 1.0-(smoothstep(0.0,0.0+smooth_width,pix_sub.y)-smoothstep(0.15,0.15+smooth_width,pix_sub.y));    
-    rgb_factor += -(smoothstep(0.0,0.0+smooth_width,pix_sub.x)-smoothstep(0.15,0.15+smooth_width,pix_sub.x));    
+    float rgb_factor = smoothstep(0.0,0.0+smooth_height,pix_sub.y)-smoothstep(1.0-smooth_height,1.0,pix_sub.y);    
+    rgb_factor *= (smoothstep(0.0,smooth_width,pix_sub.x)-smoothstep(1.0-smooth_width,1.0,pix_sub.x));    
     rgb_factor = mix(0.66,1.,rgb_factor);
     if(lcd_is_grayscale>0.5){
         vec4 bilin = frag_color;

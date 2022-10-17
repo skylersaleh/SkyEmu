@@ -118,7 +118,8 @@ typedef struct{
   uint32_t integer_scaling; 
   uint32_t screen_shader; //0: pixels, 1: lcd, 2: lcd+subpixels, 3: upscale
   uint32_t screen_rotation; //0: No rotation, 1: Rotate Left, 2: Rotate Right, 3: Upside Down
-  uint32_t padding[243];
+  uint32_t stretch_to_fit;
+  uint32_t padding[242];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1273,6 +1274,17 @@ static void se_draw_emulated_system_screen(){
     float old_h = lcd_render_h;
     lcd_render_h = ((int)((lcd_render_h)/native_h))*native_h;
     lcd_render_w = ((int)((lcd_render_w)/native_w))*native_w;
+  }
+  if(gui_state.settings.stretch_to_fit){
+    if(gui_state.last_touch_time>=0){
+      if(scr_w*render_aspect<scr_h-(controller_h+controller_y_pad*2)){
+        lcd_render_h = scr_h-(controller_h+controller_y_pad*2);
+        lcd_render_y = scr_h-(controller_h+controller_y_pad*2+lcd_render_h*0.5)-scr_h*0.5;
+      }
+    }else{
+      lcd_render_h = scr_h;
+      lcd_render_w = scr_w;
+    }
   }
   ImVec2 v;
   igGetWindowPos(&v);
@@ -2662,9 +2674,16 @@ void se_draw_menu_panel(){
     igCheckbox("Screen Ghosting", &b);
     gui_state.settings.ghosting=b;
   }
-  bool b = gui_state.settings.integer_scaling;
-  igCheckbox("Force Integer Scaling", &b);
-  gui_state.settings.integer_scaling = b;
+  {
+    bool b = gui_state.settings.integer_scaling;
+    igCheckbox("Force Integer Scaling", &b);
+    gui_state.settings.integer_scaling = b;
+  }
+  {
+    bool b = gui_state.settings.stretch_to_fit;
+    igCheckbox("Stretch Screen to Fit", &b);
+    gui_state.settings.stretch_to_fit = b;
+  }
   igText("Game Boy Color Palette");
   for(int i=0;i<4;++i){
     char buff[60];
@@ -3016,6 +3035,7 @@ void se_load_settings(){
       gui_state.settings.integer_scaling=false;
       gui_state.settings.screen_shader=3;
       gui_state.settings.screen_rotation=0;
+      gui_state.settings.stretch_to_fit = 0; 
     }
     if(gui_state.settings.screen_shader>4)gui_state.settings.screen_shader=4;
     gui_state.last_saved_settings=gui_state.settings;
