@@ -67,6 +67,14 @@ const static char* se_keybind_names[]={
   "Emulator " ICON_FK_BACKWARD,
   "Emulator " ICON_FK_FORWARD,
   "Emulator " ICON_FK_FAST_FORWARD,
+  "Capture State 0",
+  "Restore State 0",
+  "Capture State 1",
+  "Restore State 1",
+  "Capture State 2",
+  "Restore State 2",
+  "Capture State 3",
+  "Restore State 3",
 };
 #define SE_ANALOG_UP_DOWN    0
 #define SE_ANALOG_LEFT_RIGHT 1
@@ -1426,6 +1434,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
   return screen_x;
 }
 void se_set_default_keybind(gui_state_t *gui){
+  for(int i=0;i<SE_NUM_KEYBINDS;++i)gui->key.bound_id[i]=-1;
   gui->key.bound_id[SE_KEY_A]     = SAPP_KEYCODE_J;  
   gui->key.bound_id[SE_KEY_B]     = SAPP_KEYCODE_K;
   gui->key.bound_id[SE_KEY_X]     = SAPP_KEYCODE_N;
@@ -1446,7 +1455,12 @@ void se_set_default_keybind(gui_state_t *gui){
   gui->key.bound_id[SE_KEY_EMU_REWIND]= SAPP_KEYCODE_R;     
   gui->key.bound_id[SE_KEY_EMU_FF_2X]= SAPP_KEYCODE_F;     
   gui->key.bound_id[SE_KEY_EMU_FF_MAX]= SAPP_KEYCODE_TAB;     
-    
+
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    gui->key.bound_id[SE_KEY_CAPTURE_STATE(i)]=SAPP_KEYCODE_1+i;
+    gui->key.bound_id[SE_KEY_RESTORE_STATE(i)]=SAPP_KEYCODE_F1+i;
+  }
+
 }
 void sb_poll_controller_input(sb_joy_t* joy){
   for(int i=0;i<SE_NUM_KEYBINDS;++i){
@@ -2494,6 +2508,7 @@ void se_set_default_controller_binds(se_controller_state_t* cont){
   if(!cont ||!cont->sdl_gc)return; 
   SDL_GameController * gc = cont->sdl_gc;
   SDL_GameControllerUpdate();
+  for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key.bound_id[i]=-1;
   cont->key.bound_id[SE_KEY_A]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_A);
   cont->key.bound_id[SE_KEY_B]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_B);
   cont->key.bound_id[SE_KEY_X]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_X);
@@ -2591,6 +2606,15 @@ void se_reset_default_gb_palette(){
     gui_state.settings.gb_palette[i]=palette[i*3]|(palette[i*3+1]<<8)|(palette[i*3+2]<<16);
   }
 }
+void se_capture_state_slot(int slot){
+  se_capture_state(&core, save_states+slot);
+  char save_state_path[SB_FILE_PATH_SIZE];
+  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,slot);
+  se_save_state_to_disk(save_states+slot,save_state_path);
+}
+void se_restore_state_slot(int slot){
+  if(save_states[slot].valid)se_restore_state(&core, save_states+slot);
+}
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   igText(ICON_FK_FLOPPY_O " Save States");
@@ -2614,15 +2638,9 @@ void se_draw_menu_panel(){
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
     igText("Save Slot %d",i);
-    if(igButton("Capture",(ImVec2){button_w,0})){
-      se_capture_state(&core, save_states+i);
-      char save_state_path[SB_FILE_PATH_SIZE];
-      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,i);
-      se_save_state_to_disk(save_states+i,save_state_path);
-    }
-    if(save_states[i].valid){
-      if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state(&core, save_states+i);
-    }
+    if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state_slot(i);
+    if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state_slot(i);
+    
     if(save_states[i].valid){
       float w_scale = 1.0;
       float h_scale = 1.0;
@@ -2827,6 +2845,11 @@ static void frame(void) {
 
       //Don't pause a game that is already running at normal speed. 
       if(curr_toggle==2 &&next_toggle_id==2)next_toggle_id=-1;
+    }
+
+    for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+      if(curr->inputs[SE_KEY_CAPTURE_STATE(i)])se_capture_state_slot(i);
+      if(curr->inputs[SE_KEY_RESTORE_STATE(i)])se_restore_state_slot(i);
     }
 
     for(int i=0;i<num_toggles;++i){

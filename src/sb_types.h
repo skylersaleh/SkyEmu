@@ -89,8 +89,9 @@
 #define SE_KEY_EMU_REWIND 15
 #define SE_KEY_EMU_FF_2X 16
 #define SE_KEY_EMU_FF_MAX 17
-
-#define SE_NUM_KEYBINDS 18
+#define SE_KEY_CAPTURE_STATE(A) (18+(A)*2)
+#define SE_KEY_RESTORE_STATE(A) (18+(A)*2+1)
+#define SE_NUM_KEYBINDS 26
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*4)
