@@ -30,9 +30,9 @@ On Mobile platforms it is recommended to add to the home screen and launch from 
 
 Native builds can be downloaded at the following links: 
 
-- [Windows](https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_win/main/WindowsRelease.zip)
-- [macOS](https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/main/MacOSRelease.zip)
-- [Linux](https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/main/LinuxRelease.zip)
+- [Windows](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-Windows.zip)
+- [macOS](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-macOS.dmg)
+- [Linux](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-Linux.zip)
 
 Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
 
