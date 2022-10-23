@@ -4,35 +4,32 @@
 
 SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
 
-<img width="1015" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430669-20c8079a-bf5c-44b6-b7da-270aca51f216.png">
+<img width="1015" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/197385606-b12439ca-48d4-46f2-b0d5-311037430f94.png">
 
 # Features
 
 - [Highly accurate Game Boy Advance emulation](docs/Accuracy.md)
 - Game Boy and Game Boy Color Emulation 
-- Experimental Nintendo DS support (only capable of running homebrew currently)
+- High Quality Upscaling Shaders, Color Correction, and Screen Ghosting
 - Cross Platform: Windows, MacOS, Linux, Web App (with touch screen controls for iOS and Android)
 - Game Controller and Rumble Support with configureable keybinds
-- 4x Save Slots with screenshot preview
+- 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
 - Support for emulating the Real Time Clock
 - CPU, MMIO, and Memory Debuggers
 - Dark and Light Themes
-- Support for loading official BIOSs dumps
+- Support for loading official BIOS and Boot ROM dumps
+- Support for loading roms compressed in .zip archives
 
-## Web App Based Build (Desktop/iOS/Android)
+## Download / Usage
 
-The latest version of the emulator can be played at the following address as a progressive web app:
+Native builds can be downloaded at: https://github.com/skylersaleh/SkyEmu/releases
+
+The latest version of the emulator can also be played without installing at the following address as a progressive web app:
 
 https://web.skyemu.app/
 
-On Mobile platforms it is recommended to add to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will remove the browsers UI. 
-
-Native builds can be downloaded at the following links: 
-
-- [Windows](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-Windows.zip)
-- [macOS](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-macOS.dmg)
-- [Linux](https://github.com/skylersaleh/SkyEmu/releases/download/v1/SkyEmu-Linux.zip)
+On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen. 
 
 Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
 
@@ -93,5 +90,5 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - Passes all of Blargg's CPU instruction tests
 - Passes DMG and GBC acid2 PPU conformance tests
 - Passes MBCtest
-- Scan line based PPU implementation
+- Dotclk based PPU implementation
 - Anti-aliased audio synthesis with support for APU changes per sample (supports Pikachu's voice in Pokemon Yellow/Pokemon Pinball)
