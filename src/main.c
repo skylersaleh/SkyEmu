@@ -231,6 +231,7 @@ void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, int index);
+static void se_emscripten_flush_fs();
 static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
@@ -501,6 +502,7 @@ void se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
   snprintf(png_path,SB_FILE_PATH_SIZE,"%s.png",filename);
   stbi_write_png(png_path, save_state->screenshot_width*scale, save_state->screenshot_height*scale, 4, imdata, 0);
   free(imdata);
+  se_emscripten_flush_fs();
 }
 bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id emu_id, se_save_state_t* state){
   state->state = core;
