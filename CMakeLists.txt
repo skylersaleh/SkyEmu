@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
-set(CMAKE_OSX_ARCHITECTURES arm64 x86_64)
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 
 if(APPLE)
   project(SkyEmu OBJC C CXX)
