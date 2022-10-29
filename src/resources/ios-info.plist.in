@@ -47,5 +47,6 @@
 		<dict/>
 	</dict>
 	<key>UIRequiresFullScreen</key><true/>
+	<key>UIFileSharingEnabled</key><true/>
 </dict>
 </plist>
