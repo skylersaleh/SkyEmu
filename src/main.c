@@ -44,8 +44,9 @@
 #ifdef PLATFORM_IOS
 #include "ios_support.h"
 #endif
-
+#ifdef USE_SDL
 #include "SDL.h"
+#endif 
 #include "lcd_shaders.h"
 
 #define SE_HAT_MASK (1<<16)
@@ -107,8 +108,10 @@ typedef struct{
 typedef struct{
   char name[128];
   char guid[64];
+  #ifdef USE_SDL
   SDL_Joystick * sdl_joystick; 
   SDL_GameController * sdl_gc; 
+  #endif
   bool active; 
   bool connected;
   se_keybind_state_t key;
@@ -241,12 +244,14 @@ static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state
 static size_t se_get_core_size();
 
 static const char* se_get_pref_path(){
-#ifdef EMSCRIPTEN
+#if defined(EMSCRIPTEN)
   return "/offline/";
-#else
+#elif defined(USE_SDL)
   static const char* cached_pref_path=NULL;
   if(cached_pref_path==NULL)cached_pref_path=SDL_GetPrefPath("Sky","SkyEmu");
   return cached_pref_path;
+#else
+  return "";
 #endif
 }
 
@@ -1678,6 +1683,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     if(state->bound_id[k]!=-1){
       switch(keybind_type){
         case SE_BIND_KEYBOARD: button_label=se_keycode_to_string(state->bound_id[k]);break;
+        #ifdef USE_SDL
         case SE_BIND_KEY: 
           { 
             int key = state->bound_id[k];
@@ -1706,6 +1712,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
           snprintf(buff, sizeof(buff),"Analog %d (%0.2f)", state->bound_id[k],state->value[k]);button_label=buff;
           button_label=buff;
           break;
+        #endif
       }
     }
     if(state->bind_being_set==k){
@@ -2146,6 +2153,7 @@ void se_load_rom_overlay(bool visible){
   igEnd();
   return;
 }
+#ifdef USE_SDL
 static void se_poll_sdl(){
   SDL_Event sdlEvent;
   se_controller_state_t *cont = &gui_state.controller;
@@ -2254,6 +2262,7 @@ static void se_poll_sdl(){
     emu_state.joy.inputs[SE_KEY_R]  += cont->analog.value[SE_ANALOG_R]>0.1;
   }
 }
+#endif
 void se_update_frame() {
   if(emu_state.run_mode == SB_MODE_RESET){
     se_reset_core();
@@ -2487,6 +2496,7 @@ void se_imgui_theme()
       });
   });
   #endif
+#ifdef USE_SDL
 int se_get_sdl_key_bind(SDL_GameController* gc, int button){
   SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
   if(bind.bindType==SDL_CONTROLLER_BINDTYPE_HAT){
@@ -2619,6 +2629,7 @@ void se_draw_controller_config(gui_state_t* gui){
   if(SDL_JoystickHasRumble(cont->sdl_joystick)){igText("Rumble Supported");
   }else igText("Rumble Not Supported");
 }
+#endif 
 void se_reset_default_gb_palette(){
   uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
   for(int i=0;i<4;++i){
@@ -2755,8 +2766,9 @@ void se_draw_menu_panel(){
     se_emscripten_flush_fs();
   }
   #endif
-
+  #ifdef USE_SDL
   se_draw_controller_config(&gui_state);
+  #endif
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
   bool light_mode = gui_state.settings.light_mode; 
@@ -2792,7 +2804,9 @@ static void se_init_audio(){
 static void frame(void) {
 
   sb_poll_controller_input(&emu_state.joy);
+#ifdef USE_SDL
   se_poll_sdl();
+#endif
   int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
@@ -3083,7 +3097,9 @@ void se_load_settings(){
       se_set_default_keybind(&gui_state);
     }
   }
+#ifdef USE_SDL
   se_load_controller_settings(&gui_state.controller);
+#endif
   {
     char settings_path[SB_FILE_PATH_SIZE];
     snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
@@ -3111,9 +3127,11 @@ void se_load_settings(){
 static void init(void) {
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
   gui_state.overlay_open= true;
+#ifdef USE_SDL
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
+#endif
   se_initialize_keybind(&gui_state.key);
   se_load_settings();
   sg_setup(&(sg_desc){
@@ -3179,7 +3197,9 @@ static void cleanup(void) {
   se_free_all_images();
   sg_shutdown();
   saudio_shutdown();
+#ifdef USE_SDL
   SDL_Quit();
+#endif
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {
