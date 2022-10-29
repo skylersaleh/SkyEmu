@@ -1277,6 +1277,7 @@ SOKOL_APP_API_DECL const void* sapp_metal_get_drawable(void);
 SOKOL_APP_API_DECL const void* sapp_macos_get_window(void);
 /* iOS: get bridged pointer to iOS UIWindow */
 SOKOL_APP_API_DECL const void* sapp_ios_get_window(void);
+SOKOL_APP_API_DECL const void* sapp_ios_get_view_ctrl(void);
 
 /* D3D11: get pointer to ID3D11Device object */
 SOKOL_APP_API_DECL const void* sapp_d3d11_get_device(void);
@@ -10618,6 +10619,16 @@ SOKOL_API_IMPL const void* sapp_ios_get_window(void) {
         return 0;
     #endif
 }
+SOKOL_APP_API_DECL const void* sapp_ios_get_view_ctrl(void){
+    #if defined(_SAPP_IOS)
+        const void* obj = (__bridge const void*) _sapp.ios.view_ctrl;
+        SOKOL_ASSERT(obj);
+        return obj;
+    #else
+        return 0;
+    #endif
+}
+
 
 SOKOL_API_IMPL const void* sapp_d3d11_get_device(void) {
     SOKOL_ASSERT(_sapp.valid);

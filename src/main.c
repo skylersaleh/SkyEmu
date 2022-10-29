@@ -41,6 +41,10 @@
 #include "tinyfiledialogs.h"
 #endif
 
+#ifdef PLATFORM_IOS
+#include "ios_support.h"
+#endif
+
 #include "SDL.h"
 #include "lcd_shaders.h"
 
@@ -1428,6 +1432,11 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       igSetNextWindowSize((ImVec2){sidebar_w, height}, ImGuiCond_Always);
       igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse);
       desc->function();
+      float bottom_padding =0;
+      #ifdef PLATFORM_IOS
+      se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
+      #endif
+      igDummy((ImVec2){0,bottom_padding});
       igEnd();
       screen_x+=sidebar_w;
     }
@@ -2087,6 +2096,14 @@ void se_load_rom_overlay(bool visible){
           se_load_rom(outPath);
       }
     #endif
+    #ifdef PLATFORM_IOS
+      char * out_path= se_ios_open_file_picker(sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),valid_rom_file_types);
+      if(out_path){
+        se_load_rom(out_path);
+        free(out_path);
+      }
+    #endif 
+
   }
   igEnd();
   ImVec2 child_size; 
@@ -2721,6 +2738,7 @@ void se_draw_menu_panel(){
   }
   if(igButton("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
 
+#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
   igText(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
@@ -2736,6 +2754,8 @@ void se_draw_menu_panel(){
     sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
     se_emscripten_flush_fs();
   }
+  #endif
+
   se_draw_controller_config(&gui_state);
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
@@ -2745,6 +2765,11 @@ void se_draw_menu_panel(){
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   igCheckbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
+  float bottom_padding =0;
+  #ifdef PLATFORM_IOS
+  se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
+  #endif
+  igDummy((ImVec2){0,bottom_padding});
 
 }
 static void se_reset_audio_ring(){
@@ -2768,7 +2793,7 @@ static void frame(void) {
 
   sb_poll_controller_input(&emu_state.joy);
   se_poll_sdl();
-  const int width = sapp_width();
+  int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
   gui_state.screen_width=width;
@@ -2781,15 +2806,30 @@ static void frame(void) {
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
   ImGuiStyle* style = igGetStyle();
+  float top_padding =0;
+  float left_padding = 0, right_padding=0;
+#ifdef PLATFORM_IOS
+  se_ios_get_safe_ui_padding(&top_padding,NULL,&left_padding,&right_padding);
+  style->ScrollbarSize=4;
+  style->DisplaySafeAreaPadding.x = left_padding;
+  style->DisplaySafeAreaPadding.y = top_padding;
+#endif
+
   if (gui_state.test_runner_mode==false&&igBeginMainMenuBar())
   {
     int orig_x = igGetCursorPosX();
     igSetCursorPosX((width/se_dpi_scale())-100);
     igPushItemWidth(-0.01);
-    int v = (int)(gui_state.settings.volume*100); 
+    int v = (int)(gui_state.settings.volume*100);
+    float volume_padding=110;
+#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
     igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
     se_tooltip("Adjust volume");
     gui_state.settings.volume=v*0.01;
+#else
+    gui_state.settings.volume=1.;
+    volume_padding=0;
+#endif
     igPopItemWidth();
     igSetCursorPosX(orig_x);
 
@@ -2809,7 +2849,7 @@ static void frame(void) {
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
     int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
     float toggle_width = sel_width*num_toggles;
-    if(toggle_x+toggle_width>(width/se_dpi_scale())-110)toggle_x=igGetCursorPosX()+((width/se_dpi_scale()-igGetCursorPosX())-110-sel_width*num_toggles)*0.5;
+    if(toggle_x+toggle_width>(width/se_dpi_scale())-volume_padding)toggle_x=igGetCursorPosX()+((width/se_dpi_scale()-igGetCursorPosX())-volume_padding-sel_width*num_toggles)*0.5;
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
 
@@ -2905,14 +2945,16 @@ static void frame(void) {
     window_bg.w = SE_TRANSPARENT_BG_ALPHA; 
     igPushStyleColorVec4(ImGuiCol_WindowBg, window_bg);
   }
+  screen_x = left_padding;
+  screen_width-=(left_padding+right_padding)*se_dpi_scale();
   if(gui_state.sidebar_open){
-    igSetNextWindowPos((ImVec2){0,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+    igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
     igBegin("Menu",&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse);
     se_draw_menu_panel();
     igEnd();
-    screen_x = sidebar_w;
-    screen_width -=screen_x*se_dpi_scale(); 
+    screen_x += sidebar_w;
+    screen_width -=sidebar_w*se_dpi_scale();
     gui_state.key.last_bind_activitiy = -1;
   }
   if(gui_state.settings.draw_debug_menu){
