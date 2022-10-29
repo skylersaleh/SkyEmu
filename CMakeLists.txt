@@ -39,7 +39,10 @@ if (MSVC)
 
 endif()
 
-
+if((NOT ANDROID) AND (NOT IOS))
+    set(USE_SDL 1)
+    add_definitions(-DUSE_SDL=1)
+endif()
 
 if (NOT EMSCRIPTEN)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3")
@@ -86,28 +89,30 @@ add_library(cimgui STATIC
 set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 target_include_directories(cimgui INTERFACE src/cimgui)
-#=== LIBRARY: SDL2
-set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
-set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
-set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
-set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)
+if(USE_SDL)
+    #=== LIBRARY: SDL2
+    set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
+    set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
+    set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)    
 
-# Allow some projects to be built conditionally.
-# set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
-set(SDL2_DISABLE_INSTALL    ON CACHE BOOL "Disable installation of SDL2" FORCE)
-set(SDL2_DISABLE_UNINSTALL  ON CACHE BOOL "Disable uninstallation of SDL2" FORCE)
+    # Allow some projects to be built conditionally.
+    set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
+    set(SDL2_DISABLE_INSTALL    ON CACHE BOOL "Disable installation of SDL2" FORCE)
+    set(SDL2_DISABLE_UNINSTALL  ON CACHE BOOL "Disable uninstallation of SDL2" FORCE)    
 
-set(SDL_LIBC               ON CACHE BOOL "Use the system C library" ${OPT_DEF_LIBC} FORCE)
-set(SDL_ATOMIC OFF CACHE BOOL "SDL Video support" FORCE)
-set(SDL_AUDIO OFF CACHE BOOL "SDL Video support" FORCE)
-set(SDL_FILE OFF CACHE BOOL "SDL Video support" FORCE)
-set(SDL_THREAD OFF CACHE BOOL "SDL Video support" FORCE)
-set(SDL_RENDER OFF CACHE BOOL "SDL Video support" FORCE)
-set(SDL_LOCALE OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_LIBC               ON CACHE BOOL "Use the system C library" ${OPT_DEF_LIBC} FORCE)
+    set(SDL_ATOMIC OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_AUDIO OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_FILE OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_THREAD OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_RENDER OFF CACHE BOOL "SDL Video support" FORCE)
+    set(SDL_LOCALE OFF CACHE BOOL "SDL Video support" FORCE)    
 
-add_definitions(-DSDL_LEAN_AND_MEAN=1)
-add_subdirectory(src/SDL2)
-set_property(TARGET SDL2-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    add_definitions(-DSDL_LEAN_AND_MEAN=1)
+    add_subdirectory(src/SDL2)
+    set_property(TARGET SDL2-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
 
 
 if (EMSCRIPTEN)
@@ -127,6 +132,7 @@ set(SOKOL_HEADERS
     src/sokol/sokol_glue.h)
 if(ANDROID)
     add_definitions(-DPLATFORM_ANDROID)
+    set(LINK_LIBS ${LINK_LIBS}  GLESv3 EGL OpenSLES log android)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
@@ -208,7 +214,9 @@ add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
 set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c)
 
-include_directories(${SDL2_INCLUDE_DIRS})
+if(USE_SDL)
+    include_directories(${SDL2_INCLUDE_DIRS})
+endif()
 
 if(IOS)
     set(SKYEMU_SRC ${SKYEMU_SRC} src/ios_support.m)
@@ -233,6 +241,8 @@ elseif(APPLE)
         set_property(TARGET ${PROJECT_NAME} PROPERTY XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "SkyEmu")
         set_property(TARGET ${PROJECT_NAME} PROPERTY MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/ios-info.plist.in")
     endif()
+elseif(ANDROID)
+    add_library(${PROJECT_NAME} SHARED ${SKYEMU_SRC})
 else()
     add_executable(${PROJECT_NAME} ${SKYEMU_SRC})
 endif()
@@ -250,7 +260,10 @@ set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
 add_subdirectory(src/capstone)
 set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
-set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES} SDL2-static)
+set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
+if(USE_SDL)
+  set(LINK_LIBS ${LINK_LIBS} SDL2-static)
+endif()
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 if(MSVC)
