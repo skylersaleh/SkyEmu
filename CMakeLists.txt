@@ -93,7 +93,7 @@ set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
 set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)
 
 # Allow some projects to be built conditionally.
-set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
+# set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
 set(SDL2_DISABLE_INSTALL    ON CACHE BOOL "Disable installation of SDL2" FORCE)
 set(SDL2_DISABLE_UNINSTALL  ON CACHE BOOL "Disable uninstallation of SDL2" FORCE)
 
@@ -125,6 +125,9 @@ set(SOKOL_HEADERS
     src/sokol/sokol_imgui.h
     src/sokol/sokol_audio.h
     src/sokol/sokol_glue.h)
+if(ANDROID)
+    add_definitions(-DPLATFORM_ANDROID)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
     target_link_libraries(sokol PUBLIC

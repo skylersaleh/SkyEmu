@@ -5,6 +5,8 @@
 #define SOKOL_D3D11
 #elif defined(__EMSCRIPTEN__)
 #define SOKOL_GLES2
+#elif defined(PLATFORM_ANDROID)
+#define SOKOL_GLES3
 #elif defined(__APPLE__)
 #error "Must use sokol.m on macOS"
 #else
