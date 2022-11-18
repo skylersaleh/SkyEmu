@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 
-if(APPLE)
+if(APPLE AND (NOT IOS) AND (NOT ANDROID))
+  set(MACOS 1)
+endif()
+if(MACOS OR IOS)
   project(SkyEmu OBJC C CXX)
 else()
   project(SkyEmu C CXX)
 endif()
-
 
 
 set(CMAKE_C_STANDARD 11)
@@ -39,18 +41,23 @@ if (MSVC)
 
 endif()
 
-if((NOT ANDROID) AND (NOT IOS))
+if( (NOT ANDROID) AND (NOT IOS))
     set(USE_SDL 1)
     add_definitions(-DUSE_SDL=1)
 endif()
 
 if (NOT EMSCRIPTEN)
-  set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3")
-  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -g -O3") 
+  set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3 ")
+  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -g -O3 ")
 else () 
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O3 -DNDEBUG")
   set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O3 -DNDEBUG") 
 endif ()
+if(ANDROID)
+  set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}")
+  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS}") 
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 find_package(OpenGL)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -63,7 +70,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL Linux)
 endif()
 
 # TinyFileDialogs
-if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID))
+if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND FALSE)
     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
     add_library(tinyfd STATIC 
@@ -90,12 +97,14 @@ set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 target_include_directories(cimgui INTERFACE src/cimgui)
 if(USE_SDL)
+    message("Build with SDL!")
+
     #=== LIBRARY: SDL2
     set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
     set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
     set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
     set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)    
-
+    set(SDL_STATIC_PIC ON CACHE BOOL "Build Static PIC" FORCE)
     # Allow some projects to be built conditionally.
     set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
     set(SDL2_DISABLE_INSTALL    ON CACHE BOOL "Disable installation of SDL2" FORCE)
@@ -133,6 +142,7 @@ set(SOKOL_HEADERS
 if(ANDROID)
     add_definitions(-DPLATFORM_ANDROID)
     set(LINK_LIBS ${LINK_LIBS}  GLESv3 EGL OpenSLES log android)
+    message("Android Build!")
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
@@ -226,7 +236,7 @@ endif()
 if(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
     add_executable(${PROJECT_NAME} WIN32 ${SKYEMU_SRC} ${APP_ICON_RESOURCE_WINDOWS})
-elseif(APPLE)
+elseif(MACOS OR IOS)
     set(MACOSX_BUNDLE_GUI_IDENTIFIER "SkyEmu")
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${GIT_COMMIT_HASH})
     set(MACOSX_BUNDLE_LONG_VERSION_STRING ${GIT_COMMIT_HASH})
@@ -268,7 +278,7 @@ endif()
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 if(MSVC)
     set_property(TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-elseif(APPLE)
+elseif(MACOS OR IOS)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE ON
         MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME}

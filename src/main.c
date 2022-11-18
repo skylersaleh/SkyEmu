@@ -37,16 +37,27 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#undef USE_TINY_FILE_DIALOGS
 #ifdef USE_TINY_FILE_DIALOGS
 #include "tinyfiledialogs.h"
+#else 
+#define UNICODE
+#define USE_BUILT_IN_FILEBROWSER
+#include "tinydir.h"
 #endif
 
+#ifdef PLATFORM_ANDROID
+  #include <android/log.h>
+#endif
 #ifdef PLATFORM_IOS
 #include "ios_support.h"
 #endif
 #ifdef USE_SDL
 #include "SDL.h"
 #endif 
+#ifdef PLATFORM_ANDROID
+#include <android/native_activity.h>
+#endif
 #include "lcd_shaders.h"
 
 #define SE_HAT_MASK (1<<16)
@@ -148,6 +159,15 @@ typedef struct{
   float waveform_fps_emulation[SE_STATS_GRAPH_DATA];
   float waveform_fps_render[SE_STATS_GRAPH_DATA];
 }se_emulator_stats_t;
+#define SE_FILE_BROWSER_CLOSED 0
+#define SE_FILE_BROWSER_OPEN 1
+#define SE_FILE_BROWSER_SELECTED 2
+
+typedef struct{
+  char current_path[SB_FILE_PATH_SIZE];
+  char file_path[SB_FILE_PATH_SIZE];
+  int state; // 0 = Closed no file selected,  1= Open,  2 = closed file selected
+}se_file_browser_state_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -180,6 +200,7 @@ typedef struct {
     sg_shader lcd_prog;
     sg_buffer quad_vb;
     sg_pipeline lcd_pipeline;
+    se_file_browser_state_t file_browser; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -250,15 +271,20 @@ static const char* se_get_pref_path(){
   static const char* cached_pref_path=NULL;
   if(cached_pref_path==NULL)cached_pref_path=SDL_GetPrefPath("Sky","SkyEmu");
   return cached_pref_path;
-#else
-  return "";
+#elif defined(PLATFORM_ANDROID)
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  if(activity->internalDataPath)return activity->internalDataPath;
 #endif
+  return "";
 }
 
 static float se_dpi_scale(){
   float dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
   dpi_scale*=1.10;
+#ifdef PLATFORM_ANDROID
+  dpi_scale*=3.3;
+#endif
   return dpi_scale;
 }
 const char* se_keycode_to_string(int keycode){
@@ -1975,6 +2001,48 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igPopID();
   return clicked; 
 }
+#ifdef PLATFORM_ANDROID
+void se_android_open_file_picker(){
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
+
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  if ( nResult != JNI_ERR ) 
+  {
+      // Retrieves NativeActivity.
+      jobject nativeActivity = activity->clazz;
+      jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+      jmethodID MethodShowKeyboard = (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "openFile", "()V" );
+      (*pJNIEnv)->CallVoidMethod(pJNIEnv, nativeActivity, MethodShowKeyboard );
+      
+
+      // Finished with the JVM.
+      (*pJavaVM)->DetachCurrentThread(pJavaVM);
+  }
+}
+void se_android_request_permissions(){
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
+
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  if ( nResult != JNI_ERR ) 
+  {
+      // Retrieves NativeActivity.
+      jobject nativeActivity = activity->clazz;
+      jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+      jmethodID MethodShowKeyboard = (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "requestPermissions", "()V" );
+      (*pJNIEnv)->CallVoidMethod(pJNIEnv, nativeActivity, MethodShowKeyboard );
+      
+
+      // Finished with the JVM.
+      (*pJavaVM)->DetachCurrentThread(pJavaVM);
+  }
+}
+#endif
 #ifdef EMSCRIPTEN
 void se_download_emscripten_file(const char * path){
   const char * base,*file, *ext;
@@ -2005,6 +2073,23 @@ void se_download_emscripten_file(const char * path){
   }, name, data, data_size);
 }
 #endif 
+
+int file_sorter (const void * a, const void * b) {
+  tinydir_file*af = (tinydir_file*)a;
+  tinydir_file*bf = (tinydir_file*)b;
+  if(af->is_dir!=bf->is_dir)return af->is_dir?-1:1;
+  int i=0;
+  for(i = 0; af->path[i];++i){
+    if(af->path[i]!=bf->path[i]){
+      char ac = af->path[i];
+      char bc = bf->path[i];
+      if(ac>='A'&&ac<='Z')ac=ac-'A'+'a';
+      if(bc>='A'&&bc<='Z')bc=bc-'A'+'a';
+      if(ac!=bc)return ac>bc?1:-1;
+    }
+  }
+  return bf->path[i]=='\0'?0:-1;
+}
 void se_load_rom_overlay(bool visible){
   static bool last_visible = false;
   if(visible==false){
@@ -2095,22 +2180,34 @@ void se_load_rom_overlay(bool visible){
   prompt2 = "You can also drag & drop a ROM/save file to load it";
   #endif
 
-  if(se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,hover,0)){
-    #ifdef USE_TINY_FILE_DIALOGS
-      char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
-                                          valid_rom_file_types,NULL,0);
-      if (outPath){
-          se_load_rom(outPath);
-      }
-    #endif
-    #ifdef PLATFORM_IOS
-      char * out_path= se_ios_open_file_picker(sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),valid_rom_file_types);
-      if(out_path){
-        se_load_rom(out_path);
-        free(out_path);
-      }
-    #endif 
-
+  if(gui_state.file_browser.state!=SE_FILE_BROWSER_OPEN){
+    if(se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,hover,0)){
+      #ifdef USE_TINY_FILE_DIALOGS
+        char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
+                                            valid_rom_file_types,NULL,0);
+        if (outPath){
+            se_load_rom(outPath);
+        }
+      #endif
+      #ifdef PLATFORM_IOS
+        char * out_path= se_ios_open_file_picker(sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),valid_rom_file_types);
+        if(out_path){
+          se_load_rom(out_path);
+          free(out_path);
+        }
+      #endif 
+      #ifdef USE_BUILT_IN_FILEBROWSER
+        gui_state.file_browser.state=SE_FILE_BROWSER_OPEN;
+      #endif
+    }
+  }else{
+    if(se_selectable_with_box("Exit File Browser","Go back to recently loaded games",ICON_FK_BAN,hover,0)){
+      gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+    }
+    const char* parent_dir = sb_parent_path(gui_state.file_browser.current_path);
+    if(se_selectable_with_box("Go to parent directory",parent_dir,ICON_FK_ARROW_UP,hover,0)){
+      strncpy(gui_state.file_browser.current_path, parent_dir, SB_FILE_PATH_SIZE);
+    }
   }
   igEnd();
   ImVec2 child_size; 
@@ -2119,38 +2216,86 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize(child_size,ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
-  igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
-  int num_entries=0;
-  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    se_game_info_t *info = gui_state.recently_loaded_games+i;
-    if(strcmp(info->path,"")==0)break;
-    igPushIDInt(i);
-    const char* base, *file_name, *ext; 
-    sb_breakup_path(info->path,&base,&file_name,&ext);
-    char ext_upper[8]={0};
-    for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
-    int reduce_width = 0; 
-    #ifdef EMSCRIPTEN
-    char save_file_path[SB_FILE_PATH_SIZE];
-    snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
-    bool save_exists = sb_file_exists(save_file_path);
-    if(save_exists)reduce_width=85; 
-    #endif
-    if(se_selectable_with_box(file_name,info->path,ext_upper,false,reduce_width)){
-      se_load_rom(info->path);
+  if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED){
+    igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
+    int num_entries=0;
+    for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+      se_game_info_t *info = gui_state.recently_loaded_games+i;
+      if(strcmp(info->path,"")==0)break;
+      igPushIDInt(i);
+      const char* base, *file_name, *ext; 
+      sb_breakup_path(info->path,&base,&file_name,&ext);
+      char ext_upper[8]={0};
+      for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
+      int reduce_width = 0; 
+      #ifdef EMSCRIPTEN
+      char save_file_path[SB_FILE_PATH_SIZE];
+      snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
+      bool save_exists = sb_file_exists(save_file_path);
+      if(save_exists)reduce_width=85; 
+      #endif
+      if(se_selectable_with_box(file_name,info->path,ext_upper,false,reduce_width)){
+        se_load_rom(info->path);
+      }
+      #ifdef EMSCRIPTEN
+      if(save_exists){
+        igSameLine(0,4);
+        if(igButton(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
+      }
+      #endif 
+      igSeparator();
+      num_entries++;
+      igPopID();
     }
-    #ifdef EMSCRIPTEN
-    if(save_exists){
-      igSameLine(0,4);
-      if(igButton(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
+    if(num_entries==0)igText("No recently played games");
+    igEnd();
+  }else{
+    igBegin(ICON_FK_FOLDER_OPEN " Open File From Disk",NULL,ImGuiWindowFlags_NoCollapse);
+    tinydir_dir dir; 
+    if(tinydir_open(&dir, gui_state.file_browser.current_path)==-1){
+      strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
+      if(tinydir_open(&dir, gui_state.file_browser.current_path)==-1){
+        printf("Error opening %s\n",gui_state.file_browser.current_path);
+      }
+    }else{
+      int max_files = 2048;
+      tinydir_file *files = (tinydir_file*)malloc(sizeof(tinydir_file)*max_files);
+      int f = 0; 
+      while(dir.has_next&&f<max_files){
+        tinydir_readfile(&dir, &files[f]);
+        char *ext = files[f].extension;
+        bool show_item = true; 
+        if(!files[f].is_dir){
+          show_item=false;
+          for(int i=0;i<sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]);++i){
+            if(sb_path_has_file_ext(files[f].path,valid_rom_file_types[i])){show_item=true;break;}
+          }
+        }else{
+          const char* name = files[f].name;
+          if(strcmp(name,".")==0||strcmp(name,"..")==0)show_item=false;
+        }
+        if(show_item)++f;
+        tinydir_next(&dir);
+      }
+      int total_files = f;
+      qsort(files,f,sizeof(tinydir_file),file_sorter);
+      for(int f = 0;f<total_files;++f) {
+        char *ext = ICON_FK_FOLDER_OPEN;
+        if (!files[f].is_dir) {
+          char* base, *file;
+          sb_breakup_path(files[f].path, &base, &file, &ext);
+        }
+        if (se_selectable_with_box(files[f].name, files[f].path, ext, false, 0)) {
+          if (files[f].is_dir)
+            strncpy(gui_state.file_browser.current_path, files[f].path, SB_FILE_PATH_SIZE);
+          else se_load_rom(files[f].path);
+        }
+      }
+      free(files);
+      tinydir_close(&dir);
     }
-    #endif 
-    igSeparator();
-    num_entries++;
-    igPopID();
+    igEnd();
   }
-  if(num_entries==0)igText("No recently played games");
-  igEnd();
   return;
 }
 #ifdef USE_SDL
@@ -2787,8 +2932,8 @@ void se_draw_menu_panel(){
 static void se_reset_audio_ring(){
   //Reset the audio ring to 50% full with empty samples to avoid crackles while the buffer fills back up. 
   emu_state.audio_ring_buff.read_ptr = 0;
-  emu_state.audio_ring_buff.write_ptr=SB_AUDIO_RING_BUFFER_SIZE/2;
-  for(int i=0;i<SB_AUDIO_RING_BUFFER_SIZE/2;++i)emu_state.audio_ring_buff.data[i]=0; 
+  emu_state.audio_ring_buff.write_ptr=4096;
+  for(int i=0;i<SB_AUDIO_RING_BUFFER_SIZE;++i)emu_state.audio_ring_buff.data[i]=0; 
 }
 static void se_init_audio(){
  saudio_setup(&(saudio_desc){
@@ -3191,6 +3336,10 @@ static void init(void) {
   };
   gui_state.quad_vb = sg_make_buffer(&vb_desc);
   sg_pop_debug_group();
+#ifdef PLATFORM_ANDROID
+  se_android_request_permissions();
+  sapp_android_disable_vsync();
+  #endif
 }
 static void cleanup(void) {
   simgui_shutdown();

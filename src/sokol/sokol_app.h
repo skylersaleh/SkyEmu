@@ -1301,6 +1301,7 @@ SOKOL_APP_API_DECL const void* sapp_wgpu_get_depth_stencil_view(void);
 
 /* Android: get native activity handle */
 SOKOL_APP_API_DECL const void* sapp_android_get_native_activity(void);
+SOKOL_APP_API_DECL const void* sapp_android_disable_vsync(void);
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -7559,6 +7560,10 @@ _SOKOL_PRIVATE bool _sapp_android_init_egl(void) {
     _sapp.android.context = context;
     return true;
 }
+SOKOL_APP_API_DECL const void* sapp_android_disable_vsync(void){
+    //eglSwapInterval(_sapp.android.display,0);
+}
+
 
 _SOKOL_PRIVATE void _sapp_android_cleanup_egl(void) {
     if (_sapp.android.display != EGL_NO_DISPLAY) {

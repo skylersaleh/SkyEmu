@@ -94,7 +94,7 @@
 #define SE_NUM_KEYBINDS 26
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
-#define SB_AUDIO_RING_BUFFER_SIZE (2048*4)
+#define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 
 #define SYSTEM_UNKNOWN 0
 #define SYSTEM_GB 1
@@ -162,6 +162,8 @@ static inline float sb_random_float(float min, float max){
   return min + v*(max-min);
 }
 static inline bool sb_path_has_file_ext(const char * path, const char * ext){
+  if(ext[0]=='*')ext++;
+  if(ext[0]=='.')ext++;
   int ext_len = strlen(ext);
   int path_len = strlen(path);
   if(path_len<ext_len)return false;
@@ -233,6 +235,40 @@ static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size)
 }
 static void sb_free_file_data(uint8_t* data){
   if(data)free(data);
+}
+static const char* sb_parent_path(const char* path){
+  static char tmp_path[SB_FILE_PATH_SIZE];
+  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
+  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
+  size_t sz = strlen(tmp_path);
+  while(sz>1){
+    char c = tmp_path[sz-1];
+    bool is_slash = c=='\\'||c=='/';
+    if(!is_slash){break;}
+    tmp_path[--sz]='\0';
+  }
+  if(sz){
+    bool found_dir = false;
+    while(sz--){
+      char c = tmp_path[sz];
+      bool is_slash = c=='\\'||c=='/';
+      if(found_dir&&!is_slash)break;
+      if(is_slash)found_dir = true;
+      tmp_path[sz]='\0';
+    }
+  }
+  return tmp_path;
+}
+static const char *sb_get_home_path(){
+  static char homedir[SB_FILE_PATH_SIZE];
+#ifdef PLATFORM_ANDROID
+  return "/sdcard/";
+#elif defined(_WIN32)
+  snprintf(homedir, SB_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
+#else
+  snprintf(homedir, SB_FILE_PATH_SIZE, "%s", getenv("HOME"));
+#endif
+  return homedir;
 }
 static void sb_breakup_path(const char* path, const char** base_path, const char** file_name, const char** ext){
   static char tmp_path[SB_FILE_PATH_SIZE];

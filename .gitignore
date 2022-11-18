@@ -42,3 +42,7 @@ build*
 *.dia
 *.metal
 *.metallib
+.cxx
+.idea
+.gradle
+.google
