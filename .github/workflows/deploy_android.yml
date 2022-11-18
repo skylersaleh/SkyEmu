@@ -12,28 +12,16 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: '8'
-      - name: Configure & Build 🔧 
-        run: |
-          mkdir build
-          cd build
-          ../tools/build_android.sh
-          
+      - uses: sparkfabrik/android-build-action@v1.0.0
+        with:
+          project-path: tools/android_project
+          output-path: SkyEmu.apk
+          gradle-task: assemble
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
         with:
            name: AndroidRelease
-           path: build/cmake_build
-        #uses: softprops/action-gh-release@v0.1.5
-        #with:
-        #  # Note-worthy description of changes in release
-        #  # body: # optional
-        #  # Path to load note-worthy description of changes in release from
-        #  # body_path: # optional
-        #  # Gives the release a custom name. Defaults to tag name
-        #  name: LinuxRelease
-        #  # Identify the release as a prerelease. Defaults to false
-        #  prerelease: True
-        #  # Newline-delimited list of path globs for asset files to upload
-        #  files: build/bin/*
+           path: SkyEmu.apk
+        
  

@@ -1,0 +1,48 @@
+apply plugin: 'com.android.application'
+
+android {
+    /*signingConfigs {
+        release {
+            storePassword 'skyemu'
+            keyAlias 'key0'
+            keyPassword 'skyemu'
+            storeFile file('/Users/skylersaleh/skyemu-android-key2')
+        }
+    }*/
+    compileSdkVersion 30
+    ndkVersion '22.1.7171670'
+
+    defaultConfig {
+        //signingConfig signingConfigs.release
+        applicationId = 'com.sky.SkyEmu'
+        minSdkVersion 19
+        targetSdkVersion 30
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static', '-DANDROID=1', '-DANDROID_ABI=arm64-v8a', '-DNDK_DEBUG=0', '-DCMAKE_BUILD_TYPE=RELWITHDEBINFO',"-DANDROID_ARM_NEON=TRUE"
+            }
+        }
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'),
+                    'proguard-rules.pro'
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            version '3.18.1'
+            path '../../../CMakeLists.txt'
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'androidx.appcompat:appcompat:1.0.2'
+    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
+}
