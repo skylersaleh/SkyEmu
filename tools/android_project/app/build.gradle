@@ -1,19 +1,19 @@
 apply plugin: 'com.android.application'
 
 android {
-    /*signingConfigs {
+    signingConfigs {
         release {
-            storePassword 'skyemu'
-            keyAlias 'key0'
-            keyPassword 'skyemu'
-            storeFile file('/Users/skylersaleh/skyemu-android-key2')
+            storePassword 'skyemu-super-secure-password'
+            keyAlias 'skyemu-open-code-certificate'
+            keyPassword 'skyemu-super-secure-password'
+            storeFile file('../skyemu-open-signing-store')
         }
-    }*/
+    }
     compileSdkVersion 30
     ndkVersion '22.1.7171670'
 
     defaultConfig {
-        //signingConfig signingConfigs.release
+        signingConfig signingConfigs.release
         applicationId = 'com.sky.SkyEmu'
         minSdkVersion 19
         targetSdkVersion 30
