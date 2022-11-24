@@ -17,7 +17,8 @@ jobs:
           brew install graphicsmagick imagemagick
           npm install --global create-dmg
           create-dmg --dmg-title=SkyEmu 'bin/SkyEmu.app' || true
-          mv "SkyEmu .dmg" "SkyEmu.dmg" || true
+          ls 
+          mv SkyEmu*.dmg "SkyEmu.dmg"
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
