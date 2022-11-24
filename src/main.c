@@ -37,14 +37,13 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-#undef USE_TINY_FILE_DIALOGS
 #ifdef USE_TINY_FILE_DIALOGS
 #include "tinyfiledialogs.h"
-#else 
+#endif
+
 #define UNICODE
 #define USE_BUILT_IN_FILEBROWSER
 #include "tinydir.h"
-#endif
 
 #ifdef PLATFORM_ANDROID
   #include <android/log.h>
@@ -2182,7 +2181,14 @@ void se_load_rom_overlay(bool visible){
 
   if(gui_state.file_browser.state!=SE_FILE_BROWSER_OPEN){
     if(se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,hover,0)){
+      #ifdef USE_BUILT_IN_FILEBROWSER
+        gui_state.file_browser.state=SE_FILE_BROWSER_OPEN;
+      #endif
       #ifdef USE_TINY_FILE_DIALOGS
+        if(tinyfd_openFileDialog("tinyfd_query","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
+                                            valid_rom_file_types,NULL,0)){
+          gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+        }
         char *outPath= tinyfd_openFileDialog("Open ROM","", sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),
                                             valid_rom_file_types,NULL,0);
         if (outPath){
@@ -2190,15 +2196,13 @@ void se_load_rom_overlay(bool visible){
         }
       #endif
       #ifdef PLATFORM_IOS
+        gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
         char * out_path= se_ios_open_file_picker(sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]),valid_rom_file_types);
         if(out_path){
           se_load_rom(out_path);
           free(out_path);
         }
       #endif 
-      #ifdef USE_BUILT_IN_FILEBROWSER
-        gui_state.file_browser.state=SE_FILE_BROWSER_OPEN;
-      #endif
     }
   }else{
     if(se_selectable_with_box("Exit File Browser","Go back to recently loaded games",ICON_FK_BAN,hover,0)){
