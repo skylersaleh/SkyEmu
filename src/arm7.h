@@ -63,6 +63,7 @@ typedef struct {
   36: SPSR_und
   */
   uint32_t prefetch_pc;
+  uint32_t step_instructions;//Instructions to step before triggering a breakpoint
   uint32_t prefetch_opcode[3]; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
@@ -736,9 +737,7 @@ static void arm_check_log_file(arm7_t*cpu){
       int prev_mode = prev_cpsr&0x1f;
       if(log_mode==0x12&&prev_mode!=0x12){
         printf("Interrupt!\n");
-        cpu->trigger_breakpoint=false;
-        cpu->registers[PC]=0xffff0018;
-       
+        cpu->trigger_breakpoint=false;       
       }
       thumb = arm7_get_thumb_bit(cpu);
       if(thumb){
@@ -819,6 +818,10 @@ static void arm9_exec_instruction(arm7_t* cpu){
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
   }
+  if(SB_UNLIKELY(cpu->step_instructions)){
+    --cpu->step_instructions;
+    if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
+  }
 }
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
   if(SB_UNLIKELY(cpu->wait_for_interrupt)){
@@ -863,6 +866,10 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     arm7t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+  }
+  if(SB_UNLIKELY(cpu->step_instructions)){
+    --cpu->step_instructions;
+    if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
   }
 }
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {

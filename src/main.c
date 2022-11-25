@@ -847,6 +847,10 @@ void se_draw_emu_stats(){
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
+  if(igButton("Step Instruction",(ImVec2){0,0})){
+    arm->step_instructions=1;
+    emu_state.run_mode= SB_MODE_RUN;
+  }
   int r = 0; 
   igText(ICON_FK_SERVER " Registers");
   igSeparator();
