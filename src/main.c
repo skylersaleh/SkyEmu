@@ -181,6 +181,8 @@ typedef struct {
     }touch_points[SAPP_MAX_TOUCHPOINTS];
     float last_touch_time;
     int mem_view_address;
+    int mem_dump_size;
+    int mem_dump_start_address;
     bool sidebar_open;
     se_keybind_state_t key;
     se_controller_state_t controller;
@@ -851,6 +853,13 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     arm->step_instructions=1;
     emu_state.run_mode= SB_MODE_RUN;
   }
+  if(arm->log_cmp_file){
+    igSameLine(0,0);
+    if(igButton("Disconnect Log",(ImVec2){0,0})){
+      fclose(arm->log_cmp_file);
+      arm->log_cmp_file=NULL;
+    }
+  }
   int r = 0; 
   igText(ICON_FK_SERVER " Registers");
   igSeparator();
@@ -889,7 +898,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   unsigned pc = arm7_reg_read(arm,PC);
   bool thumb = arm7_get_thumb_bit(arm);
   pc-=thumb? 4: 8;
-  uint8_t buffer[64];
+  uint8_t buffer[128];
   int buffer_size = sizeof(buffer);
   if(thumb)buffer_size/=2;
   int off = buffer_size/2;
@@ -960,6 +969,21 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   if(igInputInt("data (signed 8b)",&v, 1,5,ImGuiInputTextFlags_None)){
     (*write)(gui->mem_view_address,v);
   }
+  igText(ICON_FK_FILE_O " Dump Memory to File");
+  igSeparator();
+  igInputInt("Start Address",&gui->mem_dump_start_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  igInputInt("Size",&gui->mem_dump_size, 1,5,ImGuiInputTextFlags_None);
+  if(igButton("Save Memory Dump",(ImVec2){0,0})){
+    uint8_t *data = (uint8_t*)malloc(gui->mem_dump_size);
+    for(int i=0;i<gui->mem_dump_size;++i)data[i]=(*read)(gui->mem_dump_start_address+i);
+    char *base, *file_name,*ext;
+    sb_breakup_path(emu_state.save_file_path,&base,&file_name,&ext);
+    char new_path[SB_FILE_PATH_SIZE];
+    snprintf(new_path,SB_FILE_PATH_SIZE,"%s/%s-memdump.bin",base,file_name);
+    sb_save_file_data(new_path,data,gui->mem_dump_size);
+    free(data);
+  }
+
 }
 void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write){
   for(int i = 0; i<mmios_size;++i){
@@ -1387,6 +1411,19 @@ void nds7_mem_debugger(){se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_by
 void nds9_mem_debugger(){se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);}
 void nds7_cpu_debugger(){se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); }
 void nds9_cpu_debugger(){se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read);}
+void nds_io_debugger(){
+  nds_t * nds = &core.nds;
+  for(int cpu=0;cpu<2;++cpu){
+    igText(cpu? ICON_FK_EXCHANGE " ARM9 IPC FIFO":ICON_FK_EXCHANGE " ARM7 IPC FIFO");
+    igSeparator();
+    igText("Write Pointer: %d\n", nds->ipc[cpu].write_ptr);
+    igText("Read Pointer: %d\n", nds->ipc[cpu].read_ptr);
+    igText("Size: %d\n", (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f);
+    igText("Error: %d\n", nds->ipc[cpu].error);
+
+  }
+}
+
 se_debug_tool_desc_t gba_debug_tools[]={
   {ICON_FK_TELEVISION, ICON_FK_TELEVISION " CPU", gba_cpu_debugger},
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gba_mmio_debugger},
@@ -1407,6 +1444,8 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_SITEMAP " 9", ICON_FK_SITEMAP " ARM9 MMIO", nds9_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O " 7", ICON_FK_PENCIL_SQUARE_O " ARM7 Memory",nds7_mem_debugger},
   {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
+  {ICON_FK_INFO_CIRCLE, ICON_FK_INFO_CIRCLE " NDS IO",nds_io_debugger},
+
   {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
