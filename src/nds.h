@@ -3855,7 +3855,7 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
     ext_key|= !(joy->inputs[SE_KEY_X]>0.3) <<0;
     ext_key|= !(joy->inputs[SE_KEY_Y]>0.3) <<1;
     ext_key|= !(joy->inputs[SE_KEY_PEN_DOWN]>0.3)<<6;
-    ext_key|= !(joy->inputs[SE_KEY_FOLD_SCREEN]>0.3) <<7;
+    ext_key|= (joy->inputs[SE_KEY_FOLD_SCREEN]>0.3) <<7;
     ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
