@@ -4293,8 +4293,14 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         }
       }
       //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
-      if(nds->arm7.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm7.trigger_breakpoint=false; break;}
-      if(nds->arm9.trigger_breakpoint){emu->run_mode = SB_MODE_PAUSE; nds->arm9.trigger_breakpoint=false; break;}
+      if(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint){
+        emu->run_mode = SB_MODE_PAUSE;
+        nds->arm7.trigger_breakpoint=false;
+        nds->arm9.trigger_breakpoint=false;
+        printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
+        printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
+        break;
+      }
     }
     ticks=2;
     last_tick=ticks;
