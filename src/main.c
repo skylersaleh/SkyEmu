@@ -253,6 +253,7 @@ typedef struct{
   uint32_t system;
   uint8_t padding[20];
 }se_emu_id;
+gui_state_t gui_state={ 0 }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation);
@@ -626,7 +627,7 @@ double se_time(){
   return stm_sec(stm_diff(stm_now(),base_time));
 }
 static void se_tooltip(const char * tooltip){
-  if(igGetCurrentContext()->HoveredIdTimer<1.5)return;
+  if(igGetCurrentContext()->HoveredIdTimer<1.5||se_time()-gui_state.last_touch_time<1.5)return;
   if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
     igSetTooltip(tooltip);
   }
@@ -654,7 +655,6 @@ double se_fps_counter(int tick){
   return 1.0/fps; 
 }
 
-gui_state_t gui_state={ 0 }; 
 static void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
     EM_ASM( FS.syncfs(function (err) {}););
