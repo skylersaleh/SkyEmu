@@ -144,7 +144,9 @@ typedef struct{
   uint32_t screen_shader; //0: pixels, 1: lcd, 2: lcd+subpixels, 3: upscale
   uint32_t screen_rotation; //0: No rotation, 1: Rotate Left, 2: Rotate Right, 3: Upside Down
   uint32_t stretch_to_fit;
-  uint32_t padding[242];
+  uint32_t auto_hide_touch_controls;
+  float touch_controls_opacity; 
+  uint32_t padding[240];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1831,13 +1833,16 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   ImU32 line_color2 =0x000000;
   ImU32 sel_color =0x000000;
 
-  float opacity = 5.-(se_time()-gui_state.last_touch_time);
-  if(opacity<=0){opacity=0;return;}
+  float opacity = 3.-(se_time()-gui_state.last_touch_time);
   if(opacity>1)opacity=1;
+  if(!gui_state.settings.auto_hide_touch_controls)opacity=1;   
+  if(opacity<=0){opacity=0;return;}
+  opacity*=gui_state.settings.touch_controls_opacity;
 
-  line_color|=(int)(opacity*0x48)<<24;
-  line_color2|=(int)(opacity*0x48)<<24;
-  sel_color|=(int)(opacity*0x48)<<24;
+
+  line_color|=(int)(opacity*0x8f)<<24;
+  line_color2|=(int)(opacity*0x8f)<<24;
+  sel_color|=(int)(opacity*0x8f)<<24;
 
   int line_w0 = 1;
   int line_w1 = 3; 
@@ -2964,6 +2969,18 @@ void se_draw_menu_panel(){
   #ifdef USE_SDL
   se_draw_controller_config(&gui_state);
   #endif
+  igText(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
+  igSeparator();
+
+  igText("Opacity");igSameLine(win_w*0.4,0);
+  igPushItemWidth(-1);
+  igSliderFloat("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f",ImGuiSliderFlags_AlwaysClamp);
+  igPopItemWidth();
+  bool auto_hide = gui_state.settings.auto_hide_touch_controls;
+  igCheckbox("Hide when inactive",&auto_hide);
+  gui_state.settings.auto_hide_touch_controls = auto_hide;
+
+
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
   bool light_mode = gui_state.settings.light_mode; 
@@ -3316,6 +3333,12 @@ void se_load_settings(){
       gui_state.settings.stretch_to_fit = 0; 
     }
     if(gui_state.settings.screen_shader>4)gui_state.settings.screen_shader=4;
+    if(gui_state.settings.settings_file_version<2){
+      gui_state.settings.settings_file_version = 2; 
+      gui_state.settings.auto_hide_touch_controls=true;
+      gui_state.settings.touch_controls_opacity = 0.5;
+    }
+    if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
     gui_state.last_saved_settings=gui_state.settings;
   }
 }
