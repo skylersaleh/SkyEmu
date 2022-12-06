@@ -3316,7 +3316,7 @@ void se_load_settings(){
     char settings_path[SB_FILE_PATH_SIZE];
     snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
     if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){gui_state.settings.settings_file_version=-1;}
-    int max_settings_version_supported =1;
+    int max_settings_version_supported =2;
     if(gui_state.settings.settings_file_version>max_settings_version_supported){
       gui_state.settings.volume=0.8;
       gui_state.settings.draw_debug_menu = false; 
