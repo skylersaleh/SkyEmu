@@ -396,6 +396,12 @@ typedef enum{
 #define NDS7_SNDCAP1DAD 0x04000518 /* Sound Capture 1 Destination Address (R/W) */
 #define NDS7_SNDCAP1LEN 0x0400051C /* Sound Capture 1 Length (W) */
 
+#define NDS_SPI_POWER 0 
+#define NDS_SPI_FIRMWARE 1
+#define NDS_SPI_TOUCH 2
+
+#define NDS_FIRMWARE_SIZE (256*1024)
+
 
 mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DISPCNT , "DISPCNT ", { 
@@ -1431,7 +1437,16 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS_GCBUS_SEED1_LO,  "GCBUS_SEED1_LO", { 0 } }, /* Gamecard Encryption Seed 1 Lower 32bit */
   { NDS_GCBUS_SEED0_HI,  "GCBUS_SEED0_HI", { 0 } }, /* Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused) */
   { NDS_GCBUS_SEED1_HI,  "GCBUS_SEED1_HI", { 0 } }, /* Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused) */
-  { NDS7_SPI_BUS_CTL,     "SPI_BUS_CTL",    { 0 } }, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
+  { NDS7_SPI_BUS_CTL,     "SPI_BUS_CTL",    { 
+    { 0    , 2,"Baudrate (0=4MHz/Firmware, 1=2MHz/Touchscr, 2=1MHz/Powerman., 3=512KHz)"},
+    { 2    , 1,"DSi: Baudrate MSB   (4=8MHz, 5..7=None/0Hz) (when SCFG_EXT7.bit9=1)"},
+    { 7    , 1,"Busy Flag           (0=Ready, 1=Busy) (presumably Read-only)"},
+    { 8    , 2,"Device Select       (0=Powerman., 1=Firmware, 2=Touchscr, 3=Reserved)"},
+    { 10   , 1,"Transfer Size       (0=8bit/Normal, 1=16bit/Bugged)"},
+    { 11   , 1,"Chipselect Hold     (0=Deselect after transfer, 1=Keep selected)"},
+    { 14   , 1,"Interrupt Request   (0=Disable, 1=Enable)"},
+    { 15   , 1,"SPI Bus Enable      (0=Disable, 1=Enable)"},
+  } }, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
   { NDS7_SPI_BUS_DATA,    "SPI_BUS_DATA",   { 0 } }, /* SPI bus Data */
   // ARM7 Memory and IRQ Control
   { NDS7_EXMEMSTAT,   "EXMEMSTAT",   { 0 }}, /* EXMEMSTAT - External Memory Status */
@@ -1916,7 +1931,7 @@ typedef struct{
   uint8_t nds7_bios[16*1024];
   uint8_t nds9_bios[4*1024];
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
-  uint8_t firmware[256*1024];
+  uint8_t firmware[NDS_FIRMWARE_SIZE];
 }nds_scratch_t; 
 
 typedef struct {
@@ -2039,12 +2054,24 @@ typedef struct{
   uint64_t div_last_update_clock;
   uint64_t sqrt_last_update_clock;
 }nds_math_t;
+typedef struct{
+  uint8_t last_device;
+}nds_spi_t;
+typedef struct{
+  uint8_t state; 
+  uint8_t cmd;
+  uint32_t addr;
+  bool write_enable;
+}nds_firmware_flash_t;
+typedef struct{
+  uint16_t x_reg, y_reg; 
+  uint16_t tx_reg; 
+}nds_touch_t; 
 
 typedef struct{
   nds_mem_t mem;
   arm7_t arm7;
   arm7_t arm9;
-
   nds_card_t card;
   nds_input_t joy;       
   nds_ppu_t ppu[2];
@@ -2053,6 +2080,9 @@ typedef struct{
   nds_ipc_t ipc[2];
   nds_system_control_processor cp15;
   nds_math_t math; 
+  nds_spi_t spi; 
+  nds_firmware_flash_t firmware;
+  nds_touch_t touch;
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -2074,6 +2104,7 @@ typedef struct{
 } nds_t; 
 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
+static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static void nds_compute_timers(nds_t* nds); 
 static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
@@ -2327,9 +2358,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
 
     int bank_offset = address-base; 
     if(bank_offset>=bank_size[b])continue;
-    if( vram_cnt_array[b]==NDS9_VRAMCNT_G){
-      if(transaction_type&NDS_MEM_WRITE)printf("VRAM %c Transfer: %08x, data: %08x\n",'A'+b,address,data);
-    }
+
     int vram_addr = bank_offset+vram_off;
     
     if(transaction_type&NDS_MEM_4B){
@@ -2405,9 +2434,9 @@ static uint32_t nds_process_memory_transaction(nds_t * nds, uint32_t addr, uint3
     case 0x4: 
         if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
-        nds_preprocess_mmio_read(nds,addr,transaction_type);
+        if(!(transaction_type&NDS_MEM_WRITE))nds_preprocess_mmio_read(nds,addr,transaction_type);
         int baddr =addr;
-        if(transaction_type&NDS_MEM_ARM7&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
+        if((transaction_type&NDS_MEM_ARM7)&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
         baddr&=0xffff;
         *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         nds->mem.openbus_word=*ret;
@@ -2955,7 +2984,8 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
   nds9_io_store16(nds,NDS9_POSTFLG,1);
   nds7_io_store16(nds,NDS7_POSTFLG,1);
-  
+  //nds->arm9.registers[PC] = 0xFFFF0000;
+  //nds->arm7.registers[PC] = 0;
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
@@ -3037,12 +3067,22 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
     }
-    
-
   }
   nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
 }    
+static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
+  if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
+  if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
+  return data; 
+}
+static FORCE_INLINE uint32_t nds_word_mask(uint32_t addr, int transaction_type){
+  if(transaction_type&NDS_MEM_2B)return (0xffff)<<((addr&3)*8);
+  if(transaction_type&NDS_MEM_1B)return (0xff)<<((addr&3)*8);
+  return 0xffffffff;
+}
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
+  uint32_t word_mask = nds_word_mask(addr,transaction_type);
+  addr&=~3;
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7;
   /*if(addr!=0x04000208&&addr!=0x04000301&&addr!=0x04000138
@@ -3068,6 +3108,7 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       sync|=nds->ipc[cpu].sync_data;
       nds_io_store16(nds,cpu,NDS_IPCSYNC,sync);
     }break;
+
     case NDS_IPCFIFOCNT:{
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       int send_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
@@ -3082,7 +3123,17 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       cnt |= (nds->ipc[cpu].error<<14);
       nds_io_store16(nds,cpu,NDS_IPCFIFOCNT,cnt);
     }break;
-    case NDS_IPCFIFORECV:{
+    case NDS7_SPI_BUS_CTL:{
+      if(cpu!=NDS_ARM7)return;
+      if(!(word_mask&0xff0000))return;
+      uint16_t spicnt = nds7_io_read16(nds,NDS7_SPI_BUS_CTL);
+      int device = SB_BFE(spicnt,8,2);
+      if(device!=NDS_SPI_FIRMWARE)return;
+      printf("NDS FIRMWARE DATA READ\n");
+
+    }break;
+    case NDS_IPCFIFORECV|NDS_IO_MAP_041_OFFSET:{
+      printf("IPC_RECV: CPU: %d\n", cpu);
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       bool enabled = SB_BFE(cnt,15,1);
       if(!enabled)return; 
@@ -3177,12 +3228,130 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
     }break;
   }
 }
-static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
-  if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
-  if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
-  return data; 
+#define NDS_FIRM_RECV_CMD  0 
+#define NDS_FIRM_RXTX      1 
+#define NDS_FIRM_SET_ADDR0 2
+#define NDS_FIRM_SET_ADDR1 3
+#define NDS_FIRM_SET_ADDR2 4
+#define NDS_FIRM_SET_ADDR3 5
+#define NDS_FIRM_DUMMY     6
+
+static uint8_t nds_process_firmware_write(nds_t *nds, uint8_t data){
+  nds_firmware_flash_t *firm = &nds->firmware;
+  uint8_t return_data = 0xff;
+  if(firm->state==NDS_FIRM_RECV_CMD){
+    firm->cmd = data; 
+    switch(data){
+      case 0x06: firm->write_enable = true; break;  //WriteEnable(WREM)
+      case 0x04: firm->write_enable = false; break;  //WriteDisable(WRDI)
+
+      case 0x96: //ReadJEDEC(RDID)
+      case 0x05: //ReadStatus(RDSR)
+        firm->state = NDS_FIRM_RXTX; firm->addr=0;
+        printf("Status\n");
+        break;
+      
+      case 0x03: //ReadData(READ)
+      case 0x0B: //ReadDataFast(FAST)
+        firm->state = NDS_FIRM_SET_ADDR0; 
+        break; 
+
+      case 0x0A: //PageWrite(PW)
+      case 0x02: //PageProgram(PP)
+      case 0xDB: //PageErase(PE)
+      case 0xD8: //SectorErase(SE)
+        if(firm->write_enable)firm->state = NDS_FIRM_SET_ADDR0;
+        break;
+
+      case 0xB9: break;  //DeepPowerDown(DP)
+      case 0xAB: break;  //ReleaseDeepPowerDown(RDP)
+    }
+    printf("NDS Firmware cmd:%02x addr:%08x\n",firm->cmd);
+  }else if(firm->state == NDS_FIRM_RXTX){
+    switch(firm->cmd){
+      case 0x06: firm->state=0; break;  //WriteEnable(WREM)
+      case 0x04: firm->state=0; break;  //WriteDisable(WRDI)
+
+      case 0x96:{ //ReadID(RDID)
+        uint8_t jedec_id[3] = { 0x20, 0x40, 0x12 };
+        return_data = jedec_id[firm->addr++];
+        if(firm->addr>2)firm->state = 0; 
+        break;
+      }
+      case 0x05: //ReadStatus(RDSR)
+        return_data = firm->write_enable?0x2:0;
+        firm->state = 0; 
+        break;
+      
+      case 0x03: //ReadData(READ)
+      case 0x0B:{ //ReadDataFast(FAST)
+        uint32_t addr = firm->addr++;
+        return_data = nds->mem.firmware[addr&(NDS_FIRMWARE_SIZE-1)];
+        break; 
+      }
+
+      case 0x0A: //PageWrite(PW)
+      case 0x02: //PageProgram(PP)
+      case 0xDB: //PageErase(PE)
+      case 0xD8: //SectorErase(SE)
+        firm->state = 0; 
+        break;
+
+      case 0xB9: firm->state = 0; break;  //DeepPowerDown(DP)
+      case 0xAB: firm->state = 0; break;  //ReleaseDeepPowerDown(RDP)
+    }
+    printf("NDS Firmware RXTX: cmd:%02x addr:%08x\n",firm->cmd, firm->addr);
+
+  }else{
+    switch(firm->state){
+      case NDS_FIRM_SET_ADDR0:
+        firm->addr = ((uint32_t)data)<<16; 
+        firm->state = NDS_FIRM_SET_ADDR1;
+        break; 
+      case NDS_FIRM_SET_ADDR1:
+        firm->addr |= ((uint32_t)data)<<8; 
+        firm->state = NDS_FIRM_SET_ADDR2;
+        break;
+      case NDS_FIRM_SET_ADDR2:
+        firm->addr |= ((uint32_t)data)<<0; 
+        //Dummy byte for fast read
+        firm->state = firm->cmd == 0x0B?NDS_FIRM_DUMMY:NDS_FIRM_RXTX;
+        break;
+      case NDS_FIRM_DUMMY:
+        firm->state = NDS_FIRM_RXTX;
+        break;
+    }
+  }
+  return return_data;
 }
 
+static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
+
+  nds_touch_t *touch = &nds->touch;
+  uint8_t return_data = touch->tx_reg >> 8;
+  touch->tx_reg<<=8;
+  if(data&0x80){
+    //Recv'd ctrl byte
+    int channel = SB_BFE(data,4,3);
+    switch(channel){
+      case 0: touch->tx_reg =0x7FF8; break; // Temperature 0 (requires calibration, step 2.1mV per 1'C accuracy)
+      case 1: touch->tx_reg =touch->y_reg; break; // Touchscreen Y-Position  (somewhat 0B0h..F20h, or FFFh=released)
+      case 2: touch->tx_reg =0x7FF8; break; // Battery Voltage         (not used, connected to GND in NDS, always 000h)
+      case 3: touch->tx_reg =0x7FF8; break; // Touchscreen Z1-Position (diagonal position for pressure measurement)
+      case 4: touch->tx_reg =0x7FF8; break; // Touchscreen Z2-Position (diagonal position for pressure measurement)
+      case 5: touch->tx_reg =touch->x_reg; break; // Touchscreen X-Position  (somewhat 100h..ED0h, or 000h=released)
+      case 6: touch->tx_reg =0x7FF8; break; // AUX Input               (connected to Microphone in the NDS)
+      case 7: touch->tx_reg =0x7FF8; break; // Temperature 1 (difference to Temp 0, without calibration, 2'C accuracy)
+    }
+  }
+  return return_data;
+}
+
+
+static void nds_deselect_spi(nds_t *nds){
+  nds->firmware.state = 0; 
+  nds->spi.last_device = -1;
+}
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
@@ -3207,7 +3376,46 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       mmio&=0x4f0f;
       nds_io_store32(nds,cpu,addr,mmio);
     }break;
+    case NDS7_SPI_BUS_CTL:{
+      if(cpu!=NDS_ARM7)return;
+      uint16_t spicnt = nds7_io_read16(nds,NDS7_SPI_BUS_CTL);
+      if(nds_word_mask(baddr,transaction_type)&0xffff){
+       // printf("NDS SPI BUS CTRL:%04x\n",spicnt);
+        int busy = false; 
+        uint8_t device = SB_BFE(spicnt,8,2);
+        bool enable = SB_BFE(spicnt,15,1);
+        if(!enable||nds->spi.last_device!=device){
+          nds_deselect_spi(nds);
+        }
+        spicnt&= ~((busy<<7));
+        nds7_io_store16(nds,NDS7_SPI_BUS_CTL,spicnt);
+        nds->spi.last_device = device;
+
+      }
+      //printf("NDS SPI BUS CTRL\n");
+      if(nds_word_mask(baddr,transaction_type)&0xff0000){
+        int device = SB_BFE(spicnt,8,2);
+        bool keep_selected =SB_BFE(spicnt,11,1);
+        bool irq_en = SB_BFE(spicnt,14,1);
+        bool enable = SB_BFE(spicnt,15,1);
+        if(!enable)return; 
+        uint8_t data = 0xff;
+        uint8_t cmd = nds7_io_read8(nds,NDS7_SPI_BUS_DATA);
+       // printf("NDS SPI BUS DATA: %d %02x %04x\n",device,cmd,spicnt);
+        switch(device){
+          case NDS_SPI_POWER: /*TODO*/break;
+          case NDS_SPI_TOUCH: break;
+          case NDS_SPI_FIRMWARE: data = nds_process_firmware_write(nds,cmd); break;
+          default: break;
+        }
+        nds7_io_store8(nds,NDS7_SPI_BUS_DATA,data);
+        if(!keep_selected)nds_deselect_spi(nds);
+        if(irq_en)nds7_send_interrupt(nds,4,1<<NDS7_INT_SPI);
+
+      }
+    }break;
     case NDS_IPCFIFOSEND:{
+      printf("IPC_SEND: CPU: %d\n", cpu);
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       bool enabled = SB_BFE(cnt,15,1);
       if(!enabled)return; 
@@ -3860,6 +4068,42 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
 }
+static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
+  bool is_touched = joy->inputs[SE_KEY_PEN_DOWN];
+  int x = 100;
+  int y = 100; 
+  uint8_t* firm_data = nds->mem.firmware;
+  uint32_t user_data_off = (firm_data[0x21]<<8)|(firm_data[0x20]);
+  uint32_t tsc_data_off = user_data_off*8+0x58;
+
+  int scr_x1 = 0, scr_x2 = 0, adc_x1 = 0, adc_x2 = 0; 
+  int scr_y1 = 0, scr_y2 = 0, adc_y1 = 0, adc_y2 = 0; 
+
+  if(tsc_data_off+12>=NDS_FIRMWARE_SIZE){
+    printf("TSC Data off is outside of firmware\n");
+  }else{
+    uint8_t* tsc_data = firm_data +tsc_data_off;
+    adc_x1  = (tsc_data[0] << 0)| (tsc_data[1] << 8);
+    adc_y1  = (tsc_data[2] << 0)| (tsc_data[3] << 8);
+    scr_x1 = tsc_data[4];
+    scr_y1 = tsc_data[5];
+
+
+    adc_x2  = (tsc_data[6] << 0)| (tsc_data[7] << 8);
+    adc_y2  = (tsc_data[8] << 0)| (tsc_data[9] << 8);
+    scr_x2 = tsc_data[10];
+    scr_y2 = tsc_data[11];
+  }
+  if(is_touched){
+    nds->touch.x_reg = ((x - scr_x1 + 1) * (adc_x2 - adc_x1) / (scr_x2 - scr_x1) + adc_x1)<<3;
+    nds->touch.y_reg = ((y - scr_y1 + 1) * (adc_y2 - adc_y1) / (scr_y2 - scr_y1) + adc_y1)<<3;
+
+  }else{
+    nds->touch.x_reg = 0;
+    nds->touch.y_reg = 0xFFF;
+  }
+  
+}
 /*uint64_t nds_read_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset, int size, int elem_size, int dir){
   uint64_t data = 0; 
   for(int i=0;i<size;++i){
@@ -4256,6 +4500,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
 
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
+  nds_tick_touch(&emu->joy,nds);
   //bool prev_vblank = nds->ppu.last_vblank; 
   //Skip emulation of a frame if we get too far ahead the audio playback
   static int last_tick =0;
