@@ -311,81 +311,81 @@ typedef enum{
 #define NDS7_SOUND0_TMR 0x04000408 /* Sound Channel 0 Timer Register (W) */
 #define NDS7_SOUND0_PNT 0x0400040A /* Sound Channel 0 Loopstart Register (W) */
 #define NDS7_SOUND0_LEN 0x0400040C /* Sound Channel 0 Length Register (W) */
-#define NDS7_SOUND1_CNT 0x04001400 /* Sound Channel 1 Control Register (R/W) */
-#define NDS7_SOUND1_SAD 0x04001404 /* Sound Channel 1 Data Source Register (W) */
-#define NDS7_SOUND1_TMR 0x04001408 /* Sound Channel 1 Timer Register (W) */
-#define NDS7_SOUND1_PNT 0x0400140A /* Sound Channel 1 Loopstart Register (W) */
-#define NDS7_SOUND1_LEN 0x0400140C /* Sound Channel 1 Length Register (W) */
-#define NDS7_SOUND2_CNT 0x04002400 /* Sound Channel 2 Control Register (R/W) */
-#define NDS7_SOUND2_SAD 0x04002404 /* Sound Channel 2 Data Source Register (W) */
-#define NDS7_SOUND2_TMR 0x04002408 /* Sound Channel 2 Timer Register (W) */
-#define NDS7_SOUND2_PNT 0x0400240A /* Sound Channel 2 Loopstart Register (W) */
-#define NDS7_SOUND2_LEN 0x0400240C /* Sound Channel 2 Length Register (W) */
-#define NDS7_SOUND3_CNT 0x04003400 /* Sound Channel 3 Control Register (R/W) */
-#define NDS7_SOUND3_SAD 0x04003404 /* Sound Channel 3 Data Source Register (W) */
-#define NDS7_SOUND3_TMR 0x04003408 /* Sound Channel 3 Timer Register (W) */
-#define NDS7_SOUND3_PNT 0x0400340A /* Sound Channel 3 Loopstart Register (W) */
-#define NDS7_SOUND3_LEN 0x0400340C /* Sound Channel 3 Length Register (W) */
-#define NDS7_SOUND4_CNT 0x04004400 /* Sound Channel 4 Control Register (R/W) */
-#define NDS7_SOUND4_SAD 0x04004404 /* Sound Channel 4 Data Source Register (W) */
-#define NDS7_SOUND4_TMR 0x04004408 /* Sound Channel 4 Timer Register (W) */
-#define NDS7_SOUND4_PNT 0x0400440A /* Sound Channel 4 Loopstart Register (W) */
-#define NDS7_SOUND4_LEN 0x0400440C /* Sound Channel 4 Length Register (W) */
-#define NDS7_SOUND5_CNT 0x04005400 /* Sound Channel 5 Control Register (R/W) */
-#define NDS7_SOUND5_SAD 0x04005404 /* Sound Channel 5 Data Source Register (W) */
-#define NDS7_SOUND5_TMR 0x04005408 /* Sound Channel 5 Timer Register (W) */
-#define NDS7_SOUND5_PNT 0x0400540A /* Sound Channel 5 Loopstart Register (W) */
-#define NDS7_SOUND5_LEN 0x0400540C /* Sound Channel 5 Length Register (W) */
-#define NDS7_SOUND6_CNT 0x04006400 /* Sound Channel 6 Control Register (R/W) */
-#define NDS7_SOUND6_SAD 0x04006404 /* Sound Channel 6 Data Source Register (W) */
-#define NDS7_SOUND6_TMR 0x04006408 /* Sound Channel 6 Timer Register (W) */
-#define NDS7_SOUND6_PNT 0x0400640A /* Sound Channel 6 Loopstart Register (W) */
-#define NDS7_SOUND6_LEN 0x0400640C /* Sound Channel 6 Length Register (W) */
-#define NDS7_SOUND7_CNT 0x04007400 /* Sound Channel 7 Control Register (R/W) */
-#define NDS7_SOUND7_SAD 0x04007404 /* Sound Channel 7 Data Source Register (W) */
-#define NDS7_SOUND7_TMR 0x04007408 /* Sound Channel 7 Timer Register (W) */
-#define NDS7_SOUND7_PNT 0x0400740A /* Sound Channel 7 Loopstart Register (W) */
-#define NDS7_SOUND7_LEN 0x0400740C /* Sound Channel 7 Length Register (W) */
-#define NDS7_SOUND8_CNT 0x04008400 /* Sound Channel 8 Control Register (R/W) */
-#define NDS7_SOUND8_SAD 0x04008404 /* Sound Channel 8 Data Source Register (W) */
-#define NDS7_SOUND8_TMR 0x04008408 /* Sound Channel 8 Timer Register (W) */
-#define NDS7_SOUND8_PNT 0x0400840A /* Sound Channel 8 Loopstart Register (W) */
-#define NDS7_SOUND8_LEN 0x0400840C /* Sound Channel 8 Length Register (W) */
-#define NDS7_SOUND9_CNT 0x04009400 /* Sound Channel 9 Control Register (R/W) */
-#define NDS7_SOUND9_SAD 0x04009404 /* Sound Channel 9 Data Source Register (W) */
-#define NDS7_SOUND9_TMR 0x04009408 /* Sound Channel 9 Timer Register (W) */
-#define NDS7_SOUND9_PNT 0x0400940A /* Sound Channel 9 Loopstart Register (W) */
-#define NDS7_SOUND9_LEN 0x0400940C /* Sound Channel 9 Length Register (W) */
-#define NDS7_SOUNDA_CNT 0x0400A400 /* Sound Channel 10 Control Register (R/W) */
-#define NDS7_SOUNDA_SAD 0x0400A404 /* Sound Channel 10 Data Source Register (W) */
-#define NDS7_SOUNDA_TMR 0x0400A408 /* Sound Channel 10 Timer Register (W) */
-#define NDS7_SOUNDA_PNT 0x0400A40A /* Sound Channel 10 Loopstart Register (W) */
-#define NDS7_SOUNDA_LEN 0x0400A40C /* Sound Channel 10 Length Register (W) */
-#define NDS7_SOUNDB_CNT 0x0400B400 /* Sound Channel 11 Control Register (R/W) */
-#define NDS7_SOUNDB_SAD 0x0400B404 /* Sound Channel 11 Data Source Register (W) */
-#define NDS7_SOUNDB_TMR 0x0400B408 /* Sound Channel 11 Timer Register (W) */
-#define NDS7_SOUNDB_PNT 0x0400B40A /* Sound Channel 11 Loopstart Register (W) */
-#define NDS7_SOUNDB_LEN 0x0400B40C /* Sound Channel 11 Length Register (W) */
-#define NDS7_SOUNDC_CNT 0x0400C400 /* Sound Channel 12 Control Register (R/W) */
-#define NDS7_SOUNDC_SAD 0x0400C404 /* Sound Channel 12 Data Source Register (W) */
-#define NDS7_SOUNDC_TMR 0x0400C408 /* Sound Channel 12 Timer Register (W) */
-#define NDS7_SOUNDC_PNT 0x0400C40A /* Sound Channel 12 Loopstart Register (W) */
-#define NDS7_SOUNDC_LEN 0x0400C40C /* Sound Channel 12 Length Register (W) */
-#define NDS7_SOUNDD_CNT 0x0400D400 /* Sound Channel 13 Control Register (R/W) */
-#define NDS7_SOUNDD_SAD 0x0400D404 /* Sound Channel 13 Data Source Register (W) */
-#define NDS7_SOUNDD_TMR 0x0400D408 /* Sound Channel 13 Timer Register (W) */
-#define NDS7_SOUNDD_PNT 0x0400D40A /* Sound Channel 13 Loopstart Register (W) */
-#define NDS7_SOUNDD_LEN 0x0400D40C /* Sound Channel 13 Length Register (W) */
-#define NDS7_SOUNDE_CNT 0x0400E400 /* Sound Channel 14 Control Register (R/W) */
-#define NDS7_SOUNDE_SAD 0x0400E404 /* Sound Channel 14 Data Source Register (W) */
-#define NDS7_SOUNDE_TMR 0x0400E408 /* Sound Channel 14 Timer Register (W) */
-#define NDS7_SOUNDE_PNT 0x0400E40A /* Sound Channel 14 Loopstart Register (W) */
-#define NDS7_SOUNDE_LEN 0x0400E40C /* Sound Channel 14 Length Register (W) */
-#define NDS7_SOUNDF_CNT 0x0400F400 /* Sound Channel 15 Control Register (R/W) */
-#define NDS7_SOUNDF_SAD 0x0400F404 /* Sound Channel 15 Data Source Register (W) */
-#define NDS7_SOUNDF_TMR 0x0400F408 /* Sound Channel 15 Timer Register (W) */
-#define NDS7_SOUNDF_PNT 0x0400F40A /* Sound Channel 15 Loopstart Register (W) */
-#define NDS7_SOUNDF_LEN 0x0400F40C /* Sound Channel 15 Length Register (W) */
+#define NDS7_SOUND1_CNT 0x04000410 /* Sound Channel 1 Control Register (R/W) */
+#define NDS7_SOUND1_SAD 0x04000414 /* Sound Channel 1 Data Source Register (W) */
+#define NDS7_SOUND1_TMR 0x04000418 /* Sound Channel 1 Timer Register (W) */
+#define NDS7_SOUND1_PNT 0x0400041A /* Sound Channel 1 Loopstart Register (W) */
+#define NDS7_SOUND1_LEN 0x0400041C /* Sound Channel 1 Length Register (W) */
+#define NDS7_SOUND2_CNT 0x04000420 /* Sound Channel 2 Control Register (R/W) */
+#define NDS7_SOUND2_SAD 0x04000424 /* Sound Channel 2 Data Source Register (W) */
+#define NDS7_SOUND2_TMR 0x04000428 /* Sound Channel 2 Timer Register (W) */
+#define NDS7_SOUND2_PNT 0x0400042A /* Sound Channel 2 Loopstart Register (W) */
+#define NDS7_SOUND2_LEN 0x0400042C /* Sound Channel 2 Length Register (W) */
+#define NDS7_SOUND3_CNT 0x04000430 /* Sound Channel 3 Control Register (R/W) */
+#define NDS7_SOUND3_SAD 0x04000434 /* Sound Channel 3 Data Source Register (W) */
+#define NDS7_SOUND3_TMR 0x04000438 /* Sound Channel 3 Timer Register (W) */
+#define NDS7_SOUND3_PNT 0x0400043A /* Sound Channel 3 Loopstart Register (W) */
+#define NDS7_SOUND3_LEN 0x0400043C /* Sound Channel 3 Length Register (W) */
+#define NDS7_SOUND4_CNT 0x04000440 /* Sound Channel 4 Control Register (R/W) */
+#define NDS7_SOUND4_SAD 0x04000444 /* Sound Channel 4 Data Source Register (W) */
+#define NDS7_SOUND4_TMR 0x04000448 /* Sound Channel 4 Timer Register (W) */
+#define NDS7_SOUND4_PNT 0x0400044A /* Sound Channel 4 Loopstart Register (W) */
+#define NDS7_SOUND4_LEN 0x0400044C /* Sound Channel 4 Length Register (W) */
+#define NDS7_SOUND5_CNT 0x04000450 /* Sound Channel 5 Control Register (R/W) */
+#define NDS7_SOUND5_SAD 0x04000454 /* Sound Channel 5 Data Source Register (W) */
+#define NDS7_SOUND5_TMR 0x04000458 /* Sound Channel 5 Timer Register (W) */
+#define NDS7_SOUND5_PNT 0x0400045A /* Sound Channel 5 Loopstart Register (W) */
+#define NDS7_SOUND5_LEN 0x0400045C /* Sound Channel 5 Length Register (W) */
+#define NDS7_SOUND6_CNT 0x04000460 /* Sound Channel 6 Control Register (R/W) */
+#define NDS7_SOUND6_SAD 0x04000464 /* Sound Channel 6 Data Source Register (W) */
+#define NDS7_SOUND6_TMR 0x04000468 /* Sound Channel 6 Timer Register (W) */
+#define NDS7_SOUND6_PNT 0x0400046A /* Sound Channel 6 Loopstart Register (W) */
+#define NDS7_SOUND6_LEN 0x0400046C /* Sound Channel 6 Length Register (W) */
+#define NDS7_SOUND7_CNT 0x04000470 /* Sound Channel 7 Control Register (R/W) */
+#define NDS7_SOUND7_SAD 0x04000474 /* Sound Channel 7 Data Source Register (W) */
+#define NDS7_SOUND7_TMR 0x04000478 /* Sound Channel 7 Timer Register (W) */
+#define NDS7_SOUND7_PNT 0x0400047A /* Sound Channel 7 Loopstart Register (W) */
+#define NDS7_SOUND7_LEN 0x0400047C /* Sound Channel 7 Length Register (W) */
+#define NDS7_SOUND8_CNT 0x04000480 /* Sound Channel 8 Control Register (R/W) */
+#define NDS7_SOUND8_SAD 0x04000484 /* Sound Channel 8 Data Source Register (W) */
+#define NDS7_SOUND8_TMR 0x04000488 /* Sound Channel 8 Timer Register (W) */
+#define NDS7_SOUND8_PNT 0x0400048A /* Sound Channel 8 Loopstart Register (W) */
+#define NDS7_SOUND8_LEN 0x0400048C /* Sound Channel 8 Length Register (W) */
+#define NDS7_SOUND9_CNT 0x04000490 /* Sound Channel 9 Control Register (R/W) */
+#define NDS7_SOUND9_SAD 0x04000494 /* Sound Channel 9 Data Source Register (W) */
+#define NDS7_SOUND9_TMR 0x04000498 /* Sound Channel 9 Timer Register (W) */
+#define NDS7_SOUND9_PNT 0x0400049A /* Sound Channel 9 Loopstart Register (W) */
+#define NDS7_SOUND9_LEN 0x0400049C /* Sound Channel 9 Length Register (W) */
+#define NDS7_SOUNDA_CNT 0x040004A0 /* Sound Channel 10 Control Register (R/W) */
+#define NDS7_SOUNDA_SAD 0x040004A4 /* Sound Channel 10 Data Source Register (W) */
+#define NDS7_SOUNDA_TMR 0x040004A8 /* Sound Channel 10 Timer Register (W) */
+#define NDS7_SOUNDA_PNT 0x040004AA /* Sound Channel 10 Loopstart Register (W) */
+#define NDS7_SOUNDA_LEN 0x040004AC /* Sound Channel 10 Length Register (W) */
+#define NDS7_SOUNDB_CNT 0x040004B0 /* Sound Channel 11 Control Register (R/W) */
+#define NDS7_SOUNDB_SAD 0x040004B4 /* Sound Channel 11 Data Source Register (W) */
+#define NDS7_SOUNDB_TMR 0x040004B8 /* Sound Channel 11 Timer Register (W) */
+#define NDS7_SOUNDB_PNT 0x040004BA /* Sound Channel 11 Loopstart Register (W) */
+#define NDS7_SOUNDB_LEN 0x040004BC /* Sound Channel 11 Length Register (W) */
+#define NDS7_SOUNDC_CNT 0x040004C0 /* Sound Channel 12 Control Register (R/W) */
+#define NDS7_SOUNDC_SAD 0x040004C4 /* Sound Channel 12 Data Source Register (W) */
+#define NDS7_SOUNDC_TMR 0x040004C8 /* Sound Channel 12 Timer Register (W) */
+#define NDS7_SOUNDC_PNT 0x040004CA /* Sound Channel 12 Loopstart Register (W) */
+#define NDS7_SOUNDC_LEN 0x040004CC /* Sound Channel 12 Length Register (W) */
+#define NDS7_SOUNDD_CNT 0x040004D0 /* Sound Channel 13 Control Register (R/W) */
+#define NDS7_SOUNDD_SAD 0x040004D4 /* Sound Channel 13 Data Source Register (W) */
+#define NDS7_SOUNDD_TMR 0x040004D8 /* Sound Channel 13 Timer Register (W) */
+#define NDS7_SOUNDD_PNT 0x040004DA /* Sound Channel 13 Loopstart Register (W) */
+#define NDS7_SOUNDD_LEN 0x040004DC /* Sound Channel 13 Length Register (W) */
+#define NDS7_SOUNDE_CNT 0x040004E0 /* Sound Channel 14 Control Register (R/W) */
+#define NDS7_SOUNDE_SAD 0x040004E4 /* Sound Channel 14 Data Source Register (W) */
+#define NDS7_SOUNDE_TMR 0x040004E8 /* Sound Channel 14 Timer Register (W) */
+#define NDS7_SOUNDE_PNT 0x040004EA /* Sound Channel 14 Loopstart Register (W) */
+#define NDS7_SOUNDE_LEN 0x040004EC /* Sound Channel 14 Length Register (W) */
+#define NDS7_SOUNDF_CNT 0x040004F0 /* Sound Channel 15 Control Register (R/W) */
+#define NDS7_SOUNDF_SAD 0x040004F4 /* Sound Channel 15 Data Source Register (W) */
+#define NDS7_SOUNDF_TMR 0x040004F8 /* Sound Channel 15 Timer Register (W) */
+#define NDS7_SOUNDF_PNT 0x040004FA /* Sound Channel 15 Loopstart Register (W) */
+#define NDS7_SOUNDF_LEN 0x040004FC /* Sound Channel 15 Length Register (W) */
 
 #define NDS7_SOUNDCNT   0x04000500 /* Sound Control Register (R/W) */
 #define NDS7_SOUNDBIAS  0x04000504 /* Sound Bias Register (R/W) */
@@ -2067,6 +2067,17 @@ typedef struct{
   uint16_t x_reg, y_reg; 
   uint16_t tx_reg; 
 }nds_touch_t; 
+typedef struct{
+  double current_sim_time;
+  double current_sample_generated_time;
+  uint32_t cycles_since_tick;
+  struct{
+    uint32_t timer;
+    uint32_t sample;
+
+  }channel[16];
+
+}nds_audio_t; 
 
 typedef struct{
   nds_mem_t mem;
@@ -2083,6 +2094,7 @@ typedef struct{
   nds_spi_t spi; 
   nds_firmware_flash_t firmware;
   nds_touch_t touch;
+  nds_audio_t audio;
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -2982,10 +2994,7 @@ static void nds_recompute_mmio_mask_table(nds_t* nds){
 //  }
 }
 
-static FORCE_INLINE void nds_process_mmio_read(nds_t *nds, uint32_t address){
-  // Force recomputing timers on timer read
-  if(address>= GBA_TM0CNT_L&&address<=GBA_TM3CNT_H)nds_compute_timers(nds);
-}
+
 
 int nds_search_rom_for_backup_string(nds_t* nds){
 //  for(int b = 0; b< nds->cart.rom_size;++b){
@@ -3412,6 +3421,7 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
         nds9_io_store32(nds,NDS9_SQRT_RESULT,SB_BFE(result,0,32));
       }
     }break;
+    break; 
   }
 }
 #define NDS_FIRM_RECV_CMD  0 
@@ -3648,24 +3658,32 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       break;
     case NDS_GCBUS_CTL|NDS_IO_MAP_SPLIT_OFFSET:
     case NDS_GCBUS_CTL:
-    nds_process_gc_bus_ctl(nds,cpu); break;
-
+      nds_process_gc_bus_ctl(nds,cpu); break;
+    case GBA_TM0CNT_L:
+    case GBA_TM1CNT_L:
+    case GBA_TM2CNT_L:
+    case GBA_TM3CNT_L:
+      if(nds_word_mask(baddr,transaction_type)&0xffff){
+        int t = (addr-GBA_TM0CNT_L)/4;
+        nds->timers[cpu][t].pending_reload_value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
+      }
   }
 }
 
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   nds_ppu_t * ppu = nds->ppu+ppu_id;
   ppu->scan_clock+=1;
-  if(ppu->scan_clock%6)return;
-  int clocks_per_frame = 355*263*6;
+  const int clocks_per_dot = 12;
+  if(ppu->scan_clock%clocks_per_dot)return;
+  int clocks_per_frame = 355*263*clocks_per_dot;
   if(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
 
   int reg_offset = ppu_id==0? 0: 0x00001000;
 
-  int clocks_per_line = 355*6;
+  int clocks_per_line = 355*clocks_per_dot;
   int lcd_y = (ppu->scan_clock+44)/clocks_per_line;
-  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/6;
-  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==296||true){
+  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/clocks_per_dot;
+  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==296){
     uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT|reg_offset)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
     bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<227;
@@ -4507,7 +4525,7 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
 }
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
   nds->deferred_timer_ticks+=1;
-  //if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)
+  if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)
   nds_compute_timers(nds); 
 }
 static void nds_compute_timers(nds_t* nds){
@@ -4661,6 +4679,102 @@ void nds_tick_rtc(nds_t*nds){
   nds->rtc.year  = nds_bin_to_bcd(tm->tm_year%100);
   nds->rtc.day_of_week=nds_bin_to_bcd(tm->tm_wday);
 }
+static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double delta_time, int cycles){
+
+  nds_audio_t* audio = &nds->audio;
+  if(delta_time>1.0/60.)delta_time = 1.0/60.;
+  audio->current_sim_time +=delta_time;
+  audio->cycles_since_tick +=cycles;
+  float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
+
+  while(audio->current_sample_generated_time < audio->current_sim_time){
+
+    audio->current_sample_generated_time+=sample_delta_t;
+    
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
+    const float lowpass_coef = 0.999;
+
+    float l = 0, r = 0; 
+    for(int c = 0; c<16;++c){
+      uint32_t cnt = nds7_io_read32(nds,NDS7_SOUND0_CNT+c*16);
+      bool enable = SB_BFE(cnt,31,1);
+      uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+c*16);
+      if(!enable){
+        audio->channel[c].sample=0;
+        audio->channel[c].timer = tmr;
+        emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef;
+        continue;
+      }
+      uint32_t sad = nds7_io_read32(nds,NDS7_SOUND0_SAD+c*16);
+      uint16_t pnt = nds7_io_read16(nds,NDS7_SOUND0_PNT+c*16);
+      uint16_t len = nds7_io_read32(nds,NDS7_SOUND0_LEN+c*16);
+
+      audio->channel[c].timer+=audio->cycles_since_tick;
+      while(audio->channel[c].timer>=0xffff){
+        audio->channel[c].timer-=0xffff;
+        audio->channel[c].timer+=tmr;
+        audio->channel[c].sample+=1;
+      }
+
+      int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
+      uint32_t tot_samps = len*4;
+      switch(format){
+        case 0: tot_samps = len*4; pnt*=4;break;
+        case 1: tot_samps = len*2; pnt*=2;break;
+        case 2: tot_samps = 8*(len-1); pnt*=8;break;
+        case 3: tot_samps = 8;  break;
+      }
+      if(audio->channel[c].sample>tot_samps){
+        int repeat_mode = SB_BFE(cnt,27,2);
+        switch(repeat_mode){
+          case 0: audio->channel[c].sample=0;enable=false; break; //Manual
+          case 1: audio->channel[c].sample=pnt;break; //Infinite
+          case 2: audio->channel[c].sample=0;enable=false; break; //One Shot
+          case 3: audio->channel[c].sample=0;enable=false; break; //Reserved
+        }
+        if(format==3){enable=true;audio->channel[c].sample=0;}
+      }
+      if(!enable){
+        cnt&=~(1<<31);
+        nds7_io_store32(nds,NDS7_SOUND0_CNT+c*16,cnt);
+
+      }else{
+        float v = 0; 
+        switch(format){
+          case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.-1.;break;
+          case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample))/32768.-1.;break;
+          case 2: v= nds7_read16(nds,sad+audio->channel[c].sample)/32768.-1.;break;
+          case 3: v= audio->channel[c].sample<SB_BFE(cnt,24,3);break;
+        }
+        emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef + fabs(v)*(1.0-lowpass_coef);
+        uint32_t vol_mul = SB_BFE(cnt,0,7);
+        uint32_t vol_div = SB_BFE(cnt,8,2);
+        uint16_t pan = SB_BFE(cnt,16,7);
+        float div_table[4]={1.0,0.5,0.25,1.0/16.};
+        v*=0.001*vol_mul*div_table[vol_div];
+        r+=v*pan/128.;
+        l+=v*(128-pan)/128.;
+      }
+    }
+
+    // Clipping
+    if(l>1.0)l=1;
+    if(r>1.0)r=1;
+    if(l<-1.0)l=-1;
+    if(r<-1.0)r=-1;
+    // Quantization
+    unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+    unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
+
+    emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(l)*(1.0-lowpass_coef);
+    emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(r)*(1.0-lowpass_coef); 
+
+
+    emu->audio_ring_buff.data[write_entry0] = l*32760;
+    emu->audio_ring_buff.data[write_entry1] = r*32760;
+    audio->cycles_since_tick=0;
+  }
+}
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -4739,19 +4853,20 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }
-    ticks=2;
+    ticks=4;
     last_tick=ticks;
     nds_tick_sio(nds);
 
-    double delta_t = ((double)ticks)/(16*1024*1024);
+    double delta_t = ((double)ticks)/(64*1024*1024);
 
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);
-      nds_tick_timers(nds);
+      if(t&1)nds_tick_timers(nds);
       nds_tick_ppu(nds,0,emu->render_frame);
       nds_tick_ppu(nds,1,emu->render_frame);
       nds->current_clock++;
     }
+    nds_tick_audio(nds,emu,delta_t,ticks/4);
     
     if(nds->ppu[0].last_vblank && !prev_vblank){
       prev_vblank = nds->ppu[0].last_vblank;

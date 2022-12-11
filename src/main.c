@@ -828,8 +828,16 @@ void se_draw_emu_stats(){
   }else if(emu_state.system == SYSTEM_GBA){
     static const char* names[] ={"Channel 1 (Square)","Channel 2 (Square)","Channel 3 (Wave)","Channel 4 (Noise)", "Channel A (FIFO)", "Channel B (FIFO)",NULL};
     channel_names= names;
+  }else if(emu_state.system == SYSTEM_NDS){
+    static const char* names[] ={
+      "Channel 0","Channel 1","Channel 2","Channel 3",
+      "Channel 4","Channel 5","Channel 6","Channel 7",
+      "Channel 8","Channel 9","Channel A","Channel B",
+      "Channel C","Channel D","Channel E","Channel F",
+      NULL};
+    channel_names= names;
   }
-  for(int i=0;i<6;++i){
+  for(int i=0;i<16;++i){
     if(!channel_names[i])break;
     igText(channel_names[i]);
     igSameLine(content_width*0.42,0);

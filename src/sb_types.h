@@ -133,7 +133,7 @@ typedef struct {
   int frame;
   bool render_frame;
   sb_ring_buffer_t audio_ring_buff;
-  float audio_channel_output[6];
+  float audio_channel_output[16];
   float mix_l_volume, mix_r_volume;
   float master_volume;
   int cmd_line_arg_count;
