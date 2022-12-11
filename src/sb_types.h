@@ -103,6 +103,7 @@
 
 typedef struct{
   float inputs[SE_NUM_KEYBINDS];
+  float touch_pos[2];
   float rumble; 
 } sb_joy_t;
   

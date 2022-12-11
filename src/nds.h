@@ -1903,6 +1903,7 @@ typedef struct {
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t *firmware;
   uint8_t io[64*1024];
+  uint32_t mmio_buffer[1024];
 
   uint8_t *card_data;
   size_t card_size;
@@ -3157,6 +3158,11 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   nds7_io_store16(nds,NDS7_POSTFLG,1);
   //nds->arm9.registers[PC] = 0xFFFF0000;
   //nds->arm7.registers[PC] = 0;
+
+  //Preload user settings
+  uint8_t* firm_data = scratch->firmware;
+  uint32_t user_data_off = ((firm_data[0x21]<<8)|(firm_data[0x20]))*8;
+  for(int i=0;i<0x070;++i)nds9_write8(nds,i+0x27FFC80,firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]);
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
@@ -3310,7 +3316,6 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       nds9_io_store32(nds,NDS9_POWCNT1,d);
       break;
     case NDS_IPCFIFORECV|NDS_IO_MAP_041_OFFSET:{
-      printf("IPC_RECV: CPU: %d\n", cpu);
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       bool enabled = SB_BFE(cnt,15,1);
       if(!enabled)return; 
@@ -3509,7 +3514,7 @@ static uint8_t nds_process_firmware_write(nds_t *nds, uint8_t data){
 static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
 
   nds_touch_t *touch = &nds->touch;
-  uint8_t return_data = touch->tx_reg >> 8;
+  uint8_t return_data = touch->tx_reg>>8;
   touch->tx_reg<<=8;
   if(data&0x80){
     //Recv'd ctrl byte
@@ -3517,7 +3522,7 @@ static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
     switch(channel){
       case 0: touch->tx_reg =0x7FF8; break; // Temperature 0 (requires calibration, step 2.1mV per 1'C accuracy)
       case 1: touch->tx_reg =touch->y_reg; break; // Touchscreen Y-Position  (somewhat 0B0h..F20h, or FFFh=released)
-      case 2: touch->tx_reg =0x7FF8; break; // Battery Voltage         (not used, connected to GND in NDS, always 000h)
+      case 2: touch->tx_reg =0x0;    break; // Battery Voltage         (not used, connected to GND in NDS, always 000h)
       case 3: touch->tx_reg =0x7FF8; break; // Touchscreen Z1-Position (diagonal position for pressure measurement)
       case 4: touch->tx_reg =0x7FF8; break; // Touchscreen Z2-Position (diagonal position for pressure measurement)
       case 5: touch->tx_reg =touch->x_reg; break; // Touchscreen X-Position  (somewhat 100h..ED0h, or 000h=released)
@@ -3585,7 +3590,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
        // printf("NDS SPI BUS DATA: %d %02x %04x\n",device,cmd,spicnt);
         switch(device){
           case NDS_SPI_POWER: /*TODO*/break;
-          case NDS_SPI_TOUCH: break;
+          case NDS_SPI_TOUCH: data = nds_process_touch_ctrl_write(nds,cmd); break;
           case NDS_SPI_FIRMWARE: data = nds_process_firmware_write(nds,cmd); break;
           default: break;
         }
@@ -3596,7 +3601,6 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       }
     }break;
     case NDS_IPCFIFOSEND:{
-      printf("IPC_SEND: CPU: %d\n", cpu);
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       bool enabled = SB_BFE(cnt,15,1);
       if(!enabled)return; 
@@ -4250,8 +4254,8 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
 }
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
   bool is_touched = joy->inputs[SE_KEY_PEN_DOWN];
-  int x = 100;
-  int y = 100; 
+  int x = joy->touch_pos[0]*NDS_LCD_W;
+  int y = joy->touch_pos[1]*NDS_LCD_H; 
   uint8_t* firm_data = nds->mem.firmware;
   uint32_t user_data_off = (firm_data[0x21]<<8)|(firm_data[0x20]);
   uint32_t tsc_data_off = user_data_off*8+0x58;
@@ -4277,11 +4281,11 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
   if(is_touched){
     nds->touch.x_reg = ((x - scr_x1 + 1) * (adc_x2 - adc_x1) / (scr_x2 - scr_x1) + adc_x1)<<3;
     nds->touch.y_reg = ((y - scr_y1 + 1) * (adc_y2 - adc_y1) / (scr_y2 - scr_y1) + adc_y1)<<3;
-
   }else{
     nds->touch.x_reg = 0;
-    nds->touch.y_reg = 0xFFF;
+    nds->touch.y_reg = 0xFFF<<3;
   }
+  printf("Touch: %04x %04x\n",nds->touch.x_reg, nds->touch.y_reg);
   
 }
 /*uint64_t nds_read_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset, int size, int elem_size, int dir){
@@ -4756,6 +4760,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     prev_vblank = nds->ppu[0].last_vblank;
     
   }
+  
+  
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp){

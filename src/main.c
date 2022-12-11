@@ -204,6 +204,8 @@ typedef struct {
     sg_buffer quad_vb;
     sg_pipeline lcd_pipeline;
     se_file_browser_state_t file_browser; 
+    float mouse_pos[2];
+    bool mouse_button[3];
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -1377,6 +1379,18 @@ static void se_draw_emulated_system_screen(){
       p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
       p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
     }
+
+    float x = gui_state.mouse_pos[0];
+    float y = gui_state.mouse_pos[1];
+    x-=lcd_render_x+p[2];
+    y-=lcd_render_y+p[3];
+    x/=lcd_render_w;
+    y/=lcd_render_h*0.5;
+    x+=0.5;
+    y+=0.5;
+    emu_state.joy.touch_pos[0]=x;
+    emu_state.joy.touch_pos[1]=y;
+    if(gui_state.mouse_button[0])emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
     se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
     se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
   }else if (emu_state.system==SYSTEM_GB){
@@ -3477,6 +3491,12 @@ static void event(const sapp_event* ev) {
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
     }
+  }else if(ev->type==SAPP_EVENTTYPE_MOUSE_MOVE){
+    gui_state.mouse_pos[0]=ev->mouse_x;
+    gui_state.mouse_pos[1]=ev->mouse_y;
+  }else if(ev->type==SAPP_EVENTTYPE_MOUSE_UP||ev->type==SAPP_EVENTTYPE_MOUSE_DOWN){
+    int b = ev->mouse_button;
+    if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
   }
 }
 sapp_desc sokol_main(int argc, char* argv[]) {
