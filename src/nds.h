@@ -1882,7 +1882,6 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_VRAM_TEX_PAL_SLOT0  0x06E00000
 
 #define NDS_VRAM_SLOT_OFF    0x2000
-#define NDS_VRAM_ENG_OFF     0x00100000
 #define NDS_ARM9 1
 #define NDS_ARM7 0
 
@@ -1894,7 +1893,7 @@ typedef struct {
   uint8_t data_tcm[16*1024];
   uint8_t code_cache[8*1024];
   uint8_t data_cache[4*1024];
-  uint8_t vram[656*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
+  uint8_t vram[1024*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
   uint8_t palette[2*1024];   
 
   uint8_t oam[4*1024];       /* OAM/PAL (2K OBJ Attribute Memory, 2K Standard Palette RAM) */
@@ -2212,7 +2211,8 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   }
   return data; 
 }
-static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+  
   const static int bank_size[9]={
     128*1024, //A
     128*1024, //B
@@ -2224,18 +2224,20 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     32*1024,  //H
     16*1024,  //I
   };
-  uint32_t offset_table[6][5]={
+  uint32_t offset_table[7][5]={
     {0,0,0,0}, //Offset ignored
     {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
     {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
     {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*0}, // Slot 0-3 (mirrored)
     {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*2, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
     {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*4,NDS_VRAM_SLOT_OFF*5}, // Slot (OFS.0*1)+(OFS.1*4)
+    {0x20000*0, 0x20000*1, 0x20000*0,0x20000*1}, //(0x20000*OFS)
   };
   typedef struct vram_bank_info_t{
     int transaction_mask; // Block transactions of these types
     int offset_table;
     uint32_t mem_address_start;
+    int size; 
   }vram_bank_info_t;
 
   const static vram_bank_info_t bank_info[9][8]={
@@ -2260,7 +2262,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     },{ //Bank C
       {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
@@ -2269,7 +2271,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     },{ //Bank D
       {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9, 1, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
@@ -2290,7 +2292,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank G
@@ -2299,7 +2301,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank H
@@ -2315,21 +2317,22 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
       {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
       {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
     }
   };
   if(!(transaction_type&NDS_MEM_WRITE))data=0;
   int total_banks = 9;
   int vram_offset = 0; 
 
+
   //1Byte writes are ignored from the ARM9
   if((transaction_type&NDS_MEM_WRITE)&&(transaction_type&NDS_MEM_1B)&&(transaction_type&NDS_MEM_ARM9))return 0;
-  for(int b = 0; b<total_banks;++b){
 
+  for(int b = 0; b<total_banks;++b){
     int vram_off = vram_offset;
     vram_offset +=bank_size[b];
     const static int vram_cnt_array[]={
@@ -2345,9 +2348,9 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     };
     uint8_t vramcnt = nds9_io_read8(nds,vram_cnt_array[b]);
     bool enable = SB_BFE(vramcnt,7,1);
-    if(!enable)continue;
     int mst = SB_BFE(vramcnt,0,3);
     int off = SB_BFE(vramcnt,3,2);
+    if(!enable)continue;
 
     vram_bank_info_t bank = bank_info[b][mst];
     if(transaction_type& bank.transaction_mask)continue;
@@ -2357,7 +2360,175 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     if(address<base)continue;
 
     int bank_offset = address-base; 
-    if(bank_offset>=bank_size[b])continue;
+    if(bank_offset>=bank_size[b]||bank_offset<0)continue;
+
+    int vram_addr = bank_offset+vram_off;
+    
+    if(transaction_type&NDS_MEM_4B){
+      vram_addr&=~3;
+      if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
+      else data |= *(uint32_t*)(nds->mem.vram+vram_addr);
+    }else if(transaction_type&NDS_MEM_2B){
+      vram_addr&=~1;
+      if(transaction_type&NDS_MEM_WRITE)*(uint16_t*)(nds->mem.vram+vram_addr)=data;
+      else data |= *(uint16_t*)(nds->mem.vram+vram_addr);
+    }else{
+      if(transaction_type&NDS_MEM_WRITE)nds->mem.vram[vram_addr]=data;
+      else data |= nds->mem.vram[vram_addr];
+    }
+  }
+  return data; 
+}
+static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+  const static int bank_size[9]={
+    128*1024, //A
+    128*1024, //B
+    128*1024, //C
+    128*1024, //D
+    64*1024,  //E
+    16*1024,  //F
+    16*1024,  //G
+    32*1024,  //H
+    16*1024,  //I
+  };
+  uint32_t offset_table[7][5]={
+    {0,0,0,0}, //Offset ignored
+    {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
+    {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*0}, // Slot 0-3 (mirrored)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*2, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*4,NDS_VRAM_SLOT_OFF*5}, // Slot (OFS.0*1)+(OFS.1*4)
+    {0x20000*0, 0x20000*1, 0x20000*0,0x20000*1}, //(0x20000*OFS)
+  };
+  typedef struct vram_bank_info_t{
+    int transaction_mask; // Block transactions of these types
+    int offset_table;
+    uint32_t mem_address_start;
+    int size; 
+  }vram_bank_info_t;
+
+  const static vram_bank_info_t bank_info[9][8]={
+    { //Bank A 
+      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
+    },{ //Bank B
+      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
+      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
+    },{ //Bank C
+      {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank D
+      {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank E
+      {NDS_MEM_ARM7, 0, 0x06880000}, //MST 0 6880000h-688FFFFh
+      {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
+      {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
+      {0xffffffff, 0, 0x0}, // MST 5 INVALID
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank F
+      {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank G
+      {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
+      {0xffffffff, 0, 0x0}, // MST 6 INVALID
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank H
+      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 0 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 1 6200000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 2 Slot 0-3
+      {0xffffffff, 0, 0x0}, // MST 3 INVALID
+      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 4 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 5 6200000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 6 Slot 0-3
+      {0xffffffff, 0, 0x0}, // MST 7 INVALID
+    },{ //Bank I
+      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
+      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
+    }
+  };
+  if(!(transaction_type&NDS_MEM_WRITE))data=0;
+  int total_banks = 9;
+  int vram_offset = 0; 
+
+
+  //1Byte writes are ignored from the ARM9
+  if((transaction_type&NDS_MEM_WRITE)&&(transaction_type&NDS_MEM_1B)&&(transaction_type&NDS_MEM_ARM9))return 0;
+
+  for(int b = 0; b<total_banks;++b){
+    int vram_off = vram_offset;
+    vram_offset +=bank_size[b];
+    const static int vram_cnt_array[]={
+      NDS9_VRAMCNT_A,
+      NDS9_VRAMCNT_B,
+      NDS9_VRAMCNT_C,
+      NDS9_VRAMCNT_D,
+      NDS9_VRAMCNT_E,
+      NDS9_VRAMCNT_F,
+      NDS9_VRAMCNT_G,
+      NDS9_VRAMCNT_H, //These are not contiguous
+      NDS9_VRAMCNT_I, //These are not contiguous
+    };
+    uint8_t vramcnt = nds9_io_read8(nds,vram_cnt_array[b]);
+    bool enable = SB_BFE(vramcnt,7,1);
+    int mst = SB_BFE(vramcnt,0,3);
+    int off = SB_BFE(vramcnt,3,2);
+    if(!enable)continue;
+
+    vram_bank_info_t bank = bank_info[b][mst];
+    if(transaction_type& bank.transaction_mask)continue;
+
+    int base = bank.mem_address_start;
+    base += offset_table[bank.offset_table][off];
+    if(address<base)continue;
+
+    int bank_offset = address-base; 
+    if(bank_offset>=128*1024||bank_offset<0)continue;
+    bank_offset&=bank_size[b]-1;
 
     int vram_addr = bank_offset+vram_off;
     
@@ -3132,6 +3303,12 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       printf("NDS FIRMWARE DATA READ\n");
 
     }break;
+    case NDS9_POWCNT1:
+      if(cpu!=NDS_ARM9)return;
+      uint32_t d = nds9_io_read32(nds,NDS9_POWCNT1);
+      d|=1;
+      nds9_io_store32(nds,NDS9_POWCNT1,d);
+      break;
     case NDS_IPCFIFORECV|NDS_IO_MAP_041_OFFSET:{
       printf("IPC_RECV: CPU: %d\n", cpu);
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
@@ -3154,6 +3331,10 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
           else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
         }
       }
+    }break;
+    case NDS7_EXMEMSTAT:{
+      uint32_t r = nds9_io_read32(nds,NDS9_EXMEMCNT);
+      nds7_io_store32(nds,NDS7_EXMEMSTAT,r);
     }break;
     case NDS_GC_BUS:nds_process_gc_bus_read(nds,cpu);break;
     case NDS9_DIVCNT:case NDS9_DIV_RESULT: case NDS9_DIVREM_RESULT:case NDS9_DIV_RESULT+4: case NDS9_DIVREM_RESULT+4:{
@@ -3690,6 +3871,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
               int tile = tile_base*tile_boundry/32 + (((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride);
               //tile*=tile_boundry/32;
               uint8_t palette_id;
+              bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
               if(colors_or_palettes==false){
                 palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
                 palette_id= (palette_id>>((tx&1)*4))&0xf;
@@ -3699,17 +3881,15 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
                 palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
                 if(palette_id==0)continue;
               }
-              bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
               if(use_obj_ext_palettes){
                 palette_id=(palette)*256+palette_id;
-                uint32_t read_addr = NDS_VRAM_OBJA_SLOT0+palette_id*2+ppu_id*NDS_VRAM_ENG_OFF+(ppu_id?0x600:0x200);
+                uint32_t read_addr = (ppu_id?NDS_VRAM_OBJB_SLOT0:NDS_VRAM_OBJA_SLOT0)+palette_id*2;
                 col = nds_ppu_read16(nds, read_addr);
               }else{
                 uint32_t pallete_offset = ppu_id?0x600:0x200; 
                 col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
               }
             }
-
 
             //Handle window objects(not displayed but control the windowing of other things)
             if(obj_mode==2){ppu->window[x]=obj_window_control; 
@@ -3847,7 +4027,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           bg_y = (y2>>8);
 
           if(display_overflow==0){
-            //if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
+            if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
           }else{
             bg_x%=screen_size_x;
             bg_y%=screen_size_y;
@@ -3882,6 +4062,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             if(direct_color)col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
             else{
               int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
+              if(pallete_id==0)continue;
               col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
             }
           }else{
@@ -3924,20 +4105,19 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           int palette = SB_BFE(tile_data,12,4);
 
           uint8_t tile_d=tile_id;
-          if(colors==false){
+          if(colors==false&&use_ext_palettes==false){
             tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
             tile_d= (tile_d>>((px&1)*4))&0xf;
             if(tile_d==0)continue;
             tile_d+=palette*16;
           }else{
-
             tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
             if(tile_d==0)continue;
           }
           uint32_t palette_id = tile_d;
           if(use_ext_palettes){
             palette_id=(palette)*256+tile_d;
-            uint32_t read_addr = NDS_VRAM_BGA_SLOT0+palette_id*2+NDS_VRAM_SLOT_OFF*(bg)+ppu_id*NDS_VRAM_ENG_OFF;
+            uint32_t read_addr = (ppu_id?NDS_VRAM_BGB_SLOT0:NDS_VRAM_BGA_SLOT0)+palette_id*2+NDS_VRAM_SLOT_OFF*(bg);
             col = nds_ppu_read16(nds, read_addr);
           }else col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
         }
@@ -4208,11 +4388,19 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
 
           cnt&=0x1FFFFF;
           if(cnt==0)cnt =0x200000;
-
-          static const uint32_t src_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
-          static const uint32_t dst_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
-          //nds->dma[cpu][i].source_addr&=src_mask[i];
-          //nds->dma[cpu][i].dest_addr  &=dst_mask[i];
+          if(cpu==NDS_ARM7){
+            static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+            static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
+            static const uint32_t len_mask[] = { 0x3FFF, 0x3FFF,0x3FFF, 0x1FFFFF};
+            nds->dma[cpu][i].source_addr&=src_mask[i];
+            nds->dma[cpu][i].dest_addr  &=dst_mask[i];
+            cnt&=len_mask[i];
+          }else{
+            static const uint32_t src_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+            static const uint32_t dst_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
+            nds->dma[cpu][i].source_addr&=src_mask[i];
+            nds->dma[cpu][i].dest_addr  &=dst_mask[i];
+          }
           nds_io_store16(nds,cpu,GBA_DMA0CNT_L+12*i,cnt);
           //printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
         }
