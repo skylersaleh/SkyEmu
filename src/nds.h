@@ -1870,7 +1870,7 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_LCD_W 256
 #define NDS_LCD_H 192
 
-#define NDS_IO_MAP_SPLIT_ADDRESS 0x0400006C
+#define NDS_IO_MAP_SPLIT_ADDRESS 0x0400000C
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
@@ -2074,7 +2074,8 @@ typedef struct{
   struct{
     uint32_t timer;
     uint32_t sample;
-
+    int32_t adpcm_sample;
+    int32_t adpcm_index;
   }channel[16];
 
 }nds_audio_t; 
@@ -3553,7 +3554,16 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
+  if(addr>=GBA_DMA0SAD||addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
+  
   switch(addr){
+    case NDS7_HALTCNT&~3:
+      {
+        uint32_t word_data = nds_align_data(baddr,data,transaction_type);
+        bool halt = SB_BFE(word_data,(NDS7_HALTCNT&3)*8+7,1);
+        if(halt)nds->arm7.wait_for_interrupt=true;
+      }
+      break;
     case NDS9_IF: /*case NDS7_IF: <- duplicate address*/ 
       data = nds_align_data(baddr,data,transaction_type);
       mmio&=~data;
@@ -3892,7 +3902,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
               }
               int tile = tile_base*tile_boundry/32 + (((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride);
               //tile*=tile_boundry/32;
-              uint8_t palette_id;
+              uint16_t palette_id;
               bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
               if(colors_or_palettes==false){
                 palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
@@ -4127,7 +4137,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           int palette = SB_BFE(tile_data,12,4);
 
           uint8_t tile_d=tile_id;
-          if(colors==false&&use_ext_palettes==false){
+          if(colors==false){
             tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
             tile_d= (tile_d>>((px&1)*4))&0xf;
             if(tile_d==0)continue;
@@ -4319,6 +4329,7 @@ void nds_store_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset,
   }
 }*/
 static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
+  if(nds->activate_dmas==false)return 0;
   int ticks =0;
   nds->activate_dmas=false;
   for(int cpu = 0;cpu<2;++cpu){
@@ -4699,8 +4710,10 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       uint32_t cnt = nds7_io_read32(nds,NDS7_SOUND0_CNT+c*16);
       bool enable = SB_BFE(cnt,31,1);
       uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+c*16);
+      int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
       if(!enable){
         audio->channel[c].sample=0;
+
         audio->channel[c].timer = tmr;
         emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef;
         continue;
@@ -4713,10 +4726,48 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       while(audio->channel[c].timer>=0xffff){
         audio->channel[c].timer-=0xffff;
         audio->channel[c].timer+=tmr;
+        if(format==2){
+           static const int16_t adpcm_table[89] ={
+              0x0007, 0x0008, 0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x000E, 
+              0x0010, 0x0011, 0x0013, 0x0015, 0x0017, 0x0019, 0x001C, 0x001F, 
+              0x0022, 0x0025, 0x0029, 0x002D, 0x0032, 0x0037, 0x003C, 0x0042,
+              0x0049, 0x0050, 0x0058, 0x0061, 0x006B, 0x0076, 0x0082, 0x008F, 
+              0x009D, 0x00AD, 0x00BE, 0x00D1, 0x00E6, 0x00FD, 0x0117, 0x0133,
+              0x0151, 0x0173, 0x0198, 0x01C1, 0x01EE, 0x0220, 0x0256, 0x0292,
+              0x02D4, 0x031C, 0x036C, 0x03C3, 0x0424, 0x048E, 0x0502, 0x0583,
+              0x0610, 0x06AB, 0x0756, 0x0812, 0x08E0, 0x09C3, 0x0ABD, 0x0BD0,
+              0x0CFF, 0x0E4C, 0x0FBA, 0x114C, 0x1307, 0x14EE, 0x1706, 0x1954,
+              0x1BDC, 0x1EA5, 0x21B6, 0x2515, 0x28CA, 0x2CDF, 0x315B, 0x364B,
+              0x3BB9, 0x41B2, 0x4844, 0x4F7E, 0x5771, 0x602F, 0x69CE, 0x7462,
+              0x7FFF
+            };
+            if(audio->channel[c].sample==0){
+              uint32_t header = nds7_read32(nds,sad);
+              audio->channel[c].adpcm_sample = (int16_t)(header & 0xFFFF);
+              audio->channel[c].adpcm_index = (header >> 16) & 0x7F;
+              if(audio->channel[c].adpcm_index>88)audio->channel[c].adpcm_index=88;
+            }
+            uint8_t data = nds7_read8(nds,sad+audio->channel[c].sample/2+4);
+            data = (data>>((audio->channel[c].sample&1)*4))&0xf;
+
+            int16_t entry = adpcm_table[audio->channel[c].adpcm_index];
+            int16_t diff = entry >> 3;
+            if (data & 1) diff += entry >> 2;
+            if (data & 2) diff += entry >> 1;
+            if (data & 4) diff += entry;
+
+            if (data & 8) audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample - diff;
+            else audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample + diff;
+            if(audio->channel[c].adpcm_sample>+0x7FFF)audio->channel[c].adpcm_sample=0x7fff;
+            if(audio->channel[c].adpcm_sample<-0x7FFF)audio->channel[c].adpcm_sample=-0x7fff;
+            int new_index = audio->channel[c].adpcm_index + adpcm_table[data & 7];
+            if(new_index>88)new_index=88;
+            if(new_index<0)new_index=0;
+            audio->channel[c].adpcm_index =new_index;
+        }
         audio->channel[c].sample+=1;
       }
 
-      int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
       uint32_t tot_samps = len*4;
       switch(format){
         case 0: tot_samps = len*4; pnt*=4;break;
@@ -4741,17 +4792,19 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       }else{
         float v = 0; 
         switch(format){
-          case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.-1.;break;
-          case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample))/32768.-1.;break;
-          case 2: v= nds7_read16(nds,sad+audio->channel[c].sample)/32768.-1.;break;
+          case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.;break;
+          case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample))/32768.;break;
+          case 2:{        
+            v = audio->channel[c].adpcm_sample / 32768.0;
+          }break;
           case 3: v= audio->channel[c].sample<SB_BFE(cnt,24,3);break;
         }
-        emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef + fabs(v)*(1.0-lowpass_coef);
         uint32_t vol_mul = SB_BFE(cnt,0,7);
         uint32_t vol_div = SB_BFE(cnt,8,2);
         uint16_t pan = SB_BFE(cnt,16,7);
         float div_table[4]={1.0,0.5,0.25,1.0/16.};
-        v*=0.001*vol_mul*div_table[vol_div];
+        v*=0.01*vol_mul*div_table[vol_div];
+        emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef + fabs(v)*(1.0-lowpass_coef);
         r+=v*pan/128.;
         l+=v*(128-pan)/128.;
       }
@@ -4816,10 +4869,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     if(!ticks){
       uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
       uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
-      if(nds->halt){
-        ticks=2;
-        if(int7_if|int9_if){nds->halt = false;}
-      }else{
+      {
         nds->mem.requests=0;
         if(int7_if){
           uint32_t ie = nds7_io_read32(nds,NDS7_IE);
@@ -4857,7 +4907,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     last_tick=ticks;
     nds_tick_sio(nds);
 
-    double delta_t = ((double)ticks)/(64*1024*1024);
+    double delta_t = ((double)ticks)/(33513982*2.);
 
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);

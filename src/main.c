@@ -1218,7 +1218,7 @@ static double se_get_sim_fps(){
   double sim_fps=1.0;
   if(emu_state.system==SYSTEM_GB)sim_fps = 59.727;
   else if(emu_state.system == SYSTEM_GBA) sim_fps = 59.727;
-  else if(emu_state.system == SYSTEM_NDS) sim_fps = 59.727;
+  else if(emu_state.system == SYSTEM_NDS) sim_fps = 59.8261;
   return sim_fps;
 }
 static size_t se_get_core_size(){
@@ -1398,7 +1398,7 @@ static void se_draw_emulated_system_screen(){
     y+=0.5;
     emu_state.joy.touch_pos[0]=x;
     emu_state.joy.touch_pos[1]=y;
-    if(gui_state.mouse_button[0])emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
+    if(gui_state.mouse_button[0]&&x>=0&&x<=1.0&&y>=0.&&y<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
     se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
     se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
   }else if (emu_state.system==SYSTEM_GB){
