@@ -149,6 +149,13 @@ typedef struct {
   char rom_path[SB_FILE_PATH_SIZE]; 
 } sb_emu_state_t;
 typedef struct{
+  bool read_since_reset;
+  bool read_in_tick;
+
+  bool write_since_reset;
+  bool write_in_tick;
+}sb_debug_mmio_access_t;
+typedef struct{
   uint32_t addr;
   const char * name;
   struct{

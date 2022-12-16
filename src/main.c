@@ -720,6 +720,7 @@ static void se_free_all_images(){
 }
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
+typedef sb_debug_mmio_access_t (*emu_mmio_access_type)(uint64_t address);
 
 static uint16_t se_read16(emu_byte_read_t read,uint64_t address){
   uint16_t data = (*read)(address+1);
@@ -997,14 +998,20 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   }
 
 }
-void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write){
+void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write, emu_mmio_access_type access_type){
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
     uint32_t data = se_read32(read, addr);
     bool has_fields = false;
     igPushIDInt(i);
     char lab[80];
-    snprintf(lab,80,"0x%08x: %s",addr,mmios[i].name);
+    sb_debug_mmio_access_t access={0};
+    if(access_type)access=access_type(addr);
+    else{
+      access.read_since_reset=true;
+      access.write_since_reset=true;
+    }
+    snprintf(lab,80,"0x%08x: %s %s%s",addr,mmios[i].name,access.write_in_tick?ICON_FK_PENCIL_SQUARE_O:"",access.read_in_tick?ICON_FK_SEARCH:"");
     if (igTreeNodeStr(lab)){
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
         igPushIDInt(f);
@@ -1411,10 +1418,10 @@ static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&core.gba,
 static uint8_t gb_byte_read(uint64_t address){return sb_read8(&core.gb,address);}
 static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&core.gb,address,data);}
 
-static uint8_t nds9_byte_read(uint64_t address){return nds9_read8(&core.nds,address);}
-static void nds9_byte_write(uint64_t address, uint8_t data){nds9_write8(&core.nds,address,data);}
-static uint8_t nds7_byte_read(uint64_t address){return nds7_read8(&core.nds,address);}
-static void nds7_byte_write(uint64_t address, uint8_t data){nds7_write8(&core.nds,address,data);}
+static uint8_t nds9_byte_read(uint64_t address){return nds9_debug_read8(&core.nds,address);}
+static void nds9_byte_write(uint64_t address, uint8_t data){nds9_debug_write8(&core.nds,address,data);}
+static uint8_t nds7_byte_read(uint64_t address){return nds7_debug_read8(&core.nds,address);}
+static void nds7_byte_write(uint64_t address, uint8_t data){nds7_debug_write8(&core.nds,address,data);}
 typedef struct{
   const char* short_label;
   const char* label;
@@ -1424,13 +1431,15 @@ typedef struct{
 
 void gba_memory_debugger(){se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); }
 void gba_cpu_debugger(){se_draw_arm_state("CPU",&core.gba.cpu,&gba_byte_read);}
-void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write);}
+void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write,NULL);}
 
-void gb_mmio_debugger(){se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write);}
+void gb_mmio_debugger(){se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write,NULL);}
 void gb_memory_debugger(){se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write);}
 
-void nds7_mmio_debugger(){se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write); }
-void nds9_mmio_debugger(){se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write); }
+sb_debug_mmio_access_t nds7_mmio_access_type(uint64_t address){return nds_debug_mmio_access(&core.nds,NDS_ARM7,address);}
+sb_debug_mmio_access_t nds9_mmio_access_type(uint64_t address){return nds_debug_mmio_access(&core.nds,NDS_ARM9,address);}
+void nds7_mmio_debugger(){se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write,&nds7_mmio_access_type); }
+void nds9_mmio_debugger(){se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write,&nds9_mmio_access_type); }
 void nds7_mem_debugger(){se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); }
 void nds9_mem_debugger(){se_draw_mem_debug_state("NDS7_MEM",&gui_state, &nds7_byte_read, &nds7_byte_write);}
 void nds7_cpu_debugger(){se_draw_arm_state("ARM7",&core.nds.arm7,&nds7_byte_read); }
