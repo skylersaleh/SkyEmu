@@ -400,6 +400,11 @@ typedef enum{
 
 #define NDS_FIRMWARE_SIZE (256*1024)
 
+#define NDS_IO_MAP_SPLIT_ADDRESS 0x04000000
+#define NDS_IO_MAP_SPLIT_OFFSET  0x2000
+#define NDS_IO_MAP_041_OFFSET    0x4000
+
+
 
 mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DISPCNT , "DISPCNT ", { 
@@ -739,6 +744,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 15   ,1, "Enable Send/Receive Fifo    (0=Disable, 1=Enable)"},
   } }, /*IPC Fifo Control Register (R/W)*/
   { NDS_IPCFIFOSEND , "IPCFIFOSEND", { 0 } }, /*IPC Send Fifo (W)*/
+  { NDS_IPCFIFORECV, "IPCFIFORECV", { 0 }}, /* Sound Capture 1 Length (W) */
   { NDS9_AUXSPICNT   , "AUXSPICNT",   { 
     { 0    ,2,"SPI Baudrate        (0=4MHz/Default, 1=2MHz, 2=1MHz, 3=512KHz)" },
     { 6    ,1,"SPI Hold Chipselect (0=Deselect after transfer, 1=Keep selected)" },
@@ -1442,6 +1448,7 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 15   ,1, "Enable Send/Receive Fifo    (0=Disable, 1=Enable)"},
   } }, /* IPC Fifo Control Register (R/W) */
   { NDS_IPCFIFOSEND,     "IPCFIFOSEND",    { 0 } }, /* IPC Send Fifo (W) */
+  { NDS_IPCFIFORECV, "IPCFIFORECV", { 0 }}, /* Sound Capture 1 Length (W) */
   { NDS7_AUXSPICNT,       "AUXSPICNT",      { 
     { 0    ,2,"SPI Baudrate        (0=4MHz/Default, 1=2MHz, 2=1MHz, 3=512KHz)" },
     { 6    ,1,"SPI Hold Chipselect (0=Deselect after transfer, 1=Keep selected)" },
@@ -1912,10 +1919,6 @@ mmio_reg_t nds7_io_reg_desc[]={
 
 #define NDS_LCD_W 256
 #define NDS_LCD_H 192
-
-#define NDS_IO_MAP_SPLIT_ADDRESS 0x04000000
-#define NDS_IO_MAP_SPLIT_OFFSET  0x2000
-#define NDS_IO_MAP_041_OFFSET    0x4000
 
 #define NDS_VRAM_BGA_SLOT0 0x06900000
 #define NDS_VRAM_BGB_SLOT0 0x06A00000
@@ -2711,7 +2714,7 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
         if(nds->arm7.registers[PC]<0x4000)
           nds->mem.arm7_bios_word = nds_apply_mem_op(nds->mem.nds7_bios,addr,data,transaction_type&~NDS_MEM_WRITE);
         //else nds->mem.bios_word=0;
-        nds->mem.openbus_word=nds->mem.arm7_bios_word;
+        *ret = nds->mem.openbus_word=nds->mem.arm7_bios_word;
       } 
       break;
     case 0x2: //Main RAM
@@ -3682,13 +3685,14 @@ static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
     switch(channel){
       case 0: touch->tx_reg =0x7FF8; break; // Temperature 0 (requires calibration, step 2.1mV per 1'C accuracy)
       case 1: touch->tx_reg =touch->y_reg; break; // Touchscreen Y-Position  (somewhat 0B0h..F20h, or FFFh=released)
-      case 2: touch->tx_reg =0x0;    break; // Battery Voltage         (not used, connected to GND in NDS, always 000h)
+      case 2: touch->tx_reg =0xf0;    break; // Battery Voltage         (not used, connected to GND in NDS, always 000h)
       case 3: touch->tx_reg =0x7FF8; break; // Touchscreen Z1-Position (diagonal position for pressure measurement)
       case 4: touch->tx_reg =0x7FF8; break; // Touchscreen Z2-Position (diagonal position for pressure measurement)
       case 5: touch->tx_reg =touch->x_reg; break; // Touchscreen X-Position  (somewhat 100h..ED0h, or 000h=released)
       case 6: touch->tx_reg =0x7FF8; break; // AUX Input               (connected to Microphone in the NDS)
       case 7: touch->tx_reg =0x7FF8; break; // Temperature 1 (difference to Temp 0, without calibration, 2'C accuracy)
     }
+    printf("Touch: %d %04x\n",channel, nds->touch.tx_reg);
   }
   return return_data;
 }
@@ -3801,6 +3805,20 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       bool error = SB_BFE(cnt,14,1);
       //Storing a 1 in the error bit clears it(rockwrestler) 
       if(error)nds->ipc[cpu].error=false;
+      int size = (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f;
+      int other_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
+
+      bool recv_fifo_not_empty_irq = SB_BFE(cnt,10,1);
+      if(recv_fifo_not_empty_irq&&size){
+        if(cpu==NDS_ARM7)nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+        else         nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+      }
+      bool send_fifo_empty_irq = SB_BFE(cnt,2,1);
+      if(send_fifo_empty_irq&&other_size==0){
+        if(cpu==NDS_ARM7)nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+        else             nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+      }
+
       nds_io_store16(nds,cpu,NDS_IPCFIFOCNT,cnt);
     }break;
     case NDS9_VRAMCNT_E:{
@@ -4492,7 +4510,6 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
     nds->touch.x_reg = 0;
     nds->touch.y_reg = 0xFFF<<3;
   }
-  printf("Touch: %04x %04x\n",nds->touch.x_reg, nds->touch.y_reg);
   
 }
 /*uint64_t nds_read_eeprom_bitstream(nds_t *nds, uint32_t source_address, int offset, int size, int elem_size, int dir){
@@ -4725,7 +4742,7 @@ static void nds_compute_timers(nds_t* nds){
   int last_timer_overflow = 0; 
   int timer_ticks_before_event = 32768; 
   for(int cpu=0;cpu<2;++cpu){
-    int ticks = (cpu==NDS_ARM7?1:2)*input_ticks;
+    int ticks = (cpu==NDS_ARM7?1:1)*input_ticks;
     for(int t=0;t<4;++t){ 
       uint16_t tm_cnt_h = nds_io_read16(nds,cpu,GBA_TM0CNT_H+t*4);
       bool enable = SB_BFE(tm_cnt_h,7,1);
@@ -4795,8 +4812,8 @@ static void nds_compute_timers(nds_t* nds){
       }else last_timer_overflow=0;
       timer->last_enable = enable;
     }
-    nds->timer_ticks_before_event=timer_ticks_before_event;
   }
+  nds->timer_ticks_before_event=timer_ticks_before_event;
 }
 static FORCE_INLINE float nds_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;
@@ -4828,15 +4845,11 @@ static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
     if(if_bit){
       uint32_t if_val = nds9_io_read32(nds,NDS9_IF);
       if_val |= if_bit;
-      uint32_t ie_val = nds9_io_read32(nds,NDS9_IE);
-      uint16_t ime = nds9_io_read16(nds,NDS9_IME); 
       nds9_io_store32(nds,NDS9_IF,if_val);
     }
     if_bit = nds->nds7_pipelined_if[0];
     if(if_bit){
       uint32_t if_val = nds7_io_read32(nds,NDS7_IF);
-      uint32_t ie_val = nds7_io_read32(nds,NDS7_IE);
-      uint16_t ime = nds7_io_read16(nds,NDS7_IME); 
       if_val |= if_bit;
       nds7_io_store32(nds,NDS7_IF,if_val);
     }
@@ -4921,6 +4934,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
               0x3BB9, 0x41B2, 0x4844, 0x4F7E, 0x5771, 0x602F, 0x69CE, 0x7462,
               0x7FFF
             };
+            static const int adpcm_indextable[8]={ -1, -1, -1, -1, 2, 4, 6, 8 };
             if(audio->channel[c].sample==0){
               uint32_t header = nds7_read32(nds,sad);
               audio->channel[c].adpcm_sample = (int16_t)(header & 0xFFFF);
@@ -4940,7 +4954,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
             else audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample + diff;
             if(audio->channel[c].adpcm_sample>+0x7FFF)audio->channel[c].adpcm_sample=0x7fff;
             if(audio->channel[c].adpcm_sample<-0x7FFF)audio->channel[c].adpcm_sample=-0x7fff;
-            int new_index = audio->channel[c].adpcm_index + adpcm_table[data & 7];
+            int new_index = audio->channel[c].adpcm_index + adpcm_indextable[data & 7];
             if(new_index>88)new_index=88;
             if(new_index<0)new_index=0;
             audio->channel[c].adpcm_index =new_index;
@@ -4974,10 +4988,8 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         switch(format){
           case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.;break;
           case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample))/32768.;break;
-          case 2:{        
-            v = audio->channel[c].adpcm_sample / 32768.0;
-          }break;
-          case 3: v= audio->channel[c].sample<SB_BFE(cnt,24,3);break;
+          case 2: v= audio->channel[c].adpcm_sample / 32768.0;break;
+          case 3: v= audio->channel[c].sample<SB_BFE(cnt,24,3);break; //Todo: add antialiasing
         }
         uint32_t vol_mul = SB_BFE(cnt,0,7);
         uint32_t vol_div = SB_BFE(cnt,8,2);
@@ -5089,6 +5101,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           arm9_exec_instruction(&nds->arm9);
           ticks = nds->mem.requests; 
         }
+       
       }
       //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
       if(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint){
@@ -5100,7 +5113,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }
-    ticks=2;
+    ticks=4;
     last_tick=ticks;
     //nds_tick_sio(nds);
 

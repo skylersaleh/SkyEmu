@@ -45,7 +45,7 @@ typedef void (*arm_write8_fn_t)(void* user_data, uint32_t address, uint8_t data)
 typedef uint32_t (*arm_coproc_read_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 typedef void (*arm_coproc_write_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp, uint32_t data);
 
-
+#define ARM_DEBUG_BRANCH_RING_SIZE 32
 typedef struct {
   // Registers
   /*
@@ -62,6 +62,9 @@ typedef struct {
   35: SPSR_abt
   36: SPSR_und
   */
+
+  uint32_t debug_branch_ring[ARM_DEBUG_BRANCH_RING_SIZE];
+  uint32_t debug_branch_ring_offset;
   uint32_t prefetch_pc;
   uint32_t step_instructions;//Instructions to step before triggering a breakpoint
   uint32_t prefetch_opcode[3]; 
@@ -791,6 +794,7 @@ static void arm9_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
+    cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
   }
   if(cpu->log_cmp_file){
     arm_check_log_file(cpu);
@@ -844,6 +848,7 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }
+    cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
   }
 
   cpu->next_fetch_sequential=true;

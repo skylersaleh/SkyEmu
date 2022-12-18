@@ -910,7 +910,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   arm7_reg_write(arm,CPSR,cpsr);
   unsigned pc = arm7_reg_read(arm,PC);
   bool thumb = arm7_get_thumb_bit(arm);
-  pc-=thumb? 4: 8;
+  //pc-=thumb? 4: 8;
   uint8_t buffer[128];
   int buffer_size = sizeof(buffer);
   if(thumb)buffer_size/=2;
@@ -921,6 +921,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   igSeparator();
   csh handle;
   if (cs_open(CS_ARCH_ARM, thumb? CS_MODE_THUMB: CS_MODE_ARM, &handle) == CS_ERR_OK){
+    cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
     cs_insn *insn;
     int count = cs_disasm(handle, buffer, buffer_size, pc-off, 0, &insn);
     size_t j;
@@ -951,6 +952,15 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
         igText(instr_str);
       }
     }  
+  }
+
+  igText(ICON_FK_RANDOM " Last Branch Locations");
+  igSeparator();
+  for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE;++i){
+    uint32_t ind = (arm->debug_branch_ring_offset-i)%ARM_DEBUG_BRANCH_RING_SIZE;
+    igText("%d",i+1);
+    igSameLine(40,0);
+    igText("0x%08x",arm->debug_branch_ring[ind]);
   }
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
