@@ -2272,6 +2272,8 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 #define NDS_MEM_ARM9  0x80
 #define NDS_MEM_PPU   0x100
 #define NDS_MEM_DEBUG 0x200
+#define NDS_MEM_CPU   0x400
+
 static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_4B){
     address&=~3;
@@ -2629,13 +2631,13 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
   uint32_t *ret = &nds->mem.openbus_word;
   *ret=0;
   if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
-    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||!(transaction_type&NDS_MEM_WRITE))){
+    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||!(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
       return *ret; 
     }
   }
   if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
-    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||!(transaction_type&NDS_MEM_WRITE))){
+    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||!(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
       return *ret; 
     }
@@ -2909,6 +2911,25 @@ static FORCE_INLINE void nds7_debug_write8(nds_t*nds, unsigned baddr, uint8_t da
   nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
 }
 
+
+static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
+static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
+static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
+static FORCE_INLINE void nds9_cpu_write32(nds_t*nds, unsigned baddr, uint32_t data){
+  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
+static FORCE_INLINE void nds9_cpu_write16(nds_t*nds, unsigned baddr, uint16_t data){
+  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
+static FORCE_INLINE void nds9_cpu_write8(nds_t*nds, unsigned baddr, uint8_t data){
+  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+}
 static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
 }
@@ -2944,14 +2965,14 @@ static FORCE_INLINE uint16_t nds_ppu_read16(nds_t*nds, unsigned baddr){
 static FORCE_INLINE uint32_t nds_ppu_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_PPU);
 }
-uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_read32((nds_t*)user_data,address);}
-uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_read16((nds_t*)user_data,address);}
-uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_read32((nds_t*)user_data,address);}
-uint32_t nds9_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_read16((nds_t*)user_data,address);}
-uint8_t nds9_arm_read8(void* user_data, uint32_t address){return nds9_read8((nds_t*)user_data,address);}
-void nds9_arm_write32(void* user_data, uint32_t address, uint32_t data){nds9_write32((nds_t*)user_data,address,data);}
-void nds9_arm_write16(void* user_data, uint32_t address, uint16_t data){nds9_write16((nds_t*)user_data,address,data);}
-void nds9_arm_write8(void* user_data, uint32_t address, uint8_t data){nds9_write8((nds_t*)user_data,address,data);}
+uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_cpu_read32((nds_t*)user_data,address);}
+uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_cpu_read16((nds_t*)user_data,address);}
+uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read32((nds_t*)user_data,address);}
+uint32_t nds9_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read16((nds_t*)user_data,address);}
+uint8_t nds9_arm_read8(void* user_data, uint32_t address){return nds9_cpu_read8((nds_t*)user_data,address);}
+void nds9_arm_write32(void* user_data, uint32_t address, uint32_t data){nds9_cpu_write32((nds_t*)user_data,address,data);}
+void nds9_arm_write16(void* user_data, uint32_t address, uint16_t data){nds9_cpu_write16((nds_t*)user_data,address,data);}
+void nds9_arm_write8(void* user_data, uint32_t address, uint8_t data){nds9_cpu_write8((nds_t*)user_data,address,data);}
 
 uint32_t nds7_arm_read32(void* user_data, uint32_t address){return nds7_read32((nds_t*)user_data,address);}
 uint32_t nds7_arm_read16(void* user_data, uint32_t address){return nds7_read16((nds_t*)user_data,address);}
@@ -3692,7 +3713,7 @@ static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
       case 6: touch->tx_reg =0x7FF8; break; // AUX Input               (connected to Microphone in the NDS)
       case 7: touch->tx_reg =0x7FF8; break; // Temperature 1 (difference to Temp 0, without calibration, 2'C accuracy)
     }
-    printf("Touch: %d %04x\n",channel, nds->touch.tx_reg);
+    //printf("Touch: %d %04x\n",channel, nds->touch.tx_reg);
   }
   return return_data;
 }
@@ -4098,6 +4119,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
                 palette_id= (palette_id>>((tx&1)*4))&0xf;
                 if(palette_id==0)continue;
                 palette_id+=palette*16;
+                use_obj_ext_palettes=false; //Not supported in 16 color mode
               }else{
                 palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
                 if(palette_id==0)continue;
@@ -4233,8 +4255,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
           if(rot_scale){
             colors = true;
-            //TODO: Can affine backgrounds really not use ext_palettes?
-            use_ext_palettes=false;
 
             int32_t bgx = ppu->aff[bg-2].internal_bgx;
             int32_t bgy = ppu->aff[bg-2].internal_bgy;
@@ -4317,8 +4337,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             int py = bg_y%8;
 
 
-            if(rot_scale)tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
-            else{
+            if(rot_scale){
+              tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
+              use_ext_palettes=false; //Not supported for 8bit bg map
+            }else{
               int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
               if(bg_tile_x>=32)tile_off+=32*32;
               if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
@@ -4338,6 +4360,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
               tile_d= (tile_d>>((px&1)*4))&0xf;
               if(tile_d==0)continue;
               tile_d+=palette*16;
+              use_ext_palettes=false;
             }else{
               tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
               if(tile_d==0)continue;
@@ -4345,7 +4368,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             uint32_t palette_id = tile_d;
             if(use_ext_palettes){
               palette_id=(palette)*256+tile_d;
-              uint32_t read_addr = (ppu_id?NDS_VRAM_BGB_SLOT0:NDS_VRAM_BGA_SLOT0)+palette_id*2+NDS_VRAM_SLOT_OFF*(bg);
+              int ext_palette_slot = bg;
+              if(bg<2)ext_palette_slot+=SB_BFE(bgcnt,13,1)*2;
+              uint32_t read_addr = (ppu_id?NDS_VRAM_BGB_SLOT0:NDS_VRAM_BGA_SLOT0)+palette_id*2+NDS_VRAM_SLOT_OFF*(ext_palette_slot);
               col = nds_ppu_read16(nds, read_addr);
             }else col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
           }

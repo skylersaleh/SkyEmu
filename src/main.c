@@ -957,7 +957,8 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   igText(ICON_FK_RANDOM " Last Branch Locations");
   igSeparator();
   for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE;++i){
-    uint32_t ind = (arm->debug_branch_ring_offset-i)%ARM_DEBUG_BRANCH_RING_SIZE;
+    uint32_t ind = (arm->debug_branch_ring_offset-i-1);
+    ind%=ARM_DEBUG_BRANCH_RING_SIZE;
     igText("%d",i+1);
     igSameLine(40,0);
     igText("0x%08x",arm->debug_branch_ring[ind]);
