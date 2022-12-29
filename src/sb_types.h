@@ -101,6 +101,10 @@
 #define SYSTEM_GBA 2
 #define SYSTEM_NDS 3
 
+#define SE_RPT4 for(int r=0;r<4;++r)
+#define SE_RPT3 for(int r=0;r<3;++r)
+#define SE_RPT2 for(int r=0;r<2;++r)
+
 typedef struct{
   float inputs[SE_NUM_KEYBINDS];
   float touch_pos[2];

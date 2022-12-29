@@ -940,7 +940,11 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_COLOR,           "COLOR",           { 0 } }, /* Directly Set Vertex Color (W) */ 
   { NDS9_NORMAL,          "NORMAL",          { 0 } }, /* Set Normal Vector (W) */ 
   { NDS9_TEXCOORD,        "TEXCOORD",        { 0 } }, /* Set Texture Coordinates (W) */ 
-  { NDS9_VTX_16,          "VTX_16",          { 0 } }, /* Set Vertex XYZ Coordinates (W) */ 
+  { NDS9_VTX_16,          "VTX_16(param 0)",          { 
+    {0, 16,  "(Param 1)X Coord 1.3.12 fixed point"},
+    {16, 16, "(Param 1)Y Coord 1.3.12 fixed point"},
+    {0, 16,  "(Param 2)Z Coord 1.3.12 fixed point"}
+  } }, /* Set Vertex XYZ Coordinates (W) */ 
   { NDS9_VTX_10,          "VTX_10",          { 0 } }, /* Set Vertex XYZ Coordinates (W) */ 
   { NDS9_VTX_XY,          "VTX_XY",          { 0 } }, /* Set Vertex XY Coordinates (W) */ 
   { NDS9_VTX_XZ,          "VTX_XZ",          { 0 } }, /* Set Vertex XZ Coordinates (W) */ 
@@ -954,7 +958,9 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_LIGHT_VECTOR,    "LIGHT_VECTOR",    { 0 } }, /* Set Light's Directional Vector (W) */ 
   { NDS9_LIGHT_COLOR,     "LIGHT_COLOR",     { 0 } }, /* Set Light Color (W) */ 
   { NDS9_SHININESS,       "SHININESS",       { 0 } }, /* Specular Reflection Shininess Table (W) */ 
-  { NDS9_BEGIN_VTXS,      "BEGIN_VTXS",      { 0 } }, /* Start of Vertex List (W) */ 
+  { NDS9_BEGIN_VTXS,      "BEGIN_VTXS",      { 
+    {0,2,"Primitive Type(0=Triangles, 1=Quads, 2=Tri Strips, 3=Quad Strips"},
+  } }, /* Start of Vertex List (W) */ 
   { NDS9_END_VTXS,        "END_VTXS",        { 0 } }, /* End of Vertex List (W) */ 
   { NDS9_SWAP_BUFFERS,    "SWAP_BUFFERS",    { 0 } }, /* Swap Rendering Engine Buffer (W) */ 
   { NDS9_VIEWPORT,        "VIEWPORT",        { 0 } }, /* Set Viewport (W) */ 
@@ -1931,6 +1937,9 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_ARM9 1
 #define NDS_ARM7 0
 
+#define NDS_GXFIFO_SIZE 256
+#define NDS_GPU_MAX_PARAM 32
+
 typedef struct {     
   uint8_t ram[4*1024*1024]; /*4096KB Main RAM (8192KB in debug version)*/
   uint8_t wram[96*1024];    /*96KB   WRAM (64K mapped to NDS7, plus 32K mappable to NDS7 or NDS9)*/
@@ -2126,6 +2135,41 @@ typedef struct{
 
 }nds_audio_t; 
 
+#define NDS_MATRIX_PROJ 0
+#define NDS_MATRIX_MV 1
+#define NDS_MATRIX_TBD 2 //<- TODO: Future Sky problem
+#define NDS_MATRIX_TEX 3
+
+#define NDS_MAX_VERTS 8192
+
+typedef struct{
+  float pos[4];
+  uint8_t color[3];
+  float tex[2];
+}nds_vert_t;
+typedef struct{
+  uint32_t fifo_data[NDS_GXFIFO_SIZE];
+  uint8_t fifo_cmd[NDS_GXFIFO_SIZE];
+  uint32_t fifo_read_ptr, fifo_write_ptr;
+  uint32_t prev_cmd;
+  uint32_t param_offset;
+  uint32_t param_buffer[NDS_GPU_MAX_PARAM];
+  nds_vert_t vert_buffer[NDS_MAX_VERTS];
+  uint32_t curr_vert; 
+  uint32_t curr_draw_vert; 
+  uint32_t prim_type;
+
+  float proj_matrix[16];
+  float tex_matrix[16];
+  float mv_matrix_stack[16*31];
+  float normal_matrix_stack[16*31];
+  uint8_t curr_color[4];
+  uint16_t curr_tex_coord[2];
+  int32_t last_vertex_pos[3];
+  int matrix_mode; 
+  int matrix_stack_ptr;
+}nds_gpu_t; 
+
 typedef struct{
   nds_mem_t mem;
   arm7_t arm7;
@@ -2133,6 +2177,7 @@ typedef struct{
   nds_card_t card;
   nds_input_t joy;       
   nds_ppu_t ppu[2];
+  nds_gpu_t gpu;
   nds_rtc_t rtc;
   nds_dma_t dma[2][4]; 
   nds_ipc_t ipc[2];
@@ -2159,6 +2204,9 @@ typedef struct{
 
   uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
   uint64_t current_clock;
 } nds_t; 
 
@@ -3108,6 +3156,7 @@ static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t 
 
 // Try to load a GBA rom, return false on invalid rom
 bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds, nds_scratch_t* scratch);
+static void nds_reset_gpu(nds_t*nds);
 void nds_reset(nds_t*nds);
  
 static void nds_recompute_mmio_mask_table(nds_t* nds){
@@ -3324,6 +3373,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   uint8_t* firm_data = scratch->firmware;
   uint32_t user_data_off = ((firm_data[0x21]<<8)|(firm_data[0x20]))*8;
   for(int i=0;i<0x070;++i)nds9_write8(nds,i+0x27FFC80,firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]);
+  nds_reset_gpu(nds);
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
@@ -3723,13 +3773,402 @@ static void nds_deselect_spi(nds_t *nds){
   nds->firmware.state = 0; 
   nds->spi.last_device = -1;
 }
+static float * nds_gpu_get_active_matrix(nds_t*nds){
+  switch(nds->gpu.matrix_mode){
+    case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix;
+    case NDS_MATRIX_MV: return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
+    case NDS_MATRIX_TEX: return nds->gpu.tex_matrix;
+    default:
+      printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
+  }
+  return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
+}
+static void nds_identity_matrix(float* m){
+  for(int i=0;i<16;++i)m[i]=(i%5)==0?1.0:0.0;;
+}
+static void nds_reset_gpu(nds_t*nds){
+  printf("Reset GPU\n");
+  nds_identity_matrix(nds->gpu.proj_matrix);
+  nds_identity_matrix(nds->gpu.tex_matrix);
+  nds_identity_matrix(nds->gpu.mv_matrix_stack);
+}
+static void nds_gpu_swap_buffers(nds_t*nds){
+  uint32_t clear_color = nds9_io_read32(nds,NDS9_CLEAR_COLOR);
+  for(int i=0;i<NDS_LCD_W*NDS_LCD_H;++i){
+    nds->framebuffer_3d_disp[i*4+0]=nds->framebuffer_3d[i*4+0];
+    nds->framebuffer_3d_disp[i*4+1]=nds->framebuffer_3d[i*4+1];
+    nds->framebuffer_3d_disp[i*4+2]=nds->framebuffer_3d[i*4+2];
+    nds->framebuffer_3d_disp[i*4+3]=nds->framebuffer_3d[i*4+3];
+    nds->framebuffer_3d[i*4+0]=SB_BFE(clear_color,0,5);
+    nds->framebuffer_3d[i*4+1]=SB_BFE(clear_color,5,5);
+    nds->framebuffer_3d[i*4+2]=SB_BFE(clear_color,10,5);
+    nds->framebuffer_3d[i*4+3]=SB_BFE(clear_color,24,5);
+
+    nds->framebuffer_3d_depth[i]=10e6;
+  }
+  nds->gpu.curr_vert = 0; 
+  nds->gpu.matrix_mode = NDS_MATRIX_MV;
+
+  SE_RPT4 nds->gpu.curr_color[r]=255;
+
+}
+void nds_translate_matrix(float * m, float x, float y, float z){
+  m[12]+=m[0]*x+m[4]*y+m[8]*z;
+  m[13]+=m[1]*x+m[5]*y+m[9]*z;
+  m[14]+=m[2]*x+m[6]*y+m[10]*z;
+  m[15]+=m[3]*x+m[7]*y+m[11]*z;
+}
+void nds_scale_matrix(float * m, float x, float y, float z){
+  SE_RPT4 m[r*4+0] *=x;
+  SE_RPT4 m[r*4+1] *=y;
+  SE_RPT4 m[r*4+2] *=z;
+}
+void nds_mult_matrix_vector(float * result, float * m, float *v,int dims){
+  for(int x=0;x<dims;++x){
+    result[x]=0;
+    for(int y = 0;y<dims;++y)result[x]+=m[x+y*dims]*v[y];
+  }
+}
+//res=res*m2
+void nds_mult_matrix4(float * res, float *m2){
+  //printf("Mult Matrix:\n");
+  //for(int y=0;y<4;++y)printf("%f %f %f %f\n",m2[0+y*4],m2[1+y*4],m2[2+y*4],m2[3+y*4]);
+  float t[16];
+  for(int i=0;i<16;++i)t[i]=res[i];
+
+  for(int y=0;y<4;++y) 
+    for(int x=0;x<4;++x){
+      res[x+y*4] = m2[0+y*4]*t[x+0*4]
+                  +m2[1+y*4]*t[x+1*4]
+                  +m2[2+y*4]*t[x+2*4]
+                  +m2[3+y*4]*t[x+3*4];
+  }
+}
+static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
+
+  nds_vert_t *v[3] = {nds->gpu.vert_buffer+vi0,nds->gpu.vert_buffer+vi1,nds->gpu.vert_buffer+vi2};
+
+
+  float min_p[3] = {1,1,1};
+  float max_p[3] = {-1,-1,-1};
+  
+  for(int i=0;i<3;++i){
+    SE_RPT3 if(min_p[r]>v[i]->pos[r])min_p[r]=v[i]->pos[r];
+    SE_RPT3 if(max_p[r]<v[i]->pos[r])max_p[r]=v[i]->pos[r];
+  }
+
+  SE_RPT3 if(min_p[r]<-1)min_p[r]=-1;
+  SE_RPT3 if(max_p[r]>1)max_p[r]=1;
+
+  float x_inc = 2./NDS_LCD_W;
+  float y_inc = 2./NDS_LCD_H;
+
+  min_p[0] = (floor(min_p[0]*NDS_LCD_W/2)-0.5)/NDS_LCD_W*2;
+  min_p[1] = (floor(min_p[1]*NDS_LCD_H/2)-0.5)/NDS_LCD_H*2;
+
+  max_p[0] = (floor(max_p[0]*NDS_LCD_W/2+0.5)+0.5)/NDS_LCD_W*2;
+  max_p[1] = (floor(max_p[1]*NDS_LCD_H/2+0.5)+0.5)/NDS_LCD_H*2;
+  for(float y=min_p[1];y<max_p[1];y+=y_inc){
+    for(float x=min_p[0];x<max_p[0];x+=x_inc){
+
+      float sub_tri_area[3]={0,0,0};
+
+      float sample_p[3] = {x,y,0};
+      for(int vid = 0;vid<3;++vid){
+        float edge0[3];
+        float edge1[3];
+
+        SE_RPT3 edge0[r] = v[vid]->pos[r]-sample_p[r];
+        SE_RPT3 edge1[r] = v[(vid+1)%3]->pos[r]-sample_p[r];
+        sub_tri_area[vid]=edge0[1]*edge1[0]-edge0[0]*edge1[1];
+
+      }
+
+      bool same_sign = (sub_tri_area[0]<=0.0&&sub_tri_area[1]<=0.0&&sub_tri_area[2]<=0.0)||(sub_tri_area[0]>=0.0&&sub_tri_area[1]>=0.0&&sub_tri_area[2]>=0.0);
+
+      float tri_area = sub_tri_area[0]+sub_tri_area[1]+sub_tri_area[2];
+
+      if(!same_sign)continue;
+
+
+      float bary[3];
+
+      SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/tri_area;
+      float w = bary[0]*v[0]->pos[3]+bary[1]*v[1]->pos[3]+bary[2]*v[2]->pos[3];
+      if(w<=0)continue;
+
+      float z = bary[0]*v[0]->pos[2]+bary[1]*v[1]->pos[2]+bary[2]*v[2]->pos[2];
+      if(z<=0)continue;
+
+      int ix = (x*0.5+0.5)*NDS_LCD_W;
+      int iy = (y*0.5+0.5)*NDS_LCD_H;
+      int p = ix+iy*NDS_LCD_W;
+
+      if(nds->framebuffer_3d_depth[p]<z)continue;
+      nds->framebuffer_3d_depth[p]=z;
+
+      for(int c = 0;c<3;++c){
+        float col = v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2];
+        nds->framebuffer_3d[p*4+c]=bary[c]*255;
+
+      }
+    }
+
+  }
+
+
+
+}
+static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz){
+  nds->gpu.last_vertex_pos[0]=vx;
+  nds->gpu.last_vertex_pos[1]=vy;
+  nds->gpu.last_vertex_pos[2]=vz;
+  float v[4] = {vx/65536.,vy/65536.,vz/65536.,1.0};
+  float res[4];
+  nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr,v,4);
+  nds_mult_matrix_vector(v,nds->gpu.proj_matrix,res,4);
+
+  float abs_w = fabs(v[3]);
+
+  res[0]=v[0]/abs_w;
+  res[1]=v[1]/abs_w*-1;
+  res[2]=v[2]/abs_w;
+  res[3]=v[3];
+
+  int x0 = (res[0]*0.5+0.5)*NDS_LCD_W;
+  int y0 = (res[1]*0.5+0.5)*NDS_LCD_H;
+  for(int px = -2;px<2;++px)for(int py=-2;py<2;++py){
+    int x = px+x0;
+    int y = py+y0;
+    if(x>=0&&x<NDS_LCD_W&&y>=0&&y<NDS_LCD_H){
+      int p = x+y*NDS_LCD_W;
+      nds->framebuffer_3d[p*4+0]=nds->gpu.curr_color[0];
+      nds->framebuffer_3d[p*4+1]=nds->gpu.curr_color[1];
+      nds->framebuffer_3d[p*4+2]=nds->gpu.curr_color[2];
+      nds->framebuffer_3d[p*4+3]=nds->gpu.curr_color[3];
+      if(res[3]<0)nds->framebuffer_3d[p*4+0]=0;
+    }
+  }
+  nds_vert_t*vert = nds->gpu.vert_buffer+nds->gpu.curr_vert++;
+  nds->gpu.curr_draw_vert++;
+  SE_RPT3 vert->color[r]=nds->gpu.curr_color[r];
+  SE_RPT4 vert->pos[r] = res[r];
+  switch(nds->gpu.prim_type){
+    /*Triangles */ case 0: 
+      if((nds->gpu.curr_draw_vert%3)==0)nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+      break;
+    /*Quads     */ case 1: 
+      if((nds->gpu.curr_draw_vert%4)==0){
+        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-3);
+      }
+      break;
+    /*Tristrip  */ case 2: 
+      if(nds->gpu.curr_draw_vert>=3){
+        if(nds->gpu.curr_draw_vert&1)nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        else nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-1,nds->gpu.curr_vert-2);
+      }
+      break;
+    /*Quadstrip */ case 3: 
+      if(nds->gpu.curr_draw_vert>=4&&(nds->gpu.curr_draw_vert%2)==0){
+        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2);
+      }
+      break;
+  }
+  //printf("Vertex %f %f %f->%f %f %f\n",vx/65536.0,vy/65536.0,vz/65536.0,res[0],res[1],res[2]);
+}
+static int nds_gpu_cmd_params(int cmd){
+  switch(cmd){
+    case 0x10:return  1 ; /*MTX_MODE - Set Matrix Mode (W)*/
+    case 0x11:return  0 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
+    case 0x12:return  1 ; /*MTX_POP - Pop Current Matrix from Stack (W)*/
+    case 0x13:return  1 ; /*MTX_STORE - Store Current Matrix on Stack (W)*/
+    case 0x14:return  1 ; /*MTX_RESTORE - Restore Current Matrix from Stack (W)*/
+    case 0x15:return  0 ; /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
+    case 0x16:return  16; /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
+    case 0x17:return  12; /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
+    case 0x18:return  16; /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
+    case 0x19:return  12; /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+    case 0x1A:return  9 ; /*MTX_MULT_3x3 - Multiply Current Matrix by 3x3 Matrix (W)*/
+    case 0x1B:return  3 ; /*MTX_SCALE - Multiply Current Matrix by Scale Matrix (W)*/
+    case 0x1C:return  3 ; /*MTX_TRANS - Mult. Curr. Matrix by Translation Matrix (W)*/
+    case 0x20:return  1 ; /*COLOR - Directly Set Vertex Color (W)*/
+    case 0x21:return  1 ; /*NORMAL - Set Normal Vector (W)*/
+    case 0x22:return  1 ; /*TEXCOORD - Set Texture Coordinates (W)*/
+    case 0x23:return  2 ; /*VTX_16 - Set Vertex XYZ Coordinates (W)*/
+    case 0x24:return  1 ; /*VTX_10 - Set Vertex XYZ Coordinates (W)*/
+    case 0x25:return  1 ; /*VTX_XY - Set Vertex XY Coordinates (W)*/
+    case 0x26:return  1 ; /*VTX_XZ - Set Vertex XZ Coordinates (W)*/
+    case 0x27:return  1 ; /*VTX_YZ - Set Vertex YZ Coordinates (W)*/
+    case 0x28:return  1 ; /*VTX_DIFF - Set Relative Vertex Coordinates (W)*/
+    case 0x29:return  1 ; /*POLYGON_ATTR - Set Polygon Attributes (W)*/
+    case 0x2A:return  1 ; /*TEXIMAGE_PARAM - Set Texture Parameters (W)*/
+    case 0x2B:return  1 ; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
+    case 0x30:return  1 ; /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
+    case 0x31:return  1 ; /*SPE_EMI - MaterialColor1 - Specular Ref. & Emission (W)*/
+    case 0x32:return  1 ; /*LIGHT_VECTOR - Set Light's Directional Vector (W)*/
+    case 0x33:return  1 ; /*LIGHT_COLOR - Set Light Color (W)*/
+    case 0x34:return  32; /*SHININESS - Specular Reflection Shininess Table (W)*/
+    case 0x40:return  1 ; /*BEGIN_VTXS - Start of Vertex List (W)*/
+    case 0x41:return  0 ; /*END_VTXS - End of Vertex List (W)*/
+    case 0x50:return  1 ; /*SWAP_BUFFERS - Swap Rendering Engine Buffer (W)*/
+    case 0x60:return  1 ; /*VIEWPORT - Set Viewport (W)*/
+    case 0x70:return  3 ; /*BOX_TEST - Test if Cuboid Sits inside View Volume (W)*/
+    case 0x71:return  2 ; /*POS_TEST - Set Position Coordinates for Test (W)*/
+    case 0x72:return  1 ; /*VEC_TEST - Set Directional Vector for Test (W)*/
+  }
+  return 0; 
+}
+static void nds_process_gpu_cmd(nds_t * nds, uint32_t cmd, uint32_t data){
+  if(cmd!=nds->gpu.prev_cmd){
+    nds->gpu.param_offset=0;
+    nds->gpu.prev_cmd = cmd;
+  }
+  if(nds->gpu.param_offset<NDS_GPU_MAX_PARAM){
+    nds->gpu.param_buffer[nds->gpu.param_offset++]=data;
+  }
+  if(nds->gpu.param_offset>=nds_gpu_cmd_params(cmd)){
+    float fixed_to_float = 1.0/(1<<13);
+    int32_t *p = (int32_t*)nds->gpu.param_buffer;
+    switch(cmd){
+      case 0x0: /*NOP*/ break;
+      case 0x10:/*MTX_MODE*/ nds->gpu.matrix_mode = SB_BFE(p[0],0,2);break;
+      case 0x11:/*MTX_PUSH*/ 
+        if(nds->gpu.matrix_mode ==NDS_MATRIX_MV&&nds->gpu.matrix_stack_ptr+1<32){
+          float *m = nds_gpu_get_active_matrix(nds);
+          for(int i=0;i<16;++i)m[i+16]=m[i];
+          nds->gpu.matrix_stack_ptr++;
+        }
+        break;
+      case 0x12:/*MTX_POP*/ 
+        {
+          int32_t pop_cnt = SB_BFE(p[0],0,6);
+          pop_cnt=(pop_cnt<<25)>>25;
+          nds->gpu.matrix_stack_ptr-=pop_cnt;
+          if(nds->gpu.matrix_stack_ptr<0)nds->gpu.matrix_stack_ptr=0;
+          if(nds->gpu.matrix_stack_ptr>31)nds->gpu.matrix_stack_ptr=31;
+        }
+    
+        break;
+      case 0x13: {/*MTX_STORE*/
+        float * m = nds_gpu_get_active_matrix(nds);
+        int new_stack = SB_BFE(p[0],0,5)*16;
+        for(int i=0;i<16;++i){
+          nds->gpu.mv_matrix_stack[new_stack+i]=m[i];
+        }
+        break;
+      }
+      case 0x14: {/*MTX_RESTORE*/
+        float * m = nds_gpu_get_active_matrix(nds);
+        int new_stack = SB_BFE(p[0],0,5)*16;
+        for(int i=0;i<16;++i){
+          m[i]=nds->gpu.mv_matrix_stack[new_stack+i];
+        }
+        break;
+      }
+      case 0x15: /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
+        nds_identity_matrix(nds_gpu_get_active_matrix(nds));
+        break;
+      case 0x16: /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
+        for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i]*fixed_to_float;
+        break;
+      case 0x17:{ /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
+        float*m = nds_gpu_get_active_matrix(nds);
+        for(int i=0;i<12;++i)m[i]=p[i]*fixed_to_float;
+        m[12]=0;m[13]=0;m[14]=0;m[15]=1;
+        break;
+      }
+      case 0x18:{ /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
+        float m[16]={
+          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,p[3]*fixed_to_float, 
+          p[4]*fixed_to_float, p[5]*fixed_to_float, p[6]*fixed_to_float,p[7]*fixed_to_float,
+          p[8]*fixed_to_float, p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,
+          p[12]*fixed_to_float, p[13]*fixed_to_float, p[14]*fixed_to_float,p[15]*fixed_to_float
+        };
+        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+        break;
+      }
+      case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+        float m[16]={
+          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
+          p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
+          p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float, 0.,
+          p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
+        };
+        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      }
+      
+      case 0x1a: { /*MTX_MULT_2x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+        float m[16]={
+          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
+          p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
+          p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0.,
+          0,0,0,1.,
+        };
+        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+        break;
+      }
+      case 0x1c: nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+                                                                     p[1]*fixed_to_float,
+                                                                     p[2]*fixed_to_float);break; /*MTX_TRAN*/
+      case 0x1b: nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+                                                                 p[1]*fixed_to_float,
+                                                                 p[2]*fixed_to_float);break; /*MTX_SCALE*/
+      case 0x20: /*COLOR - Directly Set Vertex Color (W)*/
+        nds->gpu.curr_color[0]=SB_BFE(p[0],0,5)<<3;
+        nds->gpu.curr_color[1]=SB_BFE(p[0],5,5)<<3;
+        nds->gpu.curr_color[2]=SB_BFE(p[0],10,5)<<3;          
+        nds->gpu.curr_color[3]=255;
+        break;
+      case 0x22:/*TEXCOORD*/
+        nds->gpu.curr_tex_coord[0] = SB_BFE(p[0],0,16);
+        nds->gpu.curr_tex_coord[1] = SB_BFE(p[0],16,16);
+        break;
+      case 0x23:/*VTX_16*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
+                                            ((int32_t)SB_BFE(p[1],0,16)<<16)>>12);break;
+
+      case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<21)>>12,
+                                            ((int32_t)SB_BFE(p[0],10,10)<<21)>>12,
+                                            ((int32_t)SB_BFE(p[1],20,10)<<21)>>12);break;
+
+      case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
+                                            nds->gpu.last_vertex_pos[2]);break;
+      case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                            nds->gpu.last_vertex_pos[1],
+                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
+      case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
+                                            ((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
+      case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<21)>>12)+nds->gpu.last_vertex_pos[0],
+                                            (((int32_t)SB_BFE(p[0],10,10)<<21)>>12)+nds->gpu.last_vertex_pos[1],
+                                            (((int32_t)SB_BFE(p[1],20,10)<<21)>>12)+nds->gpu.last_vertex_pos[2]);break;
+      case 0x40: /*BEGIN_VTXS*/ 
+        nds->gpu.prim_type = SB_BFE(p[0],0,2);
+        nds->gpu.curr_draw_vert =0; 
+        break;
+      case 0x41: /*END_VTXS  */ break;
+      case 0x50: nds_gpu_swap_buffers(nds);break; //Swap buffers
+
+      default:
+        printf("Unhandled GPU CMD: %02x Data: ",nds->gpu.prev_cmd);
+        for(int i=0;i<nds->gpu.param_offset;++i)printf("%08x ",nds->gpu.param_buffer[i]);
+        printf("\n");
+        break;
+    }
+    nds->gpu.prev_cmd = cmd;
+    nds->gpu.param_offset=0;
+  }
+}
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
   if(addr>=GBA_DMA0SAD||addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
-  
+  if(addr>=0x4000400&& addr<0x4000600 ) nds_process_gpu_cmd(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
   switch(addr){
     case NDS7_HALTCNT&~3:
       {
@@ -4242,7 +4681,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         bool enable_3d = bg==0&&ppu_id==0&&SB_BFE(dispcnt,3,1);
 
         if(SB_UNLIKELY(enable_3d)){
-          col = 0x01f;
+          int p = lcd_x+lcd_y*NDS_LCD_W;
+          col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
+          col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
+          col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
         }else{
           int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
           int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
@@ -5045,6 +5487,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
   }
 }
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
+  printf("Tick\n");
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
   nds->arm7.read32     = nds7_arm_read32;
@@ -5105,6 +5548,16 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           ticks = nds->mem.requests; 
         }
 
+        if(int9_if){
+          int9_if &= nds9_io_read32(nds,NDS9_IE);
+          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+          if(SB_BFE(ime,0,1)==1&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+        }
+        if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+        else if(!ticks){
+          arm9_exec_instruction(&nds->arm9);
+          ticks = nds->mem.requests; 
+        }
         if(int9_if){
           int9_if &= nds9_io_read32(nds,NDS9_IE);
           uint32_t ime = nds9_io_read32(nds,NDS9_IME);
