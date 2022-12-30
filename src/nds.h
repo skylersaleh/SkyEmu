@@ -610,7 +610,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Prohibited)" },
+    { 12, 3,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video, 4=Main memory display, 5=DS Cartridge Slot, 6=GBA Cartridge Slot, 7=Geometry Command FIFO)" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 0 Control */
@@ -622,7 +622,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 12, 3,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video, 4=Main memory display, 5=DS Cartridge Slot, 6=GBA Cartridge Slot, 7=Geometry Command FIFO)" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 1 Control */
@@ -634,7 +634,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 12, 3,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video, 4=Main memory display, 5=DS Cartridge Slot, 6=GBA Cartridge Slot, 7=Geometry Command FIFO)" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 2 Control */
@@ -647,7 +647,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
     { 11, 1,  "Game Pak DRQ (0=Normal, 1=DRQ <from> Game Pak, DMA3)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video Capture)" },
+    { 12, 3,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video, 4=Main memory display, 5=DS Cartridge Slot, 6=GBA Cartridge Slot, 7=Geometry Command FIFO)" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 3 Control */  
@@ -1311,7 +1311,7 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Prohibited)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=DS Cartridge Slot, 3=Wireless interrupt" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 0 Control */
@@ -1323,7 +1323,7 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=DS Cartridge Slot, 3=GBA Cartridge Slot" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 1 Control */
@@ -1335,7 +1335,7 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Sound)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=DS Cartridge Slot, 3=Wireless interrupt" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 2 Control */
@@ -1348,7 +1348,7 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
     { 11, 1,  "Game Pak DRQ (0=Normal, 1=DRQ <from> Game Pak, DMA3)" },
-    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video Capture)" },
+    { 12, 2,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=DS Cartridge Slot, 3=GBA Cartridge Slot" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 3 Control */  
@@ -1938,7 +1938,10 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_ARM7 0
 
 #define NDS_GXFIFO_SIZE 256
+#define NDS_GXFIFO_MASK 0x1ff
 #define NDS_GPU_MAX_PARAM 32
+#define NDS_GX_DMA_THRESHOLD 128
+
 
 typedef struct {     
   uint8_t ram[4*1024*1024]; /*4096KB Main RAM (8192KB in debug version)*/
@@ -2140,7 +2143,7 @@ typedef struct{
 #define NDS_MATRIX_TBD 2 //<- TODO: Future Sky problem
 #define NDS_MATRIX_TEX 3
 
-#define NDS_MAX_VERTS 8192
+#define NDS_MAX_VERTS 8192*16
 
 typedef struct{
   float pos[4];
@@ -2151,9 +2154,6 @@ typedef struct{
   uint32_t fifo_data[NDS_GXFIFO_SIZE];
   uint8_t fifo_cmd[NDS_GXFIFO_SIZE];
   uint32_t fifo_read_ptr, fifo_write_ptr;
-  uint32_t prev_cmd;
-  uint32_t param_offset;
-  uint32_t param_buffer[NDS_GPU_MAX_PARAM];
   nds_vert_t vert_buffer[NDS_MAX_VERTS];
   uint32_t curr_vert; 
   uint32_t curr_draw_vert; 
@@ -2168,6 +2168,10 @@ typedef struct{
   int32_t last_vertex_pos[3];
   int matrix_mode; 
   int matrix_stack_ptr;
+  uint32_t cmd_busy_cycles;
+  uint32_t packed_cmd; 
+  uint8_t packed_cmd_state;
+  uint8_t packed_cmd_param;
 }nds_gpu_t; 
 
 typedef struct{
@@ -2213,6 +2217,7 @@ typedef struct{
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
+static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
 static void nds_compute_timers(nds_t* nds); 
 static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
   nds->active_if_pipe_stages|=1<<delay;
@@ -4020,146 +4025,237 @@ static int nds_gpu_cmd_params(int cmd){
   }
   return 0; 
 }
-static void nds_process_gpu_cmd(nds_t * nds, uint32_t cmd, uint32_t data){
-  if(cmd!=nds->gpu.prev_cmd){
-    nds->gpu.param_offset=0;
-    nds->gpu.prev_cmd = cmd;
+static int nds_gpu_cmd_cycles(int cmd){
+  switch(cmd){
+    case 0x10:return   1 ; /*MTX_MODE - Set Matrix Mode (W)*/
+    case 0x11:return  17 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
+    case 0x12:return  36 ; /*MTX_POP - Pop Current Matrix from Stack (W)*/
+    case 0x13:return  17 ; /*MTX_STORE - Store Current Matrix on Stack (W)*/
+    case 0x14:return  36 ; /*MTX_RESTORE - Restore Current Matrix from Stack (W)*/
+    case 0x15:return  19 ; /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
+    case 0x16:return  34 ; /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
+    case 0x17:return  30 ; /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
+    case 0x18:return  35 ; /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
+    case 0x19:return  31 ; /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+    case 0x1A:return  28 ; /*MTX_MULT_3x3 - Multiply Current Matrix by 3x3 Matrix (W)*/
+    case 0x1B:return  22 ; /*MTX_SCALE - Multiply Current Matrix by Scale Matrix (W)*/
+    case 0x1C:return  22 ; /*MTX_TRANS - Mult. Curr. Matrix by Translation Matrix (W)*/
+    case 0x20:return  1  ; /*COLOR - Directly Set Vertex Color (W)*/
+    case 0x21:return  9  ; /*NORMAL - Set Normal Vector (W)*/
+    case 0x22:return  1  ; /*TEXCOORD - Set Texture Coordinates (W)*/
+    case 0x23:return  9  ; /*VTX_16 - Set Vertex XYZ Coordinates (W)*/
+    case 0x24:return  8  ; /*VTX_10 - Set Vertex XYZ Coordinates (W)*/
+    case 0x25:return  8  ; /*VTX_XY - Set Vertex XY Coordinates (W)*/
+    case 0x26:return  8  ; /*VTX_XZ - Set Vertex XZ Coordinates (W)*/
+    case 0x27:return  8  ; /*VTX_YZ - Set Vertex YZ Coordinates (W)*/
+    case 0x28:return  8  ; /*VTX_DIFF - Set Relative Vertex Coordinates (W)*/
+    case 0x29:return  1  ; /*POLYGON_ATTR - Set Polygon Attributes (W)*/
+    case 0x2A:return  1  ; /*TEXIMAGE_PARAM - Set Texture Parameters (W)*/
+    case 0x2B:return  1  ; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
+    case 0x30:return  4  ; /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
+    case 0x31:return  4  ; /*SPE_EMI - MaterialColor1 - Specular Ref. & Emission (W)*/
+    case 0x32:return  6  ; /*LIGHT_VECTOR - Set Light's Directional Vector (W)*/
+    case 0x33:return  1  ; /*LIGHT_COLOR - Set Light Color (W)*/
+    case 0x34:return  32 ; /*SHININESS - Specular Reflection Shininess Table (W)*/
+    case 0x40:return  1  ; /*BEGIN_VTXS - Start of Vertex List (W)*/
+    case 0x41:return  1  ; /*END_VTXS - End of Vertex List (W)*/
+    case 0x50:return  392; /*SWAP_BUFFERS - Swap Rendering Engine Buffer (W)*/
+    case 0x60:return  1  ; /*VIEWPORT - Set Viewport (W)*/
+    case 0x70:return  103; /*BOX_TEST - Test if Cuboid Sits inside View Volume (W)*/
+    case 0x71:return  9  ; /*POS_TEST - Set Position Coordinates for Test (W)*/
+    case 0x72:return  5  ; /*VEC_TEST - Set Directional Vector for Test (W)*/
   }
-  if(nds->gpu.param_offset<NDS_GPU_MAX_PARAM){
-    nds->gpu.param_buffer[nds->gpu.param_offset++]=data;
+  return 1; 
+}
+static int32_t nds_gxfifo_size(nds_t*nds){
+  return (nds->gpu.fifo_write_ptr-nds->gpu.fifo_read_ptr)%(NDS_GXFIFO_MASK);
+}
+static void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
+  nds->gpu.fifo_cmd[nds->gpu.fifo_write_ptr%NDS_GXFIFO_SIZE]=cmd;
+  nds->gpu.fifo_data[nds->gpu.fifo_write_ptr%NDS_GXFIFO_SIZE]=data;
+  nds->gpu.fifo_write_ptr++;
+  if(nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE){
+    printf("Error GX FIFO Overflow\n"); 
   }
-  if(nds->gpu.param_offset>=nds_gpu_cmd_params(cmd)){
-    float fixed_to_float = 1.0/(1<<13);
-    int32_t *p = (int32_t*)nds->gpu.param_buffer;
-    switch(cmd){
-      case 0x0: /*NOP*/ break;
-      case 0x10:/*MTX_MODE*/ nds->gpu.matrix_mode = SB_BFE(p[0],0,2);break;
-      case 0x11:/*MTX_PUSH*/ 
-        if(nds->gpu.matrix_mode ==NDS_MATRIX_MV&&nds->gpu.matrix_stack_ptr+1<32){
-          float *m = nds_gpu_get_active_matrix(nds);
-          for(int i=0;i<16;++i)m[i+16]=m[i];
-          nds->gpu.matrix_stack_ptr++;
-        }
-        break;
-      case 0x12:/*MTX_POP*/ 
-        {
-          int32_t pop_cnt = SB_BFE(p[0],0,6);
-          pop_cnt=(pop_cnt<<25)>>25;
-          nds->gpu.matrix_stack_ptr-=pop_cnt;
-          if(nds->gpu.matrix_stack_ptr<0)nds->gpu.matrix_stack_ptr=0;
-          if(nds->gpu.matrix_stack_ptr>31)nds->gpu.matrix_stack_ptr=31;
-        }
-    
-        break;
-      case 0x13: {/*MTX_STORE*/
-        float * m = nds_gpu_get_active_matrix(nds);
-        int new_stack = SB_BFE(p[0],0,5)*16;
-        for(int i=0;i<16;++i){
-          nds->gpu.mv_matrix_stack[new_stack+i]=m[i];
-        }
-        break;
-      }
-      case 0x14: {/*MTX_RESTORE*/
-        float * m = nds_gpu_get_active_matrix(nds);
-        int new_stack = SB_BFE(p[0],0,5)*16;
-        for(int i=0;i<16;++i){
-          m[i]=nds->gpu.mv_matrix_stack[new_stack+i];
-        }
-        break;
-      }
-      case 0x15: /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
-        nds_identity_matrix(nds_gpu_get_active_matrix(nds));
-        break;
-      case 0x16: /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
-        for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i]*fixed_to_float;
-        break;
-      case 0x17:{ /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
-        float*m = nds_gpu_get_active_matrix(nds);
-        for(int i=0;i<12;++i)m[i]=p[i]*fixed_to_float;
-        m[12]=0;m[13]=0;m[14]=0;m[15]=1;
-        break;
-      }
-      case 0x18:{ /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
-        float m[16]={
-          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,p[3]*fixed_to_float, 
-          p[4]*fixed_to_float, p[5]*fixed_to_float, p[6]*fixed_to_float,p[7]*fixed_to_float,
-          p[8]*fixed_to_float, p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,
-          p[12]*fixed_to_float, p[13]*fixed_to_float, p[14]*fixed_to_float,p[15]*fixed_to_float
-        };
-        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
-        break;
-      }
-      case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
-        float m[16]={
-          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
-          p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
-          p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float, 0.,
-          p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
-        };
-        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
-      }
-      
-      case 0x1a: { /*MTX_MULT_2x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
-        float m[16]={
-          p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
-          p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
-          p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0.,
-          0,0,0,1.,
-        };
-        nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
-        break;
-      }
-      case 0x1c: nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
-                                                                     p[1]*fixed_to_float,
-                                                                     p[2]*fixed_to_float);break; /*MTX_TRAN*/
-      case 0x1b: nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
-                                                                 p[1]*fixed_to_float,
-                                                                 p[2]*fixed_to_float);break; /*MTX_SCALE*/
-      case 0x20: /*COLOR - Directly Set Vertex Color (W)*/
-        nds->gpu.curr_color[0]=SB_BFE(p[0],0,5)<<3;
-        nds->gpu.curr_color[1]=SB_BFE(p[0],5,5)<<3;
-        nds->gpu.curr_color[2]=SB_BFE(p[0],10,5)<<3;          
-        nds->gpu.curr_color[3]=255;
-        break;
-      case 0x22:/*TEXCOORD*/
-        nds->gpu.curr_tex_coord[0] = SB_BFE(p[0],0,16);
-        nds->gpu.curr_tex_coord[1] = SB_BFE(p[0],16,16);
-        break;
-      case 0x23:/*VTX_16*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
-                                            ((int32_t)SB_BFE(p[1],0,16)<<16)>>12);break;
+}
+static void nds_tick_gx(nds_t* nds){
+  
+  nds_gpu_t* gpu = &nds->gpu;
+  if(gpu->cmd_busy_cycles>0)gpu->cmd_busy_cycles--;
+  int sz = nds_gxfifo_size(nds);
+  if(sz==0)return;
+  uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_SIZE];
+  uint32_t cmd_params = nds_gpu_cmd_params(cmd);
+  if(cmd_params<1)cmd_params=1;
+  if(sz<cmd_params||sz==0)return; 
 
-      case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<21)>>12,
-                                            ((int32_t)SB_BFE(p[0],10,10)<<21)>>12,
-                                            ((int32_t)SB_BFE(p[1],20,10)<<21)>>12);break;
+  if(sz<NDS_GX_DMA_THRESHOLD){nds->activate_dmas=true;}
+  
 
-      case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
-                                            nds->gpu.last_vertex_pos[2]);break;
-      case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                            nds->gpu.last_vertex_pos[1],
-                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
-      case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
-                                            ((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                            ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
-      case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<21)>>12)+nds->gpu.last_vertex_pos[0],
-                                            (((int32_t)SB_BFE(p[0],10,10)<<21)>>12)+nds->gpu.last_vertex_pos[1],
-                                            (((int32_t)SB_BFE(p[1],20,10)<<21)>>12)+nds->gpu.last_vertex_pos[2]);break;
-      case 0x40: /*BEGIN_VTXS*/ 
-        nds->gpu.prim_type = SB_BFE(p[0],0,2);
-        nds->gpu.curr_draw_vert =0; 
-        break;
-      case 0x41: /*END_VTXS  */ break;
-      case 0x50: nds_gpu_swap_buffers(nds);break; //Swap buffers
-
-      default:
-        printf("Unhandled GPU CMD: %02x Data: ",nds->gpu.prev_cmd);
-        for(int i=0;i<nds->gpu.param_offset;++i)printf("%08x ",nds->gpu.param_buffer[i]);
-        printf("\n");
-        break;
+  uint32_t param_buffer[NDS_GPU_MAX_PARAM];
+  for(int i=0;i<cmd_params;++i)param_buffer[i]=gpu->fifo_data[(gpu->fifo_read_ptr++)%NDS_GXFIFO_SIZE];
+  int32_t *p = (int32_t*)param_buffer;
+  /*
+  printf("GPU CMD: %02x fifo_size: %d Data: ",cmd,sz);
+  for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
+  printf("\n");
+  */
+  float fixed_to_float = 1.0/(1<<13);
+  gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
+  switch(cmd){
+    case 0x0: /*NOP*/ break;
+    case 0x10:/*MTX_MODE*/ nds->gpu.matrix_mode = SB_BFE(p[0],0,2);break;
+    case 0x11:/*MTX_PUSH*/ 
+      if(nds->gpu.matrix_mode ==NDS_MATRIX_MV&&nds->gpu.matrix_stack_ptr+1<32){
+        float *m = nds_gpu_get_active_matrix(nds);
+        for(int i=0;i<16;++i)m[i+16]=m[i];
+        nds->gpu.matrix_stack_ptr++;
+      }
+      break;
+    case 0x12:/*MTX_POP*/ 
+      {
+        int32_t pop_cnt = SB_BFE(p[0],0,6);
+        pop_cnt=(pop_cnt<<25)>>25;
+        nds->gpu.matrix_stack_ptr-=pop_cnt;
+        if(nds->gpu.matrix_stack_ptr<0)nds->gpu.matrix_stack_ptr=0;
+        if(nds->gpu.matrix_stack_ptr>31)nds->gpu.matrix_stack_ptr=31;
+      }
+  
+      break;
+    case 0x13: {/*MTX_STORE*/
+      float * m = nds_gpu_get_active_matrix(nds);
+      int new_stack = SB_BFE(p[0],0,5)*16;
+      for(int i=0;i<16;++i){
+        nds->gpu.mv_matrix_stack[new_stack+i]=m[i];
+      }
+      break;
     }
-    nds->gpu.prev_cmd = cmd;
-    nds->gpu.param_offset=0;
+    case 0x14: {/*MTX_RESTORE*/
+      float * m = nds_gpu_get_active_matrix(nds);
+      int new_stack = SB_BFE(p[0],0,5)*16;
+      for(int i=0;i<16;++i){
+        m[i]=nds->gpu.mv_matrix_stack[new_stack+i];
+      }
+      break;
+    }
+    case 0x15: /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
+      nds_identity_matrix(nds_gpu_get_active_matrix(nds));
+      break;
+    case 0x16: /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
+      for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i]*fixed_to_float;
+      break;
+    case 0x17:{ /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
+      float*m = nds_gpu_get_active_matrix(nds);
+      for(int i=0;i<12;++i)m[i]=p[i]*fixed_to_float;
+      m[12]=0;m[13]=0;m[14]=0;m[15]=1;
+      break;
+    }
+    case 0x18:{ /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
+      float m[16]={
+        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,p[3]*fixed_to_float, 
+        p[4]*fixed_to_float, p[5]*fixed_to_float, p[6]*fixed_to_float,p[7]*fixed_to_float,
+        p[8]*fixed_to_float, p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,
+        p[12]*fixed_to_float, p[13]*fixed_to_float, p[14]*fixed_to_float,p[15]*fixed_to_float
+      };
+      nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      break;
+    }
+    case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+      float m[16]={
+        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
+        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
+        p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float, 0.,
+        p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
+      };
+      nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+    }
+    
+    case 0x1a: { /*MTX_MULT_2x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+      float m[16]={
+        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
+        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
+        p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0.,
+        0,0,0,1.,
+      };
+      nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      break;
+    }
+    case 0x1c: nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+                                                                    p[1]*fixed_to_float,
+                                                                    p[2]*fixed_to_float);break; /*MTX_TRAN*/
+    case 0x1b: nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+                                                                p[1]*fixed_to_float,
+                                                                p[2]*fixed_to_float);break; /*MTX_SCALE*/
+    case 0x20: /*COLOR - Directly Set Vertex Color (W)*/
+      nds->gpu.curr_color[0]=SB_BFE(p[0],0,5)<<3;
+      nds->gpu.curr_color[1]=SB_BFE(p[0],5,5)<<3;
+      nds->gpu.curr_color[2]=SB_BFE(p[0],10,5)<<3;          
+      nds->gpu.curr_color[3]=255;
+      break;
+    case 0x22:/*TEXCOORD*/
+      nds->gpu.curr_tex_coord[0] = SB_BFE(p[0],0,16);
+      nds->gpu.curr_tex_coord[1] = SB_BFE(p[0],16,16);
+      break;
+    case 0x23:/*VTX_16*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
+                                          ((int32_t)SB_BFE(p[1],0,16)<<16)>>12);break;
+
+    case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<21)>>12,
+                                          ((int32_t)SB_BFE(p[0],10,10)<<21)>>12,
+                                          ((int32_t)SB_BFE(p[1],20,10)<<21)>>12);break;
+
+    case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
+                                          nds->gpu.last_vertex_pos[2]);break;
+    case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                          nds->gpu.last_vertex_pos[1],
+                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
+    case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
+                                          ((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
+    case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<21)>>12)+nds->gpu.last_vertex_pos[0],
+                                          (((int32_t)SB_BFE(p[0],10,10)<<21)>>12)+nds->gpu.last_vertex_pos[1],
+                                          (((int32_t)SB_BFE(p[1],20,10)<<21)>>12)+nds->gpu.last_vertex_pos[2]);break;
+
+    case 0x40: /*BEGIN_VTXS*/ 
+      nds->gpu.prim_type = SB_BFE(p[0],0,2);
+      nds->gpu.curr_draw_vert =0; 
+      break;
+    case 0x41: /*END_VTXS  */ break;
+    case 0x50: 
+      nds_gpu_swap_buffers(nds);
+      nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
+      break; //Swap buffers
+
+    default:
+      printf("Unhandled GPU CMD: %02x Data: ",cmd);
+      for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
+      printf("\n");
+      break;
+  }
+}
+static void nds_gpu_write_packed_cmd(nds_t *nds, uint32_t data){
+  nds_gpu_t* gpu = &nds->gpu;
+  if(gpu->packed_cmd_state){
+    int cmd = 0; 
+    int param_off = 0; 
+    for(int cmd_id = 0; cmd_id<4;++cmd_id){
+      int extracted_cmd = (gpu->packed_cmd>> (cmd_id*8))&0xff;
+      if(param_off<gpu->packed_cmd_param){
+        cmd = extracted_cmd;
+      }
+      int params = nds_gpu_cmd_params(extracted_cmd);
+      param_off+=params;
+      if(params==0&&param_off==gpu->packed_cmd_param&&cmd_id!=3){
+        nds_gxfifo_push(nds,cmd,data);
+      }
+    }
+    nds_gxfifo_push(nds,cmd,data);
+    gpu->packed_cmd_param++;
+  }else{
+    gpu->packed_cmd_state = 1; 
+    gpu->packed_cmd = data;
+    gpu->packed_cmd_param=0; 
   }
 }
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
@@ -4168,8 +4264,14 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
   if(addr>=GBA_DMA0SAD||addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
-  if(addr>=0x4000400&& addr<0x4000600 ) nds_process_gpu_cmd(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
+  if(addr>=0x4000440&& addr<0x4000600 ){
+    nds_gxfifo_push(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
+  } 
   switch(addr){
+    case NDS9_GXFIFO:
+      if(cpu!=NDS_ARM9)return;
+      nds_gpu_write_packed_cmd(nds,mmio);
+    break;
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
@@ -4308,20 +4410,27 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       }
   }
 }
-
+#define NDS_CLOCKS_PER_DOT 6
+static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
+  int sc = nds->ppu[0].scan_clock;
+  int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
+  if(sc<clocks_per_line*(NDS_LCD_H)){
+    return clocks_per_line*(NDS_LCD_H) - sc; 
+  }
+  return 0; 
+}
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   nds_ppu_t * ppu = nds->ppu+ppu_id;
   ppu->scan_clock+=1;
-  const int clocks_per_dot = 6;
-  if(ppu->scan_clock%clocks_per_dot)return;
-  int clocks_per_frame = 355*263*clocks_per_dot;
+  if(ppu->scan_clock%NDS_CLOCKS_PER_DOT)return;
+  int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   while(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
 
   int reg_offset = ppu_id==0? 0: 0x00001000;
 
-  int clocks_per_line = 355*clocks_per_dot;
+  int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
   int lcd_y = (ppu->scan_clock+44)/clocks_per_line;
-  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/clocks_per_dot;
+  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
   int early_hblank_exit = 350; 
   if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==early_hblank_exit){
     uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
@@ -5021,10 +5130,16 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
         bool dma_repeat = SB_BFE(cnt_h,9,1); 
         int  mode = SB_BFE(cnt_h,11,3);
+        if(cpu==NDS_ARM7)mode&=0x3;
         bool irq_enable = SB_BFE(cnt_h,14,1);
         bool force_first_write_sequential = false;
         int transfer_bytes = type? 4:2; 
         bool skip_dma = false;
+        if(mode==0x7){
+          printf("GX FIFO DMA\n");
+          if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD)continue;
+        }
+
         if(nds->dma[cpu][i].current_transaction==0){
           if(mode==3 && i ==0)continue;
           if(nds->dma[cpu][i].startup_delay>=0){
@@ -5530,7 +5645,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   }
 
   while(true){
-    int ticks = nds_tick_dma(nds,last_tick);
+    bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
+    int ticks = 2;
+    if(!gx_fifo_full)ticks = nds_tick_dma(nds,last_tick);
     if(!ticks){
       uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
       uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
@@ -5547,7 +5664,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           arm7_exec_instruction(&nds->arm7);
           ticks = nds->mem.requests; 
         }
-
         if(int9_if){
           int9_if &= nds9_io_read32(nds,NDS9_IE);
           uint32_t ime = nds9_io_read32(nds,NDS9_IME);
@@ -5591,6 +5707,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       nds_tick_timers(nds);
       nds_tick_ppu(nds,0,emu->render_frame);
       nds_tick_ppu(nds,1,emu->render_frame);
+      nds_tick_gx(nds);
       nds->current_clock++;
     }
     nds_tick_audio(nds,emu,delta_t,ticks/2);
