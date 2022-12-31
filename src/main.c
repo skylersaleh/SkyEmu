@@ -90,6 +90,15 @@ const static char* se_keybind_names[]={
   "Restore State 2",
   "Capture State 3",
   "Restore State 3",
+  "Reset Game",
+  "Turbo A",
+  "Turbo B",
+  "Turbo X",
+  "Turbo Y",
+  "Turbo L",
+  "Turbo R",
+  "Solar Sensor+",
+  "Solar Sensor-",
 };
 #define SE_ANALOG_UP_DOWN    0
 #define SE_ANALOG_LEFT_RIGHT 1
@@ -706,7 +715,7 @@ void se_load_recent_games_list(){
 }
 
 bool se_key_is_pressed(int keycode){
-  if(keycode>SAPP_MAX_KEYCODES)return false;
+  if(keycode>SAPP_MAX_KEYCODES||keycode==-1)return false;
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
@@ -1587,6 +1596,8 @@ void se_set_default_keybind(gui_state_t *gui){
   gui->key.bound_id[SE_KEY_EMU_REWIND]= SAPP_KEYCODE_R;     
   gui->key.bound_id[SE_KEY_EMU_FF_2X]= SAPP_KEYCODE_F;     
   gui->key.bound_id[SE_KEY_EMU_FF_MAX]= SAPP_KEYCODE_TAB;     
+  gui->key.bound_id[SE_KEY_SOLAR_M]= SAPP_KEYCODE_MINUS;     
+  gui->key.bound_id[SE_KEY_SOLAR_P]= SAPP_KEYCODE_EQUAL;     
 
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     gui->key.bound_id[SE_KEY_CAPTURE_STATE(i)]=SAPP_KEYCODE_1+i;
@@ -2043,6 +2054,28 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   state->joy.inputs[SE_KEY_R] += SB_BFE(button_press,3,1);
   state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,0,1);
   state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,1,1);
+}
+void se_update_key_turbo(sb_emu_state_t *state){
+  double t = se_time()*15;
+  bool turbo_press = (t-(int)t)>0.5;
+  if(turbo_press){
+    state->joy.inputs[SE_KEY_A]+=state->joy.inputs[SE_KEY_TURBO_A];
+    state->joy.inputs[SE_KEY_B]+=state->joy.inputs[SE_KEY_TURBO_B];
+    state->joy.inputs[SE_KEY_X]+=state->joy.inputs[SE_KEY_TURBO_X];
+    state->joy.inputs[SE_KEY_Y]+=state->joy.inputs[SE_KEY_TURBO_Y];
+    state->joy.inputs[SE_KEY_L]+=state->joy.inputs[SE_KEY_TURBO_L];
+    state->joy.inputs[SE_KEY_R]+=state->joy.inputs[SE_KEY_TURBO_R];
+  }
+}
+void se_update_solar_sensor(sb_emu_state_t*state){
+  static double last_t =0; 
+  double dt = se_time()-last_t;
+
+  state->joy.solar_sensor-=state->joy.inputs[SE_KEY_SOLAR_M]*dt;
+  state->joy.solar_sensor+=state->joy.inputs[SE_KEY_SOLAR_P]*dt;
+  if(state->joy.solar_sensor>1.0)state->joy.solar_sensor=1.0;
+  if(state->joy.solar_sensor<0.0)state->joy.solar_sensor=0.0;
+  last_t = se_time();
 }
 void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   ImVec2 curr_cursor;
@@ -3054,6 +3087,9 @@ void se_draw_menu_panel(){
   igComboStr("Theme",&theme,"Dark\0Light\0Black\0",0);
   gui_state.settings.theme = theme;
 
+  igText("Solar Sensor");igSameLine(win_w*0.4,0);
+  igPushItemWidth(-1);
+  igSliderFloat("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f",ImGuiSliderFlags_None);
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   igCheckbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
@@ -3087,6 +3123,8 @@ static void frame(void) {
 #ifdef USE_SDL
   se_poll_sdl();
 #endif
+  se_update_key_turbo(&emu_state);
+  se_update_solar_sensor(&emu_state);
   int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
@@ -3147,6 +3185,13 @@ static void frame(void) {
     igSetCursorPosX(toggle_x);
     igPushItemWidth(sel_width);
 
+    sb_joy_t *curr = &emu_state.joy;
+    sb_joy_t *prev = &emu_state.prev_frame_joy;
+
+    if(curr->inputs[SE_KEY_RESET_GAME]){
+      emu_state.run_mode=SB_MODE_RESET;
+    }
+
     if(!emu_state.rom_loaded) emu_state.run_mode = SB_MODE_PAUSE;
 
     int curr_toggle = 3;
@@ -3157,8 +3202,6 @@ static void frame(void) {
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
 
-    sb_joy_t *curr = &emu_state.joy;
-    sb_joy_t *prev = &emu_state.prev_frame_joy;
 
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
     const char* toggle_tooltips[]={

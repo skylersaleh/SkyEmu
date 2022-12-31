@@ -91,7 +91,16 @@
 #define SE_KEY_EMU_FF_MAX 17
 #define SE_KEY_CAPTURE_STATE(A) (18+(A)*2)
 #define SE_KEY_RESTORE_STATE(A) (18+(A)*2+1)
-#define SE_NUM_KEYBINDS 26
+#define SE_KEY_RESET_GAME 26
+#define SE_KEY_TURBO_A  27
+#define SE_KEY_TURBO_B  28
+#define SE_KEY_TURBO_X  29
+#define SE_KEY_TURBO_Y  30
+#define SE_KEY_TURBO_L  31
+#define SE_KEY_TURBO_R  32
+#define SE_KEY_SOLAR_P  33
+#define SE_KEY_SOLAR_M  34
+#define SE_NUM_KEYBINDS 35
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
@@ -109,6 +118,7 @@ typedef struct{
   float inputs[SE_NUM_KEYBINDS];
   float touch_pos[2];
   float rumble; 
+  float solar_sensor; 
 } sb_joy_t;
   
 typedef struct{
