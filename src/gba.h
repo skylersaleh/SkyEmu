@@ -778,6 +778,11 @@ typedef struct{
   uint16_t timer_reload_values[4];
   uint32_t padding[18];
 }gba_bess_info_t;
+typedef struct{
+  uint8_t dac;
+  uint16_t value;
+  uint8_t last_clk;
+}gba_solar_sensor_t;
 typedef struct gba_t{
   gba_mem_t mem;
   arm7_t cpu;
@@ -807,6 +812,7 @@ typedef struct gba_t{
   int last_cpu_tick;
   int residual_dma_ticks; 
   bool stop_mode; 
+  gba_solar_sensor_t solar_sensor;
 } gba_t; 
 
 typedef struct{
@@ -1066,14 +1072,27 @@ static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uin
     }
   }
 }
+static void gba_process_solar_sensor(gba_t*gba){
+  bool clk = SB_BFE(gba->cart.gpio_data,0,1);
+  bool rst = SB_BFE(gba->cart.gpio_data,1,1);
+  bool cs = SB_BFE(gba->cart.gpio_data,2,1);
+  if(cs)return;
+
+  if(clk&&!gba->solar_sensor.last_clk)gba->solar_sensor.dac++;
+  if(rst){gba->solar_sensor.dac=0;printf("Reset\n");}
+  bool flag = gba->solar_sensor.value < gba->solar_sensor.dac;
+  gba->solar_sensor.last_clk=clk;
+  gba->mem.cart_rom[0x0000C4] =(flag<<3);
+  printf("DAC: %d flag:%d\n",gba->solar_sensor.dac,flag);
+}
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data>>((baddr&3)*8)); return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
-      //Assume that the RTC is the only GPIO and is only accessed with 32 bit ops
       if(baddr==0x080000c4)gba->cart.gpio_data = data;
       gba_process_rtc_state_machine(gba);
+      gba_process_solar_sensor(gba);
       return;
     }
   }
@@ -1086,9 +1105,9 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
     if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data); return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
       int addr = baddr&~1;
-      //Assume that the RTC is the only GPIO and is only accessed with 32 bit opsj
       if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
       gba_process_rtc_state_machine(gba);
+      gba_process_solar_sensor(gba);
       return;
     }
   }
@@ -1103,7 +1122,11 @@ static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
     if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF)){gba_store16(gba,baddr&~1,(data&0xff)*0x0101);return;}
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
-    if(baddr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
+    if(baddr==0x080000c4){
+      gba->cart.gpio_data =(gba->cart.gpio_data&0xffff00)|(data&0xff);
+      gba_process_rtc_state_machine(gba);
+      gba_process_solar_sensor(gba);
+    }
     // Remaining 8 bit ops are not supported on VRAM or ROM
     return; 
   }
@@ -3270,6 +3293,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba_tick_rtc(gba);
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;
+  gba->solar_sensor.value = 0xE8-emu->joy.solar_sensor*(0xe8-0x40);
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(true){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;

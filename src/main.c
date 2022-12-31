@@ -2071,8 +2071,8 @@ void se_update_solar_sensor(sb_emu_state_t*state){
   static double last_t =0; 
   double dt = se_time()-last_t;
 
-  state->joy.solar_sensor-=state->joy.inputs[SE_KEY_SOLAR_M]*dt;
-  state->joy.solar_sensor+=state->joy.inputs[SE_KEY_SOLAR_P]*dt;
+  state->joy.solar_sensor-=state->joy.inputs[SE_KEY_SOLAR_M]*dt*0.5;
+  state->joy.solar_sensor+=state->joy.inputs[SE_KEY_SOLAR_P]*dt*0.5;
   if(state->joy.solar_sensor>1.0)state->joy.solar_sensor=1.0;
   if(state->joy.solar_sensor<0.0)state->joy.solar_sensor=0.0;
   last_t = se_time();
