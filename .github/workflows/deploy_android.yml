@@ -12,7 +12,8 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: '8'
-      - uses: sparkfabrik/android-build-action@v1.0.0
+      # - uses: sparkfabrik/android-build-action@v1.0.0 #Temporary work around for bug in sparkfabrik repo
+      - uses: geonativefr/android-build-action@fix-bundler-version
         with:
           project-path: tools/android_project
           output-path: SkyEmu.apk
