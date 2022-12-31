@@ -2041,8 +2041,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   state->joy.inputs[SE_KEY_B] += b;
   state->joy.inputs[SE_KEY_L] += SB_BFE(button_press,2,1);
   state->joy.inputs[SE_KEY_R] += SB_BFE(button_press,3,1);
-  state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,0,1);
-  state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,1,1);
+  state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,0,1);
+  state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,1,1);
 }
 void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   ImVec2 curr_cursor;
