@@ -135,7 +135,7 @@ typedef struct{
   // Be very careful to keep alignment and ordering the same otherwise you will break the settings. 
   uint32_t draw_debug_menu;
   float volume; 
-  uint32_t light_mode; 
+  uint32_t theme; 
   uint32_t settings_file_version; 
   uint32_t gb_palette[4];
   float ghosting;
@@ -191,7 +191,6 @@ typedef struct {
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
     persistent_settings_t settings;
     persistent_settings_t last_saved_settings;
-    bool last_light_mode_setting;
     bool overlay_open;
     se_emulator_stats_t emu_stats; 
     // Utilize a watchdog channel to detect if the audio context has encountered an error
@@ -214,6 +213,11 @@ typedef struct {
 
 #define SE_NUM_SAVE_STATES 4
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
+
+#define SE_THEME_DARK 0
+#define SE_THEME_LIGHT 1
+#define SE_THEME_BLACK 2
+
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
@@ -1000,7 +1004,7 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   if(igButton("Save Memory Dump",(ImVec2){0,0})){
     uint8_t *data = (uint8_t*)malloc(gui->mem_dump_size);
     for(int i=0;i<gui->mem_dump_size;++i)data[i]=(*read)(gui->mem_dump_start_address+i);
-    char *base, *file_name,*ext;
+    const char *base, *file_name,*ext;
     sb_breakup_path(emu_state.save_file_path,&base,&file_name,&ext);
     char new_path[SB_FILE_PATH_SIZE];
     snprintf(new_path,SB_FILE_PATH_SIZE,"%s/%s-memdump.bin",base,file_name);
@@ -2377,9 +2381,9 @@ void se_load_rom_overlay(bool visible){
       int total_files = f;
       qsort(files,f,sizeof(tinydir_file),file_sorter);
       for(int f = 0;f<total_files;++f) {
-        char *ext = ICON_FK_FOLDER_OPEN;
+        const char *ext = ICON_FK_FOLDER_OPEN;
         if (!files[f].is_dir) {
-          char* base, *file;
+          const char* base, *file;
           sb_breakup_path(files[f].path, &base, &file, &ext);
         }
         if (se_selectable_with_box(files[f].name, files[f].path, ext, false, 0)) {
@@ -2585,7 +2589,6 @@ void se_update_frame() {
 }
 void se_imgui_theme()
 {
-  gui_state.last_light_mode_setting= gui_state.settings.light_mode;
   ImVec4* colors = igGetStyle()->Colors;
   colors[ImGuiCol_Text]                   = (ImVec4){1.00f, 1.00f, 1.00f, 1.00f};
   colors[ImGuiCol_TextDisabled]           = (ImVec4){0.6f, 0.6f, 0.6f, 1.f};
@@ -2643,7 +2646,7 @@ void se_imgui_theme()
   colors[ImGuiCol_NavWindowingDimBg]      = (ImVec4){1.00f, 0.00f, 0.00f, 0.20f};
   colors[ImGuiCol_ModalWindowDimBg]       = (ImVec4){1.00f, 0.00f, 0.00f, 0.35f};
   
-  if(gui_state.settings.light_mode){
+  if(gui_state.settings.theme == SE_THEME_LIGHT){
     int invert_list[]={
       ImGuiCol_Text,
       ImGuiCol_TextDisabled,
@@ -2724,6 +2727,28 @@ void se_imgui_theme()
   style->GrabRounding                      = 3;
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
+
+  if(gui_state.settings.theme == SE_THEME_BLACK){
+    int black_list[]={
+      ImGuiCol_WindowBg,
+      ImGuiCol_ChildBg,
+      ImGuiCol_PopupBg,
+      //ImGuiCol_FrameBg,
+      ImGuiCol_TitleBg,
+      ImGuiCol_MenuBarBg,
+      ImGuiCol_ScrollbarBg,
+    };
+    colors[ImGuiCol_Button]                 = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
+    colors[ImGuiCol_FrameBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.8f};
+
+    for(int i=0;i<sizeof(black_list)/sizeof(black_list[0]);++i){
+      colors[black_list[i]].x=0;
+      colors[black_list[i]].y=0;
+      colors[black_list[i]].z=0;
+    }
+  
+  }
+
 }
 #if defined(EMSCRIPTEN)
   //Setup the offline file system
@@ -3025,8 +3050,9 @@ void se_draw_menu_panel(){
 
   igText(ICON_FK_WRENCH " Advanced");
   igSeparator();
-  bool light_mode = gui_state.settings.light_mode; 
-  if(igCheckbox("Light Mode",&light_mode))gui_state.settings.light_mode = light_mode;
+  int theme = gui_state.settings.theme; 
+  igComboStr("Theme",&theme,"Dark\0Light\0Black\0",0);
+  gui_state.settings.theme = theme;
 
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   igCheckbox("Show Debug Tools",&draw_debug_menu);
@@ -3069,7 +3095,7 @@ static void frame(void) {
   sg_begin_default_pass(&gui_state.pass_action, width, height);
   simgui_new_frame(width, height, delta_time);
   float menu_height = 0; 
-  if(gui_state.last_light_mode_setting!=gui_state.settings.light_mode)se_imgui_theme();
+  se_imgui_theme();
   /*=== UI CODE STARTS HERE ===*/
   igPushStyleVarVec2(ImGuiStyleVar_FramePadding,(ImVec2){5,5});
   igPushStyleVarVec2(ImGuiStyleVar_WindowPadding,(ImVec2){0,5});
