@@ -1565,8 +1565,9 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
   if(!desc)return screen_x;
   while(desc->label){
     if(desc->visible){
+      int w = sidebar_w+screen_x-(int)screen_x;
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
-      igSetNextWindowSize((ImVec2){sidebar_w, height}, ImGuiCond_Always);
+      igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
       igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       desc->function();
       float bottom_padding =0;
@@ -2762,7 +2763,7 @@ void se_imgui_theme()
   style->IndentSpacing                     = 25;
   style->ScrollbarSize                     = 15;
   style->GrabMinSize                       = 10;
-  style->WindowBorderSize                  = 1;
+  style->WindowBorderSize                  = 0;
   style->ChildBorderSize                   = 0;
   style->PopupBorderSize                   = 0;
   style->FrameBorderSize                   = 0;
@@ -2783,11 +2784,12 @@ void se_imgui_theme()
       ImGuiCol_PopupBg,
       //ImGuiCol_FrameBg,
       ImGuiCol_TitleBg,
-      ImGuiCol_MenuBarBg,
-      ImGuiCol_ScrollbarBg,
+      //ImGuiCol_MenuBarBg,
+      //ImGuiCol_ScrollbarBg,
     };
-    colors[ImGuiCol_Button]                 = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
+    colors[ImGuiCol_Button]                 = (ImVec4){0.18f, 0.18f, 0.18f, 1.00f};
     colors[ImGuiCol_FrameBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.8f};
+    colors[ImGuiCol_ScrollbarBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.6f};
 
     for(int i=0;i<sizeof(black_list)/sizeof(black_list[0]);++i){
       colors[black_list[i]].x=0;
