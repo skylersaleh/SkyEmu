@@ -1386,9 +1386,9 @@ static void se_draw_emulated_system_screen(){
   if(gui_state.last_touch_time>=0){
     lcd_render_y = -(height-render_h)*0.9*0.5;
     if(controller_h+render_h<height){
-      float off = (height-render_h-controller_h)*0.33;
+      float off = (height-render_h-controller_h)*0.15;
       lcd_render_y+=off;
-      controller_y_pad=(height-render_h-controller_h-off)*0.25;
+      controller_y_pad=(height-render_h-controller_h-off)*0.20;
     }
   }
   if(gui_state.settings.integer_scaling){
@@ -2784,7 +2784,7 @@ void se_imgui_theme()
       ImGuiCol_PopupBg,
       //ImGuiCol_FrameBg,
       ImGuiCol_TitleBg,
-      //ImGuiCol_MenuBarBg,
+      ImGuiCol_MenuBarBg,
       //ImGuiCol_ScrollbarBg,
     };
     colors[ImGuiCol_Button]                 = (ImVec4){0.18f, 0.18f, 0.18f, 1.00f};
