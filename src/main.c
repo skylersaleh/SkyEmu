@@ -2639,7 +2639,7 @@ void se_imgui_theme()
 {
   ImVec4* colors = igGetStyle()->Colors;
   colors[ImGuiCol_Text]                   = (ImVec4){1.00f, 1.00f, 1.00f, 1.00f};
-  colors[ImGuiCol_TextDisabled]           = (ImVec4){0.6f, 0.6f, 0.6f, 1.f};
+  colors[ImGuiCol_TextDisabled]           = (ImVec4){0.6f, 0.6f, 0.6f, 0.5f};
   colors[ImGuiCol_WindowBg]               = (ImVec4){0.14f, 0.14f, 0.14f, 1.00f};
   colors[ImGuiCol_ChildBg]                = (ImVec4){0.14f, 0.14f, 0.14f, 0.40f};
   colors[ImGuiCol_PopupBg]                = (ImVec4){0.19f, 0.19f, 0.19f, 0.92f};
@@ -2960,6 +2960,15 @@ void se_capture_state_slot(int slot){
 void se_restore_state_slot(int slot){
   if(save_states[slot].valid)se_restore_state(&core, save_states+slot);
 }
+void se_push_disabled(){
+  ImGuiStyle *style = igGetStyle();
+  igPushStyleColorVec4(ImGuiCol_Text, style->Colors[ImGuiCol_TextDisabled]);
+  igPushItemFlag(ImGuiItemFlags_Disabled, true);
+}
+void se_pop_disabled(){
+   igPopStyleColor(1);
+   igPopItemFlag();
+}
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   igText(ICON_FK_FLOPPY_O " Save States");
@@ -2967,6 +2976,7 @@ void se_draw_menu_panel(){
 
   int win_w = igGetWindowContentRegionWidth();
   ImDrawList*dl= igGetWindowDrawList();
+  if(!emu_state.rom_loaded)se_push_disabled();
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     int slot_x = 0;
     int slot_y = i;
@@ -2984,8 +2994,10 @@ void se_draw_menu_panel(){
     int button_w = 55; 
     igText("Save Slot %d",i);
     if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state_slot(i);
+    if(!save_states[i].valid)se_push_disabled();
     if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state_slot(i);
-    
+    if(!save_states[i].valid)se_pop_disabled();
+
     if(save_states[i].valid){
       float w_scale = 1.0;
       float h_scale = 1.0;
@@ -3018,6 +3030,7 @@ void se_draw_menu_panel(){
     }
     igEndChildFrame();
   }
+  if(!emu_state.rom_loaded)se_pop_disabled();
   igText(ICON_FK_DESKTOP " Display Settings");
   igSeparator();
   int v = gui_state.settings.screen_shader;
