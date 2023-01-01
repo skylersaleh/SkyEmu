@@ -22,6 +22,7 @@
 #include <emscripten.h>
 #endif
 
+#include "res.h"
 #include "sokol_app.h"
 #include "sokol_audio.h"
 #include "sokol_gfx.h"
@@ -30,8 +31,6 @@
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
 #include "sokol_imgui.h"
-#include "karla.h"
-#include "forkawesome.h"
 #include "IconsForkAwesome.h"
 #define STBI_ONLY_PNG
 #include "stb_image.h"
@@ -57,6 +56,14 @@
 #ifdef PLATFORM_ANDROID
 #include <android/native_activity.h>
 #endif
+#ifdef UNICODE_GUI
+#include "utf8proc.h"
+#endif
+#ifdef PLATFORM_WINDOWS
+//Needed for setlocale(...)
+#include <locale.h>
+#endif
+
 #include "lcd_shaders.h"
 
 #define SE_HAT_MASK (1<<16)
@@ -1560,7 +1567,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
     if(desc->visible){
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, height}, ImGuiCond_Always);
-      igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse);
+      igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       desc->function();
       float bottom_padding =0;
       #ifdef PLATFORM_IOS
@@ -2101,6 +2108,10 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   igSetCursorPos(backup_cursor);
 }
 bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover, int reduce_width){
+#ifdef UNICODE_GUI
+  first_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)first_label);
+  second_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)second_label);
+#endif
   int item_height = 40; 
   int padding = 4; 
   int box_h = item_height-padding*2;
@@ -2125,6 +2136,10 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igEndChildFrame();
   igSetCursorPos(next_pos);
   igPopID();
+#ifdef UNICODE_GUI
+  free(first_label);
+  free(second_label);
+#endif
   return clicked; 
 }
 #ifdef PLATFORM_ANDROID
@@ -2240,7 +2255,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
-  igBegin(ICON_FK_FILE_O " Load Game",&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse);
+  igBegin(ICON_FK_FILE_O " Load Game",&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   bool hover = false;
@@ -2351,7 +2366,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED){
-    igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse);
+    igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     int num_entries=0;
     for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
       se_game_info_t *info = gui_state.recently_loaded_games+i;
@@ -2384,7 +2399,7 @@ void se_load_rom_overlay(bool visible){
     if(num_entries==0)igText("No recently played games");
     igEnd();
   }else{
-    igBegin(ICON_FK_FOLDER_OPEN " Open File From Disk",NULL,ImGuiWindowFlags_NoCollapse);
+    igBegin(ICON_FK_FOLDER_OPEN " Open File From Disk",NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     tinydir_dir dir; 
     if(tinydir_open(&dir, gui_state.file_browser.current_path)==-1){
       strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
@@ -3287,7 +3302,7 @@ static void frame(void) {
   if(gui_state.sidebar_open){
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("Menu",&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse);
+    igBegin("Menu",&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     se_draw_menu_panel();
     igEnd();
     screen_x += sidebar_w;
@@ -3323,7 +3338,7 @@ static void frame(void) {
   if(draw_click_region){
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("##ClickRegion",&gui_state.overlay_open,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground);
+    igBegin("##ClickRegion",&gui_state.overlay_open,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoResize);
   }
   se_load_rom_overlay(draw_click_region);
   if(draw_click_region)igEnd();
@@ -3337,18 +3352,40 @@ static void frame(void) {
   if(!init){
     init=true;
     ImFontAtlas* atlas = igGetIO()->Fonts;    
+    atlas->Flags|=ImFontAtlasFlags_NoPowerOfTwoHeight;
+    uint64_t karla_compressed_size; 
+    const uint8_t* karla_compressed_data = se_get_resource(SE_KARLA,&karla_compressed_size);
+    uint64_t forkawesome_compressed_size; 
+    const uint8_t* forkawesome_compressed_data = se_get_resource(SE_FORKAWESOME,&forkawesome_compressed_size);
     ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
       atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
-   ImFontAtlas_Build(atlas);
-
+    ImFontAtlas_Build(atlas);
+    
     static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
     ImFontConfig* config=ImFontConfig_ImFontConfig();
     config->MergeMode = true;
     config->GlyphMinAdvanceX = 13.0f;
     ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
       forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),config,icons_ranges);
-    int built = 0;
     ImFontConfig_destroy(config);
+    #ifdef UNICODE_GUI
+      uint64_t notosans_cjksc_compressed_size; 
+      const uint8_t* notosans_cjksc_compressed_data = se_get_resource(SE_NOTO,&notosans_cjksc_compressed_size);
+      ImFontConfig* config3=ImFontConfig_ImFontConfig();
+      config3->MergeMode = true;
+      config3->OversampleH=1;
+      config3->PixelSnapH = true;
+      static const ImWchar ranges[] =
+      {
+          0x0020, 0x1000,
+          0x3000, 0x9FAF, // CJK
+          0xAC00, 0xD7A3, // Korean characters
+          0 
+      };
+      ImFont* font3 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,notosans_cjksc_compressed_data,notosans_cjksc_compressed_size,14*se_dpi_scale(),config3,ranges);
+      ImFontConfig_destroy(config3);
+    #endif
+    
 
     unsigned char* font_pixels;
     int font_width, font_height;
@@ -3361,12 +3398,15 @@ static void frame(void) {
     img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
     img_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
     img_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-    img_desc.min_filter = SG_FILTER_LINEAR;
-    img_desc.mag_filter = SG_FILTER_LINEAR;
+    img_desc.min_filter = SG_FILTER_NEAREST;
+    img_desc.mag_filter = SG_FILTER_NEAREST;
     img_desc.data.subimage[0][0].ptr = font_pixels;
     img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
     img_desc.label = "sokol-imgui-font";
     atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
+    ImFontAtlas_ClearTexData(atlas);
+    ImFontAtlas_ClearInputData(atlas);
+    
     igGetIO()->FontDefault=font2;
     igGetIO()->Fonts=atlas;
     igGetIO()->FontGlobalScale/=se_dpi_scale();
@@ -3596,7 +3636,12 @@ static void event(const sapp_event* ev) {
     if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
   }
 }
+
 sapp_desc sokol_main(int argc, char* argv[]) {
+  #ifdef PLATFORM_WINDOWS
+  //Should let windows open UTF-8 files
+  setlocale(LC_ALL, ".65001");
+  #endif
   emu_state.cmd_line_arg_count =argc;
   emu_state.cmd_line_args =argv;
   int width = 1280;
