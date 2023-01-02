@@ -184,6 +184,13 @@ typedef struct{
   char current_path[SB_FILE_PATH_SIZE];
   char file_path[SB_FILE_PATH_SIZE];
   int state; // 0 = Closed no file selected,  1= Open,  2 = closed file selected
+  tinydir_file* cached_files;
+  char cached_path[SB_FILE_PATH_SIZE];
+  char cached_ext_filter[SB_FILE_PATH_SIZE];
+  size_t num_cached_files;
+  double cached_time; 
+  tinydir_dir cached_dir; 
+  bool has_cache;
 }se_file_browser_state_t;
 typedef struct {
     uint64_t laptime;
@@ -2108,12 +2115,30 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   igText(text);
   igSetCursorPos(backup_cursor);
 }
+//CPU: 73%->48
 bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover, int reduce_width){
+  ImVec2 win_min,win_sz,win_max;
+  win_min.x=0;
+  win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
+  igGetWindowSize(&win_sz);
+  win_min.y+=igGetScrollY();
+  win_max.x = win_min.x+win_sz.x; 
+  win_max.y = win_min.y+win_sz.y; 
+
+  int item_height = 40; 
+
+  float disp_y_min = igGetCursorPosY();
+  float disp_y_max = disp_y_min+item_height;
+  //Early out if not visible (helps for long lists)
+  if(disp_y_max<win_min.y||disp_y_min>win_max.y){
+    igSetCursorPosY(disp_y_max);
+    return false;
+  }
+
 #ifdef UNICODE_GUI
   first_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)first_label);
   second_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)second_label);
 #endif
-  int item_height = 40; 
   int padding = 4; 
   int box_h = item_height-padding*2;
   int box_w = box_h;
@@ -2400,49 +2425,62 @@ void se_load_rom_overlay(bool visible){
     if(num_entries==0)igText("No recently played games");
     igEnd();
   }else{
+    se_file_browser_state_t* file_browse = &gui_state.file_browser;
     igBegin(ICON_FK_FOLDER_OPEN " Open File From Disk",NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-    tinydir_dir dir; 
-    if(tinydir_open(&dir, gui_state.file_browser.current_path)==-1){
-      strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
-      if(tinydir_open(&dir, gui_state.file_browser.current_path)==-1){
-        printf("Error opening %s\n",gui_state.file_browser.current_path);
+    bool update_cache = file_browse->has_cache==false||file_browse->cached_time+5.<se_time()||strncmp(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE)!=0;
+    if(update_cache){
+      strncpy(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE);
+      file_browse->cached_time=se_time();
+      if(file_browse->has_cache){
+        if(file_browse->cached_files){
+          free(file_browse->cached_files);
+          file_browse->cached_files = NULL;
+          file_browse->num_cached_files=0;
+        }
+        tinydir_close(&file_browse->cached_dir);
+        file_browse->has_cache=false;
       }
-    }else{
-      int max_files = 2048;
-      tinydir_file *files = (tinydir_file*)malloc(sizeof(tinydir_file)*max_files);
-      int f = 0; 
-      while(dir.has_next&&f<max_files){
-        tinydir_readfile(&dir, &files[f]);
-        char *ext = files[f].extension;
-        bool show_item = true; 
-        if(!files[f].is_dir){
-          show_item=false;
-          for(int i=0;i<sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]);++i){
-            if(sb_path_has_file_ext(files[f].path,valid_rom_file_types[i])){show_item=true;break;}
+      if(tinydir_open(&file_browse->cached_dir, gui_state.file_browser.current_path)==-1){
+        strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
+        if(tinydir_open(&file_browse->cached_dir, gui_state.file_browser.current_path)==-1){
+          printf("Error opening %s\n",gui_state.file_browser.current_path);
+        }
+      }else{
+        int max_files = 4096;
+        file_browse->cached_files= (tinydir_file*)malloc(sizeof(tinydir_file)*max_files);
+        int f = 0; 
+        while(file_browse->cached_dir.has_next&&f<max_files){
+          tinydir_readfile(&file_browse->cached_dir, &file_browse->cached_files[f]);
+          char *ext = file_browse->cached_files[f].extension;
+          bool show_item = true; 
+          if(!file_browse->cached_files[f].is_dir){
+            show_item=false;
+            for(int i=0;i<sizeof(valid_rom_file_types)/sizeof(valid_rom_file_types[0]);++i){
+              if(sb_path_has_file_ext(file_browse->cached_files[f].path,valid_rom_file_types[i])){show_item=true;break;}
+            }
+          }else{
+            const char* name = file_browse->cached_files[f].name;
+            if(strcmp(name,".")==0||strcmp(name,"..")==0)show_item=false;
           }
-        }else{
-          const char* name = files[f].name;
-          if(strcmp(name,".")==0||strcmp(name,"..")==0)show_item=false;
+          if(show_item)++f;
+          tinydir_next(&file_browse->cached_dir);
         }
-        if(show_item)++f;
-        tinydir_next(&dir);
+        file_browse->num_cached_files = f;
+        qsort(file_browse->cached_files,f,sizeof(tinydir_file),file_sorter);
       }
-      int total_files = f;
-      qsort(files,f,sizeof(tinydir_file),file_sorter);
-      for(int f = 0;f<total_files;++f) {
-        const char *ext = ICON_FK_FOLDER_OPEN;
-        if (!files[f].is_dir) {
-          const char* base, *file;
-          sb_breakup_path(files[f].path, &base, &file, &ext);
-        }
-        if (se_selectable_with_box(files[f].name, files[f].path, ext, false, 0)) {
-          if (files[f].is_dir)
-            strncpy(gui_state.file_browser.current_path, files[f].path, SB_FILE_PATH_SIZE);
-          else se_load_rom(files[f].path);
-        }
+      file_browse->has_cache=true;
+    }
+    for(int f = 0;f<file_browse->num_cached_files;++f) {
+      const char *ext = ICON_FK_FOLDER_OPEN;
+      if (!file_browse->cached_files[f].is_dir) {
+        const char* base, *file;
+        sb_breakup_path(file_browse->cached_files[f].path, &base, &file, &ext);
       }
-      free(files);
-      tinydir_close(&dir);
+      if (se_selectable_with_box(file_browse->cached_files[f].name, file_browse->cached_files[f].path, ext, false, 0)) {
+        if (file_browse->cached_files[f].is_dir)
+          strncpy(gui_state.file_browser.current_path, file_browse->cached_files[f].path, SB_FILE_PATH_SIZE);
+        else se_load_rom(file_browse->cached_files[f].path);
+      }
     }
     igEnd();
   }
