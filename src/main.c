@@ -162,7 +162,8 @@ typedef struct{
   uint32_t stretch_to_fit;
   uint32_t auto_hide_touch_controls;
   float touch_controls_opacity; 
-  uint32_t padding[240];
+  uint32_t always_show_menubar;
+  uint32_t padding[239];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -228,6 +229,7 @@ typedef struct {
     se_file_browser_state_t file_browser; 
     float mouse_pos[2];
     bool mouse_button[3];
+    float menubar_hide_timer;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -1572,6 +1574,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
   if(!desc)return screen_x;
   while(desc->label){
     if(desc->visible){
+      gui_state.menubar_hide_timer=se_time();
       int w = sidebar_w+screen_x-(int)screen_x;
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
@@ -3158,6 +3161,9 @@ void se_draw_menu_panel(){
   igText("Solar Sensor");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
   igSliderFloat("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f",ImGuiSliderFlags_None);
+  bool always_show_menubar = gui_state.settings.always_show_menubar;
+  igCheckbox("Always Show Menu/Nav Bar",&always_show_menubar);
+  gui_state.settings.always_show_menubar = always_show_menubar;
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   igCheckbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
@@ -3183,6 +3189,46 @@ static void se_init_audio(){
     .packet_frames=1024
   });
  se_reset_audio_ring();
+}
+
+// For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.
+bool se_begin_menu_bar()
+{
+  ImGuiContext* g = igGetCurrentContext();
+  ImVec2 menu_bar_size={g->IO.DisplaySize.x, g->NextWindowData.MenuBarOffsetMinVal.y + g->FontBaseSize + g->Style.FramePadding.y*2};
+  float y_off = (3+gui_state.menubar_hide_timer-se_time())*2.;
+  if(y_off>0)y_off=0;
+  if(gui_state.settings.always_show_menubar)y_off=0;
+  y_off = y_off*menu_bar_size.y;
+  if(y_off<-menu_bar_size.y)y_off=-menu_bar_size.y;
+  float y_pos = g->Style.DisplaySafeAreaPadding.y - g->Style.FramePadding.y;
+  if(y_pos<0)y_pos=0;
+  g->NextWindowData.MenuBarOffsetMinVal = (ImVec2){g->Style.DisplaySafeAreaPadding.x, y_pos};
+  igSetNextWindowPos((ImVec2){0.0f, y_off},ImGuiCond_Always,(ImVec2){0,0});
+  igSetNextWindowSize(menu_bar_size,ImGuiCond_Always);
+  igPushStyleVarFloat(ImGuiStyleVar_WindowRounding, 0.0f);
+  igPushStyleVarVec2(ImGuiStyleVar_WindowMinSize, (ImVec2){0, 0});
+  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+  bool is_open = igBegin("##MainMenuBar", NULL, window_flags) && igBeginMenuBar();
+  igPopStyleVar(2);
+  g->NextWindowData.MenuBarOffsetMinVal = (ImVec2){0.0f, 0.0f};
+  if (!is_open){
+      igEnd();
+      return false;
+  }
+  return true; //-V1020
+}
+
+void se_end_menu_bar()
+{
+  igEndMenuBar();
+  // When the user has left the menu layer (typically: closed menus through activation of an item), we restore focus to the previous window
+  // FIXME: With this strategy we won't be able to restore a NULL focus.
+  ImGuiContext* g = igGetCurrentContext();
+  if (g->CurrentWindow == g->NavWindow && g->NavLayer == ImGuiNavLayer_Main && !g->NavAnyRequest)
+      igFocusTopMostWindowUnderOne(g->NavWindow, NULL);
+
+  igEnd();
 }
 
 static void frame(void) {
@@ -3215,7 +3261,7 @@ static void frame(void) {
   style->DisplaySafeAreaPadding.y = top_padding;
 #endif
 
-  if (gui_state.test_runner_mode==false&&igBeginMainMenuBar())
+  if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
     int orig_x = igGetCursorPosX();
     igSetCursorPosX((width/se_dpi_scale())-100);
@@ -3270,7 +3316,7 @@ static void frame(void) {
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
 
-
+    if(emu_state.run_mode==SB_MODE_PAUSE)gui_state.menubar_hide_timer=se_time();
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
     const char* toggle_tooltips[]={
       "Rewind at 8x speed",
@@ -3298,7 +3344,7 @@ static void frame(void) {
       if(curr->inputs[SE_KEY_CAPTURE_STATE(i)])se_capture_state_slot(i);
       if(curr->inputs[SE_KEY_RESTORE_STATE(i)])se_restore_state_slot(i);
     }
-
+    if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
@@ -3309,6 +3355,7 @@ static void frame(void) {
 
       if(i==num_toggles-1)igPopStyleVar(1);
     }
+    if(!emu_state.rom_loaded)se_pop_disabled();
     switch(next_toggle_id){
       case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
       case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
@@ -3324,9 +3371,9 @@ static void frame(void) {
 
     igPopItemWidth();
     
-    
-    menu_height= igGetWindowHeight();
-    igEndMainMenuBar();
+    ImVec2 menu_p; igGetWindowPos(&menu_p);
+    menu_height= igGetWindowHeight()+menu_p.y;
+    se_end_menu_bar();
   }
   igPopStyleVar(2);
 
@@ -3361,6 +3408,7 @@ static void frame(void) {
     screen_x += sidebar_w;
     screen_width -=sidebar_w*se_dpi_scale();
     gui_state.key.last_bind_activitiy = -1;
+    gui_state.menubar_hide_timer=se_time();
   }
   if(gui_state.settings.draw_debug_menu){
     int orig_screen_x = screen_x;
@@ -3541,6 +3589,7 @@ void se_load_settings(){
       gui_state.settings.settings_file_version = 2; 
       gui_state.settings.auto_hide_touch_controls=true;
       gui_state.settings.touch_controls_opacity = 0.5;
+      gui_state.settings.always_show_menubar=false;
     }
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
     gui_state.last_saved_settings=gui_state.settings;
@@ -3680,10 +3729,12 @@ static void event(const sapp_event* ev) {
         gui_state.touch_points[i].active &= !ev->touches[i].changed;
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
+      if(ev->touches[i].pos_y<gui_state.screen_height*0.05)gui_state.menubar_hide_timer=se_time();
     }
   }else if(ev->type==SAPP_EVENTTYPE_MOUSE_MOVE){
     gui_state.mouse_pos[0]=ev->mouse_x;
     gui_state.mouse_pos[1]=ev->mouse_y;
+    if(gui_state.mouse_pos[1]<gui_state.screen_height*0.1)gui_state.menubar_hide_timer=se_time();
   }else if(ev->type==SAPP_EVENTTYPE_MOUSE_UP||ev->type==SAPP_EVENTTYPE_MOUSE_DOWN){
     int b = ev->mouse_button;
     if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
