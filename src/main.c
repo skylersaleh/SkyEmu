@@ -3729,7 +3729,7 @@ static void event(const sapp_event* ev) {
         gui_state.touch_points[i].active &= !ev->touches[i].changed;
       gui_state.touch_points[i].pos[0] = ev->touches[i].pos_x;
       gui_state.touch_points[i].pos[1] = ev->touches[i].pos_y;
-      if(ev->touches[i].pos_y<gui_state.screen_height*0.05)gui_state.menubar_hide_timer=se_time();
+      if(ev->touches[i].pos_y<gui_state.screen_height*0.05&& gui_state.touch_points[i].active)gui_state.menubar_hide_timer=se_time();
     }
   }else if(ev->type==SAPP_EVENTTYPE_MOUSE_MOVE){
     gui_state.mouse_pos[0]=ev->mouse_x;
