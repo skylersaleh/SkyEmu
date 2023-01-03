@@ -2129,9 +2129,10 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   win_max.y = win_min.y+win_sz.y; 
 
   int item_height = 40; 
+  int padding = 4; 
 
   float disp_y_min = igGetCursorPosY();
-  float disp_y_max = disp_y_min+item_height;
+  float disp_y_max = disp_y_min+item_height+padding*2;
   //Early out if not visible (helps for long lists)
   if(disp_y_max<win_min.y||disp_y_min>win_max.y){
     igSetCursorPosY(disp_y_max);
@@ -2142,7 +2143,6 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   first_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)first_label);
   second_label= (const char*)utf8proc_NFC((const utf8proc_uint8_t *)second_label);
 #endif
-  int padding = 4; 
   int box_h = item_height-padding*2;
   int box_w = box_h;
   bool clicked = false;
