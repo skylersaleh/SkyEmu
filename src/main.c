@@ -660,7 +660,7 @@ double se_time(){
   return stm_sec(stm_diff(stm_now(),base_time));
 }
 static void se_tooltip(const char * tooltip){
-  if(igGetCurrentContext()->HoveredIdTimer<1.5||se_time()-gui_state.last_touch_time<1.5)return;
+  if(igGetCurrentContext()->HoveredIdTimer<1.5||gui_state.last_touch_time>0)return;
   if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
     igSetTooltip(tooltip);
   }
