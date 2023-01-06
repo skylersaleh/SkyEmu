@@ -243,6 +243,10 @@ typedef struct {
 #define SE_THEME_LIGHT 1
 #define SE_THEME_BLACK 2
 
+#define SE_MENU_BAR_HEIGHT 24
+#define SE_MENU_BAR_BUTTON_WIDTH 30
+#define SE_TOGGLE_WIDTH 35
+#define SE_VOLUME_SLIDER_WIDTH 100
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1};
@@ -1553,20 +1557,39 @@ static void se_draw_debug_menu(){
   ImGuiStyle* style = igGetStyle();
   int id = 10;
 
-  while(desc->label){
-    igPushIDInt(id++);
-    if(desc->visible){
-      igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
-      igPopStyleColor(1);
-    }else{
-      if(igButton(desc->short_label,(ImVec2){0, 0})){desc->visible=!desc->visible;}
+  if(gui_state.screen_width*0.5/se_dpi_scale()-SE_TOGGLE_WIDTH*2.5<(SE_MENU_BAR_BUTTON_WIDTH+1)*9){
+    igSetNextItemWidth(SE_MENU_BAR_BUTTON_WIDTH);
+    if(igBeginCombo("##debug combo","  " ICON_FK_BUG,ImGuiComboFlags_NoArrowButton|ImGuiComboFlags_HeightLarge)){
+      while(desc->label){
+        bool is_selected = desc->visible; // You can store your selection however you want, outside or inside your objects
+        if (igSelectableBool(desc->label, is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
+          desc->visible=!desc->visible;
+        }
+        char tmp_str[256];
+        snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+        se_tooltip(tmp_str);
+        desc++;
+      }
+      igEndCombo();
     }
-    char tmp_str[256];
-    snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
-    se_tooltip(tmp_str);
-    desc++;
-    igPopID();
+    igSameLine(0,1);
+  }else{
+    while(desc->label){
+      igPushIDInt(id++);
+      if(desc->visible){
+        igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
+        if(igButton(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+        igPopStyleColor(1);
+      }else{
+        if(igButton(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+      }
+      igSameLine(0,1);
+      char tmp_str[256];
+      snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+      se_tooltip(tmp_str);
+      desc++;
+      igPopID();
+    }
   }
 }
 static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, float height){
@@ -2817,6 +2840,7 @@ void se_imgui_theme()
   style->GrabRounding                      = 3;
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
+  style->ButtonTextAlign = (ImVec2){0.5,0.5};
 
   if(gui_state.settings.theme == SE_THEME_BLACK){
     int black_list[]={
@@ -3192,10 +3216,9 @@ static void se_init_audio(){
 }
 
 // For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.
-bool se_begin_menu_bar()
-{
+bool se_begin_menu_bar(){
   ImGuiContext* g = igGetCurrentContext();
-  ImVec2 menu_bar_size={g->IO.DisplaySize.x, g->NextWindowData.MenuBarOffsetMinVal.y + g->FontBaseSize + g->Style.FramePadding.y*2};
+  ImVec2 menu_bar_size={g->IO.DisplaySize.x, g->NextWindowData.MenuBarOffsetMinVal.y + SE_MENU_BAR_HEIGHT};
   float y_off = (3+gui_state.menubar_hide_timer-se_time())*2.;
   if(y_off>0)y_off=0;
   if(gui_state.settings.always_show_menubar)y_off=0;
@@ -3208,26 +3231,19 @@ bool se_begin_menu_bar()
   igSetNextWindowSize(menu_bar_size,ImGuiCond_Always);
   igPushStyleVarFloat(ImGuiStyleVar_WindowRounding, 0.0f);
   igPushStyleVarVec2(ImGuiStyleVar_WindowMinSize, (ImVec2){0, 0});
-  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
-  bool is_open = igBegin("##MainMenuBar", NULL, window_flags) && igBeginMenuBar();
+  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
+  bool is_open = igBegin("##MainMenuBar", NULL, window_flags);
   igPopStyleVar(2);
   g->NextWindowData.MenuBarOffsetMinVal = (ImVec2){0.0f, 0.0f};
   if (!is_open){
       igEnd();
       return false;
   }
+  igSetCursorPosY(0);
   return true; //-V1020
 }
 
-void se_end_menu_bar()
-{
-  igEndMenuBar();
-  // When the user has left the menu layer (typically: closed menus through activation of an item), we restore focus to the previous window
-  // FIXME: With this strategy we won't be able to restore a NULL focus.
-  ImGuiContext* g = igGetCurrentContext();
-  if (g->CurrentWindow == g->NavWindow && g->NavLayer == ImGuiNavLayer_Main && !g->NavAnyRequest)
-      igFocusTopMostWindowUnderOne(g->NavWindow, NULL);
-
+void se_end_menu_bar(){
   igEnd();
 }
 
@@ -3263,40 +3279,52 @@ static void frame(void) {
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
-    int orig_x = igGetCursorPosX();
-    igSetCursorPosX((width/se_dpi_scale())-100);
-    igPushItemWidth(-0.01);
-    int v = (int)(gui_state.settings.volume*100);
-    float volume_padding=110;
-#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
-    igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
-    se_tooltip("Adjust volume");
-    gui_state.settings.volume=v*0.01;
-#else
-    gui_state.settings.volume=1.;
-    volume_padding=0;
-#endif
-    igPopItemWidth();
-    igSetCursorPosX(orig_x);
-
+    float menu_bar_y = igGetCursorPosY();
     if(gui_state.sidebar_open){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(ICON_FK_TIMES,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(igButton(ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
       igPopStyleColor(1);
     }else{
-      if(igButton(ICON_FK_BARS,(ImVec2){0, 0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(igButton(ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
+    igSameLine(0,1);
     se_tooltip("Show/Hide Menu Panel");
 
     if(gui_state.settings.draw_debug_menu)se_draw_debug_menu();
     
+
+    int orig_x = igGetCursorPosX();
+    int v = (int)(gui_state.settings.volume*100);
+    float volume_width = SE_VOLUME_SLIDER_WIDTH+5;
+#if defined(PLATFORM_IOS) || defined(PLATFORM_ANDROID)
+    gui_state.settings.volume=1.;
+    volum_width = 0; 
+#endif
+
+    
     int num_toggles = 5;
-    int sel_width =35;
+    int sel_width =SE_TOGGLE_WIDTH;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
     int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
+    if((width)/se_dpi_scale()-toggle_x-(sel_width+1)*num_toggles<volume_width)toggle_x=(width)/se_dpi_scale()-(sel_width+1)*num_toggles-volume_width;
+    if(toggle_x<orig_x)toggle_x=orig_x;
+
+#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
+    int vol_x = width/se_dpi_scale()-volume_width;
+    if(vol_x<toggle_x+(sel_width+1)*num_toggles)vol_x=toggle_x+(sel_width+1)*num_toggles;
+    igSetCursorPosX(vol_x);
+    igPushItemWidth(-0.01);
+    igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
+    se_tooltip("Adjust volume");
+    gui_state.settings.volume=v*0.01;
+    igPopItemWidth();
+    igSetCursorPosX(orig_x);
+#endif
+    
+
     float toggle_width = sel_width*num_toggles;
-    if(toggle_x+toggle_width>(width/se_dpi_scale())-volume_padding)toggle_x=igGetCursorPosX()+((width/se_dpi_scale()-igGetCursorPosX())-volume_padding-sel_width*num_toggles)*0.5;
-    igSetCursorPosX(toggle_x);
+
+    igSameLine(toggle_x,0);
     igPushItemWidth(sel_width);
 
     sb_joy_t *curr = &emu_state.joy;
@@ -3348,7 +3376,8 @@ static void frame(void) {
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(toggle_labels[i],(ImVec2){sel_width, 0}))next_toggle_id = i;
+      if(igButton(toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT}))next_toggle_id = i;
+      igSameLine(0,1);
       se_tooltip(toggle_tooltips[i]);
       
       if(active_button)igPopStyleColor(1);
