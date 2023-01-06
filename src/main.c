@@ -1394,6 +1394,11 @@ static void se_draw_emulated_system_screen(){
   render_w*=render_scale;
   render_h*=render_scale;
 
+  //Don't hide menubar if it doesn't make the screen smaller
+  if(gui_state.screen_height/se_dpi_scale()-SE_MENU_BAR_HEIGHT>gui_state.screen_width/se_dpi_scale()*render_aspect){
+      gui_state.menubar_hide_timer=se_time();
+  }
+
   int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
   if(gui_state.last_touch_time>=0){
@@ -3298,7 +3303,7 @@ static void frame(void) {
     float volume_width = SE_VOLUME_SLIDER_WIDTH+5;
 #if defined(PLATFORM_IOS) || defined(PLATFORM_ANDROID)
     gui_state.settings.volume=1.;
-    volum_width = 0; 
+    volume_width = 0; 
 #endif
 
     
