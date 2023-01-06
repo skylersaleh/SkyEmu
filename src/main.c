@@ -3236,7 +3236,7 @@ bool se_begin_menu_bar(){
   igSetNextWindowSize(menu_bar_size,ImGuiCond_Always);
   igPushStyleVarFloat(ImGuiStyleVar_WindowRounding, 0.0f);
   igPushStyleVarVec2(ImGuiStyleVar_WindowMinSize, (ImVec2){0, 0});
-  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
+  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings;
   bool is_open = igBegin("##MainMenuBar", NULL, window_flags);
   igPopStyleVar(2);
   g->NextWindowData.MenuBarOffsetMinVal = (ImVec2){0.0f, 0.0f};
