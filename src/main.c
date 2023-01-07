@@ -1456,6 +1456,11 @@ static void se_draw_emulated_system_screen(){
       lcd_render_h = scr_h;
       lcd_render_w = scr_w;
     }
+    if(gui_state.settings.screen_rotation==1 || gui_state.settings.screen_rotation==3){
+      int t = lcd_render_w;
+      lcd_render_w = lcd_render_h; 
+      lcd_render_h= t; 
+    }
   }
   ImVec2 v;
   igGetWindowPos(&v);
