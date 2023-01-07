@@ -17,6 +17,7 @@
 #include "gb.h"
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
+#include "localization.h"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -163,7 +164,8 @@ typedef struct{
   uint32_t auto_hide_touch_controls;
   float touch_controls_opacity; 
   uint32_t always_show_menubar;
-  uint32_t padding[239];
+  uint32_t language;
+  uint32_t padding[238];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -326,15 +328,44 @@ static float se_dpi_scale(){
 #endif
   return dpi_scale;
 }
+
+static inline bool se_checkbox(const char* label, bool * v){
+  return igCheckbox(se_localize(label),v);
+}
+static void se_text(const char* label,...){
+  va_list args;
+  va_start(args, label);
+  igTextV(se_localize(label),args);
+  va_end(args);
+}
+static void se_text_disabled(const char* label,...){
+  va_list args;
+  va_start(args, label);
+  igTextDisabledV(se_localize(label),args);
+  va_end(args);
+}
+static bool se_combo_str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items){
+  return igComboStr(se_localize(label),current_item,se_localize(items_separated_by_zeros),popup_max_height_in_items);
+}
+static int se_slider_float(const char* label,float* v,float v_min,float v_max,const char* format){
+  igSliderFloat(se_localize(label),v,v_min,v_max,se_localize(format),ImGuiSliderFlags_AlwaysClamp);
+}
+static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags){
+  return igInputInt(se_localize(label),v,step,step_fast,flags);
+}
+
+static bool se_button(const char* label, ImVec2 size){
+  return igButton(se_localize(label),size);
+}
 const char* se_keycode_to_string(int keycode){
   switch(keycode){
     default:           return "Unknown";
     case SAPP_KEYCODE_SPACE:         return "SPACE";
-    case SAPP_KEYCODE_APOSTROPHE:    return "APOSTROPHE";
-    case SAPP_KEYCODE_COMMA:         return "COMMA";
-    case SAPP_KEYCODE_MINUS:         return "MINUS";
-    case SAPP_KEYCODE_PERIOD:        return "PERIOD";
-    case SAPP_KEYCODE_SLASH:         return "SLASH";
+    case SAPP_KEYCODE_APOSTROPHE:    return "'";
+    case SAPP_KEYCODE_COMMA:         return ",";
+    case SAPP_KEYCODE_MINUS:         return "-";
+    case SAPP_KEYCODE_PERIOD:        return ".";
+    case SAPP_KEYCODE_SLASH:         return "/";
     case SAPP_KEYCODE_0:             return "0";
     case SAPP_KEYCODE_1:             return "1";
     case SAPP_KEYCODE_2:             return "2";
@@ -345,8 +376,8 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_7:             return "7";
     case SAPP_KEYCODE_8:             return "8";
     case SAPP_KEYCODE_9:             return "9";
-    case SAPP_KEYCODE_SEMICOLON:     return "SEMICOLON";
-    case SAPP_KEYCODE_EQUAL:         return "EQUAL";
+    case SAPP_KEYCODE_SEMICOLON:     return ";";
+    case SAPP_KEYCODE_EQUAL:         return "=";
     case SAPP_KEYCODE_A:             return "A";
     case SAPP_KEYCODE_B:             return "B";
     case SAPP_KEYCODE_C:             return "C";
@@ -373,12 +404,12 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_X:             return "X";
     case SAPP_KEYCODE_Y:             return "Y";
     case SAPP_KEYCODE_Z:             return "Z";
-    case SAPP_KEYCODE_LEFT_BRACKET:  return "LEFT_BRACKET";
-    case SAPP_KEYCODE_BACKSLASH:     return "BACKSLASH";
-    case SAPP_KEYCODE_RIGHT_BRACKET: return "RIGHT_BRACKET";
-    case SAPP_KEYCODE_GRAVE_ACCENT:  return "GRAVE_ACCENT";
-    case SAPP_KEYCODE_WORLD_1:       return "WORLD_1";
-    case SAPP_KEYCODE_WORLD_2:       return "WORLD_2";
+    case SAPP_KEYCODE_LEFT_BRACKET:  return "[";
+    case SAPP_KEYCODE_BACKSLASH:     return "\\";
+    case SAPP_KEYCODE_RIGHT_BRACKET: return "]";
+    case SAPP_KEYCODE_GRAVE_ACCENT:  return "`";
+    case SAPP_KEYCODE_WORLD_1:       return "WORLD 1";
+    case SAPP_KEYCODE_WORLD_2:       return "WORLD 2";
     case SAPP_KEYCODE_ESCAPE:        return "ESCAPE";
     case SAPP_KEYCODE_ENTER:         return "ENTER";
     case SAPP_KEYCODE_TAB:           return "TAB";
@@ -389,14 +420,14 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_LEFT:          return "LEFT";
     case SAPP_KEYCODE_DOWN:          return "DOWN";
     case SAPP_KEYCODE_UP:            return "UP";
-    case SAPP_KEYCODE_PAGE_UP:       return "PAGE_UP";
-    case SAPP_KEYCODE_PAGE_DOWN:     return "PAGE_DOWN";
+    case SAPP_KEYCODE_PAGE_UP:       return "PAGE UP";
+    case SAPP_KEYCODE_PAGE_DOWN:     return "PAGE DOWN";
     case SAPP_KEYCODE_HOME:          return "HOME";
     case SAPP_KEYCODE_END:           return "END";
-    case SAPP_KEYCODE_CAPS_LOCK:     return "CAPS_LOCK";
-    case SAPP_KEYCODE_SCROLL_LOCK:   return "SCROLL_LOCK";
-    case SAPP_KEYCODE_NUM_LOCK:      return "NUM_LOCK";
-    case SAPP_KEYCODE_PRINT_SCREEN:  return "PRINT_SCREEN";
+    case SAPP_KEYCODE_CAPS_LOCK:     return "CAPS LOCK";
+    case SAPP_KEYCODE_SCROLL_LOCK:   return "SCROLL LOCK";
+    case SAPP_KEYCODE_NUM_LOCK:      return "NUM LOCK";
+    case SAPP_KEYCODE_PRINT_SCREEN:  return "PRINT SCREEN";
     case SAPP_KEYCODE_PAUSE:         return "PAUSE";
     case SAPP_KEYCODE_F1:            return "F1";
     case SAPP_KEYCODE_F2:            return "F2";
@@ -423,31 +454,31 @@ const char* se_keycode_to_string(int keycode){
     case SAPP_KEYCODE_F23:           return "F23";
     case SAPP_KEYCODE_F24:           return "F24";
     case SAPP_KEYCODE_F25:           return "F25";
-    case SAPP_KEYCODE_KP_0:          return "KP_0";
-    case SAPP_KEYCODE_KP_1:          return "KP_1";
-    case SAPP_KEYCODE_KP_2:          return "KP_2";
-    case SAPP_KEYCODE_KP_3:          return "KP_3";
-    case SAPP_KEYCODE_KP_4:          return "KP_4";
-    case SAPP_KEYCODE_KP_5:          return "KP_5";
-    case SAPP_KEYCODE_KP_6:          return "KP_6";
-    case SAPP_KEYCODE_KP_7:          return "KP_7";
-    case SAPP_KEYCODE_KP_8:          return "KP_8";
-    case SAPP_KEYCODE_KP_9:          return "KP_9";
-    case SAPP_KEYCODE_KP_DECIMAL:    return "KP_DECIMAL";
-    case SAPP_KEYCODE_KP_DIVIDE:     return "KP_DIVIDE";
-    case SAPP_KEYCODE_KP_MULTIPLY:   return "KP_MULTIPLY";
-    case SAPP_KEYCODE_KP_SUBTRACT:   return "KP_SUBTRACT";
-    case SAPP_KEYCODE_KP_ADD:        return "KP_ADD";
-    case SAPP_KEYCODE_KP_ENTER:      return "KP_ENTER";
-    case SAPP_KEYCODE_KP_EQUAL:      return "KP_EQUAL";
-    case SAPP_KEYCODE_LEFT_SHIFT:    return "LEFT_SHIFT";
-    case SAPP_KEYCODE_LEFT_CONTROL:  return "LEFT_CONTROL";
-    case SAPP_KEYCODE_LEFT_ALT:      return "LEFT_ALT";
-    case SAPP_KEYCODE_LEFT_SUPER:    return "LEFT_SUPER";
-    case SAPP_KEYCODE_RIGHT_SHIFT:   return "RIGHT_SHIFT";
-    case SAPP_KEYCODE_RIGHT_CONTROL: return "RIGHT_CONTROL";
-    case SAPP_KEYCODE_RIGHT_ALT:     return "RIGHT_ALT";
-    case SAPP_KEYCODE_RIGHT_SUPER:   return "RIGHT_SUPER";
+    case SAPP_KEYCODE_KP_0:          return "KP 0";
+    case SAPP_KEYCODE_KP_1:          return "KP 1";
+    case SAPP_KEYCODE_KP_2:          return "KP 2";
+    case SAPP_KEYCODE_KP_3:          return "KP 3";
+    case SAPP_KEYCODE_KP_4:          return "KP 4";
+    case SAPP_KEYCODE_KP_5:          return "KP 5";
+    case SAPP_KEYCODE_KP_6:          return "KP 6";
+    case SAPP_KEYCODE_KP_7:          return "KP 7";
+    case SAPP_KEYCODE_KP_8:          return "KP 8";
+    case SAPP_KEYCODE_KP_9:          return "KP 9";
+    case SAPP_KEYCODE_KP_DECIMAL:    return "KP .";
+    case SAPP_KEYCODE_KP_DIVIDE:     return "KP /";
+    case SAPP_KEYCODE_KP_MULTIPLY:   return "KP *";
+    case SAPP_KEYCODE_KP_SUBTRACT:   return "KP -";
+    case SAPP_KEYCODE_KP_ADD:        return "KP +";
+    case SAPP_KEYCODE_KP_ENTER:      return "KP ENTER";
+    case SAPP_KEYCODE_KP_EQUAL:      return "KP =";
+    case SAPP_KEYCODE_LEFT_SHIFT:    return "LEFT SHIFT";
+    case SAPP_KEYCODE_LEFT_CONTROL:  return "LEFT CONTROL";
+    case SAPP_KEYCODE_LEFT_ALT:      return "LEFT ALT";
+    case SAPP_KEYCODE_LEFT_SUPER:    return "LEFT SUPER";
+    case SAPP_KEYCODE_RIGHT_SHIFT:   return "RIGHT SHIFT";
+    case SAPP_KEYCODE_RIGHT_CONTROL: return "RIGHT CONTROL";
+    case SAPP_KEYCODE_RIGHT_ALT:     return "RIGHT ALT";
+    case SAPP_KEYCODE_RIGHT_SUPER:   return "RIGHT SUPER";
     case SAPP_KEYCODE_MENU:          return "MENU";
   }
 }
@@ -666,7 +697,7 @@ double se_time(){
 static void se_tooltip(const char * tooltip){
   if(igGetCurrentContext()->HoveredIdTimer<1.5||gui_state.last_touch_time>0)return;
   if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
-    igSetTooltip(tooltip);
+    igSetTooltip(se_localize(tooltip));
   }
 }
 double se_fps_counter(int tick){
@@ -840,19 +871,19 @@ void se_draw_emu_stats(){
   }
 
   float content_width = igGetWindowContentRegionWidth();
-  igText(ICON_FK_CLOCK_O " FPS");
+  se_text(ICON_FK_CLOCK_O " FPS");
   igSeparator();
   char label_tmp[128];
-  snprintf(label_tmp,128,"Display FPS: %2.1f\n",render_avg);
+  snprintf(label_tmp,128,se_localize("Display FPS: %2.1f\n"),render_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_render,SE_STATS_GRAPH_DATA,0,label_tmp,0,render_max*1.3,(ImVec2){content_width,80},4);
 
-  snprintf(label_tmp,128,"Emulation FPS: %2.1f\n",emulate_avg);
+  snprintf(label_tmp,128,se_localize("Emulation FPS: %2.1f\n"),emulate_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,0,emulate_max*1.3,(ImVec2){content_width,80},4);
   
-  igText(ICON_FK_VOLUME_UP " Audio");
+  se_text(ICON_FK_VOLUME_UP " Audio");
   igSeparator();
-  igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,"Left Audio Channel",-1,1,(ImVec2){content_width,80},4);
-  igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,"Right Audio Channel",-1,1,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,se_localize("Left Audio Channel"),-1,1,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,se_localize("Right Audio Channel"),-1,1,(ImVec2){content_width,80},4);
   
   const char* null_names[] = {NULL};
   const char ** channel_names = null_names; 
@@ -873,21 +904,21 @@ void se_draw_emu_stats(){
   }
   for(int i=0;i<16;++i){
     if(!channel_names[i])break;
-    igText(channel_names[i]);
+    se_text(channel_names[i]);
     igSameLine(content_width*0.42,0);
     igProgressBar(emu_state.audio_channel_output[i],(ImVec2){content_width*0.6,0},"");
   }
   float audio_buff_size = sb_ring_buffer_size(&emu_state.audio_ring_buff)/(float)SB_AUDIO_RING_BUFFER_SIZE;
-  snprintf(label_tmp,128,"Audio Ring (Samples Available: %d)", sb_ring_buffer_size(&emu_state.audio_ring_buff));
-  igText(label_tmp);
+  snprintf(label_tmp,128,se_localize("Audio Ring (Samples Available: %d)"),sb_ring_buffer_size(&emu_state.audio_ring_buff));
+  se_text(label_tmp);
   igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
-  snprintf(label_tmp,128,"Audio Watchdog Triggered %d Times", gui_state.audio_watchdog_triggered);
-  igText(label_tmp);
+  snprintf(label_tmp,128,se_localize("Audio Watchdog Triggered %d Times"),gui_state.audio_watchdog_triggered);
+  se_text(label_tmp);
 
-  igText(ICON_FK_INFO_CIRCLE " Build Info");
+  se_text(ICON_FK_INFO_CIRCLE " Build Info");
   igSeparator();
-  igText("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
-  igText("Commit Hash:");
+  se_text("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
+  se_text("Commit Hash:");
   igPushItemWidth(-1);
   igInputText("##COMMIT_HASH",GIT_COMMIT_HASH,sizeof(GIT_COMMIT_HASH),ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
@@ -895,19 +926,19 @@ void se_draw_emu_stats(){
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
-  if(igButton("Step Instruction",(ImVec2){0,0})){
+  if(se_button("Step Instruction",(ImVec2){0,0})){
     arm->step_instructions=1;
     emu_state.run_mode= SB_MODE_RUN;
   }
   if(arm->log_cmp_file){
     igSameLine(0,0);
-    if(igButton("Disconnect Log",(ImVec2){0,0})){
+    if(se_button("Disconnect Log",(ImVec2){0,0})){
       fclose(arm->log_cmp_file);
       arm->log_cmp_file=NULL;
     }
   }
   int r = 0; 
-  igText(ICON_FK_SERVER " Registers");
+  se_text(ICON_FK_SERVER " Registers");
   igSeparator();
   int w= igGetWindowWidth();
   while(reg_names[r]){
@@ -917,7 +948,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
       igSameLine(w*0.5,0);
     }else igSetNextItemWidth((w-100)*0.5);
 
-    if(igInputInt(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
+    if(se_input_int(reg_names[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal)){
       arm7_reg_write(arm,r,value);
     }
     ++r;
@@ -936,7 +967,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     int y = i/4;
     int x = i%4; 
     if(x!=0)igSameLine(x*w/4,0);
-    igCheckbox(flag_names[i],&v);
+    se_checkbox(flag_names[i],&v);
     cpsr&=~(1<<b);
     cpsr|= ((int)v)<<b;
   }
@@ -950,7 +981,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   int off = buffer_size/2;
   if(pc<off)off=pc;
   for(int i=0;i<buffer_size;++i)buffer[i]=read(pc-off+i);
-  igText(ICON_FK_LIST_OL " Disassembly");
+  se_text(ICON_FK_LIST_OL " Disassembly");
   igSeparator();
   csh handle;
   if (cs_open(CS_ARCH_ARM, thumb? CS_MODE_THUMB: CS_MODE_ARM, &handle) == CS_ERR_OK){
@@ -963,74 +994,74 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
       
       if(insn[j].address==pc){
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
-        igText("PC " ICON_FK_ARROW_RIGHT);
+        se_text("PC " ICON_FK_ARROW_RIGHT);
         igSameLine(40,0);
         snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
         instr_str[79]=0;
-        igText(instr_str);
+        se_text(instr_str);
         snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
         instr_str[79]=0;
         igSameLine(130,0);
-        igText(instr_str);
+        se_text(instr_str);
         igPopStyleColor(1);
       }else{
         snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
         instr_str[79]=0;
-        igText("");
+        se_text("");
         igSameLine(40,0);
-        igText(instr_str);
+        se_text(instr_str);
         snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
         instr_str[79]=0;
         igSameLine(130,0);
-        igText(instr_str);
+        se_text(instr_str);
       }
     }  
   }
 
-  igText(ICON_FK_RANDOM " Last Branch Locations");
+  se_text(ICON_FK_RANDOM " Last Branch Locations");
   igSeparator();
   for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE;++i){
     uint32_t ind = (arm->debug_branch_ring_offset-i-1);
     ind%=ARM_DEBUG_BRANCH_RING_SIZE;
-    igText("%d",i+1);
+    se_text("%d",i+1);
     igSameLine(40,0);
-    igText("0x%08x",arm->debug_branch_ring[ind]);
+    se_text("0x%08x",arm->debug_branch_ring[ind]);
   }
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
-  igText(ICON_FK_EXCHANGE " Read/Write Memory Address");
+  se_text(ICON_FK_EXCHANGE " Read/Write Memory Address");
   igSeparator();
-  igInputInt("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  se_input_int("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
   igSeparator();
   int v = se_read32(read,gui->mem_view_address);
-  if(igInputInt("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+  if(se_input_int("data (32 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
     se_write32(write,gui->mem_view_address,v);
   }
   v = se_read16(read,gui->mem_view_address);
-  if(igInputInt("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+  if(se_input_int("data (16 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
     se_write16(write,gui->mem_view_address,v);
   }
   v = (*read)(gui->mem_view_address);
-  if(igInputInt("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+  if(se_input_int("data (8 bit)",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
     (*write)(gui->mem_view_address,v);
   }
   v = se_read32(read,gui->mem_view_address);
-  if(igInputInt("data (signed 32b)",&v, 1,5,ImGuiInputTextFlags_None)){
+  if(se_input_int("data (signed 32b)",&v, 1,5,ImGuiInputTextFlags_None)){
     se_write32(write,gui->mem_view_address,v);
   }
   v = se_read16(read,gui->mem_view_address);
-  if(igInputInt("data (signed 16b)",&v, 1,5,ImGuiInputTextFlags_None)){
+  if(se_input_int("data (signed 16b)",&v, 1,5,ImGuiInputTextFlags_None)){
     se_write16(write,gui->mem_view_address,v);
   }
   v = (*read)(gui->mem_view_address);
-  if(igInputInt("data (signed 8b)",&v, 1,5,ImGuiInputTextFlags_None)){
+  if(se_input_int("data (signed 8b)",&v, 1,5,ImGuiInputTextFlags_None)){
     (*write)(gui->mem_view_address,v);
   }
-  igText(ICON_FK_FILE_O " Dump Memory to File");
+  se_text(ICON_FK_FILE_O " Dump Memory to File");
   igSeparator();
-  igInputInt("Start Address",&gui->mem_dump_start_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
-  igInputInt("Size",&gui->mem_dump_size, 1,5,ImGuiInputTextFlags_None);
-  if(igButton("Save Memory Dump",(ImVec2){0,0})){
+  se_input_int("Start Address",&gui->mem_dump_start_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
+  se_input_int("Size",&gui->mem_dump_size, 1,5,ImGuiInputTextFlags_None);
+  if(se_button("Save Memory Dump",(ImVec2){0,0})){
     uint8_t *data = (uint8_t*)malloc(gui->mem_dump_size);
     for(int i=0;i<gui->mem_dump_size;++i)data[i]=(*read)(gui->mem_dump_start_address+i);
     const char *base, *file_name,*ext;
@@ -1068,13 +1099,13 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
           bool edit = false;
           if(size==1){
             bool v = field_data!=0;
-            edit=igCheckbox("",&v);
+            edit=se_checkbox("",&v);
             data &= ~mask;
             data |= (v<<start)&mask; 
           }else{
             int v = field_data;
             igPushItemWidth(100);
-            edit = igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
+            edit = se_input_int("",&v, 1,5,ImGuiInputTextFlags_CharsDecimal);
             data &= ~mask;
             data |= (v<<start)&mask;
             igPopItemWidth();
@@ -1083,8 +1114,8 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
             se_write32(write,addr,data);
           }
           igSameLine(0,2);
-          if(size>1)igText("%s (Bits [%d:%d])",mmios[i].bits[f].name,start, start+size-1);
-          else igText("%s (Bit %d)",mmios[i].bits[f].name,start);
+          if(size>1)se_text("%s (Bits [%d:%d])",mmios[i].bits[f].name,start, start+size-1);
+          else se_text("%s (Bit %d)",mmios[i].bits[f].name,start);
         }
         igPopID();
       }
@@ -1092,11 +1123,11 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
         int v = data; 
         igPushIDInt(0);
         igPushItemWidth(150);
-        if(igInputInt("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
+        if(se_input_int("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
           se_write32(write,addr,v);
         }
         igSameLine(0,2);
-        igText("Data");
+        se_text("Data");
         igPopID();
       }
       igTreePop();
@@ -1496,12 +1527,12 @@ void nds9_cpu_debugger(){se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read
 void nds_io_debugger(){
   nds_t * nds = &core.nds;
   for(int cpu=0;cpu<2;++cpu){
-    igText(cpu? ICON_FK_EXCHANGE " ARM9 IPC FIFO":ICON_FK_EXCHANGE " ARM7 IPC FIFO");
+    se_text(cpu? ICON_FK_EXCHANGE " ARM9 IPC FIFO":ICON_FK_EXCHANGE " ARM7 IPC FIFO");
     igSeparator();
-    igText("Write Pointer: %d\n", nds->ipc[cpu].write_ptr);
-    igText("Read Pointer: %d\n", nds->ipc[cpu].read_ptr);
-    igText("Size: %d\n", (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f);
-    igText("Error: %d\n", nds->ipc[cpu].error);
+    se_text("Write Pointer: %d\n", nds->ipc[cpu].write_ptr);
+    se_text("Read Pointer: %d\n", nds->ipc[cpu].read_ptr);
+    se_text("Size: %d\n", (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f);
+    se_text("Error: %d\n", nds->ipc[cpu].error);
 
   }
 }
@@ -1567,7 +1598,7 @@ static void se_draw_debug_menu(){
     if(igBeginCombo("##debug combo","  " ICON_FK_BUG,ImGuiComboFlags_NoArrowButton|ImGuiComboFlags_HeightLarge)){
       while(desc->label){
         bool is_selected = desc->visible; // You can store your selection however you want, outside or inside your objects
-        if (igSelectableBool(desc->label, is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
+        if (igSelectableBool(se_localize(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
           desc->visible=!desc->visible;
         }
         char tmp_str[256];
@@ -1583,10 +1614,10 @@ static void se_draw_debug_menu(){
       igPushIDInt(id++);
       if(desc->visible){
         igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-        if(igButton(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+        if(se_button(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
         igPopStyleColor(1);
       }else{
-        if(igButton(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+        if(se_button(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
       }
       igSameLine(0,1);
       char tmp_str[256];
@@ -1606,7 +1637,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       int w = sidebar_w+screen_x-(int)screen_x;
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
-      igBegin(desc->label,&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+      igBegin(se_localize(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       desc->function();
       float bottom_padding =0;
       #ifdef PLATFORM_IOS
@@ -1846,7 +1877,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
   bool settings_changed = false; 
   for(int k=0;k<num_keybinds;++k){
     igPushIDInt(k);
-    igText("%s",button_labels[k]);
+    se_text("%s",se_localize(button_labels[k]));
     float active = (state->value[k])>0.4;
     igSameLine(100,0);
     if(state->bind_being_set==k)active=true;
@@ -1902,7 +1933,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
         settings_changed = true;
       }
     }
-    if(igButton(button_label,(ImVec2){-1, 0})){
+    if(se_button(button_label,(ImVec2){-1, 0})){
       state->bind_being_set = k;
       state->rebind_start_time = se_time();
     }
@@ -2143,7 +2174,7 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   curr_cursor.x+=(size.x-text_sz.x)*0.5;
   curr_cursor.y+=(size.y-text_sz.y)*0.5;
   igSetCursorPos(curr_cursor);
-  igText(text);
+  se_text(text);
   igSetCursorPos(backup_cursor);
 }
 //CPU: 73%->48
@@ -2188,14 +2219,14 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   igSetCursorPosY(curr_pos.y-padding*0.5);
   igSetCursorPosX(curr_pos.x+box_w);
   igBeginChildFrame(igGetIDStr(first_label),(ImVec2){igGetWindowContentRegionWidth()-box_w-padding-reduce_width,item_height},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|ImGuiWindowFlags_NoBackground|ImGuiWindowFlags_NoInputs);
-  igText(first_label);
-  igTextDisabled(second_label);
+  se_text(first_label);
+  se_text_disabled(second_label);
   igEndChildFrame();
   igSetCursorPos(next_pos);
   igPopID();
 #ifdef UNICODE_GUI
-  free(first_label);
-  free(second_label);
+  free((void*)first_label);
+  free((void*)second_label);
 #endif
   return clicked; 
 }
@@ -2312,7 +2343,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
-  igBegin(ICON_FK_FILE_O " Load Game",&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igBegin(se_localize(ICON_FK_FILE_O " Load Game"),&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   bool hover = false;
@@ -2423,7 +2454,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED){
-    igBegin(ICON_FK_CLOCK_O " Load Recently Played Game",NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     int num_entries=0;
     for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
       se_game_info_t *info = gui_state.recently_loaded_games+i;
@@ -2446,18 +2477,18 @@ void se_load_rom_overlay(bool visible){
       #ifdef EMSCRIPTEN
       if(save_exists){
         igSameLine(0,4);
-        if(igButton(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
+        if(se_button(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
       }
       #endif 
       igSeparator();
       num_entries++;
       igPopID();
     }
-    if(num_entries==0)igText("No recently played games");
+    if(num_entries==0)se_text("No recently played games");
     igEnd();
   }else{
     se_file_browser_state_t* file_browse = &gui_state.file_browser;
-    igBegin(ICON_FK_FOLDER_OPEN " Open File From Disk",NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize(ICON_FK_FOLDER_OPEN " Open File From Disk"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     bool update_cache = file_browse->has_cache==false||file_browse->cached_time+5.<se_time()||strncmp(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE)!=0;
     if(update_cache){
       strncpy(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE);
@@ -2965,7 +2996,7 @@ void se_set_new_controller(se_controller_state_t* cont, int index){
   if(!se_load_controller_settings(cont))se_set_default_controller_binds(cont);
 }
 void se_draw_controller_config(gui_state_t* gui){
-  igText(ICON_FK_GAMEPAD " Controllers");
+  se_text(ICON_FK_GAMEPAD " Controllers");
   igSeparator();
   ImGuiStyle* style = igGetStyle();
   se_controller_state_t *cont = &gui->controller;
@@ -2973,10 +3004,10 @@ void se_draw_controller_config(gui_state_t* gui){
   if(cont->sdl_joystick){
     cont_name = SDL_JoystickName(cont->sdl_joystick);
   }
-  if(igBeginCombo("Controller", cont_name, ImGuiComboFlags_None)){
+  if(igBeginCombo(se_localize("Controller"), se_localize(cont_name), ImGuiComboFlags_None)){
     {
       bool is_selected=cont->sdl_joystick==NULL;
-      if(igSelectableBool("No Controller",is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
+      if(igSelectableBool(se_localize("No Controller"),is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
         if(cont->sdl_joystick)SDL_JoystickClose(cont->sdl_joystick);
         if(cont->sdl_gc)SDL_GameControllerClose(cont->sdl_gc);
         cont->sdl_joystick=NULL;
@@ -2997,7 +3028,7 @@ void se_draw_controller_config(gui_state_t* gui){
   if(!cont->sdl_joystick)return;
   bool modified = se_handle_keybind_settings(SE_BIND_KEY,&(cont->key));
   modified |= se_handle_keybind_settings(SE_BIND_ANALOG,&(cont->analog));
-  if(igButton("Reset Default Controller Bindings",(ImVec2){0,0})){
+  if(se_button("Reset Default Controller Bindings",(ImVec2){0,0})){
     se_set_default_controller_binds(cont);
     modified=true;
   }
@@ -3013,8 +3044,8 @@ void se_draw_controller_config(gui_state_t* gui){
     se_emscripten_flush_fs();
   }
 
-  if(SDL_JoystickHasRumble(cont->sdl_joystick)){igText("Rumble Supported");
-  }else igText("Rumble Not Supported");
+  if(SDL_JoystickHasRumble(cont->sdl_joystick)){se_text("Rumble Supported");
+  }else se_text("Rumble Not Supported");
 }
 #endif 
 void se_reset_default_gb_palette(){
@@ -3043,7 +3074,7 @@ void se_pop_disabled(){
 }
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
-  igText(ICON_FK_FLOPPY_O " Save States");
+  se_text(ICON_FK_FLOPPY_O " Save States");
   igSeparator();
 
   int win_w = igGetWindowContentRegionWidth();
@@ -3064,10 +3095,10 @@ void se_draw_menu_panel(){
     int screen_w = 64;
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
-    igText("Save Slot %d",i);
-    if(igButton("Capture",(ImVec2){button_w,0}))se_capture_state_slot(i);
+    se_text(se_localize("Save Slot %d"),i);
+    if(se_button(se_localize("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
     if(!save_states[i].valid)se_push_disabled();
-    if(igButton("Restore",(ImVec2){button_w,0}))se_restore_state_slot(i);
+    if(se_button(se_localize("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
     if(!save_states[i].valid)se_pop_disabled();
 
     if(save_states[i].valid){
@@ -3087,7 +3118,7 @@ void se_draw_menu_panel(){
                     screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
       if(save_states[i].valid==2){
         igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
-        igButton(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
+        se_button(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
         se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
       }
     }else{
@@ -3098,44 +3129,44 @@ void se_draw_menu_panel(){
       ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
       ImVec2 anchor;
       igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
-      igText(ICON_FK_BAN);
+      se_text(ICON_FK_BAN);
     }
     igEndChildFrame();
   }
   if(!emu_state.rom_loaded)se_pop_disabled();
-  igText(ICON_FK_DESKTOP " Display Settings");
+  se_text(ICON_FK_DESKTOP " Display Settings");
   igSeparator();
   int v = gui_state.settings.screen_shader;
   igPushItemWidth(-1);
-  igText("Screen Shader");igSameLine(win_w*0.4,0);
-  igComboStr("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
+  se_text("Screen Shader");igSameLine(win_w*0.4,0);
+  se_combo_str("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
   gui_state.settings.screen_shader=v;
   v = gui_state.settings.screen_rotation;
-  igText("Screen Rotation");igSameLine(win_w*0.4,0);
-  igComboStr("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
+  se_text("Screen Rotation");igSameLine(win_w*0.4,0);
+  se_combo_str("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
   gui_state.settings.screen_rotation=v;
-  igText("Color Correction");igSameLine(win_w*0.4,0);
-  igSliderFloat("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f",ImGuiSliderFlags_AlwaysClamp);
+  se_text("Color Correction");igSameLine(win_w*0.4,0);
+  se_slider_float("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f");
   igPopItemWidth();
   {
     bool b = gui_state.settings.ghosting;
-    igCheckbox("Screen Ghosting", &b);
+    se_checkbox("Screen Ghosting", &b);
     gui_state.settings.ghosting=b;
   }
   {
     bool b = gui_state.settings.integer_scaling;
-    igCheckbox("Force Integer Scaling", &b);
+    se_checkbox("Force Integer Scaling", &b);
     gui_state.settings.integer_scaling = b;
   }
   {
     bool b = gui_state.settings.stretch_to_fit;
-    igCheckbox("Stretch Screen to Fit", &b);
+    se_checkbox("Stretch Screen to Fit", &b);
     gui_state.settings.stretch_to_fit = b;
   }
-  igText("Game Boy Color Palette");
+  se_text("Game Boy Color Palette");
   for(int i=0;i<4;++i){
     char buff[60];
-    snprintf(buff,60,"GB Palette %d",i);
+    snprintf(buff,60,se_localize("GB Palette %d"),i);
     float color[3]; 
     uint32_t col = gui_state.settings.gb_palette[i];
     color[0]= SB_BFE(col,0,8)/255.;
@@ -3147,14 +3178,14 @@ void se_draw_menu_panel(){
     col |= (((int)(color[2]*255))&0xff)<<16;
     gui_state.settings.gb_palette[i]=col;
   }
-  if(igButton("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
+  if(se_button("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
 
 #if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
-  igText(ICON_FK_KEYBOARD_O " Keybinds");
+  se_text(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
   bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
-  if(igButton("Reset Default Keybinds",(ImVec2){0,0})){
+  if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
     se_set_default_keybind(&gui_state);
     modified=true;
   }
@@ -3169,39 +3200,55 @@ void se_draw_menu_panel(){
   #ifdef USE_SDL
   se_draw_controller_config(&gui_state);
   #endif
-  igText(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
+  se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
   igSeparator();
 
-  igText("Opacity");igSameLine(win_w*0.4,0);
+  se_text("Opacity");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
-  igSliderFloat("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f",ImGuiSliderFlags_AlwaysClamp);
+  se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
   igPopItemWidth();
   bool auto_hide = gui_state.settings.auto_hide_touch_controls;
-  igCheckbox("Hide when inactive",&auto_hide);
+  se_checkbox("Hide when inactive",&auto_hide);
   gui_state.settings.auto_hide_touch_controls = auto_hide;
 
-
-  igText(ICON_FK_WRENCH " Advanced");
+  se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
-  int theme = gui_state.settings.theme; 
-  igComboStr("Theme",&theme,"Dark\0Light\0Black\0",0);
-  gui_state.settings.theme = theme;
-
-  igText("Solar Sensor");igSameLine(win_w*0.4,0);
+  se_text("Language");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
-  igSliderFloat("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f",ImGuiSliderFlags_None);
+  if(igBeginCombo("##Language", se_language_string(gui_state.settings.language), ImGuiComboFlags_None)){
+    int lang_id = 0; 
+    for(int lang_id=0;lang_id<SE_MAX_LANG_VALUE;++lang_id){
+      const char* lang = se_language_string(lang_id);
+      if(lang[0]){
+        if(igSelectableBool(lang,false,ImGuiSelectableFlags_None, (ImVec2){0,0}))gui_state.settings.language=lang_id;
+      }
+    }
+    igEndCombo();
+  }
+  igPopItemWidth();
+  int theme = gui_state.settings.theme; 
+  se_text("Theme");igSameLine(win_w*0.4,0);
+  igPushItemWidth(-1);
+  se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0",0);
+  igPopItemWidth();
+  gui_state.settings.theme = theme;
   bool always_show_menubar = gui_state.settings.always_show_menubar;
-  igCheckbox("Always Show Menu/Nav Bar",&always_show_menubar);
+  se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
   gui_state.settings.always_show_menubar = always_show_menubar;
+
+  se_text(ICON_FK_WRENCH " Advanced");
+  igSeparator();
+  se_text("Solar Sensor");igSameLine(win_w*0.4,0);
+  igPushItemWidth(-1);
+  se_slider_float("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f");
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
-  igCheckbox("Show Debug Tools",&draw_debug_menu);
+  se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
   float bottom_padding =0;
   #ifdef PLATFORM_IOS
   se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
   #endif
   igDummy((ImVec2){0,bottom_padding});
-
 }
 static void se_reset_audio_ring(){
   //Reset the audio ring to 50% full with empty samples to avoid crackles while the buffer fills back up. 
@@ -3258,6 +3305,7 @@ static void frame(void) {
 #ifdef USE_SDL
   se_poll_sdl();
 #endif
+  se_set_language(gui_state.settings.language);
   se_update_key_turbo(&emu_state);
   se_update_solar_sensor(&emu_state);
   int width = sapp_width();
@@ -3287,10 +3335,10 @@ static void frame(void) {
     float menu_bar_y = igGetCursorPosY();
     if(gui_state.sidebar_open){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(se_button(ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
       igPopStyleColor(1);
     }else{
-      if(igButton(ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(se_button(ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
     igSameLine(0,1);
     se_tooltip("Show/Hide Menu Panel");
@@ -3381,7 +3429,7 @@ static void frame(void) {
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(igButton(toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT}))next_toggle_id = i;
+      if(se_button(toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT}))next_toggle_id = i;
       igSameLine(0,1);
       se_tooltip(toggle_tooltips[i]);
       
@@ -3436,7 +3484,7 @@ static void frame(void) {
   if(gui_state.sidebar_open){
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-    igBegin("Menu",&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize("Menu"),&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     se_draw_menu_panel();
     igEnd();
     screen_x += sidebar_w;
@@ -3624,6 +3672,7 @@ void se_load_settings(){
       gui_state.settings.auto_hide_touch_controls=true;
       gui_state.settings.touch_controls_opacity = 0.5;
       gui_state.settings.always_show_menubar=false;
+      gui_state.settings.language=SE_LANG_DEFAULT;
     }
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
     gui_state.last_saved_settings=gui_state.settings;
