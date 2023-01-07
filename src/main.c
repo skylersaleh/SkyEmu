@@ -165,7 +165,8 @@ typedef struct{
   float touch_controls_opacity; 
   uint32_t always_show_menubar;
   uint32_t language;
-  uint32_t padding[238];
+  float touch_controls_scale; 
+  uint32_t padding[237];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1432,7 +1433,7 @@ static void se_draw_emulated_system_screen(){
 
   int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
-  if(gui_state.last_touch_time>=0){
+  if(gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false){
     lcd_render_y = -(height-render_h)*0.9*0.5;
     if(controller_h+render_h<height){
       float off = (height-render_h-controller_h)*0.15;
@@ -1951,6 +1952,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad){
   if(state->run_mode!=SB_MODE_RUN)return;
   controller_h/=se_dpi_scale();
+  controller_h*=gui_state.settings.touch_controls_scale;
   float win_w = igGetWindowWidth()/se_dpi_scale();
   float win_h = igGetWindowHeight()/se_dpi_scale();
   ImVec2 pos; 
@@ -1961,6 +1963,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   float size_scalar = win_w;
   if(controller_h*1.4<win_w)size_scalar=controller_h*1.4;
   size_scalar*=1.15;
+  if(gui_state.settings.touch_controls_scale)size_scalar*=sqrtf(gui_state.settings.touch_controls_scale);
 
   int button_padding =0.02*size_scalar; 
   int button_h = win_h*0.1;
@@ -3208,6 +3211,10 @@ void se_draw_menu_panel(){
   se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
   igSeparator();
 
+  se_text("Scale");igSameLine(win_w*0.4,0);
+  igPushItemWidth(-1);
+  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
+
   se_text("Opacity");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
@@ -3678,7 +3685,9 @@ void se_load_settings(){
       gui_state.settings.touch_controls_opacity = 0.5;
       gui_state.settings.always_show_menubar=false;
       gui_state.settings.language=SE_LANG_DEFAULT;
+      gui_state.settings.touch_controls_scale=1.0;
     }
+    if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
     gui_state.last_saved_settings=gui_state.settings;
   }
