@@ -1,4 +1,4 @@
-#include "IconsForkAwesome.h"
+﻿#include "IconsForkAwesome.h"
 #include "stdlib.h"
 #include "localization.h"
 #include <string.h>
