@@ -2008,15 +2008,15 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   float opacity = 3.-(se_time()-gui_state.last_touch_time);
   if(opacity>1)opacity=1;
   if(!gui_state.settings.auto_hide_touch_controls)opacity=1;   
-  if(opacity<=0){opacity=0;return;}
+  if(opacity<=0){opacity=0;}
   opacity*=gui_state.settings.touch_controls_opacity;
 
 
   line_color|=(int)(opacity*0x8f)<<24;
   line_color2|=(int)(opacity*0x8f)<<24;
   sel_color|=(int)(opacity*0x8f)<<24;
-  hold_color|=(int)(opacity*0xff)<<24;
-  turbo_color|=(int)((opacity+turbo_t*0.5)*0x8f)<<24;
+  hold_color|=(int)(0xff)<<24;
+  turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xff)<<24;
 
   int line_w0 = 1;
   int line_w1 = 3; 
@@ -2050,7 +2050,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   int p = 0;
   //if(IsMouseButtonDown(0))points[p++] = GetMousePosition();
   for(int i=0; i<SAPP_MAX_TOUCHPOINTS;++i){
-    if(p<max_points&&gui_state.touch_points[i].active){
+    if(p<max_points&&gui_state.touch_points[i].active&&!preview){
       points[p][0]=gui_state.touch_points[i].pos[0]/se_dpi_scale();
       points[p][1]=gui_state.touch_points[i].pos[1]/se_dpi_scale();
       ++p;
@@ -2130,6 +2130,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     {"Turbo", b_pos[0]-button_r,button_w*0.33},
     {"Start" , b_pos[0]-button_r+button_w*0.33+button_padding,button_w*0.67-button_padding},
   };
+  int hold_button =1;
+  int turbo_button =2; 
   if(gui_state.settings.touch_controls_show_turbo==false){
     row[0].width = button_w;
     row[1].width = 0; 
@@ -2145,15 +2147,19 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     int x_min = row[b].x;
     int x_max = row[b].x+row[b].width;
     if(row[b].width==0)continue;
+    bool pressed = false;
     for(int i = 0;i<p;++i){
       int dx = points[i][0]-x_min;
       int dy = points[i][1]-button_y;
       if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
         button_press|=1<<(b+6); 
+        pressed=true;
         ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
       }
     }
     ImU32 col = line_color;
+    if(b==turbo_button&&(pressed || gui_state.touch_controls.turbo_toggle))col=turbo_color;
+    if(b==hold_button&&(pressed || gui_state.touch_controls.hold_toggle))col=hold_color;
     if(SB_BFE(gui_state.touch_controls.hold_toggle,b+6,1))col = hold_color;
     if(SB_BFE(gui_state.touch_controls.turbo_toggle,b+6,1))col = turbo_color;
     ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
