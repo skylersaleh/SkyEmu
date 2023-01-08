@@ -113,6 +113,7 @@ const static char* se_keybind_names[]={
 #define SE_ANALOG_L 2
 #define SE_ANALOG_R 3
 #define SE_NUM_ANALOGBINDS  4
+
 const static char* se_analog_bind_names[]={
   "Analog Up/Down",
   "Analog Left/Right",
@@ -166,7 +167,8 @@ typedef struct{
   uint32_t always_show_menubar;
   uint32_t language;
   float touch_controls_scale; 
-  uint32_t padding[237];
+  uint32_t touch_controls_show_turbo; 
+  uint32_t padding[236];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -196,6 +198,12 @@ typedef struct{
   tinydir_dir cached_dir; 
   bool has_cache;
 }se_file_browser_state_t;
+typedef struct{
+  uint32_t turbo_toggle;
+  uint32_t hold_toggle; 
+  uint32_t last_turbo_toggle_presses;
+  uint32_t last_hold_toggle_presses;
+}se_touch_controls_t; 
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -233,6 +241,7 @@ typedef struct {
     float mouse_pos[2];
     bool mouse_button[3];
     float menubar_hide_timer;
+    se_touch_controls_t touch_controls; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -298,7 +307,7 @@ gui_state_t gui_state={ 0 };
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation);
 void se_load_rom_overlay(bool visible);
-void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad);
+void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 static void se_emscripten_flush_fs();
@@ -1388,7 +1397,7 @@ static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_he
   }
   for(int i=3;i<SE_MAX_SCREENSHOT_SIZE;i+=4)output_buffer[i]=0xff;
 }
-static void se_draw_emulated_system_screen(){
+static void se_draw_emulated_system_screen(bool preview){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
 
@@ -1404,6 +1413,7 @@ static void se_draw_emulated_system_screen(){
 
   float scr_w = igGetWindowWidth();
   float scr_h = igGetWindowHeight();
+ 
   float height = scr_h;
   float render_w = native_w;
   float render_h = native_h;
@@ -1426,8 +1436,10 @@ static void se_draw_emulated_system_screen(){
   render_w*=render_scale;
   render_h*=render_scale;
 
+  float dpi_scale =  preview?1.0: se_dpi_scale();
+
   //Don't hide menubar if it doesn't make the screen smaller
-  if(gui_state.screen_height/se_dpi_scale()-SE_MENU_BAR_HEIGHT>gui_state.screen_width/se_dpi_scale()*render_aspect){
+  if(gui_state.screen_height/dpi_scale-SE_MENU_BAR_HEIGHT>gui_state.screen_width/dpi_scale*render_aspect&&!preview){
       gui_state.menubar_hide_timer=se_time();
   }
 
@@ -1465,39 +1477,48 @@ static void se_draw_emulated_system_screen(){
   }
   ImVec2 v;
   igGetWindowPos(&v);
-  lcd_render_x+=v.x*se_dpi_scale()+scr_w*0.5;
-  lcd_render_y+=v.y*se_dpi_scale()+scr_h*0.5;
-  if(emu_state.system==SYSTEM_GBA){
-    se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
-  }else if (emu_state.system==SYSTEM_NDS){
-    float p[4]={
-      0,-lcd_render_h*0.25,
-      0,lcd_render_h*0.25
-    };
-    for(int i=0;i<2;++i){
-      float x = p[i*2+0];
-      float y = p[i*2+1];
-      p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
-      p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
-    }
+  lcd_render_x+=v.x*dpi_scale+scr_w*0.5;
+  lcd_render_y+=v.y*dpi_scale+scr_h*0.5;
+  if(preview){
+    
+    ImVec2 min = {lcd_render_x-lcd_render_w*0.5,lcd_render_y-lcd_render_h*0.5};
+    ImVec2 max = {lcd_render_x+lcd_render_w*0.5,lcd_render_y+lcd_render_h*0.5};
+    
+    ImU32 col = 0xffC08000;
+    igRenderFrame(min,max,col,true,0);
+  }else{
+    if(emu_state.system==SYSTEM_GBA){
+      se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
+    }else if (emu_state.system==SYSTEM_NDS){
+      float p[4]={
+        0,-lcd_render_h*0.25,
+        0,lcd_render_h*0.25
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
 
-    float x = gui_state.mouse_pos[0];
-    float y = gui_state.mouse_pos[1];
-    x-=lcd_render_x+p[2];
-    y-=lcd_render_y+p[3];
-    x/=lcd_render_w;
-    y/=lcd_render_h*0.5;
-    x+=0.5;
-    y+=0.5;
-    emu_state.joy.touch_pos[0]=x;
-    emu_state.joy.touch_pos[1]=y;
-    if(gui_state.mouse_button[0]&&x>=0&&x<=1.0&&y>=0.&&y<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
-    se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
-    se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
-  }else if (emu_state.system==SYSTEM_GB){
-    se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
+      float x = gui_state.mouse_pos[0];
+      float y = gui_state.mouse_pos[1];
+      x-=lcd_render_x+p[2];
+      y-=lcd_render_y+p[3];
+      x/=lcd_render_w;
+      y/=lcd_render_h*0.5;
+      x+=0.5;
+      y+=0.5;
+      emu_state.joy.touch_pos[0]=x;
+      emu_state.joy.touch_pos[1]=y;
+      if(gui_state.mouse_button[0]&&x>=0&&x<=1.0&&y>=0.&&y<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
+      se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
+      se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
+    }else if (emu_state.system==SYSTEM_GB){
+      se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
+    }
   }
-  if(!gui_state.block_touchscreen)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad);
+  if(!gui_state.block_touchscreen||preview)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad,preview);
 }
 static uint8_t gba_byte_read(uint64_t address){return gba_read8(&core.gba,address);}
 static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&core.gba,address,data);}
@@ -1949,12 +1970,17 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
   igPopID();
   return settings_changed;
 }
-void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad){
+void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview){
   if(state->run_mode!=SB_MODE_RUN)return;
-  controller_h/=se_dpi_scale();
   controller_h*=gui_state.settings.touch_controls_scale;
-  float win_w = igGetWindowWidth()/se_dpi_scale();
-  float win_h = igGetWindowHeight()/se_dpi_scale();
+  float win_w = igGetWindowWidth();
+  float win_h = igGetWindowHeight();
+  if(preview==false){
+    win_w /=se_dpi_scale();
+    win_h /=se_dpi_scale();
+    controller_h/=se_dpi_scale();
+  }
+
   ImVec2 pos; 
   igGetWindowPos(&pos);
   float win_x = pos.x;
@@ -1966,7 +1992,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   if(gui_state.settings.touch_controls_scale)size_scalar*=sqrtf(gui_state.settings.touch_controls_scale);
 
   int button_padding =0.02*size_scalar; 
-  int button_h = win_h*0.1;
+  int button_h = win_h*0.12;
 
   int face_button_h = win_h;
   int face_button_y = 0;
@@ -1974,6 +2000,10 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   ImU32 line_color = 0xffffff;
   ImU32 line_color2 =0x000000;
   ImU32 sel_color =0x000000;
+  double turbo_t = se_time()*5;
+  turbo_t-=floor(turbo_t);
+  ImU32 turbo_color =0x0070ff;
+  ImU32 hold_color =0xff4000;
 
   float opacity = 3.-(se_time()-gui_state.last_touch_time);
   if(opacity>1)opacity=1;
@@ -1985,6 +2015,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   line_color|=(int)(opacity*0x8f)<<24;
   line_color2|=(int)(opacity*0x8f)<<24;
   sel_color|=(int)(opacity*0x8f)<<24;
+  hold_color|=(int)(opacity*0xff)<<24;
+  turbo_color|=(int)((opacity+turbo_t*0.5)*0x8f)<<24;
 
   int line_w0 = 1;
   int line_w1 = 3; 
@@ -2010,7 +2042,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   b_pos[1]+=win_y;
   dpad_pos[1]+=win_y;
 
-  bool a=false,b=false,up=false,down=false,left=false,right=false,start=false,select=false;
+  bool a=false,b=false,up=false,down=false, left=false,right=false;
  
   enum{max_points = 5};
   float points[max_points][2]={0};
@@ -2040,15 +2072,24 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     }
   }
   int scale = 1;
+  int button_press=0;
+
+  button_press|= a<<0;
+  button_press|= b<<1;
 
   ImDrawList*dl= igGetWindowDrawList();
+
+  ImU32 a_col = SB_BFE(gui_state.touch_controls.hold_toggle,0,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,0,1)? turbo_color: line_color;
+  ImU32 b_col = SB_BFE(gui_state.touch_controls.hold_toggle,1,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,1,1)? turbo_color: line_color;
+
   if(a)  ImDrawList_AddCircleFilled(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,sel_color,128);
   ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,line_color2,128,line_w1);
-  ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,line_color,128,line_w0);
+  ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,a_col,128,line_w0);
 
   if(b)ImDrawList_AddCircleFilled(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color2,128);
   ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color2,128,line_w1);
-  ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,line_color,128,line_w0);
+  ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,b_col,128,line_w0);
+
 
   ImVec2 dpad_points[12]={
     //Up
@@ -2077,68 +2118,118 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   if(left) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
   if(right)ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
 
-  char * button_name[] ={"Start", "Select"};
+  char * button_name[] ={"Start", "Hold", "Turbo", "Select"};
   int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
-  int button_press=0;           
   int button_x_off = button_padding+win_x;
-  int button_w = (win_w-(num_buttons+1)*button_padding)/num_buttons;
+  int button_w = dpad_sz1*2+dpad_pos[0]-dpad_sz1-button_padding-win_x;
   int button_y = win_y+win_h-button_h-button_padding;
-  for(int b=0;b<num_buttons;++b){                                           
-    int state = 0;
-    int button_x =button_x_off+(button_w+button_padding)*b;
-   
-    int x_min = button_x; 
-    int x_max = dpad_pos[0]+dpad_sz1;
-    if(b){
-      x_min = b_pos[0]-button_r;
-      x_max = win_x+win_w-button_padding;
-    }
+  typedef struct{const char* button_name; float x; float width;}button_row_t;
+  button_row_t row[]={
+    {"Select" , button_x_off,button_w*0.67-button_padding},
+    {"Hold"  , button_x_off+button_w*0.67,button_w*0.33},
+    {"Turbo", b_pos[0]-button_r,button_w*0.33},
+    {"Start" , b_pos[0]-button_r+button_w*0.33+button_padding,button_w*0.67-button_padding},
+  };
+  if(gui_state.settings.touch_controls_show_turbo==false){
+    row[0].width = button_w;
+    row[1].width = 0; 
+    row[2].width = 0; 
+    row[3].width = button_w; 
+    row[3].x = row[2].x;
+    gui_state.touch_controls.hold_toggle=gui_state.touch_controls.turbo_toggle=0;
+    gui_state.touch_controls.last_hold_toggle_presses= gui_state.touch_controls.last_turbo_toggle_presses=0;
+  }
+
+  for(int b=0;b<sizeof(row)/sizeof(row[0]);++b){                                           
+    int state = 0;   
+    int x_min = row[b].x;
+    int x_max = row[b].x+row[b].width;
+    if(row[b].width==0)continue;
     for(int i = 0;i<p;++i){
       int dx = points[i][0]-x_min;
       int dy = points[i][1]-button_y;
       if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
-        button_press|=1<<b; 
+        button_press|=1<<(b+6); 
         ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
       }
     }
+    ImU32 col = line_color;
+    if(SB_BFE(gui_state.touch_controls.hold_toggle,b+6,1))col = hold_color;
+    if(SB_BFE(gui_state.touch_controls.turbo_toggle,b+6,1))col = turbo_color;
     ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
-    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0);  
+    ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},col,0,ImDrawCornerFlags_None,line_w0);  
   }
   button_y=win_y+button_padding;
   if(emu_state.system!=SYSTEM_GB){
-    for(int b=0;b<num_buttons;++b){                                           
-      int state = 0;
-      int button_x =button_x_off+(button_w+button_padding)*b;
-     
-      int x_min = button_x; 
-      int x_max = dpad_pos[0]+dpad_sz1;
-      if(b){
-        x_min = b_pos[0]-button_r;
-        x_max = win_x+win_w-button_padding;
-      }
+    button_row_t row[]={
+      {"L" , button_x_off,button_w},
+      {"R"  ,b_pos[0]-button_r,button_w},
+    };
+
+    for(int b=0;b<sizeof(row)/sizeof(row[0]);++b){                                           
+      int state = 0;   
+      int x_min = row[b].x;; 
+      int x_max = row[b].x+row[b].width;
       for(int i = 0;i<p;++i){
         int dx = points[i][0]-x_min;
         int dy = points[i][1]-button_y;
         if(dx>=-(x_max-x_min)*0.05 && dx<=(x_max-x_min)*1.05 && dy>=0 && dy<=button_h ){
-          button_press|=1<<(b+2); 
+          button_press|=1<<(b+4); 
           ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
         }
       }
+       ImU32 col = line_color;
+      if(SB_BFE(gui_state.touch_controls.hold_toggle,b+4,1))col = hold_color;
+      if(SB_BFE(gui_state.touch_controls.turbo_toggle,b+4,1))col = turbo_color;
       ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
-      ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color,0,ImDrawCornerFlags_None,line_w0); 
+      ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},col,0,ImDrawCornerFlags_None,line_w0);  
     }
   }
+
+
+  bool hold = SB_BFE(button_press,7,1);
+  bool turbo = SB_BFE(button_press,8,1);
+  state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,9,1);
+
+  if(hold)turbo=false;
+
+  uint32_t hold_mask = hold? button_press:0; 
+  uint32_t turbo_mask = turbo? button_press: 0;
+
+  //Prevent the hold and turbo buttons from being held or turbo'd
+  uint32_t valid_hold_turbo_mask = ~((1<<7)|(1<<8));
+  hold_mask&=valid_hold_turbo_mask;
+  turbo_mask&=valid_hold_turbo_mask;
+
+  gui_state.touch_controls.hold_toggle^= hold_mask&~gui_state.touch_controls.last_hold_toggle_presses;
+  gui_state.touch_controls.turbo_toggle^= turbo_mask&~gui_state.touch_controls.last_turbo_toggle_presses;
+  gui_state.touch_controls.turbo_toggle&= ~(hold_mask&~gui_state.touch_controls.last_hold_toggle_presses);
+  gui_state.touch_controls.hold_toggle&= ~(turbo_mask&~gui_state.touch_controls.last_turbo_toggle_presses);
+
+  if(!hold&&!turbo){
+    gui_state.touch_controls.turbo_toggle&= ~(button_press);
+    gui_state.touch_controls.hold_toggle&= ~(button_press);
+  }
+
+  gui_state.touch_controls.last_hold_toggle_presses = hold_mask;
+  gui_state.touch_controls.last_turbo_toggle_presses = turbo_mask;
+
+  if(turbo_t>0.5)button_press|=gui_state.touch_controls.turbo_toggle;
+  button_press|=gui_state.touch_controls.hold_toggle;
+
   state->joy.inputs[SE_KEY_LEFT]  += left;
   state->joy.inputs[SE_KEY_RIGHT] += right;
   state->joy.inputs[SE_KEY_UP]    += up;
   state->joy.inputs[SE_KEY_DOWN]  += down;
 
-  state->joy.inputs[SE_KEY_A] += a;
-  state->joy.inputs[SE_KEY_B] += b;
-  state->joy.inputs[SE_KEY_L] += SB_BFE(button_press,2,1);
-  state->joy.inputs[SE_KEY_R] += SB_BFE(button_press,3,1);
-  state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,0,1);
-  state->joy.inputs[SE_KEY_START] += SB_BFE(button_press,1,1);
+  state->joy.inputs[SE_KEY_A] += SB_BFE(button_press,0,1);
+  state->joy.inputs[SE_KEY_B] += SB_BFE(button_press,1,1);
+  state->joy.inputs[SE_KEY_X] += SB_BFE(button_press,2,1);
+  state->joy.inputs[SE_KEY_Y] += SB_BFE(button_press,3,1);
+
+  state->joy.inputs[SE_KEY_L] += SB_BFE(button_press,4,1);
+  state->joy.inputs[SE_KEY_R] += SB_BFE(button_press,5,1);
+  state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press,6,1);
 }
 void se_update_key_turbo(sb_emu_state_t *state){
   double t = se_time()*15;
@@ -2737,7 +2828,7 @@ void se_update_frame() {
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   emu_state.prev_frame_joy = emu_state.joy; 
   se_reset_joy(&emu_state.joy);
-  se_draw_emulated_system_screen();
+  se_draw_emulated_system_screen(false);
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
   if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
   for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
@@ -3210,6 +3301,19 @@ void se_draw_menu_panel(){
   #endif
   se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
   igSeparator();
+  float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
+  float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
+
+  if(igBeginChildFrame(0,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
+    se_draw_emulated_system_screen(true);
+  }
+  igEndChildFrame();
+  igSameLine(0,2);
+
+  if(igBeginChildFrame(1,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
+    se_draw_emulated_system_screen(true);
+  }
+  igEndChildFrame();
 
   se_text("Scale");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
@@ -3222,6 +3326,10 @@ void se_draw_menu_panel(){
   bool auto_hide = gui_state.settings.auto_hide_touch_controls;
   se_checkbox("Hide when inactive",&auto_hide);
   gui_state.settings.auto_hide_touch_controls = auto_hide;
+
+  bool show_turbo = gui_state.settings.touch_controls_show_turbo;
+  se_checkbox("Enable Turbo and Hold Button Modifiers",&show_turbo);
+  gui_state.settings.touch_controls_show_turbo = show_turbo;
 
   se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
@@ -3686,6 +3794,7 @@ void se_load_settings(){
       gui_state.settings.always_show_menubar=false;
       gui_state.settings.language=SE_LANG_DEFAULT;
       gui_state.settings.touch_controls_scale=1.0;
+      gui_state.settings.touch_controls_show_turbo = 1; 
     }
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
