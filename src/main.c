@@ -169,7 +169,8 @@ typedef struct{
   float touch_controls_scale; 
   uint32_t touch_controls_show_turbo; 
   uint32_t save_to_path;
-  uint32_t padding[235];
+  uint32_t force_dmg_mode; 
+  uint32_t padding[234];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1278,6 +1279,7 @@ void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
   se_reset_bios_info();
+  emu_state.force_dmg_mode=gui_state.settings.force_dmg_mode;
   char *save_file=emu_state.save_file_path; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
@@ -3557,6 +3559,9 @@ void se_draw_menu_panel(){
   se_text("Solar Sensor");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
   se_slider_float("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f");
+  bool force_dmg_mode = gui_state.settings.force_dmg_mode;
+  se_checkbox("Force GB games to run in DMG mode",&force_dmg_mode);
+  gui_state.settings.force_dmg_mode=force_dmg_mode;
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;

@@ -161,6 +161,7 @@ typedef struct {
   size_t rom_size;
   uint8_t *rom_data;
   char rom_path[SB_FILE_PATH_SIZE]; 
+  bool force_dmg_mode; 
 } sb_emu_state_t;
 typedef struct{
   bool read_since_reset;

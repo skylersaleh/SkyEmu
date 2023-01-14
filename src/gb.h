@@ -1561,7 +1561,7 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
     default: gb->cart.ram_size = 0; break;
   }
   gb->model = SB_GB;
-  if(gb->cart.game_boy_color){
+  if(gb->cart.game_boy_color&&!emu->force_dmg_mode){
     gb->model = SB_GBC;
   }
   gb->cart.mapped_rom_bank=1;
@@ -1582,12 +1582,14 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
   }
   bool loaded_bios = false; 
   if(gb->model==SB_GB){
-    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_boot.bin", scratch->bios,2304);
-    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
-    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb0_boot.bin", scratch->bios,2304);
-    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_agb_boot.bin", scratch->bios,2304);
-    if(loaded_bios){
-      gb->model=SB_GBC;
+    if(!emu->force_dmg_mode){
+      if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_boot.bin", scratch->bios,2304);
+      if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
+      if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb0_boot.bin", scratch->bios,2304);
+      if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_agb_boot.bin", scratch->bios,2304);
+      if(loaded_bios){
+        gb->model=SB_GBC;
+      }
     }
     if(!loaded_bios) loaded_bios= se_load_bios_file("DMG BOOT", emu->save_file_path, "dmg_rom.bin", scratch->bios,256);
     if(!loaded_bios) loaded_bios= se_load_bios_file("DMG BOOT", emu->save_file_path, "dmg0_rom.bin", scratch->bios,256);
