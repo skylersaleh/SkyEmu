@@ -1582,19 +1582,19 @@ static bool sb_load_rom(sb_emu_state_t* emu,sb_gb_t* gb, gb_scratch_t* scratch){
   }
   bool loaded_bios = false; 
   if(gb->model==SB_GB){
-    loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_boot.bin", scratch->bios,2304);
+    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb0_boot.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_agb_boot.bin", scratch->bios,2304);
     if(loaded_bios){
       gb->model=SB_GBC;
     }
-    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG0 BOOT", emu->save_file_path, "dmg0_rom.bin", scratch->bios,256);
     if(!loaded_bios) loaded_bios= se_load_bios_file("DMG BOOT", emu->save_file_path, "dmg_rom.bin", scratch->bios,256);
-    if(!loaded_bios) loaded_bios= se_load_bios_file("GB BOOT", emu->save_file_path, "gb_bios.bin", scratch->bios,256);
+    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG BOOT", emu->save_file_path, "dmg0_rom.bin", scratch->bios,256);
+    if(!loaded_bios) loaded_bios= se_load_bios_file("DMG BOOT", emu->save_file_path, "gb_bios.bin", scratch->bios,256);
   }else if(gb->model==SB_GBC){
-    loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_boot.bin", scratch->bios,2304);
+    if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "gbc_bios.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb0_boot.bin", scratch->bios,2304);
     if(!loaded_bios)loaded_bios= se_load_bios_file("GBC BOOT", emu->save_file_path, "cgb_agb_boot.bin", scratch->bios,2304);
   }

@@ -168,7 +168,8 @@ typedef struct{
   uint32_t language;
   float touch_controls_scale; 
   uint32_t touch_controls_show_turbo; 
-  uint32_t padding[236];
+  uint32_t save_to_path;
+  uint32_t padding[235];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -204,6 +205,23 @@ typedef struct{
   uint32_t last_turbo_toggle_presses;
   uint32_t last_hold_toggle_presses;
 }se_touch_controls_t; 
+
+typedef struct{
+  char save[SB_FILE_PATH_SIZE];
+  char bios[SB_FILE_PATH_SIZE];
+  char padding[6][SB_FILE_PATH_SIZE];
+}se_search_paths_t;
+
+_Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
+
+#define SE_MAX_BIOS_FILES 8
+#define SE_BIOS_NAME_SIZE 32
+
+typedef struct{
+  char path[SE_MAX_BIOS_FILES][SB_FILE_PATH_SIZE];
+  char name[SE_MAX_BIOS_FILES][SE_BIOS_NAME_SIZE];
+  bool success[SE_MAX_BIOS_FILES];
+}se_bios_info_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -242,6 +260,8 @@ typedef struct {
     bool mouse_button[3];
     float menubar_hide_timer;
     se_touch_controls_t touch_controls; 
+    se_search_paths_t paths;
+    se_bios_info_t bios_info;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -358,12 +378,21 @@ static bool se_combo_str(const char* label,int* current_item,const char* items_s
   return igComboStr(se_localize(label),current_item,se_localize(items_separated_by_zeros),popup_max_height_in_items);
 }
 static int se_slider_float(const char* label,float* v,float v_min,float v_max,const char* format){
-  igSliderFloat(se_localize(label),v,v_min,v_max,se_localize(format),ImGuiSliderFlags_AlwaysClamp);
+  return igSliderFloat(se_localize(label),v,v_min,v_max,se_localize(format),ImGuiSliderFlags_AlwaysClamp);
 }
 static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags){
   return igInputInt(se_localize(label),v,step,step_fast,flags);
 }
-
+static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags flags){
+  int win_w = igGetWindowWidth();
+  se_text(label);igSameLine(win_w*0.4,0);
+  igPushIDStr(label);
+  igPushItemWidth(-1);
+  bool b = igInputText("##",path,SB_FILE_PATH_SIZE,flags,NULL,NULL);
+  igPopItemWidth();
+  igPopID();
+  return b; 
+}
 static bool se_button(const char* label, ImVec2 size){
   return igButton(se_localize(label),size);
 }
@@ -737,6 +766,85 @@ static void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
     EM_ASM( FS.syncfs(function (err) {}););
 #endif
+}
+void se_load_search_paths(){
+  char settings_path[SB_FILE_PATH_SIZE];
+  snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
+  if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.paths,sizeof(gui_state.paths)))memset(&gui_state.paths,0,sizeof(gui_state.paths));
+  char * paths[]={
+    gui_state.paths.save,
+    gui_state.paths.bios,
+  };
+  for(int i=0;i<sizeof(paths)/sizeof(paths[0]);++i){
+    paths[i][SB_FILE_PATH_SIZE-1]=0;
+    uint32_t len = strlen(paths[i]);
+    if(len==0){
+      paths[i][0]='.';
+      paths[i][1]='/';
+      paths[i][2]=0;
+    }else{
+      char last_c = paths[i][len-1];
+      if((last_c!='/'&&last_c!='\\')&&len<SB_FILE_PATH_SIZE)paths[i][len]='/';
+    }
+  }
+}
+void se_save_search_paths(){
+  char settings_path[SB_FILE_PATH_SIZE];
+  snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
+  sb_save_file_data(settings_path,(uint8_t*)&gui_state.paths,sizeof(gui_state.paths));
+}
+void se_reset_bios_info(){
+  memset(&gui_state.bios_info,0,sizeof(se_bios_info_t));
+}
+bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size){
+  bool loaded_bios=false;
+  const char* base, *file, *ext; 
+  sb_breakup_path(base_path, &base,&file, &ext);
+  static char bios_path[SB_FILE_PATH_SIZE];
+  se_join_path(bios_path,SB_FILE_PATH_SIZE,base,file_name,NULL);
+  size_t bios_bytes=0;
+  uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
+  if(bios_data){
+    if(bios_bytes==data_size){
+      printf("Loaded %s from %s\n",name, bios_path);
+      memcpy(data,bios_data,data_size);
+      loaded_bios=true;
+    }else{
+      printf("%s file at %s is incorrectly sized. Expected %zu bytes, got %zu bytes",name,file_name,data_size,bios_bytes);
+    }
+  }
+  if(!loaded_bios){
+    se_join_path(bios_path,SB_FILE_PATH_SIZE,gui_state.paths.bios,file_name,NULL);
+    size_t bios_bytes=0;
+    uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
+    if(bios_data){
+      if(bios_bytes==data_size){
+        printf("Loaded %s from %s\n",name, bios_path);
+        memcpy(data,bios_data,data_size);
+        loaded_bios=true;
+      }else{
+        printf("%s file at %s is incorrectly sized. Expected %zu bytes, got %zu bytes",name,file_name,data_size,bios_bytes);
+      }
+    }
+  }
+  se_bios_info_t* info = &gui_state.bios_info;
+  for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
+    if(info->name[i][0]==0){
+      strncpy(info->name[i],name,sizeof(info->name[i]));
+      strncpy(info->path[i],bios_path,sizeof(info->path[i]));
+      info->success[i]=loaded_bios;
+      break;
+    }
+    if(strcmp(info->name[i],name)==0){
+      if(loaded_bios){
+        strncpy(info->path[i],bios_path,sizeof(info->path[i]));
+        info->success[i]=true;
+      }
+      break;
+    }
+  }
+  free(bios_data);
+  return loaded_bios;
 }
 static void se_save_recent_games_list(){
   gui_state_t* gui = &gui_state;
@@ -1169,6 +1277,7 @@ void se_load_rom_from_emu_state(sb_emu_state_t*emu){
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
+  se_reset_bios_info();
   char *save_file=emu_state.save_file_path; 
   save_file[0] = '\0';
   const char* base, *c, *ext; 
@@ -1185,6 +1294,19 @@ void se_load_rom(const char *filename){
     se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
 #endif
   snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
+  if(!sb_file_exists(save_file)){
+    const char* base, *c, *ext; 
+    sb_breakup_path(filename,&base, &c, &ext);
+    char tmp_path[SB_FILE_PATH_SIZE];
+    se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
+    printf("c: %s tmp path: %s\n",c,tmp_path);
+    printf("save_base: %s\n",gui_state.paths.save);
+
+    if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
+      se_join_path(emu_state.save_data_base_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
+      strncpy(save_file,tmp_path,SB_FILE_PATH_SIZE);
+    }
+  }
   strncpy(emu_state.rom_path, filename, sizeof(emu_state.rom_path));
 
   if(emu_state.rom_loaded){
@@ -1255,9 +1377,16 @@ void se_load_rom(const char *filename){
     se_save_recent_games_list();
   }
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    save_states[i].valid=false;
     char save_state_path[SB_FILE_PATH_SIZE];
     snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,i);
     se_load_state_from_disk(save_states+i,save_state_path);
+    if(!save_states[i].valid){
+      const char* base, *file,*ext;
+      sb_breakup_path(emu_state.save_data_base_path,&base,&file,&ext);
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.slot%d.state",gui_state.paths.save,file,i);
+      se_load_state_from_disk(save_states+i,save_state_path);
+    }
   }
   return; 
 }
@@ -1782,6 +1911,24 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
   if(im_height<=0)im_height=1;
   sg_image_data im_data={0};
   uint8_t * rgba8_data = data;
+  /*
+  Delta compression codec
+  static uint8_t last_value[1024*1024];
+  int packet_count=0;
+  uint32_t last_color =-1;
+  for(int i=0;i<im_width*im_height;++i){
+
+    uint16_t color = SB_BFE(rgba8_data[i*4+0]-last_value[i*4+0],3,5)|(SB_BFE(rgba8_data[i*4+1]-last_value[i*4+1],2,6)<<5)|(SB_BFE(rgba8_data[i*4+2]-last_value[i*4+2],3,5)<<11);
+    last_value[i*4+0]=rgba8_data[i*4+0];
+    last_value[i*4+1]=rgba8_data[i*4+1];
+    last_value[i*4+2]=rgba8_data[i*4+2];
+    if(color!=last_color){
+      packet_count++;
+      last_color=color;
+    }
+  }
+  printf("Compressed Size:%d\n",packet_count*2);
+  */
   im_data.subimage[0][0].ptr = rgba8_data;
   im_data.subimage[0][0].size = im_width*im_height*4; 
   sg_image_desc desc={
@@ -2006,7 +2153,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   ImU32 hold_color =0xff4000;
 
   float opacity = 3.-(se_time()-gui_state.last_touch_time);
-  if(opacity>1)opacity=1;
+  if(opacity>1||preview)opacity=1;
   if(!gui_state.settings.auto_hide_touch_controls)opacity=1;   
   if(opacity<=0){opacity=0;}
   opacity*=gui_state.settings.touch_controls_opacity;
@@ -3362,6 +3509,49 @@ void se_draw_menu_panel(){
   se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
   gui_state.settings.always_show_menubar = always_show_menubar;
 
+#ifndef EMSCRIPTEN
+  {
+    se_text(ICON_FK_CODE_FORK " Additional Search Paths");
+    igSeparator();
+    bool modified = se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
+    modified|=se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
+    bool save_to_path=gui_state.settings.save_to_path;
+    se_checkbox("Create new save files in Save Path",&save_to_path);
+    gui_state.settings.save_to_path=save_to_path;
+
+    if(modified)se_save_search_paths();
+  }
+#endif
+  {
+    se_bios_info_t * info = &gui_state.bios_info;
+    if(emu_state.rom_loaded){
+      se_text(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
+      igSeparator();
+      bool missing_bios = false;
+      for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
+        if(info->name[i][0]){
+          if(info->success[i]){
+            igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
+            se_text(ICON_FK_CHECK);
+          }else{
+            igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
+            se_text(ICON_FK_TIMES);
+            missing_bios=true;
+          }
+          igPopStyleColor(1);
+          igSameLine(0,2);
+          se_input_path(info->name[i],info->path[i],ImGuiInputTextFlags_ReadOnly);
+        }
+      }
+      if(missing_bios){
+        igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
+        se_text("Can't find all needed BIOS/Boot ROM/Firmware Files.");
+        se_text("Accuracy will suffer and some features won't work.");
+        igPopStyleColor(1);
+      }
+    }
+  }
+  
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
   se_text("Solar Sensor");igSameLine(win_w*0.4,0);
@@ -3762,6 +3952,7 @@ static void frame(void) {
 }
 void se_load_settings(){
   se_load_recent_games_list();
+  se_load_search_paths();
   {
     char keybind_path[SB_FILE_PATH_SIZE];
     snprintf(keybind_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
@@ -3801,6 +3992,7 @@ void se_load_settings(){
       gui_state.settings.language=SE_LANG_DEFAULT;
       gui_state.settings.touch_controls_scale=1.0;
       gui_state.settings.touch_controls_show_turbo = 1; 
+      gui_state.settings.save_to_path = false;
     }
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
