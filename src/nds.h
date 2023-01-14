@@ -2,6 +2,7 @@
 #define SE_NDS_H 1
 
 #include "sb_types.h"
+#include "nds_rom_database.h"
 
 
 typedef enum{
@@ -1953,6 +1954,7 @@ typedef struct {
   uint8_t data_cache[4*1024];
   uint8_t vram[1024*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
   uint8_t palette[2*1024];   
+  uint8_t save_data[8*1024*1024];
 
   uint8_t oam[4*1024];       /* OAM/PAL (2K OBJ Attribute Memory, 2K Standard Palette RAM) */
   /* BIOS ROM (4K NDS9, 16K NDS7, 16K GBA) */
@@ -2122,6 +2124,15 @@ typedef struct{
   bool write_enable;
 }nds_firmware_flash_t;
 typedef struct{
+  nds_firmware_flash_t flash;
+  uint8_t command[8];
+  uint32_t backup_type; 
+  int command_offset; 
+  bool write_enable;
+  uint8_t status_reg;
+  bool is_dirty;
+}nds_card_backup_t;
+typedef struct{
   uint16_t x_reg, y_reg; 
   uint16_t tx_reg; 
 }nds_touch_t; 
@@ -2191,6 +2202,7 @@ typedef struct{
   nds_firmware_flash_t firmware;
   nds_touch_t touch;
   nds_audio_t audio;
+  nds_card_backup_t backup;
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -2219,6 +2231,7 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds);
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
 static void nds_compute_timers(nds_t* nds); 
+static uint32_t nds_get_save_size(nds_t*nds);
 static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
   nds->active_if_pipe_stages|=1<<delay;
   nds->nds9_pipelined_if[delay]|= if_bit;
@@ -2684,13 +2697,13 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
   uint32_t *ret = &nds->mem.openbus_word;
   *ret=0;
   if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
-    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||!(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
+    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
       return *ret; 
     }
   }
   if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
-    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||!(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
+    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE))&&(transaction_type&NDS_MEM_CPU)){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
       return *ret; 
     }
@@ -3230,6 +3243,9 @@ void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t 
     if(rom_offset+i<nds->mem.card_size) nds7_write8(nds,ram_offset+i,nds->mem.card_data[rom_offset+i]);
   }
 }
+int nds_rom_db_compare_func(const void* a, const void *b){
+  return ((nds_rom_entry_t*)a)->GameCode-*(uint32_t*)b;
+}
 bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   if(!sb_path_has_file_ext(emu->rom_path, ".nds"))return false; 
 
@@ -3379,6 +3395,31 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   uint32_t user_data_off = ((firm_data[0x21]<<8)|(firm_data[0x20]))*8;
   for(int i=0;i<0x070;++i)nds9_write8(nds,i+0x27FFC80,firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]);
   nds_reset_gpu(nds);
+
+  uint32_t game_code = (nds->card.gamecode[0]<<0)|(nds->card.gamecode[1]<<8)|(nds->card.gamecode[2]<<16)|(nds->card.gamecode[3]<<24);
+  nds_rom_entry_t* rom_entry = (nds_rom_entry_t*)bsearch(&game_code, nds_rom_database,
+                                sizeof(nds_rom_database)/sizeof(nds_rom_database[0]),sizeof(nds_rom_database[0]),
+                                nds_rom_db_compare_func);
+  if(rom_entry&&rom_entry->GameCode==game_code){
+    nds->backup.backup_type = rom_entry->SaveMemType;
+  }else{
+    printf("Save type could not be looked up in the database. A default will be assumed");
+    nds->backup.backup_type = NDS_BACKUP_EEPROM_128KB;
+  } 
+  printf("NDS Save Type: %d\n",nds->backup.backup_type);
+
+  size_t bytes=0;
+  uint8_t*data = sb_load_file_data(emu->save_file_path,&bytes);
+  if(data){
+    printf("Loaded save file: %s, bytes: %zu\n",emu->save_file_path,bytes);
+    if(bytes>=nds_get_save_size(nds))bytes=nds_get_save_size(nds);
+    memcpy(nds->mem.save_data, data, bytes);
+    sb_free_file_data(data);
+  }else{
+    printf("Could not find save file: %s\n",emu->save_file_path);
+    for(int i=0;i<sizeof(nds->mem.save_data);++i) nds->mem.save_data[i]=0;
+  }
+
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
@@ -3463,6 +3504,106 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
   }
   nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
 }    
+static uint32_t nds_get_save_size(nds_t*nds){
+  uint32_t save_size = 0; 
+  nds_card_backup_t * bak = &nds->backup;
+  switch (bak->backup_type){
+    case NDS_BACKUP_NONE        :save_size = 0; break;   
+    case NDS_BACKUP_EEPROM_512B :save_size = 512; break;  
+    case NDS_BACKUP_EEPROM_8KB  :save_size = 8*1024; break;  
+    case NDS_BACKUP_EEPROM_64KB :save_size = 64*1024; break;  
+    case NDS_BACKUP_EEPROM_128KB:save_size = 128*1024; break;  
+    case NDS_BACKUP_FLASH_256KB :save_size = 256*1024; break;  
+    case NDS_BACKUP_FLASH_512KB :save_size = 512*1024; break;  
+    case NDS_BACKUP_FLASH_1MB   :save_size = 1024*1024; break;  
+    case NDS_BACKUP_NAND_8MB    :save_size = 8*1024*1024; break;  
+    case NDS_BACKUP_NAND_16MB   :save_size = 16*1024*1024; break;  
+    case NDS_BACKUP_NAND_64MB   :save_size = 64*1024*1024; break;  
+  }
+  return save_size;
+}
+static uint32_t nds_get_curr_backup_address(nds_t*nds){
+  uint32_t save_size = nds_get_save_size(nds); 
+  nds_card_backup_t * bak = &nds->backup;
+  if(bak->backup_type==NDS_BACKUP_EEPROM_512B){
+    uint32_t base_addr = nds->backup.command[1]; 
+    if(bak->command_offset<3)return 0xffffffff;
+    //Handle high address commands
+    if(bak->command[0]==0x0B||bak->command[0]==0x0A)base_addr|=0x100;
+    return (base_addr+bak->command_offset-3)%save_size;
+  }
+  if(bak->backup_type>=NDS_BACKUP_EEPROM_8KB&&bak->backup_type<=NDS_BACKUP_EEPROM_64KB){
+    uint32_t base_addr = (nds->backup.command[1]<<8)|(nds->backup.command[2]); 
+    if(bak->command_offset<4)return 0xffffffff;
+    return (base_addr+bak->command_offset-4)%save_size;
+  }
+  if(bak->backup_type==NDS_BACKUP_EEPROM_128KB){
+    uint32_t base_addr = (nds->backup.command[1]<<16)|(nds->backup.command[2]<<8)|(nds->backup.command[3]); 
+    if(bak->command_offset<5)return 0xffffffff;
+    return (base_addr+bak->command_offset-5)%save_size;
+  }
+  printf("Unhandled backup_type: %d\n",bak->backup_type);
+  return 0xffffffff;
+}
+static void nds_process_gc_spi(nds_t* nds, int cpu_id){
+  uint32_t aux_spi_cnt = nds_io_read32(nds,cpu_id,NDS9_AUXSPICNT);
+  uint8_t spi_data = nds_io_read8(nds,cpu_id,NDS9_AUXSPIDATA);
+  bool slot_mode = SB_BFE(aux_spi_cnt,13,1);
+  bool slot_enable = SB_BFE(aux_spi_cnt,15,1);
+  //Don't process if slot is disabled or not in backup mode
+  if(slot_enable==false||slot_mode==false)return;
+  nds_card_backup_t* back = &nds->backup;
+  if(back->command_offset<sizeof(back->command)){
+    back->command[back->command_offset]=spi_data;
+  }
+  back->command_offset++;
+  uint8_t ret_data = 0; 
+  switch(back->command[0]){
+    case 0x00: /*NOP*/  break ;
+    case 0x06: /*WREN*/ back->write_enable=true;break;
+    case 0x04: /*WRDI*/ back->write_enable=false;break;
+    case 0x05: /*RDSR*/ 
+      /*
+        Status Register
+          0   WIP  Write in Progress (1=Busy) (Read only) (always 0 for FRAM chips)
+          1   WEL  Write Enable Latch (1=Enable) (Read only, except by WREN,WRDI)
+          2-3 WP   Write Protect (0=None, 1=Upper quarter, 2=Upper Half, 3=All memory)
+        For 0.5K EEPROM:
+          4-7 ONEs Not used (all four bits are always set to "1" each)
+        For 8K..64K EEPROM and for FRAM:
+          4-6 ZERO Not used (all three bits are always set to "0" each)
+          7   SRWD Status Register Write Disable (0=Normal, 1=Lock) (Only if /W=LOW)
+      */
+      back->status_reg&= (3<<2)|(1<<7);
+      if(back->write_enable)back->status_reg|=0x2;
+      if(back->backup_type==NDS_BACKUP_EEPROM_512B)back->status_reg|=0xf0;
+      ret_data = back->status_reg;
+      break;
+    case 0x01: /*WRSR*/ back->status_reg=spi_data;break;
+    case 0x9f: /*RDID*/ ret_data = 0xff; break;
+    case 0x03: /*RD/RDLO*/
+    case 0x0B: /*RDHI*/{
+      uint32_t addr = nds_get_curr_backup_address(nds);
+      if(addr!=0xffffffff)ret_data = nds->mem.save_data[addr];
+      break;
+    }
+    case 0x02: /*WR/WRLO*/
+    case 0x0A: /*WRHI*/{
+      uint32_t addr = nds_get_curr_backup_address(nds);
+      if(addr!=0xffffffff&&back->write_enable){
+        nds->mem.save_data[addr]=spi_data;
+        back->is_dirty = true;
+      }
+      break;
+    }
+    default:
+      if(back->command_offset==1)printf("Unknown AUX SPI command:%02x\n",back->command[0]);
+      break;
+  }
+  nds_io_store8(nds,cpu_id,NDS9_AUXSPIDATA,ret_data);
+  bool hold_chip_sel = SB_BFE(aux_spi_cnt,6,1);
+  if(!hold_chip_sel)nds->backup.command_offset=0;
+}
 static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
   if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
@@ -3691,7 +3832,7 @@ static uint8_t nds_process_firmware_write(nds_t *nds, uint8_t data){
       case 0xB9: break;  //DeepPowerDown(DP)
       case 0xAB: break;  //ReleaseDeepPowerDown(RDP)
     }
-    printf("NDS Firmware cmd:%02x addr:%08x\n",firm->cmd);
+    printf("NDS Firmware cmd:%02x\n",firm->cmd);
   }else if(firm->state == NDS_FIRM_RXTX){
     switch(firm->cmd){
       case 0x06: firm->state=0; break;  //WriteEnable(WREM)
@@ -3784,7 +3925,8 @@ static float * nds_gpu_get_active_matrix(nds_t*nds){
     case NDS_MATRIX_MV: return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
     case NDS_MATRIX_TEX: return nds->gpu.tex_matrix;
     default:
-      printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
+      //printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
+      break;
   }
   return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
 }
@@ -3920,9 +4062,6 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
     }
 
   }
-
-
-
 }
 static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz){
   nds->gpu.last_vertex_pos[0]=vx;
@@ -4228,9 +4367,11 @@ static void nds_tick_gx(nds_t* nds){
       break; //Swap buffers
 
     default:
+      /*
       printf("Unhandled GPU CMD: %02x Data: ",cmd);
       for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
       printf("\n");
+      */
       break;
   }
 }
@@ -4397,6 +4538,8 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       if(cpu==NDS_ARM7)break;
       nds->math.sqrt_last_update_clock= nds->current_clock;
       break;
+    case NDS9_AUXSPICNT: 
+      if(nds_word_mask(baddr,transaction_type)&0xff0000)nds_process_gc_spi(nds,cpu); break; 
     case NDS_GCBUS_CTL|NDS_IO_MAP_SPLIT_OFFSET:
     case NDS_GCBUS_CTL:
       nds_process_gc_bus_ctl(nds,cpu); break;
@@ -5602,7 +5745,6 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
   }
 }
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
-  printf("Tick\n");
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
   nds->arm7.read32     = nds7_arm_read32;
@@ -5682,7 +5824,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
         else if(!ticks){
           arm9_exec_instruction(&nds->arm9);
-          ticks = nds->mem.requests; 
+          ticks = nds->mem.requests;
         }
        
       }

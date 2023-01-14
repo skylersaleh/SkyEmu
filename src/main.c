@@ -1423,6 +1423,16 @@ static bool se_sync_save_to_disk(){
       }
       core.gba.cart.backup_is_dirty=false;
     }
+  }else if(emu_state.system ==SYSTEM_NDS){
+    if(core.nds.backup.is_dirty){
+      int size = nds_get_save_size(&core.nds);
+      if(size){
+        saved =true;
+        if(sb_save_file_data(emu_state.save_file_path,core.nds.mem.save_data,size)){
+        }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
+      }
+      core.nds.backup.is_dirty=false;
+    }
   }
   return saved;
 }
