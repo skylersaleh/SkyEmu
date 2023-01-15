@@ -1206,7 +1206,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
       access.write_since_reset=true;
     }
     snprintf(lab,80,"0x%08x: %s %s%s",addr,mmios[i].name,access.write_in_tick?ICON_FK_PENCIL_SQUARE_O:"",access.read_in_tick?ICON_FK_SEARCH:"");
-    if (igTreeNodeStr(lab)){
+    if (igTreeNodeStrStr(mmios[i].name,lab)){
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
         igPushIDInt(f);
         uint32_t start = mmios[i].bits[f].start; 

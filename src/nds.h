@@ -5744,6 +5744,34 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     audio->cycles_since_tick=0;
   }
 }
+static void nds_tick_ipc_fifo(nds_t* nds){
+  for(int cpu=0;cpu<2;++cpu){
+    int send_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
+    int recv_size = (nds->ipc[ cpu].write_ptr-nds->ipc[ cpu].read_ptr)&0x1f;
+
+    bool send_fifo_empty = send_size ==0;
+    bool send_fifo_full  = send_size ==16;
+    bool recv_fifo_empty = recv_size ==0;
+    bool recv_fifo_full  = recv_size ==16;
+    
+    if(send_size==1){
+      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
+      bool fifo_empty_irq = SB_BFE(cnt,2,1);
+      if(fifo_empty_irq){
+        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+      }
+    }
+    if(recv_size!=0){
+      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
+      bool fifo_not_empty_irq = SB_BFE(cnt,10,1);
+      if(fifo_not_empty_irq){
+        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+        }
+      }
+  }
+}
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -5843,7 +5871,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     //nds_tick_sio(nds);
 
     double delta_t = ((double)ticks)/(33513982);
-
+    nds_tick_ipc_fifo(nds);
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);
       nds_tick_timers(nds);
