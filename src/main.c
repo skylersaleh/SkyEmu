@@ -368,6 +368,7 @@ static float se_dpi_scale(){
 }
 
 static void se_cache_glyphs(const char* input_string){
+  #ifdef UNICODE_GUI
   utf8proc_int32_t codepoint_ref=0;
   const utf8proc_uint8_t *str = (const utf8proc_uint8_t *)input_string;
   while(str[0]){
@@ -381,6 +382,7 @@ static void se_cache_glyphs(const char* input_string){
       gui_state.update_font_atlas=true;
     }
   }
+  #endif
 }
 static inline const char* se_localize_and_cache(const char* input_str){
   const char * localized_string = se_localize(input_str);
