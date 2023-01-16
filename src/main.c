@@ -127,6 +127,9 @@ const static char* se_analog_bind_names[]={
 
 #define GUI_MAX_IMAGES_PER_FRAME 16
 #define SE_NUM_RECENT_PATHS 32
+#define SE_FONT_CACHE_PAGE_SIZE 16
+#define SE_MAX_UNICODE_CODE_POINT 0xffff
+
 typedef struct{
   int bind_being_set;
   double rebind_start_time;//The time that the rebind button was pressed (used for the timer to cancel keybinding)
@@ -264,6 +267,9 @@ typedef struct {
     se_touch_controls_t touch_controls; 
     se_search_paths_t paths;
     se_bios_info_t bios_info;
+    sg_image font_atlas_image;
+    uint8_t font_cache_page_valid[(SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE];
+    bool update_font_atlas;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -324,7 +330,7 @@ typedef struct{
   uint32_t system;
   uint8_t padding[20];
 }se_emu_id;
-gui_state_t gui_state={ 0 }; 
+gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
 void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation);
@@ -361,29 +367,54 @@ static float se_dpi_scale(){
   return dpi_scale;
 }
 
+static void se_cache_glyphs(const char* input_string){
+  utf8proc_int32_t codepoint_ref=0;
+  const utf8proc_uint8_t *str = (const utf8proc_uint8_t *)input_string;
+  while(str[0]){
+    int size = utf8proc_iterate(str, -1, &codepoint_ref);
+    if(size<=0)break;
+    str+=size;
+    if(codepoint_ref>SE_MAX_UNICODE_CODE_POINT)continue;;
+    uint32_t font_cache_page = codepoint_ref/SE_FONT_CACHE_PAGE_SIZE;
+    if(gui_state.font_cache_page_valid[font_cache_page]==0x0){
+      gui_state.font_cache_page_valid[font_cache_page]=0x1;
+      gui_state.update_font_atlas=true;
+    }
+  }
+}
+static inline const char* se_localize_and_cache(const char* input_str){
+  const char * localized_string = se_localize(input_str);
+  se_cache_glyphs(localized_string);
+  return localized_string;
+}
 static inline bool se_checkbox(const char* label, bool * v){
-  return igCheckbox(se_localize(label),v);
+  return igCheckbox(se_localize_and_cache(label),v);
 }
 static void se_text(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextV(se_localize(label),args);
+  igTextV(se_localize_and_cache(label),args);
   va_end(args);
 }
 static void se_text_disabled(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextDisabledV(se_localize(label),args);
+  igTextDisabledV(se_localize_and_cache(label),args);
   va_end(args);
 }
 static bool se_combo_str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items){
-  return igComboStr(se_localize(label),current_item,se_localize(items_separated_by_zeros),popup_max_height_in_items);
+  const char* localize_string= items_separated_by_zeros;
+  while(localize_string[0]){
+    se_cache_glyphs(localize_string);
+    localize_string+=strlen(localize_string)+1;
+  }
+  return igComboStr(se_localize_and_cache(label),current_item,se_localize_and_cache(items_separated_by_zeros),popup_max_height_in_items);
 }
 static int se_slider_float(const char* label,float* v,float v_min,float v_max,const char* format){
-  return igSliderFloat(se_localize(label),v,v_min,v_max,se_localize(format),ImGuiSliderFlags_AlwaysClamp);
+  return igSliderFloat(se_localize_and_cache(label),v,v_min,v_max,se_localize_and_cache(format),ImGuiSliderFlags_AlwaysClamp);
 }
 static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags){
-  return igInputInt(se_localize(label),v,step,step_fast,flags);
+  return igInputInt(se_localize_and_cache(label),v,step,step_fast,flags);
 }
 static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
@@ -396,7 +427,7 @@ static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags fla
   return b; 
 }
 static bool se_button(const char* label, ImVec2 size){
-  return igButton(se_localize(label),size);
+  return igButton(se_localize_and_cache(label),size);
 }
 const char* se_keycode_to_string(int keycode){
   switch(keycode){
@@ -738,7 +769,7 @@ double se_time(){
 static void se_tooltip(const char * tooltip){
   if(igGetCurrentContext()->HoveredIdTimer<1.5||gui_state.last_touch_time>0)return;
   if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
-    igSetTooltip(se_localize(tooltip));
+    igSetTooltip(se_localize_and_cache(tooltip));
   }
 }
 double se_fps_counter(int tick){
@@ -994,16 +1025,16 @@ void se_draw_emu_stats(){
   se_text(ICON_FK_CLOCK_O " FPS");
   igSeparator();
   char label_tmp[128];
-  snprintf(label_tmp,128,se_localize("Display FPS: %2.1f\n"),render_avg);
+  snprintf(label_tmp,128,se_localize_and_cache("Display FPS: %2.1f\n"),render_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_render,SE_STATS_GRAPH_DATA,0,label_tmp,0,render_max*1.3,(ImVec2){content_width,80},4);
 
-  snprintf(label_tmp,128,se_localize("Emulation FPS: %2.1f\n"),emulate_avg);
+  snprintf(label_tmp,128,se_localize_and_cache("Emulation FPS: %2.1f\n"),emulate_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,0,emulate_max*1.3,(ImVec2){content_width,80},4);
   
   se_text(ICON_FK_VOLUME_UP " Audio");
   igSeparator();
-  igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,se_localize("Left Audio Channel"),-1,1,(ImVec2){content_width,80},4);
-  igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,se_localize("Right Audio Channel"),-1,1,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,se_localize_and_cache("Left Audio Channel"),-1,1,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,se_localize_and_cache("Right Audio Channel"),-1,1,(ImVec2){content_width,80},4);
   
   const char* null_names[] = {NULL};
   const char ** channel_names = null_names; 
@@ -1029,10 +1060,10 @@ void se_draw_emu_stats(){
     igProgressBar(emu_state.audio_channel_output[i],(ImVec2){content_width*0.6,0},"");
   }
   float audio_buff_size = sb_ring_buffer_size(&emu_state.audio_ring_buff)/(float)SB_AUDIO_RING_BUFFER_SIZE;
-  snprintf(label_tmp,128,se_localize("Audio Ring (Samples Available: %d)"),sb_ring_buffer_size(&emu_state.audio_ring_buff));
+  snprintf(label_tmp,128,se_localize_and_cache("Audio Ring (Samples Available: %d)"),sb_ring_buffer_size(&emu_state.audio_ring_buff));
   se_text(label_tmp);
   igProgressBar(audio_buff_size,(ImVec2){content_width,0},"");
-  snprintf(label_tmp,128,se_localize("Audio Watchdog Triggered %d Times"),gui_state.audio_watchdog_triggered);
+  snprintf(label_tmp,128,se_localize_and_cache("Audio Watchdog Triggered %d Times"),gui_state.audio_watchdog_triggered);
   se_text(label_tmp);
 
   se_text(ICON_FK_INFO_CIRCLE " Build Info");
@@ -1767,7 +1798,7 @@ static void se_draw_debug_menu(){
     if(igBeginCombo("##debug combo","  " ICON_FK_BUG,ImGuiComboFlags_NoArrowButton|ImGuiComboFlags_HeightLarge)){
       while(desc->label){
         bool is_selected = desc->visible; // You can store your selection however you want, outside or inside your objects
-        if (igSelectableBool(se_localize(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
+        if (igSelectableBool(se_localize_and_cache(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
           desc->visible=!desc->visible;
         }
         char tmp_str[256];
@@ -1806,7 +1837,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       int w = sidebar_w+screen_x-(int)screen_x;
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
-      igBegin(se_localize(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+      igBegin(se_localize_and_cache(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       desc->function();
       float bottom_padding =0;
       #ifdef PLATFORM_IOS
@@ -2065,7 +2096,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
   bool settings_changed = false; 
   for(int k=0;k<num_keybinds;++k){
     igPushIDInt(k);
-    se_text("%s",se_localize(button_labels[k]));
+    se_text("%s",se_localize_and_cache(button_labels[k]));
     float active = (state->value[k])>0.4;
     igSameLine(100,0);
     if(state->bind_being_set==k)active=true;
@@ -2609,7 +2640,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize(ICON_FK_FILE_O " Load Game"),&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   bool hover = false;
@@ -2720,7 +2751,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED){
-    igBegin(se_localize(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize_and_cache(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     int num_entries=0;
     for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
       se_game_info_t *info = gui_state.recently_loaded_games+i;
@@ -2754,7 +2785,7 @@ void se_load_rom_overlay(bool visible){
     igEnd();
   }else{
     se_file_browser_state_t* file_browse = &gui_state.file_browser;
-    igBegin(se_localize(ICON_FK_FOLDER_OPEN " Open File From Disk"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize_and_cache(ICON_FK_FOLDER_OPEN " Open File From Disk"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     bool update_cache = file_browse->has_cache==false||file_browse->cached_time+5.<se_time()||strncmp(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE)!=0;
     if(update_cache){
       strncpy(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE);
@@ -3270,10 +3301,10 @@ void se_draw_controller_config(gui_state_t* gui){
   if(cont->sdl_joystick){
     cont_name = SDL_JoystickName(cont->sdl_joystick);
   }
-  if(igBeginCombo(se_localize("Controller"), se_localize(cont_name), ImGuiComboFlags_None)){
+  if(igBeginCombo(se_localize_and_cache("Controller"), se_localize_and_cache(cont_name), ImGuiComboFlags_None)){
     {
       bool is_selected=cont->sdl_joystick==NULL;
-      if(igSelectableBool(se_localize("No Controller"),is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
+      if(igSelectableBool(se_localize_and_cache("No Controller"),is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
         if(cont->sdl_joystick)SDL_JoystickClose(cont->sdl_joystick);
         if(cont->sdl_gc)SDL_GameControllerClose(cont->sdl_gc);
         cont->sdl_joystick=NULL;
@@ -3361,10 +3392,10 @@ void se_draw_menu_panel(){
     int screen_w = 64;
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
-    se_text(se_localize("Save Slot %d"),i);
-    if(se_button(se_localize("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
+    se_text(se_localize_and_cache("Save Slot %d"),i);
+    if(se_button(se_localize_and_cache("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
     if(!save_states[i].valid)se_push_disabled();
-    if(se_button(se_localize("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
+    if(se_button(se_localize_and_cache("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
     if(!save_states[i].valid)se_pop_disabled();
 
     if(save_states[i].valid){
@@ -3432,7 +3463,7 @@ void se_draw_menu_panel(){
   se_text("Game Boy Color Palette");
   for(int i=0;i<4;++i){
     char buff[60];
-    snprintf(buff,60,se_localize("GB Palette %d"),i);
+    snprintf(buff,60,se_localize_and_cache("GB Palette %d"),i);
     float color[3]; 
     uint32_t col = gui_state.settings.gb_palette[i];
     color[0]= SB_BFE(col,0,8)/255.;
@@ -3506,6 +3537,7 @@ void se_draw_menu_panel(){
     int lang_id = 0; 
     for(int lang_id=0;lang_id<SE_MAX_LANG_VALUE;++lang_id){
       const char* lang = se_language_string(lang_id);
+      se_cache_glyphs(lang);
       if(lang[0]){
         if(igSelectableBool(lang,false,ImGuiSelectableFlags_None, (ImVec2){0,0}))gui_state.settings.language=lang_id;
       }
@@ -3827,7 +3859,7 @@ static void frame(void) {
   if(gui_state.sidebar_open){
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-    igBegin(se_localize("Menu"),&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+    igBegin(se_localize_and_cache("Menu"),&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
     se_draw_menu_panel();
     igEnd();
     screen_x += sidebar_w;
@@ -3874,18 +3906,15 @@ static void frame(void) {
 
   simgui_render();
   sg_end_pass();
-  static bool init=false;
-  if(!init){
-    init=true;
+  if(gui_state.update_font_atlas){
+    gui_state.update_font_atlas=false;
     ImFontAtlas* atlas = igGetIO()->Fonts;    
-    atlas->Flags|=ImFontAtlasFlags_NoPowerOfTwoHeight;
     uint64_t karla_compressed_size; 
     const uint8_t* karla_compressed_data = se_get_resource(SE_KARLA,&karla_compressed_size);
     uint64_t forkawesome_compressed_size; 
     const uint8_t* forkawesome_compressed_data = se_get_resource(SE_FORKAWESOME,&forkawesome_compressed_size);
     ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
       atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
-    ImFontAtlas_Build(atlas);
     
     static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
     ImFontConfig* config=ImFontConfig_ImFontConfig();
@@ -3894,6 +3923,8 @@ static void frame(void) {
     ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
       forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),config,icons_ranges);
     ImFontConfig_destroy(config);
+    igGetIO()->FontDefault=font2;
+  
     #ifdef UNICODE_GUI
       uint64_t notosans_cjksc_compressed_size; 
       const uint8_t* notosans_cjksc_compressed_data = se_get_resource(SE_NOTO,&notosans_cjksc_compressed_size);
@@ -3901,15 +3932,20 @@ static void frame(void) {
       config3->MergeMode = true;
       config3->OversampleH=1;
       config3->PixelSnapH = true;
-      static const ImWchar ranges[] =
-      {
-          0x0020, 0x1000,
-          0x3000, 0x9FAF, // CJK
-          0xAC00, 0xD7A3, // Korean characters
-          0 
-      };
+
+      static ImWchar ranges[((SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE)*2+1] = {0};
+      int index = 0; 
+      for(int i = 0; i<((SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE);++i){
+        if(gui_state.font_cache_page_valid[i]==0x1){
+          ranges[index*2] = i*SE_FONT_CACHE_PAGE_SIZE;
+          if(ranges[index*2]==0)ranges[index*2]=1;
+          ranges[index*2+1] = i*SE_FONT_CACHE_PAGE_SIZE+SE_FONT_CACHE_PAGE_SIZE;
+          index++;
+        }
+      }
       ImFont* font3 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,notosans_cjksc_compressed_data,notosans_cjksc_compressed_size,14*se_dpi_scale(),config3,ranges);
       ImFontConfig_destroy(config3);
+      igGetIO()->FontDefault=font3;
     #endif
     
 
@@ -3929,13 +3965,16 @@ static void frame(void) {
     img_desc.data.subimage[0][0].ptr = font_pixels;
     img_desc.data.subimage[0][0].size = (size_t)(font_width * font_height) * sizeof(uint32_t);
     img_desc.label = "sokol-imgui-font";
-    atlas->TexID = (ImTextureID)(uintptr_t) sg_make_image(&img_desc).id;
+    static bool has_atlas_image = false;
+    if(has_atlas_image)sg_destroy_image(gui_state.font_atlas_image);
+    has_atlas_image = true;
+    gui_state.font_atlas_image = sg_make_image(&img_desc);
+    atlas->TexID = (ImTextureID)(uintptr_t)gui_state.font_atlas_image.id;
     ImFontAtlas_ClearTexData(atlas);
     ImFontAtlas_ClearInputData(atlas);
     
-    igGetIO()->FontDefault=font2;
     igGetIO()->Fonts=atlas;
-    igGetIO()->FontGlobalScale/=se_dpi_scale();
+    igGetIO()->FontGlobalScale=1./se_dpi_scale();
   }
   sg_commit();
   int num_samples_to_push = saudio_expect()*2;
