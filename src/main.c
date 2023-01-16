@@ -107,6 +107,7 @@ const static char* se_keybind_names[]={
   "Turbo R",
   "Solar Sensor+",
   "Solar Sensor-",
+  "Toggle Full Screen"
 };
 #define SE_ANALOG_UP_DOWN    0
 #define SE_ANALOG_LEFT_RIGHT 1
@@ -1843,6 +1844,7 @@ void se_set_default_keybind(gui_state_t *gui){
   gui->key.bound_id[SE_KEY_EMU_FF_MAX]= SAPP_KEYCODE_TAB;     
   gui->key.bound_id[SE_KEY_SOLAR_M]= SAPP_KEYCODE_MINUS;     
   gui->key.bound_id[SE_KEY_SOLAR_P]= SAPP_KEYCODE_EQUAL;     
+  gui->key.bound_id[SE_KEY_TOGGLE_FULLSCREEN] = SAPP_KEYCODE_F11;
 
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     gui->key.bound_id[SE_KEY_CAPTURE_STATE(i)]=SAPP_KEYCODE_1+i;
@@ -3520,6 +3522,14 @@ void se_draw_menu_panel(){
   bool always_show_menubar = gui_state.settings.always_show_menubar;
   se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
   gui_state.settings.always_show_menubar = always_show_menubar;
+#if !defined(EMSCRIPTEN) && !defined(PLATFORM_ANDROID) &&!defined(PLATFORM_IOS)
+  bool fullscreen = sapp_is_fullscreen();
+  se_checkbox("Full Screen",&fullscreen);
+  if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
+  static bool last_toggle_fullscreen=false;
+  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
+  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
 
 #ifndef EMSCRIPTEN
   {

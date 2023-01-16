@@ -100,7 +100,8 @@
 #define SE_KEY_TURBO_R  32
 #define SE_KEY_SOLAR_P  33
 #define SE_KEY_SOLAR_M  34
-#define SE_NUM_KEYBINDS 35
+#define SE_KEY_TOGGLE_FULLSCREEN 35
+#define SE_NUM_KEYBINDS 36
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
