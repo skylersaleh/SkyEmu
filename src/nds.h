@@ -2122,9 +2122,9 @@ typedef struct{
   uint8_t cmd;
   uint32_t addr;
   bool write_enable;
-}nds_firmware_flash_t;
+}nds_flash_t;
 typedef struct{
-  nds_firmware_flash_t flash;
+  nds_flash_t flash;
   uint8_t command[8];
   uint32_t backup_type; 
   int command_offset; 
@@ -2199,7 +2199,7 @@ typedef struct{
   nds_system_control_processor cp15;
   nds_math_t math; 
   nds_spi_t spi; 
-  nds_firmware_flash_t firmware;
+  nds_flash_t firmware;
   nds_touch_t touch;
   nds_audio_t audio;
   nds_card_backup_t backup;
@@ -2232,6 +2232,8 @@ static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
 static void nds_compute_timers(nds_t* nds); 
 static uint32_t nds_get_save_size(nds_t*nds);
+static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
+
 static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
   nds->active_if_pipe_stages|=1<<delay;
   nds->nds9_pipelined_if[delay]|= if_bit;
@@ -3553,56 +3555,63 @@ static void nds_process_gc_spi(nds_t* nds, int cpu_id){
   //Don't process if slot is disabled or not in backup mode
   if(slot_enable==false||slot_mode==false)return;
   nds_card_backup_t* back = &nds->backup;
-  if(back->command_offset<sizeof(back->command)){
-    back->command[back->command_offset]=spi_data;
-  }
-  back->command_offset++;
   uint8_t ret_data = 0; 
-  switch(back->command[0]){
-    case 0x00: /*NOP*/  break ;
-    case 0x06: /*WREN*/ back->write_enable=true;break;
-    case 0x04: /*WRDI*/ back->write_enable=false;break;
-    case 0x05: /*RDSR*/ 
-      /*
-        Status Register
-          0   WIP  Write in Progress (1=Busy) (Read only) (always 0 for FRAM chips)
-          1   WEL  Write Enable Latch (1=Enable) (Read only, except by WREN,WRDI)
-          2-3 WP   Write Protect (0=None, 1=Upper quarter, 2=Upper Half, 3=All memory)
-        For 0.5K EEPROM:
-          4-7 ONEs Not used (all four bits are always set to "1" each)
-        For 8K..64K EEPROM and for FRAM:
-          4-6 ZERO Not used (all three bits are always set to "0" each)
-          7   SRWD Status Register Write Disable (0=Normal, 1=Lock) (Only if /W=LOW)
-      */
-      back->status_reg&= (3<<2)|(1<<7);
-      if(back->write_enable)back->status_reg|=0x2;
-      if(back->backup_type==NDS_BACKUP_EEPROM_512B)back->status_reg|=0xf0;
-      ret_data = back->status_reg;
-      break;
-    case 0x01: /*WRSR*/ back->status_reg=spi_data;break;
-    case 0x9f: /*RDID*/ ret_data = 0xff; break;
-    case 0x03: /*RD/RDLO*/
-    case 0x0B: /*RDHI*/{
-      uint32_t addr = nds_get_curr_backup_address(nds);
-      if(addr!=0xffffffff)ret_data = nds->mem.save_data[addr];
-      break;
+  if(nds->backup.backup_type>=NDS_BACKUP_FLASH_256KB&&nds->backup.backup_type<=NDS_BACKUP_FLASH_1MB){
+    ret_data = nds_process_flash_write(nds,spi_data,&nds->backup.flash,nds->mem.save_data, nds_get_save_size(nds));
+  }else{
+    if(back->command_offset<sizeof(back->command)){
+      back->command[back->command_offset]=spi_data;
     }
-    case 0x02: /*WR/WRLO*/
-    case 0x0A: /*WRHI*/{
-      uint32_t addr = nds_get_curr_backup_address(nds);
-      if(addr!=0xffffffff&&back->write_enable){
-        nds->mem.save_data[addr]=spi_data;
-        back->is_dirty = true;
+    back->command_offset++;
+    switch(back->command[0]){
+      case 0x00: /*NOP*/  break ;
+      case 0x06: /*WREN*/ back->write_enable=true;break;
+      case 0x04: /*WRDI*/ back->write_enable=false;break;
+      case 0x05: /*RDSR*/ 
+        /*
+          Status Register
+            0   WIP  Write in Progress (1=Busy) (Read only) (always 0 for FRAM chips)
+            1   WEL  Write Enable Latch (1=Enable) (Read only, except by WREN,WRDI)
+            2-3 WP   Write Protect (0=None, 1=Upper quarter, 2=Upper Half, 3=All memory)
+          For 0.5K EEPROM:
+            4-7 ONEs Not used (all four bits are always set to "1" each)
+          For 8K..64K EEPROM and for FRAM:
+            4-6 ZERO Not used (all three bits are always set to "0" each)
+            7   SRWD Status Register Write Disable (0=Normal, 1=Lock) (Only if /W=LOW)
+        */
+        back->status_reg&= (3<<2)|(1<<7);
+        if(back->write_enable)back->status_reg|=0x2;
+        if(back->backup_type==NDS_BACKUP_EEPROM_512B)back->status_reg|=0xf0;
+        ret_data = back->status_reg;
+        break;
+      case 0x01: /*WRSR*/ back->status_reg=spi_data;break;
+      case 0x9f: /*RDID*/ ret_data = 0xff; break;
+      case 0x03: /*RD/RDLO*/
+      case 0x0B: /*RDHI*/{
+        uint32_t addr = nds_get_curr_backup_address(nds);
+        if(addr!=0xffffffff)ret_data = nds->mem.save_data[addr];
+        break;
       }
-      break;
+      case 0x02: /*WR/WRLO*/
+      case 0x0A: /*WRHI*/{
+        uint32_t addr = nds_get_curr_backup_address(nds);
+        if(addr!=0xffffffff&&back->write_enable){
+          nds->mem.save_data[addr]=spi_data;
+          back->is_dirty = true;
+        }
+        break;
+      }
+      default:
+        if(back->command_offset==1)printf("Unknown AUX SPI command:%02x\n",back->command[0]);
+        break;
     }
-    default:
-      if(back->command_offset==1)printf("Unknown AUX SPI command:%02x\n",back->command[0]);
-      break;
   }
   nds_io_store8(nds,cpu_id,NDS9_AUXSPIDATA,ret_data);
   bool hold_chip_sel = SB_BFE(aux_spi_cnt,6,1);
-  if(!hold_chip_sel)nds->backup.command_offset=0;
+  if(!hold_chip_sel){
+    nds->backup.command_offset=0;
+    nds->backup.flash.state =0;
+  }
 }
 static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
@@ -3675,15 +3684,6 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
           else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
         }
       }
-    }break;
-    case NDS7_SPI_BUS_CTL:{
-      if(cpu!=NDS_ARM7)return;
-      if(!(word_mask&0xff0000))return;
-      uint16_t spicnt = nds7_io_read16(nds,NDS7_SPI_BUS_CTL);
-      int device = SB_BFE(spicnt,8,2);
-      if(device!=NDS_SPI_FIRMWARE)return;
-      printf("NDS FIRMWARE DATA READ\n");
-
     }break;
     case NDS9_POWCNT1:
       if(cpu!=NDS_ARM9)return;
@@ -3794,97 +3794,115 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
     break; 
   }
 }
-#define NDS_FIRM_RECV_CMD  0 
-#define NDS_FIRM_RXTX      1 
-#define NDS_FIRM_SET_ADDR0 2
-#define NDS_FIRM_SET_ADDR1 3
-#define NDS_FIRM_SET_ADDR2 4
-#define NDS_FIRM_SET_ADDR3 5
-#define NDS_FIRM_DUMMY     6
+#define NDS_FLASH_RECV_CMD  0 
+#define NDS_FLASH_RXTX      1 
+#define NDS_FLASH_SET_ADDR0 2
+#define NDS_FLASH_SET_ADDR1 3
+#define NDS_FLASH_SET_ADDR2 4
+#define NDS_FLASH_SET_ADDR3 5
+#define NDS_FLASH_DUMMY     6
 
-static uint8_t nds_process_firmware_write(nds_t *nds, uint8_t data){
-  nds_firmware_flash_t *firm = &nds->firmware;
+static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size){
   uint8_t return_data = 0xff;
-  if(firm->state==NDS_FIRM_RECV_CMD){
-    firm->cmd = data; 
-    switch(data){
-      case 0x06: firm->write_enable = true; break;  //WriteEnable(WREM)
-      case 0x04: firm->write_enable = false; break;  //WriteDisable(WRDI)
+  if(flash->state==NDS_FLASH_RECV_CMD){
+    flash->cmd = write_data;
+    switch(write_data){
+      case 0x06: flash->write_enable = true; break;  //WriteEnable(WREM)
+      case 0x04: flash->write_enable = false; break;  //WriteDisable(WRDI)
 
       case 0x96: //ReadJEDEC(RDID)
       case 0x05: //ReadStatus(RDSR)
-        firm->state = NDS_FIRM_RXTX; firm->addr=0;
-        printf("Status\n");
+        flash->state = NDS_FLASH_RXTX; flash->addr=0;
         break;
       
       case 0x03: //ReadData(READ)
       case 0x0B: //ReadDataFast(FAST)
-        firm->state = NDS_FIRM_SET_ADDR0; 
+        flash->state = NDS_FLASH_SET_ADDR0; 
         break; 
 
       case 0x0A: //PageWrite(PW)
       case 0x02: //PageProgram(PP)
       case 0xDB: //PageErase(PE)
       case 0xD8: //SectorErase(SE)
-        if(firm->write_enable)firm->state = NDS_FIRM_SET_ADDR0;
+        if(flash->write_enable)flash->state = NDS_FLASH_SET_ADDR0;
         break;
-
       case 0xB9: break;  //DeepPowerDown(DP)
       case 0xAB: break;  //ReleaseDeepPowerDown(RDP)
-    }
-    printf("NDS Firmware cmd:%02x\n",firm->cmd);
-  }else if(firm->state == NDS_FIRM_RXTX){
-    switch(firm->cmd){
-      case 0x06: firm->state=0; break;  //WriteEnable(WREM)
-      case 0x04: firm->state=0; break;  //WriteDisable(WRDI)
+    } 
+    printf("NDS Firmware cmd:%02x\n",flash->cmd);
+  }else if(flash->state == NDS_FLASH_RXTX){
+    uint32_t page_mask = 0xff;
+    uint32_t sector_mask = 0xffff;
+    switch(flash->cmd){
+      case 0x06: flash->state=0; break;  //WriteEnable(WREM)
+      case 0x04: flash->state=0; break;  //WriteDisable(WRDI)
 
       case 0x96:{ //ReadID(RDID)
         uint8_t jedec_id[3] = { 0x20, 0x40, 0x12 };
-        return_data = jedec_id[firm->addr++];
-        if(firm->addr>2)firm->state = 0; 
+        return_data = jedec_id[flash->addr++];
+        if(flash->addr>2)flash->state = 0; 
         break;
       }
       case 0x05: //ReadStatus(RDSR)
-        return_data = firm->write_enable?0x2:0;
-        firm->state = 0; 
+        return_data = flash->write_enable?0x2:0;
         break;
       
       case 0x03: //ReadData(READ)
       case 0x0B:{ //ReadDataFast(FAST)
-        uint32_t addr = firm->addr++;
-        return_data = nds->mem.firmware[addr&(NDS_FIRMWARE_SIZE-1)];
+        uint32_t addr = flash->addr++;
+        return_data = flash_data[addr&(flash_size-1)];
         break; 
       }
-
       case 0x0A: //PageWrite(PW)
-      case 0x02: //PageProgram(PP)
-      case 0xDB: //PageErase(PE)
-      case 0xD8: //SectorErase(SE)
-        firm->state = 0; 
+      {
+        uint32_t addr = flash->addr;
+        flash->addr = ((flash->addr+1)&page_mask)|(flash->addr&~page_mask);
+        if(flash->write_enable) return_data = flash_data[addr&(flash_size-1)]=write_data;
         break;
+      }
+      case 0x02: //PageProgram(PP)
+      {
+        uint32_t addr = flash->addr;
+        flash->addr = ((flash->addr+1)&page_mask)|(flash->addr&~page_mask);
+        if(flash->write_enable) return_data = flash_data[addr&(flash_size-1)]&=write_data;
+        break;
+      }
+      case 0xDB: //PageErase(PE)
+      {
+        flash->addr =flash->addr&~page_mask;
+        if(flash->write_enable) for(int i=0;i<=page_mask;++i)return_data = flash_data[(flash->addr|i)&(flash_size-1)]=0xff;
+        break;
+      }
+      case 0xD8: //SectorErase(SE)
+      {
+        flash->addr =flash->addr&~sector_mask;
+        if(flash->write_enable) for(int i=0;i<=sector_mask;++i)return_data = flash_data[(flash->addr|i)&(flash_size-1)]=0xff;
+        break;
+      }
 
-      case 0xB9: firm->state = 0; break;  //DeepPowerDown(DP)
-      case 0xAB: firm->state = 0; break;  //ReleaseDeepPowerDown(RDP)
+      case 0xB9: flash->state = 0; break;  //DeepPowerDown(DP)
+      case 0xAB: flash->state = 0; break;  //ReleaseDeepPowerDown(RDP)
     }
-    printf("NDS Firmware RXTX: cmd:%02x addr:%08x\n",firm->cmd, firm->addr);
+    //printf("NDS Firmware RXTX: cmd:%02x addr:%08x\n",flash->cmd, flash->addr);
 
   }else{
-    switch(firm->state){
-      case NDS_FIRM_SET_ADDR0:
-        firm->addr = ((uint32_t)data)<<16; 
-        firm->state = NDS_FIRM_SET_ADDR1;
+    switch(flash->state){
+      case NDS_FLASH_SET_ADDR0:
+        flash->addr = write_data<<16; 
+        flash->state = NDS_FLASH_SET_ADDR1;
         break; 
-      case NDS_FIRM_SET_ADDR1:
-        firm->addr |= ((uint32_t)data)<<8; 
-        firm->state = NDS_FIRM_SET_ADDR2;
+      case NDS_FLASH_SET_ADDR1:
+        flash->addr |= write_data<<8; 
+        flash->state = NDS_FLASH_SET_ADDR2;
         break;
-      case NDS_FIRM_SET_ADDR2:
-        firm->addr |= ((uint32_t)data)<<0; 
+      case NDS_FLASH_SET_ADDR2:
+        flash->addr |= write_data<<0; 
         //Dummy byte for fast read
-        firm->state = firm->cmd == 0x0B?NDS_FIRM_DUMMY:NDS_FIRM_RXTX;
+        flash->state = flash->cmd == 0x0B?NDS_FLASH_DUMMY:NDS_FLASH_RXTX;
+        flash->addr&=(flash_size-1);
         break;
-      case NDS_FIRM_DUMMY:
-        firm->state = NDS_FIRM_RXTX;
+      case NDS_FLASH_DUMMY:
+        flash->state = NDS_FLASH_RXTX;
         break;
     }
   }
@@ -3916,7 +3934,7 @@ static uint8_t nds_process_touch_ctrl_write(nds_t *nds, uint8_t data){
 
 
 static void nds_deselect_spi(nds_t *nds){
-  nds->firmware.state = 0; 
+  nds->firmware.state = NDS_FLASH_RECV_CMD; 
   nds->spi.last_device = -1;
 }
 static float * nds_gpu_get_active_matrix(nds_t*nds){
@@ -4222,6 +4240,15 @@ static void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0)gpu->cmd_busy_cycles--;
   int sz = nds_gxfifo_size(nds);
+  uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
+  int irq_mode = SB_BFE(gxstat,30,2);
+  switch(irq_mode){
+    case 0: break;
+    case 1: if(sz<128)nds9_send_interrupt(nds,4,1<<NDS9_INT_GX_FIFO); break;
+    case 2: if(sz==0)nds9_send_interrupt(nds,4,1<<NDS9_INT_GX_FIFO); break;
+    default: break;
+  }
+  
   if(sz==0)return;
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_SIZE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
@@ -4467,7 +4494,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
         switch(device){
           case NDS_SPI_POWER: /*TODO*/break;
           case NDS_SPI_TOUCH: data = nds_process_touch_ctrl_write(nds,cmd); break;
-          case NDS_SPI_FIRMWARE: data = nds_process_firmware_write(nds,cmd); break;
+          case NDS_SPI_FIRMWARE: data = nds_process_flash_write(nds,cmd,&nds->firmware,nds->mem.firmware, NDS_FIRMWARE_SIZE); break;
           default: break;
         }
         nds7_io_store8(nds,NDS7_SPI_BUS_DATA,data);
