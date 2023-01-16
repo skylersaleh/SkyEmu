@@ -3526,9 +3526,6 @@ void se_draw_menu_panel(){
   bool fullscreen = sapp_is_fullscreen();
   se_checkbox("Full Screen",&fullscreen);
   if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
-  static bool last_toggle_fullscreen=false;
-  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
-  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
 #endif
 
 #ifndef EMSCRIPTEN
@@ -3649,6 +3646,11 @@ static void frame(void) {
   se_set_language(gui_state.settings.language);
   se_update_key_turbo(&emu_state);
   se_update_solar_sensor(&emu_state);
+#if !defined(EMSCRIPTEN) && !defined(PLATFORM_ANDROID) &&!defined(PLATFORM_IOS)
+  static bool last_toggle_fullscreen=false;
+  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
+  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
   int width = sapp_width();
   const int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
