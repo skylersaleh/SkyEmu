@@ -71,6 +71,9 @@
 #define SE_JOY_POS_MASK (1<<17)
 #define SE_JOY_NEG_MASK (1<<18)
 
+#define GBA_SKYEMU_CORRECTION 0 
+#define GBA_HIGAN_CORRECTION  1
+
 const static char* se_keybind_names[]={
   "A",
   "B",
@@ -174,7 +177,8 @@ typedef struct{
   uint32_t touch_controls_show_turbo; 
   uint32_t save_to_path;
   uint32_t force_dmg_mode; 
-  uint32_t padding[234];
+  uint32_t gba_color_correction_mode; // 0 = SkyEmu, 1 = Higan
+  uint32_t padding[233];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1520,6 +1524,14 @@ se_lcd_info_t se_get_lcd_info(){
       };
     }
   }else if(emu_state.system == SYSTEM_GBA){
+    if(gui_state.settings.gba_color_correction_mode==GBA_HIGAN_CORRECTION){
+      return (se_lcd_info_t){
+        .red_color  ={1,0.039,0.196},
+        .green_color={0.196 ,0.901,0.039},
+        .blue_color ={0,0.117,0.862},
+        .gamma = 4.0
+      };
+    }
     return (se_lcd_info_t){
       .red_color  ={1,0.05,0.0},
       .green_color={0.05,1,0.05},
@@ -3446,7 +3458,11 @@ void se_draw_menu_panel(){
   gui_state.settings.screen_rotation=v;
   se_text("Color Correction");igSameLine(win_w*0.4,0);
   se_slider_float("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f");
+  int color_correct = gui_state.settings.gba_color_correction_mode;
+  se_text("GBA Color Correction Type");igSameLine(win_w*0.6,0);
+  se_combo_str("##ColorAlgorithm",&color_correct,"SkyEmu\0Higan\0",0);
   igPopItemWidth();
+  gui_state.settings.gba_color_correction_mode=color_correct;
   {
     bool b = gui_state.settings.ghosting;
     se_checkbox("Screen Ghosting", &b);
@@ -4064,6 +4080,7 @@ void se_load_settings(){
     }
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
+    if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
     gui_state.last_saved_settings=gui_state.settings;
   }
 }
