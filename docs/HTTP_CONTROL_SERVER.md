@@ -21,16 +21,16 @@ When running using these parameters, SkyEmu won't render the UI and will run wit
 
 A description of each of the supported API commands is shown below. You can test each command using a standard web browser by visiting a link like below:
 
-``` http://localhost:<port>/cmd ```
+```http://localhost:<port>/cmd?Param=Value```
 
 # /ping command
 Returns the word 'pong' used to check if the server is up. 
 
-*Example:*
+**Example:**
 
 ```http://localhost:8080/ping```
 
-*Result:*
+**Result:**
 
 ```pong```
 
@@ -39,21 +39,21 @@ Returns the word 'pong' used to check if the server is up.
 Steps the emulator forward one or more frames. A frames parameter can be optionally provided to step the emulator a fixed number of frames.
 Otherwise, the emulator steps a single frame. Returns "ok" on completion. 
 
-*Example:*
+**Example:**
 
 ```http://localhost:8080/step```
 
-*Result:*
+**Result:**
 
 The emulator is stepped ahead 1 frame. 
 
 ```ok```
 
-*Example:*
+**Example:**
 
 ```http://localhost:8080/step?frames=100```
 
-*Result:*
+**Result:**
 
 The emulator is stepped ahead 100 frames. 
 
@@ -63,11 +63,11 @@ The emulator is stepped ahead 100 frames.
 
 The emulator is un-paused and runs at 1x speed. Returns "ok" on completion. 
 
-*Example:*
+**Example:**
 
 ```http://localhost:8080/run```
 
-*Result:*
+**Result:**
 
 The emulator is playing at 1x speed. 
 
@@ -77,11 +77,11 @@ The emulator is playing at 1x speed.
 
 Returns a png image of the current screen of the emulated system. 
 
-*Example:*
+**Example:**
 
 ```http://localhost:8080/screen```
 
-*Result:*
+**Result:**
 
 ```<png image of screen>```
 
@@ -89,23 +89,23 @@ Returns a png image of the current screen of the emulated system.
 
 Reads one or multiple bytes of data from the emulated system at addresses provided using parameters. The addr parameter can be repeated an arbitrary amount of times to read an arbitrary amount of bytes. 
 
-*Example (Read a single byte):*
+**Example (Read a single byte):**
 
 ```http://localhost:8080/read_byte?addr=02000004```
 
-*Result:*
+**Result:**
 
 1 byte of data is returned in hexadecimal
 
 ```f0```
 
-*Example (Read multiple bytes):*
+**Example (Read multiple bytes):**
 
-```http://localhost:8080/read_byte?addr=02000004&addr=02000005&addr=02000006`
+```http://localhost:8080/read_byte?addr=02000004&addr=02000005&addr=02000006```
 
-*Result:*
+**Result:**
 
-3 bytes of data are returned in hexadecimal
+3 bytes of data are returned in hexadecimal (in the order mem[0x02000004], mem[0x02000005], mem[0x02000006])
 
 ```f0bf01```
 
@@ -113,24 +113,26 @@ Reads one or multiple bytes of data from the emulated system at addresses provid
 
 Writes one or multiple bytes of data from the emulated system at addresses provided using parameters. Multiple addresses can be written to in a single command. Returns "ok" on completion
 
-*Example (Write a single byte):*
+**Example (Write a single byte):**
 
 ```http://localhost:8080/write_byte?02000000=ff```
 
-*Result:*
+**Result:**
 
 mem[0x02000000] = 0xff; 
 
 ```okay```
 
-*Example (Write multiple bytes):*
+**Example (Write multiple bytes):**
 
 ```http://localhost:8080/write_byte?02000000=ff&02000001=ee&02000002=cc```
 
-*Result:*
+**Result:**
 
 mem[0x02000000] = 0xff; 
+
 mem[0x02000001] = 0xee; 
+
 mem[0x02000002] = 0xcc; 
 
 ```ok```
@@ -139,7 +141,7 @@ mem[0x02000002] = 0xcc;
 
 Sends an input to the emulated system which will stay until a different input command assigns a new value. The parameters specify the input to set and the value to set it to. In general all inputs that have keybinds in the GUI can be set using this command. A full list of the valid input names and their current state is viewable with the /status command. An arbitrary number of inputs can be set using this command. Returns "ok" on completion. 
 
-*Example (Sends a sequence of commands)*
+**Example (Sends a sequence of commands)**
 
 All buttons start released. 
 
@@ -179,11 +181,11 @@ Hot key is released.
 
 Returns info about the current state of the emulator and the state of the HTTP Control Server Inputs that are being fed into the emulator. 
 
-*Example*
+**Example**
 
 ```http://localhost:8080/status```
 
-*Result:*
+**Result:**
 
 ```
 SkyEmu (737bc7722193891cd6aa375f0a6fcdb183476356)
@@ -234,11 +236,11 @@ Inputs:
 
 Saves a save state to a parameter specified "path" on the server.  Returns "ok" on success and "failed" on error. 
 
-*Example*
+**Example**
 
 ```http://localhost:8080/save?path=/tmp/save.png```
 
-*Result:*
+**Result:**
 
 A save state is created on the server in /tmp/save.png
 
@@ -248,17 +250,12 @@ A save state is created on the server in /tmp/save.png
 
 Loads a save state from a parameter specified "path" on the server.  Returns "ok" on success and "failed" on error. 
 
-*Example*
+**Example**
 
 ```http://localhost:8080/load?path=/tmp/save.png```
 
-*Result:*
+**Result:**
 
 The state of the emulator is restored to where it was at the time the /tmp/save.png save state was taken. 
 
 ```ok```
-
-
-
-
-
