@@ -20,6 +20,7 @@ SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its 
 - Dark and Light Themes
 - Support for loading official BIOS and Boot ROM dumps
 - Support for loading roms compressed in .zip archives
+- [REST-like API for asynchronous scripting and other automation](docs/HTTP_CONTROL_SERVER.md)
 
 ## Download / Usage
 

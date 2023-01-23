@@ -12,6 +12,10 @@
 
 #define SE_TRANSPARENT_BG_ALPHA 0.9
 
+#ifdef ENABLE_HTTP_CONTROL_SERVER
+#include "http_control_server.h"
+#endif 
+
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
@@ -74,7 +78,7 @@
 #define GBA_SKYEMU_CORRECTION 0 
 #define GBA_HIGAN_CORRECTION  1
 
-const static char* se_keybind_names[]={
+const static char* se_keybind_names[SE_NUM_KEYBINDS]={
   "A",
   "B",
   "X",
@@ -178,7 +182,9 @@ typedef struct{
   uint32_t save_to_path;
   uint32_t force_dmg_mode; 
   uint32_t gba_color_correction_mode; // 0 = SkyEmu, 1 = Higan
-  uint32_t padding[233];
+  uint32_t http_control_server_port; 
+  uint32_t http_control_server_enable; 
+  uint32_t padding[231];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -274,6 +280,7 @@ typedef struct {
     sg_image font_atlas_image;
     uint8_t font_cache_page_valid[(SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE];
     bool update_font_atlas;
+    sb_joy_t hcs_joypad; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -636,8 +643,7 @@ se_emu_id se_get_emu_id(){
   strncpy(emu_id.build,GIT_COMMIT_HASH,sizeof(emu_id.build));
   return emu_id;
 }
-void se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
- 
+uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, uint32_t *height){
   se_emu_id emu_id=se_get_emu_id();
   emu_id.bess_offset = se_save_best_effort_state(&save_state->state);
   emu_id.system = save_state->system;
@@ -681,11 +687,17 @@ void se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
       imdata[p_out*4+3]=a;
     }
   }
-  char png_path[SB_FILE_PATH_SIZE];
-  snprintf(png_path,SB_FILE_PATH_SIZE,"%s.png",filename);
-  stbi_write_png(png_path, save_state->screenshot_width*scale, save_state->screenshot_height*scale, 4, imdata, 0);
+  *width = save_state->screenshot_width*scale;
+  *height = save_state->screenshot_height*scale;
+  return imdata;
+}
+bool se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
+  uint32_t width=0, height=0;
+  uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
+  bool success= stbi_write_png(filename, width,height, 4, imdata, 0);
   free(imdata);
   se_emscripten_flush_fs();
+  return success;
 }
 bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id emu_id, se_save_state_t* state){
   state->state = core;
@@ -705,14 +717,11 @@ bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id
   }
   return valid; 
 }
-void se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
+bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
   save_state->valid = false;
-  char png_path[SB_FILE_PATH_SIZE];
-  snprintf(png_path,SB_FILE_PATH_SIZE,"%s.png",filename);
-
   int im_w, im_h, im_c; 
-  uint8_t *imdata = stbi_load(png_path, &im_w, &im_h, &im_c, 4);
-  if(!imdata)return; 
+  uint8_t *imdata = stbi_load(filename, &im_w, &im_h, &im_c, 4);
+  if(!imdata)return false; 
 
   uint8_t *data = malloc(im_w*im_h);
   size_t data_size = im_w*im_h;
@@ -766,6 +775,7 @@ void se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
     else printf("Failed to load state from file:%s\n",filename);
   }
   free(data);
+  return save_state->valid;
 }
 double se_time(){
   static uint64_t base_time=0;
@@ -1419,12 +1429,12 @@ void se_load_rom(const char *filename){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     save_states[i].valid=false;
     char save_state_path[SB_FILE_PATH_SIZE];
-    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,i);
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
     se_load_state_from_disk(save_states+i,save_state_path);
     if(!save_states[i].valid){
       const char* base, *file,*ext;
       sb_breakup_path(emu_state.save_data_base_path,&base,&file,&ext);
-      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.slot%d.state",gui_state.paths.save,file,i);
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.slot%d.state.png",gui_state.paths.save,file,i);
       se_load_state_from_disk(save_states+i,save_state_path);
     }
   }
@@ -1433,13 +1443,13 @@ void se_load_rom(const char *filename){
 static void se_reset_core(){
   se_load_rom(gui_state.recently_loaded_games[0].path);
 }
-static bool se_sync_save_to_disk(){
+static bool se_write_save_to_disk(const char* path){
   bool saved = false;
   if(emu_state.system== SYSTEM_GB){
     if(core.gb.cart.ram_is_dirty){
       saved=true;
-      if(sb_save_file_data(emu_state.save_file_path,core.gb.cart.ram_data,core.gb.cart.ram_size)){
-      }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
+      if(sb_save_file_data(path,core.gb.cart.ram_data,core.gb.cart.ram_size)){
+      }else printf("Failed to write out save file: %s\n",path);
       core.gb.cart.ram_is_dirty=false;
     }
   }else if(emu_state.system ==SYSTEM_GBA){
@@ -1456,8 +1466,8 @@ static bool se_sync_save_to_disk(){
       }
       if(size){
         saved =true;
-        if(sb_save_file_data(emu_state.save_file_path,core.gba.mem.cart_backup,size)){
-        }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
+        if(sb_save_file_data(path,core.gba.mem.cart_backup,size)){
+        }else printf("Failed to write out save file: %s\n",path);
       }
       core.gba.cart.backup_is_dirty=false;
     }
@@ -1466,14 +1476,15 @@ static bool se_sync_save_to_disk(){
       int size = nds_get_save_size(&core.nds);
       if(size){
         saved =true;
-        if(sb_save_file_data(emu_state.save_file_path,core.nds.mem.save_data,size)){
-        }else printf("Failed to write out save file: %s\n",emu_state.save_file_path);
+        if(sb_save_file_data(path,core.nds.mem.save_data,size)){
+        }else printf("Failed to write out save file: %s\n",path);
       }
       core.nds.backup.is_dirty=false;
     }
   }
   return saved;
 }
+static bool se_sync_save_to_disk(){return se_write_save_to_disk(emu_state.save_file_path);}
 //Returns offset into savestate where bess info can be found
 static uint32_t se_save_best_effort_state(se_core_state_t* state){
   if(emu_state.system==SYSTEM_GB)return sb_save_best_effort_state(&state->gb);
@@ -1782,6 +1793,17 @@ static se_debug_tool_desc_t* se_get_debug_description(){
   if(emu_state.system ==SYSTEM_GB)desc = gb_debug_tools;
   if(emu_state.system ==SYSTEM_NDS)desc = nds_debug_tools;
   return desc; 
+}
+uint8_t se_read_byte(uint64_t address, int addr_map){
+  if(emu_state.system ==SYSTEM_GBA)return gba_byte_read(address);
+  if(emu_state.system ==SYSTEM_GB)return gb_byte_read(address);
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_read(address):nds9_byte_read(address);
+  return 0; 
+}
+void se_write_byte(uint64_t address, int addr_map, uint8_t byte){
+  if(emu_state.system ==SYSTEM_GBA)return gba_byte_write(address,byte);
+  if(emu_state.system ==SYSTEM_GB)return gb_byte_write(address,byte);
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_write(address,byte):nds9_byte_write(address,byte);
 }
 ///////////////////////////////
 // END UPDATE FOR NEW SYSTEM //
@@ -3009,11 +3031,18 @@ void se_update_frame() {
     }
     while(max_frames_per_tick--){
       double error = curr_time-simulation_time;
-      if(unlocked_mode){
-        if(simulation_time<curr_time&&emu_state.frame){break;}
+      // On steps emulate all frames, but only render the last frame of the step
+      // and don't allow screen ghosting
+      if(emu_state.run_mode==SB_MODE_STEP){
+        emu_state.render_frame = max_frames_per_tick==0;
+        emu_state.screen_ghosting_strength=0; 
       }else{
-        if(emu_state.frame==0&&simulation_time>curr_time)break;
-        if(emu_state.frame&&curr_time-simulation_time<sim_time_increment*0.8){break;}
+        if(unlocked_mode){
+          if(simulation_time<curr_time&&emu_state.frame){break;}
+        }else{
+          if(emu_state.frame==0&&simulation_time>curr_time)break;
+          if(emu_state.frame&&curr_time-simulation_time<sim_time_increment*0.8){break;}
+        }
       }
       if(emu_state.run_mode==SB_MODE_REWIND){
         se_rewind_state_single_tick(&core, &rewind_buffer);
@@ -3036,7 +3065,8 @@ void se_update_frame() {
       if(emu_state.run_mode==SB_MODE_PAUSE)break;
 
     }
-  }else if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
+  }
+  if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   bool mute = emu_state.run_mode != SB_MODE_RUN;
   emu_state.prev_frame_joy = emu_state.joy; 
   se_reset_joy(&emu_state.joy);
@@ -3368,7 +3398,7 @@ void se_reset_default_gb_palette(){
 void se_capture_state_slot(int slot){
   se_capture_state(&core, save_states+slot);
   char save_state_path[SB_FILE_PATH_SIZE];
-  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state",emu_state.save_data_base_path,slot);
+  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,slot);
   se_save_state_to_disk(save_states+slot,save_state_path);
 }
 void se_restore_state_slot(int slot){
@@ -3632,6 +3662,20 @@ void se_draw_menu_panel(){
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
+
+#ifdef ENABLE_HTTP_CONTROL_SERVER
+  bool enable_hcs = gui_state.settings.http_control_server_enable;
+  se_checkbox("Enable HTTP Control Server",&enable_hcs);
+  gui_state.settings.http_control_server_enable =enable_hcs;
+  if(enable_hcs){
+    int port = gui_state.settings.http_control_server_port;
+    se_text("Server Port");igSameLine(win_w*0.4,0);
+    igPushItemWidth(-1);
+    if(se_input_int("##Server Port",&port,1,10,ImGuiInputTextFlags_None))gui_state.settings.http_control_server_port=port; 
+    igPopItemWidth();
+  }
+#endif 
+
   float bottom_padding =0;
   #ifdef PLATFORM_IOS
   se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
@@ -3687,8 +3731,186 @@ void se_end_menu_bar(){
   igEnd();
 }
 
-static void frame(void) {
+#ifdef ENABLE_HTTP_CONTROL_SERVER
+typedef struct{
+  uint8_t* data; 
+  size_t size; 
+}se_png_write_context_t;
+void se_png_write_mem(void *context, void *data, int size){
+  se_png_write_context_t * cont =(se_png_write_context_t*)context;
+  cont->data = realloc(cont->data,size+cont->size);
+  memcpy(cont->data+cont->size,data,size);
+  cont->size+=size; 
+}
+uint64_t se_hex_string_to_int(const char* s){
+  uint64_t num = 0; 
+  while(*s){
+    num<<=4;
+    if(s[0]>='a'&&s[0]<='f')num+=s[0]-'a'+10;
+    if(s[0]>='A'&&s[0]<='F')num+=s[0]-'A'+10;
+    if(s[0]>='0'&&s[0]<='9')num+=s[0]-'0';
+    ++s;
+  }
+  return num;
+}
+void se_append_char_to_string(char** str, uint64_t* size, char c){
+  if(*size==0)*size=1; 
+  *str = realloc(*str,*size+1);
+  (*str)[*size-1]=c;
+  (*str)[*size]='\0';
+  *size+=1;
+}
+uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type){
+  *result_size = 0;
+  *mime_type = "text/html";
+  printf("Got HCS Cmd: %s\n",cmd);
+  const char ** p = params;
+  while(*p){
+    printf("%s = %s\n",p[0],p[1]);
+    p+=2;
+  }
+  const char* str_result = NULL;
+  if(strcmp(cmd,"/ping")==0)str_result="pong";
+  else if(strcmp(cmd,"/load_rom")==0){
+    while(*params){
+      if(strcmp(params[0],"path")==0)se_load_rom(params[1]);
+      if(strcmp(params[0],"pause")==0){
+        if(atoi(params[1]))emu_state.run_mode=SB_MODE_PAUSE;
+      };
+      params+=2;
+    }
+    str_result=emu_state.rom_loaded?"ok":"Failed to load ROM";
+  }else if(strcmp(cmd,"/step")==0){
+    int step_frames = 1; 
+    while(*params){
+      if(strcmp(params[0],"frames")==0)step_frames=atoi(params[1]);
+      params+=2;
+    }
+    emu_state.step_frames=step_frames;
+    emu_state.run_mode = SB_MODE_STEP;
+    str_result="ok";
+  }else if(strcmp(cmd,"/run")==0){
+    emu_state.step_frames=1;
+    emu_state.run_mode = SB_MODE_RUN;
+    str_result="ok";
+  }else if(strcmp(cmd,"/screen")==0){
+    se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
+    se_capture_state(&core,save_state);
+    uint32_t width=0, height=0; 
+    uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
+    free(save_state);
+    se_png_write_context_t cont ={0};
+    stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
+    free(imdata);
+    *result_size = cont.size;
+    *mime_type="image/png";
+    return cont.data;
+  }else if(strcmp(cmd,"/read_byte")==0){
+    uint64_t response_size = 0; 
+    char *response = NULL;
+    while(*params){
+      if(strcmp(params[0],"addr")==0){
+        uint64_t addr = se_hex_string_to_int(params[1]);
+        uint8_t byte = se_read_byte(addr,0);
+        const char *map="0123456789abcdef";
+        se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,4,4)]);
+        se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,0,4)]);
+      }
+      params+=2;
+    }
+    if(response){
+      *result_size = response_size;
+      return (uint8_t*)response;
+    }   
+  }else if(strcmp(cmd,"/write_byte")==0){
+    uint64_t response_size = 0; 
+    char *response = NULL;
+    while(*params){
+      uint64_t addr = se_hex_string_to_int(params[0]);
+      uint8_t data = se_hex_string_to_int(params[1]);
+      se_write_byte(addr,0,data);
+      params+=2;
+    }
+    str_result="ok";
+  }else if(strcmp(cmd,"/input")==0){
+    while(*params){
+      for(int i=0; i<SE_NUM_KEYBINDS;++i){
+        if(strcmp(params[0],se_keybind_names[i])==0){
+          gui_state.hcs_joypad.inputs[i]=atof(params[1]);
+          break;
+        }
+      }
+      params+=2; 
+    }
+    str_result = "ok";
+  }else if(strcmp(cmd,"/status")==0){
+    *mime_type = "text/plain";
+    char buffer[4096]={0};
+    int off = 0;
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"SkyEmu (%s)\n",GIT_COMMIT_HASH);
+    switch(emu_state.run_mode){
+      case SB_MODE_PAUSE: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: PAUSE\n");break;
+      case SB_MODE_RUN: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: RUN\n");break;
+      case SB_MODE_STEP: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: STEP\n");break;
+      case SB_MODE_RESET: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: RESET\n");break;
+      case SB_MODE_REWIND: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: REWIND\n");break;
+    }
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"ROM Loaded: %s\n",emu_state.rom_loaded?"true":"false");
+    if(emu_state.rom_loaded){
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"ROM Path: %s\n",emu_state.rom_path);
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"Save Path: %s\n",emu_state.save_file_path);
+    }
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"Inputs: \n");
+    
+    for(int i=0; i<SE_NUM_KEYBINDS;++i){
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"- %s: %f\n",se_keybind_names[i],gui_state.hcs_joypad.inputs[i]);
+    }
+    str_result = buffer;
+  }else if(strcmp(cmd,"/save")==0){
+    bool okay=false;; 
+    while(*params){
+      if(strcmp(params[0],"path")==0){
+        se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
+        se_capture_state(&core,save_state);
+        okay|=se_save_state_to_disk(save_state,params[1]);
+        free(save_state);
+      }
+      params+=2;
+    }
+    str_result=okay? "ok":"failed";
+  }else if(strcmp(cmd,"/load")==0){
+    bool okay=false;; 
+    while(*params){
+      if(strcmp(params[0],"path")==0){
+        se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
+        if(se_load_state_from_disk(save_state,params[1])){
+          okay=true;
+          se_restore_state(&core,save_state);
+        }
+        free(save_state);
+      }
+      params+=2;
+    }
+    str_result=okay? "ok":"failed";
+  }
+  if(str_result){
+    const char * result = strdup(str_result);
+    *result_size = strlen(result)+1;
+    return (uint8_t*)result;
+  }
+  return NULL;
+}
 
+#endif 
+
+static void frame(void) {
+  #ifdef ENABLE_HTTP_CONTROL_SERVER
+  hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
+  if(gui_state.settings.http_control_server_enable){
+    for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]+=gui_state.hcs_joypad.inputs[i];
+  }
+  hcs_suspend_callbacks();
+  #endif
   sb_poll_controller_input(&emu_state.joy);
 #ifdef USE_SDL
   se_poll_sdl();
@@ -4033,6 +4255,9 @@ static void frame(void) {
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
   }
+  #ifdef ENABLE_HTTP_CONTROL_SERVER
+  hcs_resume_callbacks();
+  #endif
 }
 void se_load_settings(){
   se_load_recent_games_list();
@@ -4077,6 +4302,8 @@ void se_load_settings(){
       gui_state.settings.touch_controls_scale=1.0;
       gui_state.settings.touch_controls_show_turbo = 1; 
       gui_state.settings.save_to_path = false;
+      gui_state.settings.http_control_server_enable = false; 
+      gui_state.settings.http_control_server_port=8080;
     }
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
@@ -4106,6 +4333,13 @@ static void init(void) {
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
+  if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
+    gui_state.test_runner_mode=true;
+    gui_state.settings.http_control_server_port = atoi(emu_state.cmd_line_args[2]);
+    emu_state.cmd_line_arg_count =emu_state.cmd_line_arg_count-2;
+    emu_state.cmd_line_args =emu_state.cmd_line_args+2;
+    gui_state.settings.http_control_server_enable=true;
+  } 
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
   }

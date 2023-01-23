@@ -97,6 +97,10 @@ if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID))
     set_property(TARGET tinyfd PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
+if(NOT EMSCRIPTEN)
+  set(ENABLE_HTTP_CONTROL_SERVER 1)
+endif()
+
 #=== LIBRARY: cimgui + Dear ImGui
 add_library(cimgui STATIC 
     src/cimgui/cimgui.cpp 
@@ -236,6 +240,11 @@ add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
 set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c)
+
+if(ENABLE_HTTP_CONTROL_SERVER)
+  add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)
+  set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
+endif()
 
 if(UNICODE_GUI)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
