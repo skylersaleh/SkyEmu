@@ -1954,7 +1954,7 @@ typedef struct {
   uint8_t data_cache[4*1024];
   uint8_t vram[1024*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
   uint8_t palette[2*1024];   
-  uint8_t save_data[8*1024*1024];
+  uint8_t *save_data;
 
   uint8_t oam[4*1024];       /* OAM/PAL (2K OBJ Attribute Memory, 2K Standard Palette RAM) */
   /* BIOS ROM (4K NDS9, 16K NDS7, 16K GBA) */
@@ -1992,6 +1992,7 @@ typedef struct{
   uint8_t nds9_bios[4*1024];
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[NDS_FIRMWARE_SIZE];
+  uint8_t save_data[8*1024*1024];
 }nds_scratch_t; 
 
 typedef struct {
@@ -2158,6 +2159,7 @@ typedef struct{
 
 typedef struct{
   float pos[4];
+  float clip_pos[3];
   uint8_t color[3];
   float tex[2];
 }nds_vert_t;
@@ -2170,19 +2172,22 @@ typedef struct{
   uint32_t curr_draw_vert; 
   uint32_t prim_type;
 
-  float proj_matrix[16];
-  float tex_matrix[16];
-  float mv_matrix_stack[16*31];
-  float normal_matrix_stack[16*31];
+  float proj_matrix[16*2];
+  float tex_matrix[16*2];
+  float mv_matrix_stack[16*32];
+  float normal_matrix_stack[16*32];
   uint8_t curr_color[4];
   uint16_t curr_tex_coord[2];
   int32_t last_vertex_pos[3];
   int matrix_mode; 
-  int matrix_stack_ptr;
+  int mv_matrix_stack_ptr;
+  int proj_matrix_stack_ptr;
+  int tex_matrix_stack_ptr;
   uint32_t cmd_busy_cycles;
   uint32_t packed_cmd; 
   uint8_t packed_cmd_state;
   uint8_t packed_cmd_param;
+  bool matrix_stack_error;
 }nds_gpu_t; 
 
 typedef struct{
@@ -2357,7 +2362,7 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   }
   return data; 
 }
-static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
   
   const static int bank_size[9]={
     128*1024, //A
@@ -2374,7 +2379,7 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
     {0,0,0,0}, //Offset ignored
     {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
     {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
-    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*0}, // Slot 0-3 (mirrored)
+    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*2,NDS_VRAM_SLOT_OFF*3}, // Slot 0-3 (mirrored)
     {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*2, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
     {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*4,NDS_VRAM_SLOT_OFF*5}, // Slot (OFS.0*1)+(OFS.1*4)
     {0x20000*0, 0x20000*1, 0x20000*0,0x20000*1}, //(0x20000*OFS)
@@ -2390,26 +2395,26 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
     { //Bank A 
       {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
+      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank B
       {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
+      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank C
       {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -2418,7 +2423,7 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
       {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
       {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
       {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
       {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -2428,7 +2433,7 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
       {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
       {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
@@ -2506,7 +2511,7 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
     if(address<base)continue;
 
     int bank_offset = address-base; 
-    if(bank_offset>=bank_size[b]||bank_offset<0)continue;
+    if(bank_offset>=bank_size[b])continue;
 
     int vram_addr = bank_offset+vram_off;
     
@@ -2525,174 +2530,7 @@ static uint32_t nds_apply_vram_mem_op2(nds_t *nds,uint32_t address, uint32_t dat
   }
   return data; 
 }
-static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
-  const static int bank_size[9]={
-    128*1024, //A
-    128*1024, //B
-    128*1024, //C
-    128*1024, //D
-    64*1024,  //E
-    16*1024,  //F
-    16*1024,  //G
-    32*1024,  //H
-    16*1024,  //I
-  };
-  uint32_t offset_table[7][5]={
-    {0,0,0,0}, //Offset ignored
-    {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
-    {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
-    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*0}, // Slot 0-3 (mirrored)
-    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*2, NDS_VRAM_SLOT_OFF*0,NDS_VRAM_SLOT_OFF*2}, // Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-    {NDS_VRAM_SLOT_OFF*0, NDS_VRAM_SLOT_OFF*1, NDS_VRAM_SLOT_OFF*4,NDS_VRAM_SLOT_OFF*5}, // Slot (OFS.0*1)+(OFS.1*4)
-    {0x20000*0, 0x20000*1, 0x20000*0,0x20000*1}, //(0x20000*OFS)
-  };
-  typedef struct vram_bank_info_t{
-    int transaction_mask; // Block transactions of these types
-    int offset_table;
-    uint32_t mem_address_start;
-    int size; 
-  }vram_bank_info_t;
 
-  const static vram_bank_info_t bank_info[9][8]={
-    { //Bank A 
-      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
-    },{ //Bank B
-      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 1, 0x06400000}, //MST 6 
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 7
-    },{ //Bank C
-      {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
-      {0xffffffff, 0, 0x0}, // MST 5 INVALID
-      {0xffffffff, 0, 0x0}, // MST 6 INVALID
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank D
-      {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 1, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
-      {0xffffffff, 0, 0x0}, // MST 5 INVALID
-      {0xffffffff, 0, 0x0}, // MST 6 INVALID
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank E
-      {NDS_MEM_ARM7, 0, 0x06880000}, //MST 0 6880000h-688FFFFh
-      {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
-      {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
-      {0xffffffff, 0, 0x0}, // MST 5 INVALID
-      {0xffffffff, 0, 0x0}, // MST 6 INVALID
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank F
-      {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
-      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
-      {0xffffffff, 0, 0x0}, // MST 6 INVALID
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank G
-      {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
-      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 4, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
-      {0xffffffff, 0, 0x0}, // MST 6 INVALID
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank H
-      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 0 6898000h-689FFFFh
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 1 6200000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 2 Slot 0-3
-      {0xffffffff, 0, 0x0}, // MST 3 INVALID
-      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 4 6898000h-689FFFFh
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 5 6200000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 3, NDS_VRAM_BGB_SLOT0}, //MST 6 Slot 0-3
-      {0xffffffff, 0, 0x0}, // MST 7 INVALID
-    },{ //Bank I
-      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
-      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
-      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
-      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
-    }
-  };
-  if(!(transaction_type&NDS_MEM_WRITE))data=0;
-  int total_banks = 9;
-  int vram_offset = 0; 
-
-
-  //1Byte writes are ignored from the ARM9
-  if((transaction_type&NDS_MEM_WRITE)&&(transaction_type&NDS_MEM_1B)&&(transaction_type&NDS_MEM_ARM9))return 0;
-
-  for(int b = 0; b<total_banks;++b){
-    int vram_off = vram_offset;
-    vram_offset +=bank_size[b];
-    const static int vram_cnt_array[]={
-      NDS9_VRAMCNT_A,
-      NDS9_VRAMCNT_B,
-      NDS9_VRAMCNT_C,
-      NDS9_VRAMCNT_D,
-      NDS9_VRAMCNT_E,
-      NDS9_VRAMCNT_F,
-      NDS9_VRAMCNT_G,
-      NDS9_VRAMCNT_H, //These are not contiguous
-      NDS9_VRAMCNT_I, //These are not contiguous
-    };
-    uint8_t vramcnt = nds9_io_read8(nds,vram_cnt_array[b]);
-    bool enable = SB_BFE(vramcnt,7,1);
-    int mst = SB_BFE(vramcnt,0,3);
-    int off = SB_BFE(vramcnt,3,2);
-    if(!enable)continue;
-
-    vram_bank_info_t bank = bank_info[b][mst];
-    if(transaction_type& bank.transaction_mask)continue;
-
-    int base = bank.mem_address_start;
-    base += offset_table[bank.offset_table][off];
-    if(address<base)continue;
-
-    int bank_offset = address-base; 
-    if(bank_offset>=128*1024||bank_offset<0)continue;
-    bank_offset&=bank_size[b]-1;
-
-    int vram_addr = bank_offset+vram_off;
-    
-    if(transaction_type&NDS_MEM_4B){
-      vram_addr&=~3;
-      if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
-      else data |= *(uint32_t*)(nds->mem.vram+vram_addr);
-    }else if(transaction_type&NDS_MEM_2B){
-      vram_addr&=~1;
-      if(transaction_type&NDS_MEM_WRITE)*(uint16_t*)(nds->mem.vram+vram_addr)=data;
-      else data |= *(uint16_t*)(nds->mem.vram+vram_addr);
-    }else{
-      if(transaction_type&NDS_MEM_WRITE)nds->mem.vram[vram_addr]=data;
-      else data |= nds->mem.vram[vram_addr];
-    }
-  }
-  return data; 
-}
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type);
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
@@ -3267,6 +3105,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
 
   nds->mem.card_data=emu->rom_data;
   nds->mem.card_size=emu->rom_size;
+  nds->mem.save_data = scratch->save_data;
 
   memcpy(&nds->card,emu->rom_data,sizeof(nds_card_t));
   nds->card.title[11]=0;
@@ -3451,7 +3290,7 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   data[2]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
   data[3]= nds->mem.card_transfer_data[(bank_off++)&0xfff];
   uint32_t data_out = *(uint32_t*)(data);
-  fprintf(card_xfer,"Data: %08x\n",data_out);
+  if(card_xfer)fprintf(card_xfer,"Data: %08x\n",data_out);
   //printf("data[%08x]: %08x\n",nds->mem.card_read_offset,data_out);
   nds_io_store32(nds,cpu_id,NDS_GC_BUS,data_out);
   nds->mem.card_read_offset = bank|(bank_off&0xfff);
@@ -3465,7 +3304,7 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
 }
 
 static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
-  if(card_xfer==NULL)card_xfer=fopen("card_xfer.txt","wb");
+  //if(card_xfer==NULL)card_xfer=fopen("card_xfer.txt","wb");
   uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
   bool start_transfer = SB_BFE(gcbus_ctl,31,1);
   //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
@@ -3474,7 +3313,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
     //Mask out start bit;
     uint8_t commands[8];
     for(int i=0;i<7;++i)commands[i]=nds9_io_read8(nds,NDS_GCBUS_CMD+i);
-    fprintf(card_xfer,"GCBUS CMD: %02x %02x %02x%02x %02x%02x %02x%02x\n",commands[0],commands[1],commands[2],commands[3]
+    if(card_xfer!=NULL)fprintf(card_xfer,"GCBUS CMD: %02x %02x %02x%02x %02x%02x %02x%02x\n",commands[0],commands[1],commands[2],commands[3]
       ,commands[4],commands[5],commands[6],commands[7]);
     switch(commands[0]){
       case NDS_CARD_MAIN_DATA_READ:{
@@ -3488,7 +3327,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
           nds->mem.card_transfer_data[i]=nds->mem.card_data[(i+(read_off&~0xfff))%nds->mem.card_size];
         }
         nds->mem.card_transfer_bytes=transfer_size_map[data_block_size];
-        fprintf(card_xfer,"Encrypted Read: 0x%08x transfer_size: %08x transfer:%d\n",read_off,nds->mem.card_transfer_bytes,nds->mem.transfer_id++);
+        if(card_xfer!=NULL)fprintf(card_xfer,"Encrypted Read: 0x%08x transfer_size: %08x transfer:%d\n",read_off,nds->mem.card_transfer_bytes,nds->mem.transfer_id++);
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
       case NDS_CARD_CHIP_ID_READ:{
@@ -3499,9 +3338,15 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
         nds->mem.card_transfer_data[2]=SB_BFE(nds->mem.card_chip_id,16,8);
         nds->mem.card_transfer_data[3]=SB_BFE(nds->mem.card_chip_id,24,8);
         nds->mem.card_transfer_bytes=4;
-        fprintf(card_xfer,"CHIPID Read transfer:%d\n",nds->mem.transfer_id++);
+        if(card_xfer!=NULL)fprintf(card_xfer,"CHIPID Read transfer:%d\n",nds->mem.transfer_id++);
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
+    }
+      uint16_t auxspi = nds_io_read16(nds,cpu_id,NDS9_AUXSPICNT);
+    bool transfer_ready_irq = SB_BFE(auxspi,14,1);
+    if(transfer_ready_irq){
+      if(cpu_id==NDS_ARM7)nds7_send_interrupt(nds,4,1<<NDS_INT_GC_TRANSFER_DONE);
+      else nds9_send_interrupt(nds,4,1<<NDS_INT_GC_TRANSFER_DONE);
     }
   }
   nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
@@ -3939,23 +3784,34 @@ static void nds_deselect_spi(nds_t *nds){
 }
 static float * nds_gpu_get_active_matrix(nds_t*nds){
   switch(nds->gpu.matrix_mode){
-    case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix;
-    case NDS_MATRIX_MV: return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
-    case NDS_MATRIX_TEX: return nds->gpu.tex_matrix;
+    case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr;
+    case NDS_MATRIX_TBD:case NDS_MATRIX_MV: return nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr;
+    case NDS_MATRIX_TEX: return nds->gpu.tex_matrix+16*nds->gpu.tex_matrix_stack_ptr;
     default:
-      //printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
+      printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
       break;
   }
-  return nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr;
+  return nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr;
 }
 static void nds_identity_matrix(float* m){
   for(int i=0;i<16;++i)m[i]=(i%5)==0?1.0:0.0;;
 }
 static void nds_reset_gpu(nds_t*nds){
   printf("Reset GPU\n");
+  nds->gpu.mv_matrix_stack_ptr=0;
+  nds->gpu.proj_matrix_stack_ptr=0;
+  nds->gpu.tex_matrix_stack_ptr=0;
+  nds->gpu.matrix_mode=NDS_MATRIX_PROJ;
+  nds->gpu.fifo_read_ptr=nds->gpu.fifo_write_ptr=0;
+  for(int i=0;i<NDS_GXFIFO_SIZE;++i){
+    nds->gpu.fifo_cmd[i]=0;
+    nds->gpu.fifo_data[i]=0;
+  }
   nds_identity_matrix(nds->gpu.proj_matrix);
   nds_identity_matrix(nds->gpu.tex_matrix);
   nds_identity_matrix(nds->gpu.mv_matrix_stack);
+
+
 }
 static void nds_gpu_swap_buffers(nds_t*nds){
   uint32_t clear_color = nds9_io_read32(nds,NDS9_CLEAR_COLOR);
@@ -3972,27 +3828,14 @@ static void nds_gpu_swap_buffers(nds_t*nds){
     nds->framebuffer_3d_depth[i]=10e6;
   }
   nds->gpu.curr_vert = 0; 
-  nds->gpu.matrix_mode = NDS_MATRIX_MV;
+  //nds->gpu.matrix_mode = NDS_MATRIX_MV;
+  //nds_identity_matrix(nds->gpu.proj_matrix);
+  //nds_identity_matrix(nds->gpu.tex_matrix);
+  //nds_identity_matrix(nds->gpu.mv_matrix_stack);
+  //nds->gpu.mv_matrix_stack_ptr=0;
 
-  SE_RPT4 nds->gpu.curr_color[r]=255;
+  //SE_RPT4 nds->gpu.curr_color[r]=255;
 
-}
-void nds_translate_matrix(float * m, float x, float y, float z){
-  m[12]+=m[0]*x+m[4]*y+m[8]*z;
-  m[13]+=m[1]*x+m[5]*y+m[9]*z;
-  m[14]+=m[2]*x+m[6]*y+m[10]*z;
-  m[15]+=m[3]*x+m[7]*y+m[11]*z;
-}
-void nds_scale_matrix(float * m, float x, float y, float z){
-  SE_RPT4 m[r*4+0] *=x;
-  SE_RPT4 m[r*4+1] *=y;
-  SE_RPT4 m[r*4+2] *=z;
-}
-void nds_mult_matrix_vector(float * result, float * m, float *v,int dims){
-  for(int x=0;x<dims;++x){
-    result[x]=0;
-    for(int y = 0;y<dims;++y)result[x]+=m[x+y*dims]*v[y];
-  }
 }
 //res=res*m2
 void nds_mult_matrix4(float * res, float *m2){
@@ -4009,17 +3852,54 @@ void nds_mult_matrix4(float * res, float *m2){
                   +m2[3+y*4]*t[x+3*4];
   }
 }
+void nds_translate_matrix(float * m, float x, float y, float z){
+
+  float m2[16]={
+    1.,0,0,0,
+    0,1,0,0,
+    0,0,1,0,
+    x,y,z,1,
+  };
+  nds_mult_matrix4(m,m2);
+  /*m[12]+=m[0]*x+m[4]*y+m[8]*z;
+  m[13]+=m[1]*x+m[5]*y+m[9]*z;
+  m[14]+=m[2]*x+m[6]*y+m[10]*z;
+  m[15]+=m[3]*x+m[7]*y+m[11]*z;*/
+}
+void nds_scale_matrix(float * m, float x, float y, float z){
+    float m2[16]={
+    x,0,0,0,
+    0,y,0,0,
+    0,0,z,0,
+    0,0,0,1,
+  };
+  nds_mult_matrix4(m,m2);
+  /*
+  SE_RPT4 m[r*4+0] *=x;
+  SE_RPT4 m[r*4+1] *=y;
+  SE_RPT4 m[r*4+2] *=z;
+  */
+}
+void nds_mult_matrix_vector(float * result, float * m, float *v,int dims){
+  for(int x=0;x<dims;++x){
+    result[x]=0;
+    for(int y = 0;y<dims;++y)result[x]+=m[x+y*dims]*v[y];
+  }
+}
+
 static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
   nds_vert_t *v[3] = {nds->gpu.vert_buffer+vi0,nds->gpu.vert_buffer+vi1,nds->gpu.vert_buffer+vi2};
-
+  for(int i=0;i<3;++i){
+    SE_RPT3 v[i]->clip_pos[r]=v[i]->pos[r]/fabs(v[i]->pos[3]);
+  }
 
   float min_p[3] = {1,1,1};
   float max_p[3] = {-1,-1,-1};
   
   for(int i=0;i<3;++i){
-    SE_RPT3 if(min_p[r]>v[i]->pos[r])min_p[r]=v[i]->pos[r];
-    SE_RPT3 if(max_p[r]<v[i]->pos[r])max_p[r]=v[i]->pos[r];
+    SE_RPT3 if(min_p[r]>v[i]->clip_pos[r])min_p[r]=v[i]->clip_pos[r];
+    SE_RPT3 if(max_p[r]<v[i]->clip_pos[r])max_p[r]=v[i]->clip_pos[r];
   }
 
   SE_RPT3 if(min_p[r]<-1)min_p[r]=-1;
@@ -4042,11 +3922,9 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       for(int vid = 0;vid<3;++vid){
         float edge0[3];
         float edge1[3];
-
-        SE_RPT3 edge0[r] = v[vid]->pos[r]-sample_p[r];
-        SE_RPT3 edge1[r] = v[(vid+1)%3]->pos[r]-sample_p[r];
+        SE_RPT3 edge0[r] = v[vid]->clip_pos[r]-sample_p[r];
+        SE_RPT3 edge1[r] = v[(vid+1)%3]->clip_pos[r]-sample_p[r];
         sub_tri_area[vid]=edge0[1]*edge1[0]-edge0[0]*edge1[1];
-
       }
 
       bool same_sign = (sub_tri_area[0]<=0.0&&sub_tri_area[1]<=0.0&&sub_tri_area[2]<=0.0)||(sub_tri_area[0]>=0.0&&sub_tri_area[1]>=0.0&&sub_tri_area[2]>=0.0);
@@ -4055,15 +3933,13 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       if(!same_sign)continue;
 
-
       float bary[3];
 
       SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/tri_area;
       float w = bary[0]*v[0]->pos[3]+bary[1]*v[1]->pos[3]+bary[2]*v[2]->pos[3];
-      if(w<=0)continue;
 
-      float z = bary[0]*v[0]->pos[2]+bary[1]*v[1]->pos[2]+bary[2]*v[2]->pos[2];
-      if(z<=0)continue;
+      float z = bary[0]*v[0]->clip_pos[2]+bary[1]*v[1]->clip_pos[2]+bary[2]*v[2]->clip_pos[2];
+      //if(z<=0)continue;
 
       int ix = (x*0.5+0.5)*NDS_LCD_W;
       int iy = (y*0.5+0.5)*NDS_LCD_H;
@@ -4075,10 +3951,64 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       for(int c = 0;c<3;++c){
         float col = v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2];
         nds->framebuffer_3d[p*4+c]=bary[c]*255;
-
       }
     }
 
+  }
+}
+static void nds_interp_wp_vert(nds_t*nds, int v_wp, int v_wn){
+  nds_vert_t* vb = nds->gpu.vert_buffer;
+  float wn = vb[v_wn].pos[3];
+  float wp = vb[v_wp].pos[3];
+  float alpha = (0.001-wn)/(wp-wn);
+
+  SE_RPT4 vb[v_wn].pos[r] += (vb[v_wp].pos[r]-vb[v_wn].pos[r])*alpha;
+  SE_RPT3 vb[v_wn].color[r] += (vb[v_wp].color[r]-vb[v_wn].color[r])*alpha;
+  SE_RPT2 vb[v_wn].tex[r] += (vb[v_wp].tex[r]-vb[v_wn].tex[r])*alpha;
+
+}
+static void nds_gpu_clip_tri(nds_t* nds, int vi0, int vi1, int vi2){
+  //nds_gpu_draw_tri(nds,vi0,vi1,vi2);
+  //return;
+  int inds[3] = {vi0,vi1,vi2};
+  nds_vert_t* vb = nds->gpu.vert_buffer;
+
+  int inds_wp[3] = {-1,-1};
+  int inds_wn[3] = {-1,-1};
+  int wp=0;
+  int wn=0; 
+
+  for(int r = 0;r<3;++r){
+    int i = inds[r];
+    if(vb[i].pos[3]>0.)inds_wp[wp++]=i;
+    else inds_wn[wn++]=i;
+  }
+  if(wn==3)return;
+  if(wp==3){
+    nds_gpu_draw_tri(nds,inds_wp[0],inds_wp[1],inds_wp[2]);
+    return;
+  }
+  if(wp==1){
+    int extra_ind0 = NDS_MAX_VERTS-1;
+    int extra_ind1 = NDS_MAX_VERTS-2;
+    vb[extra_ind0]=vb[inds_wn[0]];
+    vb[extra_ind1]=vb[inds_wn[1]];
+    nds_interp_wp_vert(nds,inds_wp[0],extra_ind0);
+    nds_interp_wp_vert(nds,inds_wp[0],extra_ind1);
+    nds_gpu_draw_tri(nds,inds_wp[0],extra_ind0,extra_ind1);
+    return;
+  }
+
+  if(wp==2){
+    int extra_ind0 = NDS_MAX_VERTS-1;
+    int extra_ind1 = NDS_MAX_VERTS-2;
+    vb[extra_ind0]=vb[inds_wn[0]];
+    vb[extra_ind1]=vb[inds_wn[0]];
+    nds_interp_wp_vert(nds,inds_wp[0],extra_ind0);
+    nds_interp_wp_vert(nds,inds_wp[1],extra_ind1);
+    nds_gpu_draw_tri(nds,inds_wp[0],inds_wp[1],extra_ind0);
+    nds_gpu_draw_tri(nds,inds_wp[1],extra_ind0,extra_ind1);
+    return;
   }
 }
 static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz){
@@ -4087,19 +4017,22 @@ static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz)
   nds->gpu.last_vertex_pos[2]=vz;
   float v[4] = {vx/65536.,vy/65536.,vz/65536.,1.0};
   float res[4];
-  nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.matrix_stack_ptr,v,4);
-  nds_mult_matrix_vector(v,nds->gpu.proj_matrix,res,4);
+  nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr,v,4);
+  nds_mult_matrix_vector(v,nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr,res,4);
+  //printf("Vert <%f, %f, %f, %f> matrix_stack_ptr:%d\n",v[0],v[1],v[2],v[3],nds->gpu.mv_matrix_stack_ptr);
 
-  float abs_w = fabs(v[3]);
+  float abs_w = v[3];
+
+  v[1]*=-1;
 
   res[0]=v[0]/abs_w;
-  res[1]=v[1]/abs_w*-1;
+  res[1]=v[1]/abs_w;
   res[2]=v[2]/abs_w;
-  res[3]=v[3];
+  res[3]=v[3]/abs_w;
 
   int x0 = (res[0]*0.5+0.5)*NDS_LCD_W;
   int y0 = (res[1]*0.5+0.5)*NDS_LCD_H;
-  for(int px = -2;px<2;++px)for(int py=-2;py<2;++py){
+  for(int px = -1;px<1;++px)for(int py=-1;py<1;++py){
     int x = px+x0;
     int y = py+y0;
     if(x>=0&&x<NDS_LCD_W&&y>=0&&y<NDS_LCD_H){
@@ -4114,27 +4047,27 @@ static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz)
   nds_vert_t*vert = nds->gpu.vert_buffer+nds->gpu.curr_vert++;
   nds->gpu.curr_draw_vert++;
   SE_RPT3 vert->color[r]=nds->gpu.curr_color[r];
-  SE_RPT4 vert->pos[r] = res[r];
+  SE_RPT4 vert->pos[r] = v[r];
   switch(nds->gpu.prim_type){
     /*Triangles */ case 0: 
-      if((nds->gpu.curr_draw_vert%3)==0)nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+      if((nds->gpu.curr_draw_vert%3)==0)nds_gpu_clip_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
       break;
     /*Quads     */ case 1: 
       if((nds->gpu.curr_draw_vert%4)==0){
-        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
-        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-3);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-3);
       }
       break;
     /*Tristrip  */ case 2: 
       if(nds->gpu.curr_draw_vert>=3){
-        if(nds->gpu.curr_draw_vert&1)nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
-        else nds_gpu_draw_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-1,nds->gpu.curr_vert-2);
+        if(nds->gpu.curr_draw_vert&1)nds_gpu_clip_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        else nds_gpu_clip_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-1,nds->gpu.curr_vert-2);
       }
       break;
     /*Quadstrip */ case 3: 
       if(nds->gpu.curr_draw_vert>=4&&(nds->gpu.curr_draw_vert%2)==0){
-        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
-        nds_gpu_draw_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2);
       }
       break;
   }
@@ -4236,10 +4169,10 @@ static void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
   }
 }
 static void nds_tick_gx(nds_t* nds){
-  
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0)gpu->cmd_busy_cycles--;
   int sz = nds_gxfifo_size(nds);
+  if(sz<NDS_GX_DMA_THRESHOLD){nds->activate_dmas=true;}
   uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
   int irq_mode = SB_BFE(gxstat,30,2);
   switch(irq_mode){
@@ -4248,15 +4181,19 @@ static void nds_tick_gx(nds_t* nds){
     case 2: if(sz==0)nds9_send_interrupt(nds,4,1<<NDS9_INT_GX_FIFO); break;
     default: break;
   }
-  
+  gxstat&= 0xc0000000;
+  gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
+  gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
+  if(gpu->matrix_stack_error)gxstat|=1<<14;
+  gxstat|= (sz&0x1ff)<<16;
+  if(sz<128)gxstat|= 1<<25;
+  if(sz==0)gxstat|= 1<<26;
+  if(sz!=0)gxstat|= 1<<27;//is busy
   if(sz==0)return;
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_SIZE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
   if(cmd_params<1)cmd_params=1;
-  if(sz<cmd_params||sz==0)return; 
-
-  if(sz<NDS_GX_DMA_THRESHOLD){nds->activate_dmas=true;}
-  
+  if(sz<=cmd_params||sz==0)return; 
 
   uint32_t param_buffer[NDS_GPU_MAX_PARAM];
   for(int i=0;i<cmd_params;++i)param_buffer[i]=gpu->fifo_data[(gpu->fifo_read_ptr++)%NDS_GXFIFO_SIZE];
@@ -4266,41 +4203,95 @@ static void nds_tick_gx(nds_t* nds){
   for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
   printf("\n");
   */
-  float fixed_to_float = 1.0/(1<<13);
+  float fixed_to_float = 1.0/(1<<12);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
+
+  static FILE * gx_log = NULL;
+  //if(!gx_log) gx_log = fopen("gxlog.txt","wb");
+  if(gx_log){
+    fprintf(gx_log,"GPU CMD: %02x\n",cmd,gpu->fifo_read_ptr);
+    fprintf(gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
+    fprintf(gx_log,"proj: ");
+    for(int i=0;i<16;++i)fprintf(gx_log,"%f ",gpu->proj_matrix[i+gpu->proj_matrix_stack_ptr*16]);
+    fprintf(gx_log,"\nmv: ");
+    for(int i=0;i<16;++i)fprintf(gx_log,"%f ",gpu->mv_matrix_stack[i+gpu->mv_matrix_stack_ptr*16]);
+    fprintf(gx_log,"\n");
+  }
+  
+
   switch(cmd){
     case 0x0: /*NOP*/ break;
     case 0x10:/*MTX_MODE*/ nds->gpu.matrix_mode = SB_BFE(p[0],0,2);break;
     case 0x11:/*MTX_PUSH*/ 
-      if(nds->gpu.matrix_mode ==NDS_MATRIX_MV&&nds->gpu.matrix_stack_ptr+1<32){
+      {
+        switch (gpu->matrix_mode){
+          case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+            gpu->mv_matrix_stack_ptr++;
+            if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
+            break;
+          case NDS_MATRIX_TEX:
+            gpu->tex_matrix_stack_ptr++;
+            if(gpu->tex_matrix_stack_ptr>1){gpu->matrix_stack_error=true;gpu->tex_matrix_stack_ptr=1;}
+            break;
+          case NDS_MATRIX_PROJ:
+            gpu->proj_matrix_stack_ptr++;
+            if(gpu->proj_matrix_stack_ptr>1){gpu->matrix_stack_error=true;gpu->proj_matrix_stack_ptr=1;}
+            break;
+        }
         float *m = nds_gpu_get_active_matrix(nds);
-        for(int i=0;i<16;++i)m[i+16]=m[i];
-        nds->gpu.matrix_stack_ptr++;
+        for(int i=0;i<16;++i){m[i]=m[i-16];}
       }
       break;
     case 0x12:/*MTX_POP*/ 
-      {
-        int32_t pop_cnt = SB_BFE(p[0],0,6);
-        pop_cnt=(pop_cnt<<25)>>25;
-        nds->gpu.matrix_stack_ptr-=pop_cnt;
-        if(nds->gpu.matrix_stack_ptr<0)nds->gpu.matrix_stack_ptr=0;
-        if(nds->gpu.matrix_stack_ptr>31)nds->gpu.matrix_stack_ptr=31;
+    {
+      int32_t pop_cnt = SB_BFE(p[0],0,6);
+      pop_cnt=(pop_cnt<<26)>>26;
+      switch (gpu->matrix_mode){
+        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+          gpu->mv_matrix_stack_ptr-=pop_cnt;
+          if(gpu->mv_matrix_stack_ptr<0){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=0;}
+          if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
+          break;
+        case NDS_MATRIX_TEX:
+          gpu->tex_matrix_stack_ptr--;
+          if(gpu->tex_matrix_stack_ptr<0){gpu->matrix_stack_error=true;gpu->tex_matrix_stack_ptr=0;}
+          break;
+        case NDS_MATRIX_PROJ:
+          gpu->proj_matrix_stack_ptr--;
+          if(gpu->proj_matrix_stack_ptr<0){gpu->matrix_stack_error=true;gpu->proj_matrix_stack_ptr=0;}
+          break;
       }
-  
       break;
+    }
     case 0x13: {/*MTX_STORE*/
       float * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
-      for(int i=0;i<16;++i){
-        nds->gpu.mv_matrix_stack[new_stack+i]=m[i];
+      switch (gpu->matrix_mode){
+        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+          for(int i=0;i<16;++i)gpu->mv_matrix_stack[new_stack+i]=m[i];
+          break;
+        case NDS_MATRIX_TEX:
+          for(int i=0;i<16;++i)gpu->tex_matrix[i+16]=m[i];
+          break;
+        case NDS_MATRIX_PROJ:
+          for(int i=0;i<16;++i)gpu->proj_matrix[i+16]=m[i];
+          break;
       }
       break;
     }
     case 0x14: {/*MTX_RESTORE*/
       float * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
-      for(int i=0;i<16;++i){
-        m[i]=nds->gpu.mv_matrix_stack[new_stack+i];
+      switch (gpu->matrix_mode){
+        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+          for(int i=0;i<16;++i)m[i]=gpu->mv_matrix_stack[new_stack+i];
+          break;
+        case NDS_MATRIX_TEX:
+          for(int i=0;i<16;++i)m[i]=gpu->tex_matrix[i];
+          break;
+        case NDS_MATRIX_PROJ:
+          for(int i=0;i<16;++i)m[i]=gpu->proj_matrix[i];
+          break;
       }
       break;
     }
@@ -4328,28 +4319,31 @@ static void nds_tick_gx(nds_t* nds){
     }
     case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
       float m[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
-        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
-        p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float, 0.,
+        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
+        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
+        p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float,0,
         p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
       };
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      break;
     }
     
-    case 0x1a: { /*MTX_MULT_2x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+    case 0x1a: { /*MTX_MULT_3x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
       float m[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0.,
-        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0.,
-        p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0.,
+        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
+        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
+        p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0,
         0,0,0,1.,
       };
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
       break;
     }
-    case 0x1c: nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+    case 0x1c: 
+      nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
                                                                     p[1]*fixed_to_float,
                                                                     p[2]*fixed_to_float);break; /*MTX_TRAN*/
-    case 0x1b: nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
+    case 0x1b: 
+      nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
                                                                 p[1]*fixed_to_float,
                                                                 p[2]*fixed_to_float);break; /*MTX_SCALE*/
     case 0x20: /*COLOR - Directly Set Vertex Color (W)*/
@@ -4366,9 +4360,9 @@ static void nds_tick_gx(nds_t* nds){
                                           ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
                                           ((int32_t)SB_BFE(p[1],0,16)<<16)>>12);break;
 
-    case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<21)>>12,
-                                          ((int32_t)SB_BFE(p[0],10,10)<<21)>>12,
-                                          ((int32_t)SB_BFE(p[1],20,10)<<21)>>12);break;
+    case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<22)>>12,
+                                          ((int32_t)SB_BFE(p[0],10,10)<<22)>>12,
+                                          ((int32_t)SB_BFE(p[1],20,10)<<22)>>12);break;
 
     case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
                                           ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
@@ -4379,9 +4373,9 @@ static void nds_tick_gx(nds_t* nds){
     case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
                                           ((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
                                           ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
-    case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<21)>>12)+nds->gpu.last_vertex_pos[0],
-                                          (((int32_t)SB_BFE(p[0],10,10)<<21)>>12)+nds->gpu.last_vertex_pos[1],
-                                          (((int32_t)SB_BFE(p[1],20,10)<<21)>>12)+nds->gpu.last_vertex_pos[2]);break;
+    case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<22)>>12)+nds->gpu.last_vertex_pos[0],
+                                          (((int32_t)SB_BFE(p[0],10,10)<<22)>>12)+nds->gpu.last_vertex_pos[1],
+                                          (((int32_t)SB_BFE(p[1],20,10)<<22)>>12)+nds->gpu.last_vertex_pos[2]);break;
 
     case 0x40: /*BEGIN_VTXS*/ 
       nds->gpu.prim_type = SB_BFE(p[0],0,2);
@@ -4392,34 +4386,33 @@ static void nds_tick_gx(nds_t* nds){
       nds_gpu_swap_buffers(nds);
       nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
       break; //Swap buffers
-
+    case 0x21:case 0x71: case 0x60: case 0x29:case 0x30: case 0x31: case 0x2b: case 0x2a: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
     default:
-      /*
-      printf("Unhandled GPU CMD: %02x Data: ",cmd);
+      
+      /*printf("Unhandled GPU CMD: %02x Data: ",cmd);
       for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
-      printf("\n");
-      */
+      printf("\n");*/
+      
       break;
   }
 }
 static void nds_gpu_write_packed_cmd(nds_t *nds, uint32_t data){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->packed_cmd_state){
-    int cmd = 0; 
     int param_off = 0; 
     for(int cmd_id = 0; cmd_id<4;++cmd_id){
       int extracted_cmd = (gpu->packed_cmd>> (cmd_id*8))&0xff;
-      if(param_off<gpu->packed_cmd_param){
-        cmd = extracted_cmd;
-      }
       int params = nds_gpu_cmd_params(extracted_cmd);
+      int old_off = param_off; 
       param_off+=params;
-      if(params==0&&param_off==gpu->packed_cmd_param&&cmd_id!=3){
-        nds_gxfifo_push(nds,cmd,data);
+      if(gpu->packed_cmd_param>=old_off&&gpu->packed_cmd_param<param_off){
+        nds_gxfifo_push(nds,extracted_cmd,data);
+        if(params){
+          gpu->packed_cmd_param++;
+        }
       }
     }
-    nds_gxfifo_push(nds,cmd,data);
-    gpu->packed_cmd_param++;
+    if(param_off==gpu->packed_cmd_param)gpu->packed_cmd_state=0;
   }else{
     gpu->packed_cmd_state = 1; 
     gpu->packed_cmd = data;
@@ -4432,14 +4425,14 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
   if(addr>=GBA_DMA0SAD||addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
-  if(addr>=0x4000440&& addr<0x4000600 ){
+  if(addr>=0x4000440&& addr<0x4000600 &&cpu==NDS_ARM9){
     nds_gxfifo_push(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
   } 
-  switch(addr){
-    case NDS9_GXFIFO:
-      if(cpu!=NDS_ARM9)return;
+  if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
       nds_gpu_write_packed_cmd(nds,mmio);
-    break;
+  } 
+  switch(addr){
+
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
@@ -5306,8 +5299,8 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         int transfer_bytes = type? 4:2; 
         bool skip_dma = false;
         if(mode==0x7){
-          printf("GX FIFO DMA\n");
           if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD)continue;
+         // printf("GX FIFO DMA\n");
         }
 
         if(nds->dma[cpu][i].current_transaction==0){
@@ -5795,11 +5788,13 @@ static void nds_tick_ipc_fifo(nds_t* nds){
       if(fifo_not_empty_irq){
         if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
         else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
-        }
       }
+    }
   }
 }
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
+  printf("#####New Frame#####\n");
+
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
   nds->arm7.read32     = nds7_arm_read32;
@@ -5825,9 +5820,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->mem.nds7_bios=scratch->nds7_bios;
   nds->mem.nds9_bios=scratch->nds9_bios;
   nds->mem.firmware=scratch->firmware;
+  nds->mem.save_data = scratch->save_data;
   nds->mem.card_data = emu->rom_data;
   nds->mem.card_size = emu->rom_size;
-
+  
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
   nds_tick_touch(&emu->joy,nds);
