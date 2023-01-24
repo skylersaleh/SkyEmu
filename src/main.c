@@ -4333,15 +4333,18 @@ static void init(void) {
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
+  bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
     gui_state.settings.http_control_server_port = atoi(emu_state.cmd_line_args[2]);
     emu_state.cmd_line_arg_count =emu_state.cmd_line_arg_count-2;
     emu_state.cmd_line_args =emu_state.cmd_line_args+2;
     gui_state.settings.http_control_server_enable=true;
+    http_server_mode=true;
   } 
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
+    if(http_server_mode)emu_state.run_mode=SB_MODE_PAUSE;
   }
 
   sg_push_debug_group("LCD Shader Init");
