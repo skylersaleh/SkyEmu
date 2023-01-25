@@ -3550,13 +3550,13 @@ void se_draw_menu_panel(){
   float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
   float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
 
-  if(igBeginChildFrame(0,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
+  if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
     se_draw_emulated_system_screen(true);
   }
   igEndChildFrame();
   igSameLine(0,2);
 
-  if(igBeginChildFrame(1,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
+  if(igBeginChildFrame(2,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
     se_draw_emulated_system_screen(true);
   }
   igEndChildFrame();
