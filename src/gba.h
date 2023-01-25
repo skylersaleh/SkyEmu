@@ -650,8 +650,8 @@ typedef struct {
   // extra shift rights for the multicycling of the various stages. 
   uint32_t pipeline_bubble_shift_register;
   // Lookup tables to accelerate MMIO masking / Open bus behavior
-  uint32_t mmio_data_mask_lookup[0xff];
-  uint8_t  mmio_reg_valid_lookup[0xff];
+  uint32_t mmio_data_mask_lookup[256];
+  uint8_t  mmio_reg_valid_lookup[256];
 } gba_mem_t;
 
 typedef struct {
