@@ -3035,7 +3035,7 @@ void se_update_frame() {
     double curr_time = se_time();
     if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment;
     if(gui_state.test_runner_mode)unlocked_mode=true;
-    if(unlocked_mode){
+    if(unlocked_mode&&emu_state.run_mode!=SB_MODE_STEP){
       sim_time_increment=0;
       max_frames_per_tick=1000;
       simulation_time=curr_time+1./50.;
@@ -3077,6 +3077,7 @@ void se_update_frame() {
 
     }
   }
+  printf("Emulated %d frames\n",emu_state.frame);
   if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
   if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
