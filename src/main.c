@@ -4482,9 +4482,12 @@ static void event(const sapp_event* ev) {
   }
 }
 static void headless_mode(){
+  //Leave here so the entry point still exists
+#ifdef ENABLE_HTTP_CONTROL_SERVER
   se_init();
   se_update_frame();
   hcs_join_server_thread();
+#endif 
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
