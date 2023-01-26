@@ -4326,6 +4326,7 @@ void se_load_settings(){
 }
 static void se_init(){
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
+  stm_setup();
   se_load_settings();
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
@@ -4353,7 +4354,6 @@ static void init(void) {
   sg_setup(&(sg_desc){
       .context = sapp_sgcontext()
   });
-  stm_setup();
   simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
   se_imgui_theme();
   // initial clear color
