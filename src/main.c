@@ -3077,8 +3077,8 @@ void se_update_frame() {
 
     }
   }
-  printf("Emulated %d frames\n",emu_state.frame);
-  if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
+  if(emu_state.run_mode==SB_MODE_STEP)printf("Emulated %d frames\n",emu_state.frame);
+  if(emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode = SB_MODE_PAUSE; 
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
   if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
 
