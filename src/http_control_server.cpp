@@ -9,7 +9,7 @@ extern "C"{
 struct HCSServer{
     hcs_callback callback; 
     httplib::Server svr;
-    std::mutex mutex;
+    std::recursive_mutex mutex;
     std::thread thread;
     int64_t port; 
     static void server_thread(HCSServer* server){
@@ -71,5 +71,8 @@ extern "C"{
     }
     void hcs_resume_callbacks(){
         if(server)server->mutex.unlock();
+    }
+    void hcs_join_server_thread(){
+        if(server)server->thread.join();
     }
 }

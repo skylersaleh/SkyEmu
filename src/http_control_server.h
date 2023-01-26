@@ -16,5 +16,7 @@ void hcs_update(bool enable, int64_t port, hcs_callback callback);
 void hcs_suspend_callbacks();
 void hcs_resume_callbacks();
 
+//Join this thread to the server thread
+void hcs_join_server_thread();
 
 #endif

@@ -1993,6 +1993,11 @@ typedef struct{
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[NDS_FIRMWARE_SIZE];
   uint8_t save_data[8*1024*1024];
+  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
 }nds_scratch_t; 
 
 typedef struct {
@@ -2223,11 +2228,11 @@ typedef struct{
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
 
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
-  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t *framebuffer_top;
+  uint8_t *framebuffer_bottom;
+  float *framebuffer_3d_depth;
+  uint8_t *framebuffer_3d;
+  uint8_t *framebuffer_3d_disp;
   uint64_t current_clock;
 } nds_t; 
 
@@ -5823,7 +5828,11 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->mem.save_data = scratch->save_data;
   nds->mem.card_data = emu->rom_data;
   nds->mem.card_size = emu->rom_size;
-  
+  nds->framebuffer_top=scratch->framebuffer_top;
+  nds->framebuffer_bottom=scratch->framebuffer_bottom;
+  nds->framebuffer_3d_depth=scratch->framebuffer_3d_depth;
+  nds->framebuffer_3d=scratch->framebuffer_3d;
+  nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
   nds_tick_touch(&emu->joy,nds);

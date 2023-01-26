@@ -353,6 +353,7 @@ static void se_emscripten_flush_fs();
 static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
+uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
 
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
@@ -1582,16 +1583,16 @@ static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_he
   if(emu_state.system==SYSTEM_GBA){
     *out_width = GBA_LCD_W;
     *out_height = GBA_LCD_H;
-    memcpy(output_buffer,core.gba.framebuffer,GBA_LCD_W*GBA_LCD_H*4);
+    memcpy(output_buffer,scratch.gba.framebuffer,GBA_LCD_W*GBA_LCD_H*4);
   }else if (emu_state.system==SYSTEM_NDS){
     *out_width = NDS_LCD_W;
     *out_height = NDS_LCD_H*2;
-    memcpy(output_buffer,core.nds.framebuffer_top,NDS_LCD_W*NDS_LCD_H*4);
-    memcpy(output_buffer+NDS_LCD_W*NDS_LCD_H*4,core.nds.framebuffer_bottom,NDS_LCD_W*NDS_LCD_H*4);
+    memcpy(output_buffer,scratch.nds.framebuffer_top,NDS_LCD_W*NDS_LCD_H*4);
+    memcpy(output_buffer+NDS_LCD_W*NDS_LCD_H*4,scratch.nds.framebuffer_bottom,NDS_LCD_W*NDS_LCD_H*4);
   }else if (emu_state.system==SYSTEM_GB){
     *out_width = SB_LCD_W;
     *out_height = SB_LCD_H;
-    memcpy(output_buffer,core.gb.lcd.framebuffer,SB_LCD_W*SB_LCD_H*4);
+    memcpy(output_buffer,scratch.gb.framebuffer,SB_LCD_W*SB_LCD_H*4);
   }
   for(int i=3;i<SE_MAX_SCREENSHOT_SIZE;i+=4)output_buffer[i]=0xff;
 }
@@ -2992,6 +2993,16 @@ static void se_poll_sdl(){
 }
 #endif
 void se_update_frame() {
+  #ifdef ENABLE_HTTP_CONTROL_SERVER
+  hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
+  if(gui_state.settings.http_control_server_enable){
+    for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]+=gui_state.hcs_joypad.inputs[i];
+  }
+  hcs_suspend_callbacks();
+  #endif
+  se_update_key_turbo(&emu_state);
+  se_update_solar_sensor(&emu_state);
+
   if(emu_state.run_mode == SB_MODE_RESET){
     se_reset_core();
     emu_state.run_mode = SB_MODE_RUN;
@@ -3067,15 +3078,15 @@ void se_update_frame() {
     }
   }
   if(emu_state.run_mode == SB_MODE_STEP) emu_state.run_mode = SB_MODE_PAUSE; 
-  bool mute = emu_state.run_mode != SB_MODE_RUN;
-  emu_state.prev_frame_joy = emu_state.joy; 
-  se_reset_joy(&emu_state.joy);
-  se_draw_emulated_system_screen(false);
   if(emu_state.run_mode==SB_MODE_PAUSE)emu_state.frame = 0; 
   if(emu_state.run_mode==SB_MODE_REWIND)emu_state.frame = - emu_state.frame*frames_per_rewind_state;
-  for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
-    if(gui_state.touch_points[i].active)gui_state.last_touch_time = se_time();
-  }
+
+  emu_state.prev_frame_joy = emu_state.joy; 
+  se_reset_joy(&emu_state.joy);
+
+  #ifdef ENABLE_HTTP_CONTROL_SERVER
+    hcs_resume_callbacks();
+  #endif
 }
 void se_imgui_theme()
 {
@@ -3782,29 +3793,34 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
     str_result=emu_state.rom_loaded?"ok":"Failed to load ROM";
   }else if(strcmp(cmd,"/step")==0){
     int step_frames = 1; 
+    int old_step = emu_state.step_frames;
     while(*params){
       if(strcmp(params[0],"frames")==0)step_frames=atoi(params[1]);
       params+=2;
     }
     emu_state.step_frames=step_frames;
     emu_state.run_mode = SB_MODE_STEP;
+    se_update_frame(); 
+    emu_state.step_frames=old_step;
     str_result="ok";
   }else if(strcmp(cmd,"/run")==0){
     emu_state.step_frames=1;
     emu_state.run_mode = SB_MODE_RUN;
     str_result="ok";
   }else if(strcmp(cmd,"/screen")==0){
-    se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
-    se_capture_state(&core,save_state);
-    uint32_t width=0, height=0; 
-    uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
-    free(save_state);
-    se_png_write_context_t cont ={0};
-    stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
-    free(imdata);
-    *result_size = cont.size;
-    *mime_type="image/png";
-    return cont.data;
+    if(emu_state.rom_loaded){
+      se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
+      se_capture_state(&core,save_state);
+      uint32_t width=0, height=0; 
+      uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
+      free(save_state);
+      se_png_write_context_t cont ={0};
+      stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
+      free(imdata);
+      *result_size = cont.size;
+      *mime_type="image/png";
+      return cont.data;
+    }else str_result = "Failed (no ROM loaded)";
   }else if(strcmp(cmd,"/read_byte")==0){
     uint64_t response_size = 0; 
     char *response = NULL;
@@ -3904,20 +3920,11 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
 #endif 
 
 static void frame(void) {
-  #ifdef ENABLE_HTTP_CONTROL_SERVER
-  hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
-  if(gui_state.settings.http_control_server_enable){
-    for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]+=gui_state.hcs_joypad.inputs[i];
-  }
-  hcs_suspend_callbacks();
-  #endif
   sb_poll_controller_input(&emu_state.joy);
 #ifdef USE_SDL
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
-  se_update_key_turbo(&emu_state);
-  se_update_solar_sensor(&emu_state);
 #if !defined(EMSCRIPTEN) && !defined(PLATFORM_ANDROID) &&!defined(PLATFORM_IOS)
   static bool last_toggle_fullscreen=false;
   if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
@@ -4129,6 +4136,12 @@ static void frame(void) {
     |ImGuiWindowFlags_NoBringToFrontOnFocus);
  
   se_update_frame();
+
+  se_draw_emulated_system_screen(false);
+  for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
+    if(gui_state.touch_points[i].active)gui_state.last_touch_time = se_time();
+  }
+
   igPopStyleVar(2);
   igPopStyleColor(1);
   igEnd();
@@ -4311,28 +4324,9 @@ void se_load_settings(){
     gui_state.last_saved_settings=gui_state.settings;
   }
 }
-static void init(void) {
+static void se_init(){
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
-  gui_state.overlay_open= true;
-#ifdef USE_SDL
-  if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
-    printf("Failed to init SDL: %s\n",SDL_GetError());
-  }
-#endif
-  se_initialize_keybind(&gui_state.key);
   se_load_settings();
-  sg_setup(&(sg_desc){
-      .context = sapp_sgcontext()
-  });
-  stm_setup();
-  simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
-  se_imgui_theme();
-  // initial clear color
-  gui_state.pass_action = (sg_pass_action) {
-      .colors[0] = { .action = SG_ACTION_CLEAR, .value={0,0,0,1} }
-  };
-  gui_state.last_touch_time=-10000;
-  se_init_audio();
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
@@ -4346,7 +4340,28 @@ static void init(void) {
     se_load_rom(emu_state.cmd_line_args[1]);
     if(http_server_mode)emu_state.run_mode=SB_MODE_PAUSE;
   }
-
+}
+static void init(void) {
+  gui_state.overlay_open= true;
+#ifdef USE_SDL
+  if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
+    printf("Failed to init SDL: %s\n",SDL_GetError());
+  }
+#endif
+  se_initialize_keybind(&gui_state.key);
+  se_init();
+  sg_setup(&(sg_desc){
+      .context = sapp_sgcontext()
+  });
+  stm_setup();
+  simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
+  se_imgui_theme();
+  // initial clear color
+  gui_state.pass_action = (sg_pass_action) {
+      .colors[0] = { .action = SG_ACTION_CLEAR, .value={0,0,0,1} }
+  };
+  gui_state.last_touch_time=-10000;
+  se_init_audio();
   sg_push_debug_group("LCD Shader Init");
 
   gui_state.lcd_prog = sg_make_shader(lcdprog_shader_desc(sg_query_backend()));
@@ -4466,6 +4481,12 @@ static void event(const sapp_event* ev) {
     if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
   }
 }
+#include "unistd.h"
+static void headless_mode(){
+  se_init();
+  se_update_frame();
+  hcs_join_server_thread();
+}
 
 sapp_desc sokol_main(int argc, char* argv[]) {
   #ifdef PLATFORM_WINDOWS
@@ -4493,6 +4514,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
   #if defined(EMSCRIPTEN)
     em_init_fs();  
   #endif
+  if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0)headless_mode();
+
   return (sapp_desc){
       .init_cb = init,
       .frame_cb = frame,
