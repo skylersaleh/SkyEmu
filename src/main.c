@@ -4481,7 +4481,6 @@ static void event(const sapp_event* ev) {
     if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
   }
 }
-#include "unistd.h"
 static void headless_mode(){
   se_init();
   se_update_frame();
