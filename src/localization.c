@@ -413,6 +413,7 @@ int se_localize_cmp(const void *a, const void*b){return strcmp(((const char**)a)
 void se_set_language(int language_enum){
     const char ** new_map = NULL; 
     if(language_enum==SE_LANG_CHINESE)new_map = zh_localization_array; 
+    if(language_enum==SE_LANG_ARMENIAN)new_map = hy_localization_array; 
     if(new_map!=localization_map){
         localization_map=new_map;
         localization_size=0;
