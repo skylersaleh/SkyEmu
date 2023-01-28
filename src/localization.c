@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 
+//#define SHOW_TRANSLATE_ME 1
+
 //Special thanks to https://github.com/shooterspps for the Chinese Translation
 static char* zh_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " 载入游戏",
@@ -186,6 +188,23 @@ static char* zh_localization_array[]={
     "RIGHT_ALT", "右 Alt",
     "RIGHT_SUPER", "右 Super",
     "MENU", "菜单",
+#ifdef SHOW_TRANSLATE_ME
+    "Enable Turbo and Hold Button Modifiers", "TRANSLATE ME",
+    "Scale", "TRANSLATE ME",
+    "Scale: %.2f","TRANSLATE %.2f",
+    "GBA Color Correction Type","TRANSLATE ME",
+    ICON_FK_TEXT_HEIGHT " GUI",ICON_FK_TEXT_HEIGHT " TBD",
+    "Full Screen","TBD",
+    ICON_FK_CODE_FORK " Additional Search Paths",ICON_FK_CODE_FORK " TBD",
+    "Save File/State Path","TBD",
+    "BIOS/Firmware Path","TBD",
+    "Create new save files in Save Path","TBD",
+    ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files",ICON_FK_CROSSHAIRS " TBD",
+    "Force GB games to run in DMG mode","TBD",
+    "Enable HTTP Control Server","TBD",
+    "Server Port","TBD",
+    "Toggle Full Screen","TBD",
+#endif 
     NULL,NULL
 };
 
