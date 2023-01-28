@@ -188,7 +188,6 @@ static char* zh_localization_array[]={
     "RIGHT_ALT", "右 Alt",
     "RIGHT_SUPER", "右 Super",
     "MENU", "菜单",
-#ifdef SHOW_TRANSLATE_ME
     "Enable Turbo and Hold Button Modifiers", "启用按住按键连发",
     "Scale", "缩放",
     "Scale: %.2f","缩放 %.2f",
@@ -204,7 +203,6 @@ static char* zh_localization_array[]={
     "Enable HTTP Control Server","启用 HTTP 服务器控制",
     "Server Port","服务器端口",
     "Toggle Full Screen","切换全屏",
-#endif 
     NULL,NULL
 };
 
