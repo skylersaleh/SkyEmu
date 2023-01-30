@@ -403,6 +403,8 @@ static char* hy_localization_array[]={
     "Enable HTTP Control Server","Միացնեք HTTP Կառավարման Սերվերը",
     "Server Port","Սերվերի Պորտ",
     "Toggle Full Screen","Միացնեք Ամբողջ էկրանը",
+    "Can't find all needed BIOS/Boot ROM/Firmware Files.","Չենք կարող գտնել բոլոր անհրաժեշտ\nBIOS/Գործարկման ROM/Որոնվածային ֆայլերը:",
+    "Accuracy will suffer and some features won't work.","Ճշգրտությունը կտուժի\nև որոշ գործառույթներ չեն աշխատի:",
     NULL,NULL
 };
 
