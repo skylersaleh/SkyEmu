@@ -937,7 +937,10 @@ static FORCE_INLINE void gba_process_flash_state_machine(gba_t* gba, unsigned ba
         int erase_4k_off = gba->cart.flash_bank*64*1024+SB_BFE(baddr,12,4)*4096;
         // Process command
         switch(data){
-          case FLASH_ERASE_CHIP:for(int i=0;i<size;++i)gba->mem.cart_backup[i]=0xff; break;
+          case FLASH_ERASE_CHIP:
+            printf("Erase Flash Chip %d bytes\n",size);
+            for(int i=0;i<size;++i)gba->mem.cart_backup[i]=0xff;
+            break;
           case FLASH_ERASE_4KB:for(int i=0;i<4096;++i)gba->mem.cart_backup[erase_4k_off+i]=0xff; break;
           default: printf("Unknown flash erase command: %02x\n",data);break;
         }
@@ -1088,7 +1091,7 @@ static void gba_process_solar_sensor(gba_t*gba){
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data>>((baddr&3)*8)); return;}
+    if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));return;}
     if(baddr>=0x080000C4&& baddr<0x080000CA){
       if(baddr==0x080000c4)gba->cart.gpio_data = data;
       gba_process_rtc_state_machine(gba);
@@ -1102,7 +1105,10 @@ static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
 static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
-    if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data); return;}
+    if((baddr&0xfe000000)==0xE000000){
+      gba_process_backup_write(gba,baddr,data>>  ((baddr&1)*8));
+      return;
+    }
     if(baddr>=0x080000C4&& baddr<0x080000CA){
       int addr = baddr&~1;
       if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
@@ -1389,13 +1395,19 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
       if(gba->cart.backup_type==GBA_BACKUP_SRAM){
         gba->mem.sram_word= gba->mem.cart_backup[(addr&0x7fff)]*0x01010101;
         ret = &gba->mem.sram_word;
-     }else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
-      else{
+      }else if(gba->cart.backup_type==GBA_BACKUP_EEPROM) ret = (uint32_t*)&gba->mem.eeprom_word;
+      else if(gba->cart.backup_type==GBA_BACKUP_NONE){
+        gba->mem.sram_word= 0xffffffff;
+        ret = &gba->mem.sram_word;
+      }else{
         //Flash
         if(gba->cart.in_chip_id_mode&&addr<=0xE000001){
           gba->mem.openbus_word = *(uint32_t*)gba->mem.flash_chip_id;
           ret = &gba->mem.openbus_word;
-        }else ret = (uint32_t*)(gba->mem.cart_backup+(addr&0xfffc)+gba->cart.flash_bank*64*1024);
+        }else{
+          gba->mem.sram_word = gba->mem.cart_backup[(addr&0xffff)+gba->cart.flash_bank*64*1024]*0x01010101;
+          ret = &gba->mem.sram_word;
+        }
       }
       gba->mem.openbus_word=(*ret&0xffff)*0x10001;
       break;
@@ -1621,7 +1633,7 @@ bool gba_load_rom(sb_emu_state_t*emu,gba_t* gba, gba_scratch_t *scratch){
     sb_free_file_data(data);
   }else{
     printf("Could not find save file: %s\n",emu->save_file_path);
-    for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0;
+    for(int i=0;i<sizeof(gba->mem.cart_backup);++i) gba->mem.cart_backup[i]=0xff;
   }
 
   // Setup flash chip id (this is not used if the cartridge does not have flash backup storage)
