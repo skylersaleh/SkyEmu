@@ -398,7 +398,7 @@ static char* hy_localization_array[]={
     "Save File/State Path","Պահպանեք Ֆայլի/Վիճակի Վայրերը",
     "BIOS/Firmware Path","BIOS/Որոնվածը Գտնվելու Վայրը",
     "Create new save files in Save Path","Ստեղծեք նոր պահված ֆայլեր Պահպանել Վայրը",
-    ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files",ICON_FK_CROSSHAIRS " Գտել Ենք BIOS/Որոնվածը Ֆայլեր",
+    ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files",ICON_FK_CROSSHAIRS " BIOS/Որոնվածը Ֆայլեր",
     "Force GB games to run in DMG mode","Ստիպել «ԳԲ» խաղերին աշխատել «DMG» ռեժիմով",
     "Enable HTTP Control Server","Միացնեք HTTP Կառավարման Սերվերը",
     "Server Port","Սերվերի Պորտ",
