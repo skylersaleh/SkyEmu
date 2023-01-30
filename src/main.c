@@ -1098,6 +1098,11 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     arm->step_instructions=1;
     emu_state.run_mode= SB_MODE_RUN;
   }
+  igSameLine(0,4);
+  if(se_button("Step Frame",(ImVec2){0,0})){
+    emu_state.step_frames=1;
+    emu_state.run_mode=SB_MODE_STEP;
+  }
   if(arm->log_cmp_file){
     igSameLine(0,0);
     if(se_button("Disconnect Log",(ImVec2){0,0})){
@@ -1185,16 +1190,33 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
       }
     }  
   }
-
+  bool clear_step_data = emu_state.run_mode!=SB_MODE_PAUSE;
   se_text(ICON_FK_RANDOM " Last Branch Locations");
   igSeparator();
-  for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE;++i){
+  igBeginChildStr(("##BranchLoc"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
+  for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE&&i<arm->debug_branch_ring_offset;++i){
     uint32_t ind = (arm->debug_branch_ring_offset-i-1);
     ind%=ARM_DEBUG_BRANCH_RING_SIZE;
     se_text("%d",i+1);
-    igSameLine(40,0);
+    igSameLine(60,0);
     se_text("0x%08x",arm->debug_branch_ring[ind]);
   }
+  igEndChild();
+  if(clear_step_data)arm->debug_branch_ring_offset=0;
+  se_text("SWI");
+  igSeparator();
+  igBeginChildStr(("##SWI"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
+  for(int i=0;i<ARM_DEBUG_SWI_RING_SIZE&&i<arm->debug_swi_ring_offset;++i){
+    uint32_t ind = (arm->debug_swi_ring_offset-i-1);
+    ind%=ARM_DEBUG_SWI_RING_SIZE;
+    se_text("%d",i+1);
+    igSameLine(60,0);
+    if(arm->debug_swi_ring_times[ind]>=2)se_text("SWI 0x%02x (%dx)",arm->debug_swi_ring[ind],arm->debug_swi_ring_times[ind]);
+    else se_text("SWI 0x%02x",arm->debug_swi_ring[ind]);
+  }
+  igEndChild();
+  if(clear_step_data)arm->debug_swi_ring_offset=0;
+
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
   se_text(ICON_FK_EXCHANGE " Read/Write Memory Address");

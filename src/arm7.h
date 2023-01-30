@@ -46,6 +46,7 @@ typedef uint32_t (*arm_coproc_read_fn_t)(void* user_data, int coproc,int opcode,
 typedef void (*arm_coproc_write_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp, uint32_t data);
 
 #define ARM_DEBUG_BRANCH_RING_SIZE 32
+#define ARM_DEBUG_SWI_RING_SIZE 32
 typedef struct {
   // Registers
   /*
@@ -65,6 +66,9 @@ typedef struct {
 
   uint32_t debug_branch_ring[ARM_DEBUG_BRANCH_RING_SIZE];
   uint32_t debug_branch_ring_offset;
+  uint32_t debug_swi_ring[ARM_DEBUG_SWI_RING_SIZE];
+  uint32_t debug_swi_ring_times[ARM_DEBUG_SWI_RING_SIZE];
+  uint32_t debug_swi_ring_offset;
   uint32_t prefetch_pc;
   uint32_t step_instructions;//Instructions to step before triggering a breakpoint
   uint32_t prefetch_opcode[3]; 
@@ -1688,6 +1692,18 @@ static FORCE_INLINE void arm7_software_interrupt(arm7_t* cpu, uint32_t opcode){
   cpu->registers[SPSR_svc] = cpsr;
   //Update mode to supervisor and block irqs
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x13|0x80;
+  uint32_t swi_number = SB_BFE(opcode,0,24);
+  if(arm7_get_thumb_bit(cpu))swi_number = SB_BFE(opcode,0,8);
+  int id = -1;
+  for(int i=0;i<ARM_DEBUG_SWI_RING_SIZE&&i<cpu->debug_swi_ring_offset;++i){
+    if(cpu->debug_swi_ring[i]==swi_number){id=i;break;}
+  }
+  if(id==-1){
+    id = (cpu->debug_swi_ring_offset++)%ARM_DEBUG_SWI_RING_SIZE;
+    cpu->debug_swi_ring_times[id]=0;
+  }
+  cpu->debug_swi_ring[id]= swi_number; 
+  cpu->debug_swi_ring_times[id]++; 
   arm7_set_thumb_bit(cpu,false);
 }
 
