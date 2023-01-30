@@ -1428,7 +1428,7 @@ static void gba_recompute_mmio_mask_table(gba_t* gba){
     else if(dword_address==0x400007C)data_mask &= 0x40FF;
     else if(dword_address==0x4000080)data_mask &= 0x770FFF77;
     else if(dword_address==0x4000084)data_mask &= 0x0080;
-    else if(dword_address==0x4000088)data_mask = 0x0000ffff;
+    else if(dword_address==0x4000088||dword_address==0x4000134||dword_address==0x4000140||dword_address==0x4000158||dword_address==0x4000204||dword_address==0x4000208)data_mask = 0x0000ffff;
     else if(dword_address==0x40000B8||dword_address==0x40000C4||dword_address==0x40000D0)data_mask&=0xf7e00000;
     else if(dword_address==0x40000DC)data_mask&=0xFFE00000; 
     else if((dword_address>=0x4000010&& dword_address<=0x4000046) ||
