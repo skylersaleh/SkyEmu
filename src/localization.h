@@ -17,7 +17,8 @@
 #define SE_LANG_PORTUGESE 13
 #define SE_LANG_RUSSIAN 14
 #define SE_LANG_SPANISH 15
-#define SE_MAX_LANG_VALUE 16
+#define SE_LANG_DUTCH 16
+#define SE_MAX_LANG_VALUE 17
 
 void se_set_language(int language_enum);//i.e. SE_LANG_ENGLISH
 const char* se_language_string(int language_enum);//returns "" if language is not supported
