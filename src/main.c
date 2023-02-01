@@ -4223,6 +4223,9 @@ static void frame(void) {
       uint64_t noto_armenian_size;
       const uint8_t *noto_armenian = se_get_resource(SE_NOTO_ARMENIAN,&noto_armenian_size);
       ImFont* font4 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_armenian,noto_armenian_size,14*se_dpi_scale(),config3,ranges);
+      uint64_t noto_sans_size=0;
+      const uint8_t *noto_sans = se_get_resource(SE_NOTO_SANS,&noto_sans_size);
+      ImFont* font5 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_sans,noto_sans_size,14*se_dpi_scale(),config3,ranges);
       ImFontConfig_destroy(config3);
       igGetIO()->FontDefault=font3;
     #endif
