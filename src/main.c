@@ -4374,6 +4374,7 @@ static void se_init(){
 static void init(void) {
   gui_state.overlay_open= true;
 #ifdef USE_SDL
+  SDL_SetMainReady();
   if(SDL_Init(SDL_INIT_GAMECONTROLLER)){
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
