@@ -50,5 +50,6 @@
 	<key>UIFileSharingEnabled</key><true/>
 	<key>UIStatusBarHidden</key><true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key><false/>
+	<key>GCSupportsControllerUserInteraction</key><true/>
 </dict>
 </plist>
