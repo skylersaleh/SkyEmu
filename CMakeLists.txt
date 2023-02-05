@@ -45,7 +45,7 @@ if (MSVC)
 
 endif()
 
-if( (NOT ANDROID) AND (NOT IOS))
+if( (NOT ANDROID))
     set(USE_SDL 1)
     add_definitions(-DUSE_SDL=1)
 endif()
