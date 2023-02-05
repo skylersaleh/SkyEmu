@@ -259,3 +259,17 @@ Loads a save state from a parameter specified "path" on the server.  Returns "ok
 The state of the emulator is restored to where it was at the time the /tmp/save.png save state was taken. 
 
 ```ok```
+
+# /load_rom command
+
+Loads a rom from a parameter specified "path" on the server. Can be initially paused by setting the "pause" parameter. Returns "ok" on success.
+
+**Example**
+
+```http://localhost:8080/load?path=/tmp/rom.gba&pause=1```
+
+**Result:**
+
+Loads the rom at /tmp/rom.gba and pauses the emulator.
+
+```ok```
