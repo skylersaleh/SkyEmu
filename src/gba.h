@@ -703,7 +703,6 @@ typedef struct{
   bool last_enable; 
   uint16_t reload_value; 
   uint16_t pending_reload_value; 
-  uint16_t prescaler_timer;
   int startup_delay;
 }gba_timer_t;
 typedef struct{
@@ -799,6 +798,7 @@ typedef struct gba_t{
   gba_timer_t timers[4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
+  uint32_t global_timer;
   gba_audio_t audio;
   bool prev_key_interrupt;
   uint32_t first_target_buffer[GBA_LCD_W];
@@ -2579,9 +2579,13 @@ static FORCE_INLINE void gba_tick_timers(gba_t* gba){
 }
 static void gba_compute_timers(gba_t* gba){
   int ticks = gba->deferred_timer_ticks; 
+  uint32_t old_global_timer = gba->global_timer;
+  gba->global_timer+=gba->deferred_timer_ticks;
+
   gba->deferred_timer_ticks=0;
   int last_timer_overflow = 0; 
-  int timer_ticks_before_event = 32768; 
+  int timer_ticks_before_event = 32768;
+  const int prescaler_lookup[]={0,6,8,10};
   for(int t=0;t<4;++t){ 
     uint16_t tm_cnt_h = gba_io_read16(gba,GBA_TM0CNT_H+t*4);
     bool enable = SB_BFE(tm_cnt_h,7,1);
@@ -2605,7 +2609,6 @@ static void gba_compute_timers(gba_t* gba){
         }
         compensated_ticks=-gba->timers[t].startup_delay;
         gba->timers[t].startup_delay=-1;
-        gba->timers[t].prescaler_timer=0;
       }
       if(count_up){
         if(last_timer_overflow){
@@ -2620,20 +2623,15 @@ static void gba_compute_timers(gba_t* gba){
         }
       }else{
         last_timer_overflow=0;
-        int prescale_time = gba->timers[t].prescaler_timer;
-        prescale_time+=compensated_ticks;
-        const int prescaler_lookup[]={0,6,8,10};
         int prescale_duty = prescaler_lookup[prescale];
 
-        int increment = prescale_time>>prescale_duty;
-        prescale_time = prescale_time&((1<<prescale_duty)-1);
+        int increment = (gba->global_timer>>prescale_duty)-(old_global_timer>>prescale_duty);
         int v = value+increment;
         while(v>0xffff){
           v=(v+gba->timers[t].reload_value)-0x10000;
           last_timer_overflow++;
         }
         value = v; 
-        gba->timers[t].prescaler_timer=prescale_time;
         int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
         if(ticks_before_overflow<timer_ticks_before_event)timer_ticks_before_event=ticks_before_overflow;
       }
