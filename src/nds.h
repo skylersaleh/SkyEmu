@@ -4469,6 +4469,34 @@ static void nds_gpu_write_packed_cmd(nds_t *nds, uint32_t data){
     }
   }
 }
+static void nds_tick_ipc_fifo(nds_t* nds){
+  for(int cpu=0;cpu<2;++cpu){
+    int send_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
+    int recv_size = (nds->ipc[ cpu].write_ptr-nds->ipc[ cpu].read_ptr)&0x1f;
+
+    bool send_fifo_empty = send_size ==0;
+    bool send_fifo_full  = send_size ==16;
+    bool recv_fifo_empty = recv_size ==0;
+    bool recv_fifo_full  = recv_size ==16;
+    
+    if(send_size==1){
+      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
+      bool fifo_empty_irq = SB_BFE(cnt,2,1);
+      if(fifo_empty_irq){
+        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
+      }
+    }
+    if(recv_size!=0){
+      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
+      bool fifo_not_empty_irq = SB_BFE(cnt,10,1);
+      if(fifo_not_empty_irq){
+        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
+      }
+    }
+  }
+}
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
@@ -4486,7 +4514,8 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
-        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+7,2)==2;
+        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)>=2;
+
         if(halt) nds->arm7.wait_for_interrupt=true;
       }
       break;
@@ -4494,6 +4523,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       data = nds_align_data(baddr,data,transaction_type);
       mmio&=~data;
       nds_io_store32(nds,cpu,addr,mmio);
+      nds_tick_ipc_fifo(nds);
       break;
     case NDS_IPCSYNC:{
       int data_out = SB_BFE(mmio,8,4);
@@ -5080,10 +5110,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           int character_base_addr = character_base*16*1024;
          
           int32_t bg_base = ppu_id? 0x06200000:0x06000000;
-          if(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP){
+          bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+          bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+          if(bitmap_mode){
             screen_base_addr=screen_base*16*1024;
             int p = bg_x+(bg_y)*screen_size_x;
-            bool bitmap_mode = SB_BFE(bgcnt,7,1);
             if(bitmap_mode){
               bool direct_color = SB_BFE(bgcnt,2,1);
               if(direct_color)col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
@@ -5115,8 +5146,13 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             int px = bg_x%8;
             int py = bg_y%8;
 
-
-            if(rot_scale){
+            if(extended_bgmap){
+              tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
+              int h_flip = SB_BFE(tile_data,10,1);
+              int v_flip = SB_BFE(tile_data,11,1);
+              if(h_flip)px=7-px;
+              if(v_flip)py=7-py;
+            }else if(rot_scale){
               tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
               use_ext_palettes=false; //Not supported for 8bit bg map
             }else{
@@ -5540,8 +5576,7 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
 }
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
   nds->deferred_timer_ticks+=1;
-  if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)
-  nds_compute_timers(nds); 
+  if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)nds_compute_timers(nds); 
 }
 static void nds_compute_timers(nds_t* nds){
 
@@ -5709,7 +5744,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     for(int c = 0; c<16;++c){
       uint32_t cnt = nds7_io_read32(nds,NDS7_SOUND0_CNT+c*16);
       bool enable = SB_BFE(cnt,31,1);
-      uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+c*16);
+      uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+c*16)*2;
       int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
       if(!enable){
         audio->channel[c].sample=0;
@@ -5760,8 +5795,8 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         l+=v*(128-pan)/128.;
       }
       audio->channel[c].timer+=audio->cycles_since_tick;
-      while(audio->channel[c].timer>0xffff){
-        audio->channel[c].timer-=0x10000;
+      while(audio->channel[c].timer>0x1ffff){
+        audio->channel[c].timer-=0x20000;
         audio->channel[c].timer+=tmr;
         if(format==2){
            static const int16_t adpcm_table[89] ={
@@ -5827,34 +5862,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     audio->cycles_since_tick=0;
   }
 }
-static void nds_tick_ipc_fifo(nds_t* nds){
-  for(int cpu=0;cpu<2;++cpu){
-    int send_size = (nds->ipc[!cpu].write_ptr-nds->ipc[!cpu].read_ptr)&0x1f;
-    int recv_size = (nds->ipc[ cpu].write_ptr-nds->ipc[ cpu].read_ptr)&0x1f;
 
-    bool send_fifo_empty = send_size ==0;
-    bool send_fifo_full  = send_size ==16;
-    bool recv_fifo_empty = recv_size ==0;
-    bool recv_fifo_full  = recv_size ==16;
-    
-    if(send_size==1){
-      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
-      bool fifo_empty_irq = SB_BFE(cnt,2,1);
-      if(fifo_empty_irq){
-        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
-        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_SEND);
-      }
-    }
-    if(recv_size!=0){
-      uint16_t cnt = nds_io_read16(nds,cpu,NDS_IPCFIFOCNT);
-      bool fifo_not_empty_irq = SB_BFE(cnt,10,1);
-      if(fifo_not_empty_irq){
-        if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
-        else             nds7_send_interrupt(nds,4,1<<NDS_INT_IPC_FIFO_RECV);
-      }
-    }
-  }
-}
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   printf("#####New Frame#####\n");
@@ -5898,7 +5906,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   //bool prev_vblank = nds->ppu.last_vblank; 
   //Skip emulation of a frame if we get too far ahead the audio playback
   static int last_tick =0;
-  static bool prev_vblank=false;
+  bool prev_vblank=true;
 
   uint64_t* d = (uint64_t*)nds->mem.mmio_debug_access_buffer;
   for(int i=0;i<sizeof(nds->mem.mmio_debug_access_buffer)/8;++i){
@@ -5907,48 +5915,46 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
 
   while(true){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE-4;
-    int ticks = 2;
+    int ticks = 1;
     if(!gx_fifo_full)ticks = nds_tick_dma(nds,last_tick)?1:0;
     if(!ticks){
       uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
       uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
       {
-        nds->mem.requests=0;
         if(int7_if){
           uint32_t ie = nds7_io_read32(nds,NDS7_IE);
           uint32_t ime = nds7_io_read32(nds,NDS7_IME);
           int7_if&=ie;
-          if(SB_BFE(ime,0,1)==1&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
         }
         if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
         else arm7_exec_instruction(&nds->arm7);
         if(int9_if){
           int9_if &= nds9_io_read32(nds,NDS9_IE);
           uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-          if(SB_BFE(ime,0,1)==1&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
         }
-        if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-        else arm9_exec_instruction(&nds->arm9);
-        if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-        else arm9_exec_instruction(&nds->arm9);
-        ticks=2;
-       
-      }
-      //if(nds->mem.transfer_id<151)nds->arm7.trigger_breakpoint=nds->arm9.trigger_breakpoint=false;
-      if(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint){
-        emu->run_mode = SB_MODE_PAUSE;
-        nds->arm7.trigger_breakpoint=false;
-        nds->arm9.trigger_breakpoint=false;
-        printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
-        printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
-        break;
-      }
+        if(!nds->arm9.wait_for_interrupt){
+          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+          else arm9_exec_instruction(&nds->arm9);
+          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+          else arm9_exec_instruction(&nds->arm9);
+        }
+        ticks=1;
+        if(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint){
+          emu->run_mode = SB_MODE_PAUSE;
+          nds->arm7.trigger_breakpoint=false;
+          nds->arm9.trigger_breakpoint=false;
+          printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
+          printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
+          break;
+        }
+      }      
     }
     last_tick=ticks;
     //nds_tick_sio(nds);
 
     double delta_t = ((double)ticks)/(33513982);
-    nds_tick_ipc_fifo(nds);
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);
       nds_tick_timers(nds);
@@ -5957,17 +5963,11 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       nds_tick_gx(nds);
       nds->current_clock++;
     }
-    nds_tick_audio(nds,emu,delta_t,ticks/2);
+    nds_tick_audio(nds,emu,delta_t,ticks);
     
-    if(nds->ppu[0].last_vblank && !prev_vblank){
-      prev_vblank = nds->ppu[0].last_vblank;
-      break;
-    }
+    if(nds->ppu[0].last_vblank && !prev_vblank)break;
     prev_vblank = nds->ppu[0].last_vblank;
-    
   }
-  
-  
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp){
