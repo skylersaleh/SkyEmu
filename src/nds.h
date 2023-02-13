@@ -900,12 +900,19 @@ mmio_reg_t nds9_io_reg_desc[]={
   } }, /* WRAM Bank Control (W) */
 
   // ARM9 Maths
-  { NDS9_DIVCNT,        "DIVCNT",        { 0 } }, /* Division Control (R/W) */
+  { NDS9_DIVCNT,        "DIVCNT",        { 
+      {0,2,    "Division Mode    (0-2=See below) (3=Reserved; same as Mode 1)"},
+      {14,1,   "Division by zero (0=Okay, 1=Division by zero error; 64bit Denom=0)"},
+      {15,1,   "Busy             (0=Ready, 1=Busy) (Execution time see below)"},
+  } }, /* Division Control (R/W) */
   { NDS9_DIV_NUMER,     "DIV_NUMER",     { 0 } }, /* Division Numerator (R/W) */
   { NDS9_DIV_DENOM,     "DIV_DENOM",     { 0 } }, /* Division Denominator (R/W) */
   { NDS9_DIV_RESULT,    "DIV_RESULT",    { 0 } }, /* Division Quotient (=Numer/Denom) (R) */
   { NDS9_DIVREM_RESULT, "DIVREM_RESULT", { 0 } }, /* Division Remainder (=Numer MOD Denom) (R) */
-  { NDS9_SQRTCNT,       "SQRTCNT",       { 0 } }, /* Square Root Control (R/W) */
+  { NDS9_SQRTCNT,       "SQRTCNT",       { 
+      {0 ,1, "Mode (0=32bit input, 1=64bit input)"},
+      {15,1, "Busy (0=Ready, 1=Busy) (Execution time is 13 clks, in either Mode)"},
+  } }, /* Square Root Control (R/W) */
   { NDS9_SQRT_RESULT,   "SQRT_RESULT",   { 0 } }, /* Square Root Result (R) */
   { NDS9_SQRT_PARAM,    "SQRT_PARAM",    { 0 } }, /* Square Root Parameter Input (R/W) */
   { NDS9_POSTFLG,       "POSTFLG",       { 
@@ -2193,6 +2200,7 @@ typedef struct{
   bool matrix_stack_error;
   uint32_t tex_image_param;
   uint32_t tex_plt_base;
+  uint32_t poly_attr;
 }nds_gpu_t; 
 
 typedef struct{
@@ -3981,20 +3989,6 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
     }break;
-    case 0x6: /*Format 4: A5I3 Translucent Texture (5bit Alpha, 3bit Color Index)*/
-    {
-      int x = tex_p[0], y=tex_p[1];
-      uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x+y*sz[0]);
-      uint32_t alpha = SB_BFE(palette,3,5);
-      palette = SB_BFE(palette,0,3);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
-      uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      palette_zero = palette==0;
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
-      tex_color[3] = alpha/31.;
-    }break;
     case 0x3: /*Format 3: 16-Color Palette Texture*/
     {
       int x = tex_p[0], y=tex_p[1];
@@ -4017,6 +4011,33 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       tex_color[0] = SB_BFE(color,0,5)/31.;
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
+    }break;
+    case 0x5:
+      for(int i=0;i<2;++i)tex_color[i]= uv[i]/((float)(sz[i]));
+      break;
+    case 0x6: /*Format 6: A5I3 Translucent Texture (5bit Alpha, 3bit Color Index)*/
+    {
+      int x = tex_p[0], y=tex_p[1];
+      uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x+y*sz[0]);
+      uint32_t alpha = SB_BFE(palette,3,5);
+      palette = SB_BFE(palette,0,3);
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
+      palette_zero = palette==0;
+      tex_color[0] = SB_BFE(color,0,5)/31.;
+      tex_color[1] = SB_BFE(color,5,5)/31.;
+      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[3] = alpha/31.;
+    }break;
+    case 0x7: /* Format 7: Direct Color Texture*/
+    {
+      int x = tex_p[0], y=tex_p[1];
+      uint32_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x*2+y*sz[0]*2);
+      palette_zero = SB_BFE(color,15,1)==0;
+      tex_color[0] = SB_BFE(color,0,5)/31.;
+      tex_color[1] = SB_BFE(color,5,5)/31.;
+      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[3] = SB_BFE(color,15,1);
     }break;
     default:
       printf("Unknown texture format:%d\n",format);
@@ -4088,12 +4109,19 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       if(!same_sign)continue;
 
+      float bary_nopersp[3];
       float bary[3];
 
-      SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/tri_area;
+      SE_RPT3 bary_nopersp[r] = sub_tri_area[(r+1)%3]/tri_area;
+      SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/v[r]->pos[3];
+
+      float bary_area = bary[0]+bary[1]+bary[2];
+      SE_RPT3 bary[r] /= bary_area;
+
+
       float w = bary[0]*v[0]->pos[3]+bary[1]*v[1]->pos[3]+bary[2]*v[2]->pos[3];
 
-      float z = bary[0]*v[0]->clip_pos[2]+bary[1]*v[1]->clip_pos[2]+bary[2]*v[2]->clip_pos[2];
+      float z = bary_nopersp[0]*v[0]->clip_pos[2]+bary_nopersp[1]*v[1]->clip_pos[2]+bary_nopersp[2]*v[2]->clip_pos[2];
       //if(z<=0)continue;
 
       int ix = (x*0.5+0.5)*NDS_LCD_W;
@@ -4101,7 +4129,6 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       int p = ix+iy*NDS_LCD_W;
 
       if(nds->framebuffer_3d_depth[p]<z)continue;
-      nds->framebuffer_3d_depth[p]=z;
       float uv[4]={0,0,0,255};
       for(int i=0;i<2;++i)uv[i]=v[0]->tex[i]*bary[0]+v[1]->tex[i]*bary[1]+v[2]->tex[i]*bary[2];
 
@@ -4109,6 +4136,7 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       bool discard = false;
       if(tex_map)discard|=nds_sample_texture(nds, tex_color, uv);
       if(discard)continue;
+      nds->framebuffer_3d_depth[p]=z;
 
       float output_col[4];
       for(int c = 0;c<4;++c){
@@ -4567,6 +4595,7 @@ static void nds_tick_gx(nds_t* nds){
     case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<22)>>12)+nds->gpu.last_vertex_pos[0],
                                           (((int32_t)SB_BFE(p[0],10,10)<<22)>>12)+nds->gpu.last_vertex_pos[1],
                                           (((int32_t)SB_BFE(p[1],20,10)<<22)>>12)+nds->gpu.last_vertex_pos[2]);break;
+    case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
     case 0x2B:nds->gpu.tex_plt_base = p[0];   break; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
 
@@ -4579,7 +4608,7 @@ static void nds_tick_gx(nds_t* nds){
       nds_gpu_swap_buffers(nds);
       nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
       break; //Swap buffers
-    case 0x21:case 0x71: case 0x60: case 0x29:case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
+    case 0x21:case 0x71: case 0x60:case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
     default:
       
       /*printf("Unhandled GPU CMD: %02x Data: ",cmd);
@@ -5137,16 +5166,16 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         int win_ymax = SB_BFE(WINV,0,8);
         // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
         // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
-        if(win_xmin>win_xmax)win_xmax=240;
-        if(win_ymin>win_ymax)win_ymax=161;
-        if(win_xmax>240)win_xmax=240;
+        if(win_xmin>win_xmax)win_xmax=NDS_LCD_W;
+        if(win_ymin>win_ymax)win_ymax=NDS_LCD_H+1;
+        if(win_xmax>NDS_LCD_W)win_xmax=NDS_LCD_W;
         if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
         uint16_t winin = nds9_io_read16(nds,GBA_WININ+reg_offset);
         uint8_t win_value = SB_BFE(winin,win*8,6);
         for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
       }
       int backdrop_type = 5;
-      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
       for(int x=0;x<NDS_LCD_W;++x){
         uint8_t window_control = ppu->window[x];
         if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
@@ -5433,6 +5462,29 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           break; 
       }
     }
+    {
+      uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
+      int factor = SB_BFE(master_brightness,0,5);
+      int mode = SB_BFE(master_brightness,14,2);
+      if(factor>16)factor=16;
+      if(mode==1){
+        r += (63-r)*factor/16;
+        g += (63-g)*factor/16;
+        b += (63-b)*factor/16;
+      }else if(mode==2){
+        r -= r*factor/16;
+        g -= g*factor/16;
+        b -= b*factor/16;
+      }
+      if(r<0)r=0;
+      if(g<0)g=0;
+      if(b<0)b=0;
+
+      if(r>31)r=31;
+      if(g>31)g=31;
+      if(b>31)b=31;
+    }
+
     int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
     float screen_blend_factor = 0.7;
     uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
@@ -5442,7 +5494,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
     framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
     int backdrop_type = 5;
-    uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2))|(backdrop_type<<17);
+    uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
+    
     ppu->first_target_buffer[lcd_x] = backdrop_col;
     ppu->second_target_buffer[lcd_x] = backdrop_col;
   }
@@ -6091,7 +6144,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   }
 
   while(true){
-    bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE-4;
+    bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE-8;
     int ticks = 1;
     if(!gx_fifo_full)ticks = nds_tick_dma(nds,last_tick)?1:0;
     if(!ticks){
