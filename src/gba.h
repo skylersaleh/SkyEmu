@@ -795,6 +795,7 @@ typedef struct gba_t{
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
+  bool dma_wait_ppu;
   gba_timer_t timers[4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
@@ -1741,7 +1742,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       gba->ppu.last_hblank = hblank;
       bool hblank_irq_en = SB_BFE(disp_stat,4,1);
       if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-      gba->activate_dmas=true;
+      gba->activate_dmas|=gba->dma_wait_ppu;
       if(!hblank){
         gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
         gba->ppu.dispcnt_pipeline[1]=gba->ppu.dispcnt_pipeline[2];
@@ -1754,7 +1755,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         gba->ppu.last_vblank = vblank;
         bool vblank_irq_en = SB_BFE(disp_stat,3,1);
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
-        gba->activate_dmas=true;
+        gba->activate_dmas|=gba->dma_wait_ppu;
       }
       gba->ppu.last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
@@ -2266,6 +2267,7 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
 static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   int ticks =0;
   gba->activate_dmas=false;
+  gba->dma_wait_ppu=false;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
@@ -2312,13 +2314,18 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         bool last_hblank = gba->dma[i].last_hblank;
         gba->dma[i].last_vblank = gba->ppu.last_vblank;
         gba->dma[i].last_hblank = gba->ppu.last_hblank;
-        if(mode ==1 && (!gba->ppu.last_vblank||last_vblank)) continue; 
+        if(mode ==1 && (!gba->ppu.last_vblank||last_vblank)){
+          gba->dma_wait_ppu=true;
+          continue; 
+        }
         if(mode==2){
+          gba->dma_wait_ppu=true;
           uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(vcount>=160||!gba->ppu.last_hblank||last_hblank)continue;
         }
         //Video dma
         if(mode==3 && i ==3){
+          gba->dma_wait_ppu=true;
           uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
           if(!gba->ppu.last_hblank||last_hblank)continue;
           //Video dma starts at scanline 2

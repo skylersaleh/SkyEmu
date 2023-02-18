@@ -1946,7 +1946,7 @@ mmio_reg_t nds7_io_reg_desc[]={
 
 #define NDS_GXFIFO_SIZE 256
 #define NDS_GXFIFO_MASK 0x1ff
-#define NDS_GPU_MAX_PARAM 32
+#define NDS_GPU_MAX_PARAM 64
 #define NDS_GX_DMA_THRESHOLD 128
 
 
@@ -2224,6 +2224,8 @@ typedef struct{
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
+  bool dma_wait_gx;
+  bool dma_wait_ppu;
   nds_timer_t timers[2][4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
@@ -4377,7 +4379,7 @@ static void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
   int sz = nds_gxfifo_size(nds);
-  if(sz<NDS_GX_DMA_THRESHOLD){nds->activate_dmas=true;}
+  if(sz<NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
   uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
   int irq_mode = SB_BFE(gxstat,30,2);
   bool less_than_half_full = sz<128;
@@ -4392,7 +4394,7 @@ static void nds_tick_gx(nds_t* nds){
   gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
   gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
   
-  //if(gpu->matrix_stack_error)gxstat|=1<<15;
+  if(gpu->matrix_stack_error)gxstat|=1<<15;
   gxstat|= (sz&0x1ff)<<16;
   if(less_than_half_full)gxstat|= 1<<25; //Less than half full
   if(empty)gxstat|= 1<<26;  //Empty
@@ -4412,7 +4414,7 @@ static void nds_tick_gx(nds_t* nds){
   printf("GPU CMD: %02x fifo_size: %d Data: ",cmd,sz);
   for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
   printf("\n");
-  */
+  //*/
   float fixed_to_float = 1.0/(1<<12);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
 
@@ -4620,17 +4622,27 @@ static void nds_tick_gx(nds_t* nds){
 }
 static void nds_gpu_write_packed_cmd(nds_t *nds, uint32_t data){
   nds_gpu_t* gpu = &nds->gpu;
+  //printf("Write packed cmd:0x%08x\n",data);
   if(gpu->packed_cmd){
+    bool param_consumed = false;
     while(gpu->packed_cmd){
       uint8_t cmd = gpu->packed_cmd&0xff;
-      nds_gxfifo_push(nds,cmd,data);
       int params = nds_gpu_cmd_params(cmd);
-      gpu->packed_cmd_param++;
-      if(params==0){gpu->packed_cmd>>=8;gpu->packed_cmd_param=0;}
-      else{
-        if(gpu->packed_cmd_param>=params){gpu->packed_cmd>>=8;gpu->packed_cmd_param=0;}
-        break;
+      if(params==0){
+        nds_gxfifo_push(nds,cmd,data);
+        gpu->packed_cmd>>=8;
+        gpu->packed_cmd_param=0;
+      }else{
+        if(param_consumed)break;
+        nds_gxfifo_push(nds,cmd,data);
+        gpu->packed_cmd_param++;
+        if(gpu->packed_cmd_param>=params){
+          //printf("End cmd:%02x params:%d\n",cmd,params);
+          gpu->packed_cmd>>=8;gpu->packed_cmd_param=0;
+        }
+        param_consumed =true;
       }
+      //if( gpu->packed_cmd_param==0)printf("End cmd:%02x params:%d\n",cmd,params);
     }
     /*
     int param_off = 0; 
@@ -4650,13 +4662,19 @@ static void nds_gpu_write_packed_cmd(nds_t *nds, uint32_t data){
     */
   }else{
     bool unpacked_cmd = SB_BFE(data,8,24)==0;
+    uint8_t cmd= SB_BFE(data,0,8);
     gpu->packed_cmd = data;
     gpu->packed_cmd_param=0; 
-    if(unpacked_cmd&&nds_gpu_cmd_params(data)==0){
-      nds_gxfifo_push(nds, data, data);
+    if(unpacked_cmd&&nds_gpu_cmd_params(cmd)==0){
+      nds_gxfifo_push(nds, cmd, data);
       gpu->packed_cmd=0;
+      //printf("Start/end unpacked cmd: 0x%08x\n",data);
+    }else{
+      //printf("Start packed cmd: 0x%08x\n",gpu->packed_cmd);
     }
   }
+ // if(!gpu->packed_cmd)printf("Finish packed cmd\n");
+
 }
 static void nds_tick_ipc_fifo(nds_t* nds){
   for(int cpu=0;cpu<2;++cpu){
@@ -4917,7 +4935,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
       if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
       if(hblank&&hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
-      nds->activate_dmas=true;
+      nds->activate_dmas|=nds->dma_wait_ppu;
       if(!hblank){
         ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
         ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
@@ -4959,7 +4977,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
         if(vblank&&vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK); 
-        nds->activate_dmas=true;
+        nds->activate_dmas|=nds->dma_wait_ppu;
       }
       ppu->last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
@@ -5598,6 +5616,8 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
   if(nds->activate_dmas==false)return 0;
   int ticks =0;
   nds->activate_dmas=false;
+  nds->dma_wait_gx = false;
+  nds->dma_wait_ppu= false;
   for(int cpu = 0;cpu<2;++cpu){
     for(int i=0;i<4;++i){
       uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
@@ -5630,8 +5650,8 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         int transfer_bytes = type? 4:2; 
         bool skip_dma = false;
         if(mode==0x7){
+            nds->dma_wait_gx = true;
           if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD)continue;
-         // printf("GX FIFO DMA\n");
         }
 
         if(nds->dma[cpu][i].current_transaction==0){
@@ -5651,18 +5671,23 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           bool last_hblank = nds->dma[cpu][i].last_hblank;
           nds->dma[cpu][i].last_vblank = nds->ppu[0].last_vblank;
           nds->dma[cpu][i].last_hblank = nds->ppu[0].last_hblank;
-          if(mode ==1 && (!nds->ppu[0].last_vblank||last_vblank)) continue; 
+          if(mode ==1 && (!nds->ppu[0].last_vblank||last_vblank)){
+            nds->dma_wait_ppu=true;
+            continue; 
+          } 
           if(mode==2){
+            nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(vcount>=160||!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(vcount>=NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
           }
           //Video dma
           if(mode==3 && i ==3){
+            nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
             if(!nds->ppu[0].last_hblank||last_hblank)continue;
             //Video dma starts at scanline 2
             if(vcount<2)continue;
-            if(vcount==161)dma_repeat=false;
+            if(vcount==NDS_LCD_H+1)dma_repeat=false;
           }
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
@@ -5752,6 +5777,9 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
               ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 0:1);
             }
           }
+          /*if(mode==0x7){
+            printf("GX FIFO DMA:%d of %d data:0x%08x\n",nds->dma[cpu][i].current_transaction,cnt,nds->dma[cpu][i].latched_transfer);
+          }*/
         }
       //
         if(nds->dma[cpu][i].current_transaction>=cnt){
