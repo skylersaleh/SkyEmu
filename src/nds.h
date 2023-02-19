@@ -918,7 +918,14 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_POSTFLG,       "POSTFLG",       { 
      { 0, 1, "First Boot Flag  (0=First, 1=Further)" },
   } }, /* Undoc */
-  { NDS9_POWCNT1,       "POWCNT1",       { 0 } }, /* Graphics Power Control Register (R/W) */
+  { NDS9_POWCNT1,       "POWCNT1",       { 
+    { 0 , 1, "Enable Flag for both LCDs (0=Disable) (Prohibited, see notes)"},
+    { 1 , 1, "2D Graphics Engine A      (0=Disable) (Ports 008h-05Fh, Pal 5000000h)"},
+    { 2 , 1, "3D Rendering Engine       (0=Disable) (Ports 320h-3FFh)"},
+    { 3 , 1, "3D Geometry Engine        (0=Disable) (Ports 400h-6FFh)"},
+    { 9 , 1, "2D Graphics Engine B      (0=Disable) (Ports 1008h-105Fh, Pal 5000400h)"},
+    { 15, 1, "Display Swap (0=Send Display A to Lower Screen, 1=To Upper Screen)"},
+   } }, /* Graphics Power Control Register (R/W) */
 
   // ARM9 3D Display Engine
   { NDS9_RDLINES_COUNT,   "RDLINES_COUNT",   { 0 } }, /* Rendered Line Count Register (R) */
@@ -2244,6 +2251,7 @@ typedef struct{
   uint8_t *framebuffer_3d;
   uint8_t *framebuffer_3d_disp;
   uint64_t current_clock;
+  float ghosting_strength;
   FILE * gx_log;
   FILE * gc_log;
   FILE * dma_log;
@@ -3589,12 +3597,6 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
         }
       }
     }break;
-    case NDS_DISPCAPCNT:{
-      if(cpu!=NDS_ARM9)return;
-      uint32_t v = nds9_io_read32(nds,NDS_DISPCAPCNT);
-      v&=~(1<<31);
-      nds9_io_store32(nds,NDS_DISPCAPCNT,v);
-    }
     case NDS7_EXMEMSTAT:{
       if(cpu!=NDS_ARM7)return; 
       uint32_t r = nds9_io_read32(nds,NDS9_EXMEMCNT);
@@ -4583,7 +4585,7 @@ static void nds_tick_gx(nds_t* nds){
 
     case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<22)>>12,
                                           ((int32_t)SB_BFE(p[0],10,10)<<22)>>12,
-                                          ((int32_t)SB_BFE(p[1],20,10)<<22)>>12);break;
+                                          ((int32_t)SB_BFE(p[0],20,10)<<22)>>12);break;
 
     case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
                                           ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
@@ -4596,7 +4598,7 @@ static void nds_tick_gx(nds_t* nds){
                                           ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
     case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<22)>>12)+nds->gpu.last_vertex_pos[0],
                                           (((int32_t)SB_BFE(p[0],10,10)<<22)>>12)+nds->gpu.last_vertex_pos[1],
-                                          (((int32_t)SB_BFE(p[1],20,10)<<22)>>12)+nds->gpu.last_vertex_pos[2]);break;
+                                          (((int32_t)SB_BFE(p[0],20,10)<<22)>>12)+nds->gpu.last_vertex_pos[2]);break;
     case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
     case 0x2B:nds->gpu.tex_plt_base = p[0];   break; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
@@ -4608,7 +4610,7 @@ static void nds_tick_gx(nds_t* nds){
     case 0x41: /*END_VTXS  */ break;
     case 0x50: 
       nds_gpu_swap_buffers(nds);
-      nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
+      nds->gpu.cmd_busy_cycles=nds_cycles_till_vblank(nds);
       break; //Swap buffers
     case 0x21:case 0x71: case 0x60:case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
     default:
@@ -4890,10 +4892,12 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
   int sc = nds->ppu[0].scan_clock;
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
-  if(sc<clocks_per_line*(NDS_LCD_H)){
-    return clocks_per_line*(NDS_LCD_H) - sc; 
+  int clocks_til_trigger = 355*(NDS_LCD_H-1)*NDS_CLOCKS_PER_DOT;
+  if(sc<=clocks_til_trigger){
+    return clocks_til_trigger - sc; 
   }
-  return 0; 
+  int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
+  return clocks_per_frame-sc +clocks_til_trigger;
 }
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   nds_ppu_t * ppu = nds->ppu+ppu_id;
@@ -4901,11 +4905,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   if(ppu->scan_clock%NDS_CLOCKS_PER_DOT)return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   while(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
+  uint32_t dispcapcnt = nds9_io_read32(nds,NDS_DISPCAPCNT);
 
   int reg_offset = ppu_id==0? 0: 0x00001000;
 
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
-  int lcd_y = (ppu->scan_clock+44)/clocks_per_line;
+  int lcd_y = (ppu->scan_clock)/clocks_per_line;
   int lcd_x = ((ppu->scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
   int early_hblank_exit = 350; 
   if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==early_hblank_exit){
@@ -4978,6 +4983,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
         if(vblank&&vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK); 
         nds->activate_dmas|=nds->dma_wait_ppu;
+        if(vblank&&ppu_id==0){
+          //Done with capture
+          dispcapcnt&=~(1<<31);
+          nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
+        }
       }
       ppu->last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
@@ -5005,10 +5015,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     nds9_send_interrupt(nds,3,new_if);
     nds7_send_interrupt(nds,3,new_if7);
   }
-
+  uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
+  int display_mode = SB_BFE(dispcnt,16,2);
+  bool enable_capture = SB_BFE(dispcapcnt,31,1)&&(display_mode==1)&&ppu_id==0;
+  render|=enable_capture;
   if(!render)return; 
   
-  uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
   bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
   int bg_mode = SB_BFE(dispcnt,0,3);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
@@ -5121,7 +5133,29 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             }
             uint32_t col =0;
             if(obj_mode==3){
-              col = 0xff;
+
+              bool linear = SB_BFE(dispcnt,6,1);
+              //TODO: Bitmap sprites
+              if(linear){
+                int boundry = SB_BFE(dispcnt,22,1);
+                tile_base *= boundry? 256: 128;
+                int p = sx+sy*x_size;
+                col = nds_ppu_read16(nds,obj_vram_base+tile_base+p*2);
+              }else{
+                bool size = SB_BFE(dispcnt,5,1);
+                int p = 0;             
+                if(size){
+                  int tile_x=SB_BFE(tile_base,0,5);
+                  int tile_y=SB_BFE(tile_base,5,5);
+                  p = (tile_x*8+sx)+(tile_y*8+sy)*32*8;
+                }else{
+                  int tile_x=SB_BFE(tile_base,0,4);
+                  int tile_y=SB_BFE(tile_base,4,6);
+                  p = (tile_x*8+sx)+(tile_y*8+sy)*16*8;
+                }
+                col = nds_ppu_read16(nds,obj_vram_base+p*2);
+                if(!SB_BFE(col,15,1))continue;
+              }
             }else{
               int tx = sx%8;
               int ty = sy%8;
@@ -5161,7 +5195,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
 
             //Handle window objects(not displayed but control the windowing of other things)
             if(obj_mode==2){ppu->window[x]=obj_window_control; 
-            }else if(obj_mode!=3){
+            }else{
               int type =4;
               col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
               if(obj_mode==1)col|=1<<16;
@@ -5202,10 +5236,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
   }
   if(visible){
     uint8_t window_control =ppu->window[lcd_x];
-    int display_mode = SB_BFE(dispcnt,16,2);
     if(display_mode==2){
       int vram_block = SB_BFE(dispcnt,18,2);
-      ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*128*1024];
+      ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
     }else if(display_mode==0){
       ppu->first_target_buffer[lcd_x] = 0xffffffff;
     }else{
@@ -5334,7 +5367,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
             int p = bg_x+(bg_y)*screen_size_x;
             if(bitmap_mode){
               bool direct_color = SB_BFE(bgcnt,2,1);
-              if(direct_color)col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+              if(direct_color){
+                col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+                if(!SB_BFE(col,15,1))continue;
+              }
               else{
                 int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
                 if(pallete_id==0)continue;
@@ -5502,9 +5538,30 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       if(g>31)g=31;
       if(b>31)b=31;
     }
+    if(enable_capture){
+      uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
+      //TODO: EVA/EVB, sources other than 0
+      int write_block = SB_BFE(dispcapcnt, 16,2);
+      int write_offset = SB_BFE(dispcapcnt, 18,2);
+      int size = SB_BFE(dispcapcnt, 20,2);
+      int szx = 128; int szy = 128;
+      if(size!=0){szx=256; szy= size*64;}
+      if(lcd_x<szx){
+        if(lcd_y<szy){
+          uint32_t write_address = 0x06800000;
+          write_address+=write_block*128*1024;
+          write_address+=write_offset*0x08000;
+          write_address+=lcd_y*szx*2+lcd_x*2;
+          color|=0x8000;//TODO: Confirm that captured alpha is always 1
+          nds9_write16(nds,write_address,color);
+        }
+      }
+    }
 
     int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-    float screen_blend_factor = 0.7;
+    float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
+    if(screen_blend_factor>1.0)screen_blend_factor=1;
+    if(screen_blend_factor<0.0)screen_blend_factor=0;
     uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
     bool display_flip = SB_BFE(powcnt1,15,1);
     uint8_t *framebuffer = (ppu_id==0)^display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
@@ -6124,6 +6181,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   printf("#####New Frame#####\n");
+  nds->ghosting_strength = emu->screen_ghosting_strength;
 
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
