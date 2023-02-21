@@ -777,7 +777,17 @@ mmio_reg_t nds9_io_reg_desc[]={
   { NDS9_GC_ENC1_HI  , "GC_ENC1_HI",  { 0 } }, /*Gamecard Encryption Seed 1 Upper 7bit (bit7-15 unused)*/
   
   // ARM9 Memory and IRQ Control
-  { NDS9_EXMEMCNT , "EXMEMCNT",  { 0 } }, /* External Memory Control (R/W) */
+  { NDS9_EXMEMCNT , "EXMEMCNT",  { 
+    {0,2,"32-pin GBA Slot SRAM Access Time    (0-3 = 10, 8, 6, 18 cycles)"},
+    {2,2,"32-pin GBA Slot ROM 1st Access Time (0-3 = 10, 8, 6, 18 cycles)"},
+    {4,1,"32-pin GBA Slot ROM 2nd Access Time (0-1 = 6, 4 cycles)"},
+    {6 ,2, "32-pin GBA Slot PHI-pin out   (0-3 = Low, 4.19MHz, 8.38MHz, 16.76MHz)"},
+    {7   ,1, "32-pin GBA Slot Access Rights     (0=ARM9, 1=ARM7)"},
+    {11  ,1, "17-pin NDS Slot Access Rights     (0=ARM9, 1=ARM7)"},
+    {13  ,1, "NDS:Always set?  ;set/tested by DSi bootcode: Main RAM enable, CE2 pin?"},
+    {14  ,1, "Main Memory Interface Mode Switch (0=Async/GBA/Reserved, 1=Synchronous)"},
+    {15  ,1, "Main Memory Access Priority       (0=ARM9 Priority, 1=ARM7 Priority)"},
+  } }, /* External Memory Control (R/W) */
   { NDS9_IME      , "IME",       { 0 } }, /* Interrupt Master Enable (R/W) */
   { NDS9_IE       , "IE",        { 
     { 0 , 1, "LCD V-Blank" },
@@ -1510,7 +1520,17 @@ mmio_reg_t nds7_io_reg_desc[]={
   } }, /* SPI bus Control (Firmware, Touchscreen, Powerman) */
   { NDS7_SPI_BUS_DATA,    "SPI_BUS_DATA",   { 0 } }, /* SPI bus Data */
   // ARM7 Memory and IRQ Control
-  { NDS7_EXMEMSTAT,   "EXMEMSTAT",   { 0 }}, /* EXMEMSTAT - External Memory Status */
+  { NDS7_EXMEMSTAT,   "EXMEMSTAT",   { 
+    {0,2,"32-pin GBA Slot SRAM Access Time    (0-3 = 10, 8, 6, 18 cycles)"},
+    {2,2,"32-pin GBA Slot ROM 1st Access Time (0-3 = 10, 8, 6, 18 cycles)"},
+    {4,1,"32-pin GBA Slot ROM 2nd Access Time (0-1 = 6, 4 cycles)"},
+    {6 ,2, "32-pin GBA Slot PHI-pin out   (0-3 = Low, 4.19MHz, 8.38MHz, 16.76MHz)"},
+    {7   ,1, "32-pin GBA Slot Access Rights     (0=ARM9, 1=ARM7)"},
+    {11  ,1, "17-pin NDS Slot Access Rights     (0=ARM9, 1=ARM7)"},
+    {13  ,1, "NDS:Always set?  ;set/tested by DSi bootcode: Main RAM enable, CE2 pin?"},
+    {14  ,1, "Main Memory Interface Mode Switch (0=Async/GBA/Reserved, 1=Synchronous)"},
+    {15  ,1, "Main Memory Access Priority       (0=ARM9 Priority, 1=ARM7 Priority)"},
+  }}, /* EXMEMSTAT - External Memory Status */
   { NDS7_WIFIWAITCNT, "WIFIWAITCNT", { 0 }}, /* WIFIWAITCNT */
   { NDS7_IME,         "IME",         { 0 }}, /* IME - Interrupt Master Enable (R/W) */
   { NDS7_IE,          "IE",          { 
@@ -1873,8 +1893,20 @@ mmio_reg_t nds7_io_reg_desc[]={
 
   { NDS7_SOUNDCNT,   "SOUNDCNT",   { 0 }}, /* Sound Control Register (R/W) */
   { NDS7_SOUNDBIAS,  "SOUNDBIAS",  { 0 }}, /* Sound Bias Register (R/W) */
-  { NDS7_SNDCAP0CNT, "SNDCAP0CNT", { 0 }}, /* Sound Capture 0 Control Register (R/W) */
-  { NDS7_SNDCAP1CNT, "SNDCAP1CNT", { 0 }}, /* Sound Capture 1 Control Register (R/W) */
+  { NDS7_SNDCAP0CNT, "SNDCAP0CNT", {
+    {0,1, "Output Sound Channel 1 (0=As is, 1=Add to Channel 0)"},
+    {1,1, "Capture 0 Source (0=Left Mixer, 1=Channel 0/Bugged)"},
+    {2,1, "Capture Repeat        (0=Loop, 1=One-shot)"},
+    {3,1, "Capture Format        (0=PCM16, 1=PCM8)"},
+    {7,1, "Capture Start/Status  (0=Stop, 1=Start/Busy)"},
+  }}, /* Sound Capture 0 Control Register (R/W) */
+  { NDS7_SNDCAP1CNT, "SNDCAP1CNT", { 
+    {0,1, "Output Sound Channel 3 (0=As is, 1=Add to Channel 2)"},
+    {1,1, "Capture 1 Source (0=Left Mixer, 1=Channel 0/Bugged)"},
+    {2,1, "Capture Repeat        (0=Loop, 1=One-shot)"},
+    {3,1, "Capture Format        (0=PCM16, 1=PCM8)"},
+    {7,1, "Capture Start/Status  (0=Stop, 1=Start/Busy)"},
+  }}, /* Sound Capture 1 Control Register (R/W) */
   { NDS7_SNDCAP0DAD, "SNDCAP0DAD", { 0 }}, /* Sound Capture 0 Destination Address (R/W) */
   { NDS7_SNDCAP0LEN, "SNDCAP0LEN", { 0 }}, /* Sound Capture 0 Length (W) */
   { NDS7_SNDCAP1DAD, "SNDCAP1DAD", { 0 }}, /* Sound Capture 1 Destination Address (R/W) */
@@ -2195,8 +2227,10 @@ typedef struct{
   float mv_matrix_stack[16*32];
   float normal_matrix_stack[16*32];
   uint8_t curr_color[4];
+  uint8_t curr_ambient_color[3];
+  uint8_t curr_diffuse_color[3];
   int16_t curr_tex_coord[2];
-  int32_t last_vertex_pos[3];
+  int16_t last_vertex_pos[3];
   int matrix_mode; 
   int mv_matrix_stack_ptr;
   int proj_matrix_stack_ptr;
@@ -2233,6 +2267,7 @@ typedef struct{
   bool activate_dmas; 
   bool dma_wait_gx;
   bool dma_wait_ppu;
+  bool dma_processed[2];
   nds_timer_t timers[2][4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
@@ -2255,6 +2290,7 @@ typedef struct{
   FILE * gx_log;
   FILE * gc_log;
   FILE * dma_log;
+  FILE * vert_log;
 } nds_t; 
 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
@@ -3291,7 +3327,8 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
     for(int i=0;i<sizeof(nds->mem.save_data);++i) nds->mem.save_data[i]=0;
   }
 
-  //nds->gx_log = fopen("gxlog.txt","wb");
+  nds->gx_log = fopen("gxlog.txt","wb");
+  nds->vert_log = fopen("vertlog.txt","wb");
   //nds->gc_log = fopen("gclog.txt","wb");
   //nds->dma_log = fopen("dmalog.txt","wb");
 
@@ -3599,8 +3636,11 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
     }break;
     case NDS7_EXMEMSTAT:{
       if(cpu!=NDS_ARM7)return; 
-      uint32_t r = nds9_io_read32(nds,NDS9_EXMEMCNT);
-      nds7_io_store32(nds,NDS7_EXMEMSTAT,r);
+      uint16_t r9 = nds9_io_read16(nds,NDS9_EXMEMCNT);
+      uint16_t r7 = nds7_io_read16(nds,NDS7_EXMEMSTAT);
+      r7&=0xff80;
+      r7|= r9&0x7f;
+      nds7_io_store16(nds,NDS7_EXMEMSTAT,r7);
     }break;
     case NDS_GC_BUS:nds_process_gc_bus_read(nds,cpu);break;
     case NDS9_DIVCNT:case NDS9_DIV_RESULT: case NDS9_DIVREM_RESULT:case NDS9_DIV_RESULT+4: case NDS9_DIVREM_RESULT+4:{
@@ -3950,7 +3990,17 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
   tex_color[2]=0;
   tex_color[3]=1;
 
-  float tex_p[2]={uv[0],uv[1]};
+  float tex_p[4]={uv[0],uv[1],1,1};
+  switch(coord_xform_mode){
+    case 0: break;
+    case 1:{
+      float tex_p2[4]={tex_p[0],tex_p[1],1/16.,1/16.};
+      nds_mult_matrix_vector(tex_p,nds->gpu.tex_matrix+nds->gpu.tex_matrix_stack_ptr*16,tex_p2,4);
+    }break;
+    default:
+      printf("Unknown Tex Coord XForm mode:%d\n",coord_xform_mode);
+      break;
+  }
   
   for(int i=0;i<2;++i){
     sz[i]=8<<sz[i];
@@ -4093,6 +4143,9 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
   max_p[0] = (floor(max_p[0]*NDS_LCD_W/2+0.5)+0.5)/NDS_LCD_W*2;
   max_p[1] = (floor(max_p[1]*NDS_LCD_H/2+0.5)+0.5)/NDS_LCD_H*2;
+
+  uint32_t poly_attr = nds->gpu.poly_attr;
+  int alpha = SB_BFE(poly_attr,16,5);
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
     for(float x=min_p[0];x<max_p[0];x+=x_inc){
 
@@ -4145,7 +4198,7 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       float output_col[4];
       for(int c = 0;c<4;++c){
         float col = (v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
-        if(c==3)col=1.0;
+        if(c==3)col=alpha/31.;
         output_col[c]=tex_color[c]*col;
         if(output_col[c]>1.0)output_col[c]=1.;
         if(output_col[c]<0.0)output_col[c]=0.;
@@ -4215,11 +4268,15 @@ static void nds_gpu_clip_tri(nds_t* nds, int vi0, int vi1, int vi2){
     return;
   }
 }
-static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz){
+static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz){
   nds->gpu.last_vertex_pos[0]=vx;
   nds->gpu.last_vertex_pos[1]=vy;
   nds->gpu.last_vertex_pos[2]=vz;
-  float v[4] = {vx/65536.,vy/65536.,vz/65536.,1.0};
+
+  if(nds->vert_log){
+    fprintf(nds->vert_log,"Vertex {%d %d %d}\n",vx,vy,vz);
+  }
+  float v[4] = {vx/4096.,vy/4096.,vz/4096.,1.0};
   float res[4];
   nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr,v,4);
   nds_mult_matrix_vector(v,nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr,res,4);
@@ -4240,19 +4297,24 @@ static void nds_gpu_process_vertex(nds_t*nds, int32_t vx,int32_t vy, int32_t vz)
 
   int x0 = (res[0]*0.5+0.5)*NDS_LCD_W;
   int y0 = (res[1]*0.5+0.5)*NDS_LCD_H;
+  /*
   for(int px = -1;px<1;++px)for(int py=-1;py<1;++py){
     int x = px+x0;
     int y = py+y0;
     if(x>=0&&x<NDS_LCD_W&&y>=0&&y<NDS_LCD_H){
       int p = x+y*NDS_LCD_W;
-      nds->framebuffer_3d[p*4+0]=nds->gpu.curr_color[0];
-      nds->framebuffer_3d[p*4+1]=nds->gpu.curr_color[1];
-      nds->framebuffer_3d[p*4+2]=nds->gpu.curr_color[2];
-      nds->framebuffer_3d[p*4+3]=nds->gpu.curr_color[3];
+      nds->framebuffer_3d[p*4+0]=0xff;
+      nds->framebuffer_3d[p*4+1]=0xff;
+      nds->framebuffer_3d[p*4+2]=0xff;
+      nds->framebuffer_3d[p*4+3]=0xff;
       if(res[3]<0)nds->framebuffer_3d[p*4+0]=0;
     }
-  }
+  }*/
   nds_vert_t*vert = nds->gpu.vert_buffer+nds->gpu.curr_vert++;
+  if(nds->gpu.curr_vert+1>= NDS_MAX_VERTS){
+    nds->gpu.curr_vert = NDS_MAX_VERTS-1;
+    printf("Vertex overflow\n");
+  }
   nds->gpu.curr_draw_vert++;
   SE_RPT3 vert->color[r]=nds->gpu.curr_color[r];
   SE_RPT2 vert->tex[r]= uv[r];
@@ -4579,27 +4641,40 @@ static void nds_tick_gx(nds_t* nds){
       nds->gpu.curr_tex_coord[0] = SB_BFE(p[0],0,16);
       nds->gpu.curr_tex_coord[1] = SB_BFE(p[0],16,16);
       break;
-    case 0x23:/*VTX_16*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
-                                          ((int32_t)SB_BFE(p[1],0,16)<<16)>>12);break;
+    case 0x23:/*VTX_16*/ nds_gpu_process_vertex(nds,SB_BFE(p[0],0,16),
+                                          SB_BFE(p[0],16,16),
+                                          SB_BFE(p[1],0,16));break;
 
-    case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,10)<<22)>>12,
-                                          ((int32_t)SB_BFE(p[0],10,10)<<22)>>12,
-                                          ((int32_t)SB_BFE(p[0],20,10)<<22)>>12);break;
+    case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int16_t)SB_BFE(p[0],0,10)<<6),
+                                          ((int16_t)SB_BFE(p[0],10,10)<<6),
+                                          ((int16_t)SB_BFE(p[0],20,10)<<6));break;
 
-    case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12,
+    case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,SB_BFE(p[0],0,16),
+                                          SB_BFE(p[0],16,16),
                                           nds->gpu.last_vertex_pos[2]);break;
-    case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
+    case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,SB_BFE(p[0],0,16),
                                           nds->gpu.last_vertex_pos[1],
-                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
+                                          SB_BFE(p[0],16,16));break;
     case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
-                                          ((int32_t)SB_BFE(p[0],0,16)<<16)>>12,
-                                          ((int32_t)SB_BFE(p[0],16,16)<<16)>>12);break;
-    case 0x28: /*VTX_DIFF*/ nds_gpu_process_vertex(nds,(((int32_t)SB_BFE(p[0],0,10)<<22)>>12)+nds->gpu.last_vertex_pos[0],
-                                          (((int32_t)SB_BFE(p[0],10,10)<<22)>>12)+nds->gpu.last_vertex_pos[1],
-                                          (((int32_t)SB_BFE(p[0],20,10)<<22)>>12)+nds->gpu.last_vertex_pos[2]);break;
+                                          SB_BFE(p[0],0,16),
+                                          SB_BFE(p[0],16,16));break;
+    case 0x28: /*VTX_DIFF*/ 
+    nds_gpu_process_vertex(nds,(((int16_t)(SB_BFE(p[0],0,10)<<6))>>6)+nds->gpu.last_vertex_pos[0],
+                                          (((int16_t)(SB_BFE(p[0],10,10)<<6))>>6)+nds->gpu.last_vertex_pos[1],
+                                          (((int16_t)(SB_BFE(p[0],20,10)<<6))>>6)+nds->gpu.last_vertex_pos[2]);break;
+    
     case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
+    case 0x30: /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
+      {
+        nds->gpu.curr_diffuse_color[0] = SB_BFE(p[0],0,5)<<3;
+        nds->gpu.curr_diffuse_color[1] = SB_BFE(p[0],5,5)<<3;
+        nds->gpu.curr_diffuse_color[2] = SB_BFE(p[0],10,5)<<3;
+        bool set_vertex_color = SB_BFE(p[0],15,1);
+        if(set_vertex_color||true)SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_diffuse_color[r];
+        nds->gpu.curr_ambient_color[0] = SB_BFE(p[0],16,5)<<3;
+        nds->gpu.curr_ambient_color[1] = SB_BFE(p[0],21,5)<<3;
+        nds->gpu.curr_ambient_color[2] = SB_BFE(p[0],26,5)<<3;
+      }break;
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
     case 0x2B:nds->gpu.tex_plt_base = p[0];   break; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
 
@@ -4612,7 +4687,7 @@ static void nds_tick_gx(nds_t* nds){
       nds_gpu_swap_buffers(nds);
       nds->gpu.cmd_busy_cycles=nds_cycles_till_vblank(nds);
       break; //Swap buffers
-    case 0x21:case 0x71: case 0x60:case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
+    case 0x21:case 0x71: case 0x60: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
     default:
       
       /*printf("Unhandled GPU CMD: %02x Data: ",cmd);
@@ -5676,6 +5751,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
   nds->dma_wait_gx = false;
   nds->dma_wait_ppu= false;
   for(int cpu = 0;cpu<2;++cpu){
+    nds->dma_processed[cpu]=false;
     for(int i=0;i<4;++i){
       uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
       bool enable = SB_BFE(cnt_h,15,1);
@@ -5707,7 +5783,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         int transfer_bytes = type? 4:2; 
         bool skip_dma = false;
         if(mode==0x7){
-            nds->dma_wait_gx = true;
+          nds->dma_wait_gx = true;
           if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD)continue;
         }
 
@@ -5760,14 +5836,6 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           }
           if(nds->dma[cpu][i].source_addr>=0x08000000&&nds->dma[cpu][i].dest_addr>=0x08000000){
             force_first_write_sequential=true;
-          }else{
-            if(nds->dma[cpu][i].dest_addr>=0x08000000){
-              // Allow the in process prefetech to finish before starting DMA
-              if(!nds->mem.prefetch_size&&nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[cpu][i].dest_addr,2)>4;
-            }
-          }
-          if(nds->dma[cpu][i].source_addr>=0x08000000){
-              if(nds->mem.prefetch_en)ticks+=nds_compute_access_cycles_dma(nds,nds->dma[cpu][i].source_addr,2)<=4;
           }
           nds->last_transaction_dma=true;
           uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
@@ -5803,6 +5871,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
 
         if(!skip_dma){
+          nds->dma_processed[cpu]=true;
           // This code is complicated to handle the per channel DMA latches that are present
           // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
           // and the text in Lufia
@@ -5848,7 +5917,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           nds->dma[cpu][i].source_addr=src;
           nds->dma[cpu][i].dest_addr=dst;
           if(irq_enable){
-            uint16_t if_bit = 1<<(GBA_INT_DMA0+i);
+            uint32_t if_bit = 1<<(GBA_INT_DMA0+i);
             if(cpu==NDS_ARM7)nds7_send_interrupt(nds,4,if_bit);
             else if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,if_bit);
           }
@@ -5868,7 +5937,6 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
     nds->activate_dmas|=ticks!=0;
 
     if(nds->last_transaction_dma&&ticks==0){
-      ticks+=2; 
       nds->last_transaction_dma=false;
     }
   }
@@ -6230,33 +6298,35 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   }
 
   while(true){
-    bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE-8;
-    int ticks = 1;
-    if(!gx_fifo_full)ticks = nds_tick_dma(nds,last_tick)?1:0;
-    if(!ticks){
+    bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE-4;
+    if(!gx_fifo_full){
+      nds_tick_dma(nds,last_tick);
       uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
       uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
       {
-        if(int7_if){
-          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-          int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+        if(!nds->dma_processed[0]){
+          if(int7_if){
+            uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+            uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+            int7_if&=ie;
+            if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+          }
+          if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
+          else arm7_exec_instruction(&nds->arm7);
         }
-        if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
-        else arm7_exec_instruction(&nds->arm7);
-        if(int9_if){
-          int9_if &= nds9_io_read32(nds,NDS9_IE);
-          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+        if(!nds->dma_processed[1]){
+          if(int9_if){
+            int9_if &= nds9_io_read32(nds,NDS9_IE);
+            uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+            if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+          }
+          if(!nds->arm9.wait_for_interrupt){
+            if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+            else arm9_exec_instruction(&nds->arm9);
+            if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
+            else arm9_exec_instruction(&nds->arm9);
+          }
         }
-        if(!nds->arm9.wait_for_interrupt){
-          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-          else arm9_exec_instruction(&nds->arm9);
-          if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-          else arm9_exec_instruction(&nds->arm9);
-        }
-        ticks=1;
         if(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint){
           emu->run_mode = SB_MODE_PAUSE;
           nds->arm7.trigger_breakpoint=false;
@@ -6267,6 +6337,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         }
       }      
     }
+    
+    int ticks = 1;
     last_tick=ticks;
     //nds_tick_sio(nds);
 
