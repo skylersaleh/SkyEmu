@@ -2746,116 +2746,7 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
   }
   return *ret; 
 }
-/* Only simulates a small subset of the RTC needed to make time events work in the pokemon games. */
-//static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
-//  uint32_t data = nds->cart.gpio_data;
-//  bool clk  = SB_BFE(data,0,1);
-//  bool io_dat = SB_BFE(data,1,1);
-//  bool cs   = SB_BFE(data,2,1);
-//  #define SERIAL_INIT 0 
-//  #define SERIAL_CLK_LOW 1
-//  #define SERIAL_CLK_HIGH 2  //
 
-//  #define RTC_RECV_CMD -1
-//  #define RTC_RESET     0
-//  #define RTC_STATUS    1
-//  #define RTC_DATE_TIME 2    
-//  #define RTC_TIME      3//
-
-//  nds->rtc.status_register &= ~((1<<7));
-//  nds->rtc.status_register |= 0x40;//
-
-//  if(cs==0){
-//    nds->rtc.serial_state=SERIAL_INIT;
-//    nds->rtc.serial_bits_clocked=0;
-//    nds->rtc.state = RTC_RECV_CMD;
-//  }//
-
-//  if(cs!=0){
-//    bool new_bit = false; 
-//    
-//    if(nds->rtc.serial_state==SERIAL_CLK_LOW&&clk){
-//      nds->rtc.input_register<<=1;
-//      nds->rtc.input_register|=((uint64_t)io_dat);
-//      new_bit = true;
-//    
-//      bool out_bit = (nds->rtc.output_register&1);
-//      nds->mem.cart_rom[0x0000C4] = (nds->cart.gpio_data&~2)|(out_bit<<1);
-//      nds->rtc.output_register>>=1;
-//    }
-//    
-//    nds->rtc.serial_state= clk? SERIAL_CLK_HIGH: SERIAL_CLK_LOW;//
-
-//    if(new_bit){
-//      nds->rtc.serial_bits_clocked++;
-//      if(nds->rtc.serial_bits_clocked==8) nds->rtc.state= SB_BFE(nds->rtc.input_register,0,4);
-//      int  cmd = SB_BFE(nds->rtc.state,1,3);
-//      bool read = SB_BFE(nds->rtc.state,0,1);
-//      switch(cmd){
-//        case RTC_RECV_CMD:break;
-//        case RTC_STATUS:{
-//          if(nds->rtc.serial_bits_clocked==8) nds->rtc.output_register = nds->rtc.status_register;
-//          if(nds->rtc.serial_bits_clocked==16){
-//            if(!read)nds->rtc.status_register=SB_BFE(nds->rtc.input_register,0,8);
-//            nds->rtc.state= RTC_RECV_CMD;
-//            nds->rtc.serial_bits_clocked=0;
-//          }
-//          break;
-//        }
-//        case RTC_DATE_TIME:{
-//          if(nds->rtc.serial_bits_clocked==8) nds->rtc.output_register =
-//            ((uint64_t)(nds->rtc.year&0xff)       <<(0*8))|
-//            ((uint64_t)(nds->rtc.month&0xff)      <<(1*8))|
-//            ((uint64_t)(nds->rtc.day&0xff)        <<(2*8))|
-//            ((uint64_t)(nds->rtc.day_of_week&0xff)<<(3*8))|
-//            ((uint64_t)(nds->rtc.hour&0xff)       <<(4*8))|
-//            ((uint64_t)(nds->rtc.minute&0xff)     <<(5*8))|
-//            ((uint64_t)(nds->rtc.second&0xff)     <<(6*8));
-//          if(nds->rtc.serial_bits_clocked==8*8){
-//            if(!read){
-//              nds->rtc.year  = SB_BFE(nds->rtc.input_register,6*8,8);
-//              nds->rtc.month = SB_BFE(nds->rtc.input_register,5*8,8);
-//              nds->rtc.day   = SB_BFE(nds->rtc.input_register,4*8,8);
-//              nds->rtc.day_of_week = SB_BFE(nds->rtc.input_register,3*8,8);
-//              nds->rtc.hour   = SB_BFE(nds->rtc.input_register,2*8,8);
-//              nds->rtc.minute = SB_BFE(nds->rtc.input_register,1*8,8);
-//              nds->rtc.second = SB_BFE(nds->rtc.input_register,0*8,8);
-//            }
-//            nds->rtc.state= RTC_RECV_CMD;
-//            nds->rtc.serial_bits_clocked=0;
-//          }
-//          break;
-//        }
-//        case RTC_TIME:{
-//          if(nds->rtc.serial_bits_clocked==8) nds->rtc.output_register = 
-//            ((uint64_t)(nds->rtc.hour&0xff)<<(0*8))|
-//            ((uint64_t)(nds->rtc.minute&0xff)<<(1*8))|
-//            ((uint64_t)(nds->rtc.second&0xff)<<(2*8));
-//          if(nds->rtc.serial_bits_clocked==4*8){
-//            if(!read){
-//              nds->rtc.hour   = SB_BFE(nds->rtc.input_register,0*8,8);
-//              nds->rtc.minute = SB_BFE(nds->rtc.input_register,1*8,8);
-//              nds->rtc.second = SB_BFE(nds->rtc.input_register,2*8,8);
-//            }
-//            nds->rtc.state= RTC_RECV_CMD;
-//            nds->rtc.serial_bits_clocked=0;
-//          }
-//          break;
-//        }
-//      }
-//    }
-//  }
-//}
-//static FORCE_INLINE void nds_process_backup_write(nds_t*nds, unsigned baddr, uint32_t data){
-//  if(nds->cart.backup_type==GBA_BACKUP_FLASH_64K||nds->cart.backup_type==GBA_BACKUP_FLASH_128K){
-//    nds_process_flash_state_machine(nds,baddr,data);
-//  }else if(nds->cart.backup_type==GBA_BACKUP_SRAM){
-//    if(nds->mem.cart_backup[baddr&0x7fff]!=(data&0xff)){
-//      nds->mem.cart_backup[baddr&0x7fff]=data&0xff; 
-//      nds->cart.backup_is_dirty=true;
-//    }
-//  }
-//}
 static FORCE_INLINE void nds9_write32(nds_t*nds, unsigned baddr, uint32_t data){
   nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9);
 }
@@ -3433,6 +3324,110 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
   }
   nds_io_store32(nds,cpu_id,NDS_GCBUS_CTL,gcbus_ctl);
 }    
+/* Only simulates a small subset of the RTC needed to make time events work in the pokemon games. */
+static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
+  uint8_t data = nds7_io_read8(nds,NDS7_RTC_BUS);
+  bool clk  = !SB_BFE(data,1,1);
+  bool io_dat = SB_BFE(data,0,1);
+  bool cs   = SB_BFE(data,2,1);
+  #define SERIAL_INIT 0 
+  #define SERIAL_CLK_LOW 1
+  #define SERIAL_CLK_HIGH 2  
+
+  #define RTC_RECV_CMD -1
+  #define RTC_RESET     0
+  #define RTC_STATUS    1
+  #define RTC_DATE_TIME 2    
+  #define RTC_TIME      3
+
+  nds_rtc_t * rtc = &(nds->rtc);
+
+  rtc->status_register &= ~((1<<7));
+  rtc->status_register |= 0x40;
+
+  if(cs==0){
+    rtc->serial_state=SERIAL_INIT;
+    rtc->serial_bits_clocked=0;
+    rtc->state = RTC_RECV_CMD;
+  }
+
+  if(cs!=0){
+    bool new_bit = false; 
+    
+    if(nds->rtc.serial_state==SERIAL_CLK_LOW&&clk){
+      nds->rtc.input_register<<=1;
+      nds->rtc.input_register|=((uint64_t)io_dat);
+      new_bit = true;
+    
+      bool out_bit = (rtc->output_register&1);
+      data&=~1;
+      data|=out_bit&1;
+      nds7_io_store8(nds,NDS7_RTC_BUS,data);
+      rtc->output_register>>=1;
+    }
+    
+    nds->rtc.serial_state= clk? SERIAL_CLK_HIGH: SERIAL_CLK_LOW;
+
+    if(new_bit){
+      nds->rtc.serial_bits_clocked++;
+      if(nds->rtc.serial_bits_clocked==8) nds->rtc.state= SB_BFE(nds->rtc.input_register,0,4);
+      int  cmd = SB_BFE(rtc->state,1,3);
+      bool read = SB_BFE(rtc->state,0,1);
+      switch(cmd){
+        case RTC_RECV_CMD:break;
+        case RTC_STATUS:{
+          if(rtc->serial_bits_clocked==8) rtc->output_register = rtc->status_register;
+          if(rtc->serial_bits_clocked==16){
+            if(!read)rtc->status_register=SB_BFE(rtc->input_register,0,8);
+            rtc->state= RTC_RECV_CMD;
+            rtc->serial_bits_clocked=0;
+          }
+          break;
+        }
+        case RTC_DATE_TIME:{
+          if(rtc->serial_bits_clocked==8) rtc->output_register =
+            ((uint64_t)(rtc->year&0xff)       <<(0*8))|
+            ((uint64_t)(rtc->month&0xff)      <<(1*8))|
+            ((uint64_t)(rtc->day&0xff)        <<(2*8))|
+            ((uint64_t)(rtc->day_of_week&0xff)<<(3*8))|
+            ((uint64_t)(rtc->hour&0xff)       <<(4*8))|
+            ((uint64_t)(rtc->minute&0xff)     <<(5*8))|
+            ((uint64_t)(rtc->second&0xff)     <<(6*8));
+          if(rtc->serial_bits_clocked==8*8){
+            if(!read){
+              rtc->year  = SB_BFE(rtc->input_register,6*8,8);
+              rtc->month = SB_BFE(rtc->input_register,5*8,8);
+              rtc->day   = SB_BFE(rtc->input_register,4*8,8);
+              rtc->day_of_week = SB_BFE(rtc->input_register,3*8,8);
+              rtc->hour   = SB_BFE(rtc->input_register,2*8,8);
+              rtc->minute = SB_BFE(rtc->input_register,1*8,8);
+              rtc->second = SB_BFE(rtc->input_register,0*8,8);
+            }
+            rtc->state= RTC_RECV_CMD;
+            rtc->serial_bits_clocked=0;
+          }
+          break;
+        }
+        case RTC_TIME:{
+          if(rtc->serial_bits_clocked==8) rtc->output_register = 
+            ((uint64_t)(rtc->hour&0xff)<<(0*8))|
+            ((uint64_t)(rtc->minute&0xff)<<(1*8))|
+            ((uint64_t)(rtc->second&0xff)<<(2*8));
+          if(rtc->serial_bits_clocked==4*8){
+            if(!read){
+              rtc->hour   = SB_BFE(rtc->input_register,0*8,8);
+              rtc->minute = SB_BFE(rtc->input_register,1*8,8);
+              rtc->second = SB_BFE(rtc->input_register,2*8,8);
+            }
+            rtc->state= RTC_RECV_CMD;
+            rtc->serial_bits_clocked=0;
+          }
+          break;
+        }
+      }
+    }
+  }
+}
 static uint32_t nds_get_save_size(nds_t*nds){
   uint32_t save_size = 0; 
   nds_card_backup_t * bak = &nds->backup;
@@ -4866,6 +4861,10 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
 
       }
     }break;
+    case NDS7_RTC_BUS:
+      if(cpu!=NDS_ARM7)return;
+      nds_process_rtc_state_machine(nds);
+    break; 
     case NDS_IPCFIFOSEND:{
       uint32_t cnt =nds_io_read16(nds,cpu,NDS9_IPCFIFOCNT);
       bool enabled = SB_BFE(cnt,15,1);
