@@ -765,7 +765,27 @@ typedef struct{
 }gba_sio_t; 
 
 typedef struct{
-  uint32_t bess_version; 
+  uint32_t bess_version; //Versioning field must be 1
+  /* 
+  r0-r15 
+  CPSR 16
+  SPSR 17 
+  R13_fiq 22 
+  R13_irq 24 
+  R13_svc 26 
+  R13_abt 28 
+  R13_und 30 
+  R14_fiq 23 
+  R14_irq 25 
+  R14_svc 27 
+  R14_abt 29 
+  R14_und 31 
+  SPSR_fiq 32 
+  SPSR_irq 33 
+  SPSR_svc 34 
+  SPSR_abt 35 
+  SPSR_und 36 
+  */
   uint32_t cpu_registers[37];
   uint32_t wram0_seg;
   uint32_t wram1_seg;
@@ -833,7 +853,7 @@ static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data);
 static uint32_t gba_save_best_effort_state(gba_t* gba){
   gba->bess.bess_version = 1; 
   for(int i=0;i<37;++i)gba->bess.cpu_registers[i]=gba->cpu.registers[i];
-
+  
   gba->bess.wram0_seg = ((uint8_t*)gba->mem.wram0)-(uint8_t*)gba;
   gba->bess.wram1_seg = ((uint8_t*)gba->mem.wram1)-(uint8_t*)gba;
   gba->bess.io_seg = ((uint8_t*)gba->mem.io)-(uint8_t*)gba;

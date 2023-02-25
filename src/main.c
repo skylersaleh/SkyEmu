@@ -335,11 +335,11 @@ typedef struct{
   se_core_state_t state;
 }se_save_state_t; 
 typedef struct{
-  char name[39];
-  char build[41];
-  uint32_t bess_offset;
-  uint32_t system;
-  uint8_t padding[20];
+  char name[39]; //Emulator Name
+  char build[41];//Emulator build/commit hash
+  uint32_t bess_offset; //Number of bytes after the se_emu_id where the save state descriptor is located. 
+  uint32_t system; //SYSTEM_UNKNOWN=0 ,SYSTEM_GB=1, SYSTEM_GBA=2, SYSTEM_NDS 3
+  uint8_t padding[20];//Zero padding
 }se_emu_id;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 

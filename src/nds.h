@@ -124,8 +124,6 @@ typedef enum{
 #define NDS9_IPCFIFOSEND 0x04000188   /*IPC Send Fifo (W)*/
 #define NDS9_AUXSPICNT   0x040001A0   /*Gamecard ROM and SPI Control*/
 #define NDS9_AUXSPIDATA  0x040001A2   /*Gamecard SPI Bus Data/Strobe*/
-#define NDS9_GC_BUS_CTL  0x040001A4   /*Gamecard bus timing/control*/
-#define NDS9_GC_BUS_DAT  0x040001A8   /*Gamecard bus 8-byte command out*/
 #define NDS9_GC_ENC0_LO  0x040001B0   /*Gamecard Encryption Seed 0 Lower 32bit*/
 #define NDS9_GC_ENC1_LO  0x040001B4   /*Gamecard Encryption Seed 1 Lower 32bit*/
 #define NDS9_GC_ENC0_HI  0x040001B8   /*Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused)*/
@@ -755,7 +753,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 15   ,1,"NDS Slot Enable     (0=Disable, 1=Enable) (for both ROM and AUXSPI)" },
   } }, /*Gamecard ROM and SPI Control*/
   { NDS9_AUXSPIDATA  , "AUXSPIDATA",  { 0 } }, /*Gamecard SPI Bus Data/Strobe*/
-  { NDS9_GC_BUS_CTL  , "GC_BUS_CTL",  { 
+  { NDS_GCBUS_CTL  , "GC_BUS_CTL",  { 
     { 0    ,13,"KEY1 gap1 length  (0-1FFFh) (forced min 08F8h by BIOS) (leading gap)" },
     { 13   ,1, "KEY2 encrypt data (0=Disable, 1=Enable KEY2 Encryption for Data)" },
     { 14   ,1, "Unknown (SE)" },
@@ -770,7 +768,7 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 30   ,1, "Data Direction 'WR' (0=Normal/read, 1=Write, for FLASH/NAND carts)" },
     { 31   ,1, "Block Start/Status  (0=Ready, 1=Start/Busy) (IRQ See 40001A0h/Bit14)" },
   } }, /*Gamecard bus timing/control*/
-  { NDS9_GC_BUS_DAT  , "GC_BUS_DAT",  { 0 } }, /*Gamecard bus 8-byte command out*/
+  { NDS_GCBUS_CMD  , "GC_BUS_CMD",  { 0 } }, /*Gamecard bus 8-byte command out*/
   { NDS9_GC_ENC0_LO  , "GC_ENC0_LO",  { 0 } }, /*Gamecard Encryption Seed 0 Lower 32bit*/
   { NDS9_GC_ENC1_LO  , "GC_ENC1_LO",  { 0 } }, /*Gamecard Encryption Seed 1 Lower 32bit*/
   { NDS9_GC_ENC0_HI  , "GC_ENC0_HI",  { 0 } }, /*Gamecard Encryption Seed 0 Upper 7bit (bit7-15 unused)*/
@@ -3203,99 +3201,105 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
 
   //memcpy(nds->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
-  const uint32_t initial_regs[37]={
-    0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x0380fd80,0x0000000,0x8000000,
-    0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0380ff80,0x0,0x0380ffc0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,
-  };
+  bool fast_boot =true;
+  if(fast_boot){
+    const uint32_t initial_regs[37]={
+      0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,0x0380fd80,0x0000000,0x8000000,
+      0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x0380ff80,0x0,0x0380ffc0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,
+    };
 
-  const uint32_t initial_regs_arm9[37]={
-    0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,0x03002f7c,0x0000000,0x8000000,
-    0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
-    0x03003f80,0x0,0x03003fc0,0x0,0x0,0x0,0x0,0x0,
-    0x0,0x0,0x0,0x0,0x0,
-  };
-  for(int i=0;i<37;++i)nds->arm7.registers[i]=initial_regs[i];
-  for(int i=0;i<37;++i)nds->arm9.registers[i]=initial_regs_arm9[i];
-  const uint32_t initial_mmio_writes[]={
-    0x4000000,0x80,
-    0x4000004,0x7e0000,
-    0x4000020,0x100,
-    0x4000024,0x1000000,
-    0x4000030,0x100,
-    0x4000034,0x1000000,
-    0x4000080,0xe0000,
-    0x4000084,0xf,
-    0x4000088,0x200,
-    0x4000100,0xff8a,
-    0x4000130,0x3ff,
-    0x4000134,0x8000,
-    0x4000300,0x1,
-  };
-  for(int i=0;i<sizeof(initial_mmio_writes)/sizeof(uint32_t);i+=2){
-    uint32_t addr=initial_mmio_writes[i+0];
-    uint32_t data=initial_mmio_writes[i+1];
-    nds9_write32(nds, addr,data);
+    const uint32_t initial_regs_arm9[37]={
+      0x00000000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,0x03002f7c,0x0000000,0x8000000,
+      0xdf,0x0,0x0,0x0,0x0,0x0,0x0,0x0,
+      0x03003f80,0x0,0x03003fc0,0x0,0x0,0x0,0x0,0x0,
+      0x0,0x0,0x0,0x0,0x0,
+    };
+    for(int i=0;i<37;++i)nds->arm7.registers[i]=initial_regs[i];
+    for(int i=0;i<37;++i)nds->arm9.registers[i]=initial_regs_arm9[i];
+    const uint32_t initial_mmio_writes[]={
+      0x4000000,0x80,
+      0x4000004,0x7e0000,
+      0x4000020,0x100,
+      0x4000024,0x1000000,
+      0x4000030,0x100,
+      0x4000034,0x1000000,
+      0x4000080,0xe0000,
+      0x4000084,0xf,
+      0x4000088,0x200,
+      0x4000100,0xff8a,
+      0x4000130,0x3ff,
+      0x4000134,0x8000,
+      0x4000300,0x1,
+    };
+    for(int i=0;i<sizeof(initial_mmio_writes)/sizeof(uint32_t);i+=2){
+      uint32_t addr=initial_mmio_writes[i+0];
+      uint32_t data=initial_mmio_writes[i+1];
+      nds9_write32(nds, addr,data);
+    }
+    nds7_write32(nds,GBA_DISPSTAT,0x7e0000);
+    nds7_write32(nds,GBA_DISPSTAT,0x7e0000);
+    nds9_write16(nds,GBA_DISPCNT,0x9140);
+    nds9_write8(nds,NDS9_WRAMCNT,0x3);
+    //C9,C1,0 - Data TCM Size/Base (R/W) (32KB)
+    //C9,C1,1 - Instruction TCM Size/Base (R/W)
+
+    uint32_t init_itcm = 0x00000000|(16<<1);
+    uint32_t init_dtcm = 0x0300000a;
+    uint32_t init_C1C00 =0x0005707d; //Enable ITCM and DTCM
+    nds_coprocessor_write(nds, 15,0,9,1,0,init_dtcm);
+    nds_coprocessor_write(nds, 15,0,9,1,1,0x00000020);
+    nds_coprocessor_write(nds, 15,0,1,0,0,init_C1C00);
+    nds_coprocessor_write(nds, 15,0,0,0,1, 0x0F0D2112);
+
+    printf("Game Name: %s\n",nds->card.title);
+    nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);
+    nds7_copy_card_region_to_ram(nds,"ARM7 Executable",nds->card.arm7_rom_offset,nds->card.arm7_ram_address,nds->card.arm7_size);
+    nds->arm9.registers[PC] = nds->card.arm9_entrypoint;
+    nds->arm7.registers[PC] = nds->card.arm7_entrypoint;
+    
+    printf("ARM9 Entry:0x%x ARM7 Entry:0x%x\n",nds->card.arm9_entrypoint,nds->card.arm7_entrypoint);
+
+    //Copy NDS Header into 27FFE00h..27FFF6F
+    int header_size = 0x27FFF70-0x27FFE00;
+    for(int i=0;i<header_size;i+=4){
+      nds9_write32(nds,0x027FFE00+i, *(uint32_t*)(((uint8_t*)&nds->card)+i));
+    }
+    //Default initialize these values for a direct boot to a cartridge
+    const uint32_t arm9_init[]={
+      0x027FF800, 0x1FC2, // Chip ID 1
+      0x027FF804, 0x1FC2, // Chip ID 2
+      0x027FF850, 0x5835, // ARM7 BIOS CRC
+      0x027FF880, 0x0007, // Message from ARM9 to ARM7
+      0x027FF884, 0x0006, // ARM7 boot task
+      0x027FFC00, 0x1FC2, // Copy of chip ID 1
+      0x027FFC04, 0x1FC2, // Copy of chip ID 2
+      0x027FFC10, 0x5835, // Copy of ARM7 BIOS CRC
+      0x027FFC40, 0x0001, // Boot indicator
+    };
+    for(int i=0;i<sizeof(arm9_init)/sizeof(uint32_t);i+=2){
+      uint32_t addr=arm9_init[i+0];
+      uint32_t data=arm9_init[i+1];
+      nds9_write32(nds, addr,data);
+    }
+    nds9_io_store16(nds,NDS9_POSTFLG,1);
+    nds7_io_store16(nds,NDS7_POSTFLG,1);
+  }else{
+    nds->arm9.registers[PC] = 0xFFFF0000;
+    nds->arm7.registers[PC] = 0;
   }
-  nds7_write32(nds,GBA_DISPSTAT,0x7e0000);
-  nds7_write32(nds,GBA_DISPSTAT,0x7e0000);
-  nds9_write16(nds,GBA_DISPCNT,0x9140);
-  nds9_write8(nds,NDS9_WRAMCNT,0x3);
-  //C9,C1,0 - Data TCM Size/Base (R/W) (32KB)
-  //C9,C1,1 - Instruction TCM Size/Base (R/W)
-
-  uint32_t init_itcm = 0x00000000|(16<<1);
-  uint32_t init_dtcm = 0x0300000a;
-  uint32_t init_C1C00 =0x0005707d; //Enable ITCM and DTCM
-  nds_coprocessor_write(nds, 15,0,9,1,0,init_dtcm);
-  nds_coprocessor_write(nds, 15,0,9,1,1,0x00000020);
-  nds_coprocessor_write(nds, 15,0,1,0,0,init_C1C00);
-  nds_coprocessor_write(nds, 15,0,0,0,1, 0x0F0D2112);
-
-  printf("Game Name: %s\n",nds->card.title);
-  nds9_copy_card_region_to_ram(nds,"ARM9 Executable",nds->card.arm9_rom_offset,nds->card.arm9_ram_address,nds->card.arm9_size);
-  nds7_copy_card_region_to_ram(nds,"ARM7 Executable",nds->card.arm7_rom_offset,nds->card.arm7_ram_address,nds->card.arm7_size);
-  nds->arm9.registers[PC] = nds->card.arm9_entrypoint;
-  nds->arm9.irq_table_address = 0xFFFF0000;
-  nds->arm7.registers[PC] = nds->card.arm7_entrypoint;
   
-  printf("ARM9 Entry:0x%x ARM7 Entry:0x%x\n",nds->card.arm9_entrypoint,nds->card.arm7_entrypoint);
+  nds->arm9.irq_table_address = 0xFFFF0000;
+  nds->mem.card_chip_id= 0x1FC2;
 
   if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
   if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
   nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
   nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
 
-  //Copy NDS Header into 27FFE00h..27FFF6F
-  int header_size = 0x27FFF70-0x27FFE00;
-  for(int i=0;i<header_size;i+=4){
-    nds9_write32(nds,0x027FFE00+i, *(uint32_t*)(((uint8_t*)&nds->card)+i));
-  }
-  //Default initialize these values for a direct boot to a cartridge
-  const uint32_t arm9_init[]={
-    0x027FF800, 0x1FC2, // Chip ID 1
-    0x027FF804, 0x1FC2, // Chip ID 2
-    0x027FF850, 0x5835, // ARM7 BIOS CRC
-    0x027FF880, 0x0007, // Message from ARM9 to ARM7
-    0x027FF884, 0x0006, // ARM7 boot task
-    0x027FFC00, 0x1FC2, // Copy of chip ID 1
-    0x027FFC04, 0x1FC2, // Copy of chip ID 2
-    0x027FFC10, 0x5835, // Copy of ARM7 BIOS CRC
-    0x027FFC40, 0x0001, // Boot indicator
-  };
-  nds->mem.card_chip_id= 0x1FC2;
-  for(int i=0;i<sizeof(arm9_init)/sizeof(uint32_t);i+=2){
-    uint32_t addr=arm9_init[i+0];
-    uint32_t data=arm9_init[i+1];
-    nds9_write32(nds, addr,data);
-  }
-  nds9_io_store16(nds,NDS9_POSTFLG,1);
-  nds7_io_store16(nds,NDS7_POSTFLG,1);
-  //nds->arm9.registers[PC] = 0xFFFF0000;
-  //nds->arm7.registers[PC] = 0;
 
   //Preload user settings
   uint8_t* firm_data = scratch->firmware;
@@ -3367,9 +3371,9 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
     
   nds->mem.card_transfer_bytes-=4;
   if(nds->mem.card_transfer_bytes<=0){
-    uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
+    uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
     gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and busy bit 
-    nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
+    nds_io_store32(nds,cpu_id,NDS_GCBUS_CTL,gcbus_ctl);
   }else{
     uint16_t auxspi = nds_io_read16(nds,cpu_id,NDS9_AUXSPICNT);
     bool transfer_ready_irq = SB_BFE(auxspi,14,1);
@@ -3381,10 +3385,11 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
 }
 
 static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
-  uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS9_GC_BUS_CTL);
+  uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
   bool start_transfer = SB_BFE(gcbus_ctl,31,1);
   //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
   gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and start bit 
+  gcbus_ctl|=(1<<23);
   if(start_transfer){
     //Mask out start bit;
     uint8_t commands[8];
@@ -3417,6 +3422,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
         if(nds->gc_log)fprintf(nds->gc_log,"CHIPID Read transfer:%d\n",nds->mem.transfer_id++);
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
+      default: printf("Unknown cmd: %02x\n",commands[0]);break;
     }
     uint16_t auxspi = nds_io_read16(nds,cpu_id,NDS9_AUXSPICNT);
     bool transfer_ready_irq = SB_BFE(auxspi,14,1);
@@ -3425,7 +3431,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
       else nds9_send_interrupt(nds,4,1<<NDS_INT_GC_TRANSFER_DONE);
     }
   }
-  nds_io_store32(nds,cpu_id,NDS9_GC_BUS_CTL,gcbus_ctl);
+  nds_io_store32(nds,cpu_id,NDS_GCBUS_CTL,gcbus_ctl);
 }    
 static uint32_t nds_get_save_size(nds_t*nds){
   uint32_t save_size = 0; 
@@ -5824,7 +5830,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           }
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
-            uint32_t ctl= nds_io_read32(nds,cpu,NDS9_GC_BUS_CTL);
+            uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
             uint32_t ready_mask = (1<<31)|(1<<23); //Block Status = Word Status = 1; 
             if((ctl&ready_mask)!=ready_mask)continue;
           }
