@@ -645,7 +645,6 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
     { 10, 1,  "DMA Transfer Type (0=16bit, 1=32bit)" },
-    { 11, 1,  "Game Pak DRQ (0=Normal, 1=DRQ <from> Game Pak, DMA3)" },
     { 11, 3,  "DMA Start Timing (0=Immediately, 1=VBlank, 2=HBlank, 3=Video, 4=Main memory display, 5=DS Cartridge Slot, 6=GBA Cartridge Slot, 7=Geometry Command FIFO)" },
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
@@ -2286,6 +2285,8 @@ typedef struct{
   uint64_t current_clock;
   float ghosting_strength;
   FILE * gx_log;
+  FILE * io9_log;
+  FILE * io7_log;
   FILE * gc_log;
   FILE * dma_log;
   FILE * vert_log;
@@ -2329,6 +2330,8 @@ static FORCE_INLINE void nds9_io_store32(nds_t*nds, unsigned baddr, uint32_t dat
 static FORCE_INLINE uint8_t  nds9_io_read8(nds_t*nds, unsigned baddr) {return nds->mem.io[baddr&0xffff];}
 static FORCE_INLINE uint16_t nds9_io_read16(nds_t*nds, unsigned baddr){return *(uint16_t*)(nds->mem.io+(baddr&0xffff));}
 static FORCE_INLINE uint32_t nds9_io_read32(nds_t*nds, unsigned baddr){return *(uint32_t*)(nds->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint32_t nds7_read32(nds_t*nds, unsigned baddr);
+static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr);
 
 static FORCE_INLINE sb_debug_mmio_access_t nds_debug_mmio_access(nds_t*nds, int cpu, unsigned baddr){
   if(baddr>=0x04100000)baddr+=NDS_IO_MAP_041_OFFSET;
@@ -2435,7 +2438,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     32*1024,  //H
     16*1024,  //I
   };
-  uint32_t offset_table[10][5]={
+  const uint32_t offset_table[10][5]={
     {0,0,0,0}, //Offset ignored
     {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
     {0x0, 0x4000, 0x10000,0x14000}, //(4000h*OFS.0)+(10000h*OFS.1)
@@ -2538,7 +2541,6 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
     }
   };
-  if(!(transaction_type&NDS_MEM_WRITE))data=0;
   int total_banks = 9;
   int vram_offset = 0; 
 
@@ -2546,6 +2548,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
   //1Byte writes are ignored from the ARM9
   const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
   if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
+  uint32_t ret_data=0;
 
   for(int b = 0; b<total_banks;++b){
     int vram_off = vram_offset;
@@ -2582,17 +2585,17 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     if(transaction_type&NDS_MEM_4B){
       vram_addr&=~3;
       if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
-      else data |= *(uint32_t*)(nds->mem.vram+vram_addr);
+      else ret_data |= *(uint32_t*)(nds->mem.vram+vram_addr);
     }else if(transaction_type&NDS_MEM_2B){
       vram_addr&=~1;
       if(transaction_type&NDS_MEM_WRITE)*(uint16_t*)(nds->mem.vram+vram_addr)=data;
-      else data |= *(uint16_t*)(nds->mem.vram+vram_addr);
+      else ret_data |= *(uint16_t*)(nds->mem.vram+vram_addr);
     }else{
       if(transaction_type&NDS_MEM_WRITE)nds->mem.vram[vram_addr]=data;
-      else data |= nds->mem.vram[vram_addr];
+      else ret_data |= nds->mem.vram[vram_addr];
     }
   }
-  return data; 
+  return ret_data; 
 }
 
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type);
@@ -2721,6 +2724,13 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
         nds->mem.openbus_word=*ret;
         if(transaction_type&NDS_MEM_WRITE){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
+        }
+        if(SB_UNLIKELY(nds->io7_log)){
+          if(addr!=0x04000180){
+            const char* dir = (transaction_type&NDS_MEM_WRITE)? "W":"R";
+            uint32_t io_data = (transaction_type&NDS_MEM_WRITE)?data:*ret;
+            fprintf(nds->io7_log,"%s %08x %08x\n",dir,addr,io_data);
+          }
         }
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
@@ -3222,8 +3232,10 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
     for(int i=0;i<sizeof(nds->mem.save_data);++i) nds->mem.save_data[i]=0;
   }
 
-  nds->gx_log = fopen("gxlog.txt","wb");
-  nds->vert_log = fopen("vertlog.txt","wb");
+  //nds->gx_log = fopen("gxlog.txt","wb");
+  nds->io7_log = fopen("io7log.txt","wb");
+  nds->io9_log = fopen("io9log.txt","wb");
+  //nds->vert_log = fopen("vertlog.txt","wb");
   //nds->gc_log = fopen("gclog.txt","wb");
   //nds->dma_log = fopen("dmalog.txt","wb");
 
@@ -3636,8 +3648,12 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
       }
     }break;
     case NDS7_EXMEMSTAT:{
-      if(cpu!=NDS_ARM7)return; 
       uint16_t r9 = nds9_io_read16(nds,NDS9_EXMEMCNT);
+      r9|=(1<<13);//Bit 13 is always set
+      nds9_io_store16(nds,NDS9_EXMEMCNT,r9);
+
+      if(cpu!=NDS_ARM7)return; 
+      r9 = nds9_io_read16(nds,NDS9_EXMEMCNT);
       uint16_t r7 = nds7_io_read16(nds,NDS7_EXMEMSTAT);
       r7&=0xff80;
       r7|= r9&0x7f;
@@ -5819,7 +5835,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
             if(vcount>=NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
           }
           //Video dma
-          if(mode==3 && i ==3){
+          if(mode==3 && i ==3&&cpu==NDS_ARM9){
             nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
             if(!nds->ppu[0].last_hblank||last_hblank)continue;
