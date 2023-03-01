@@ -952,7 +952,7 @@ static void se_free_all_images(){
 }
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
-typedef sb_debug_mmio_access_t (*emu_mmio_access_type)(uint64_t address);
+typedef sb_debug_mmio_access_t (*emu_mmio_access_type)(uint64_t address, int trigger_breakpoint);
 
 static uint16_t se_read16(emu_byte_read_t read,uint64_t address){
   uint16_t data = (*read)(address+1);
@@ -1271,7 +1271,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     igPushIDInt(i);
     char lab[80];
     sb_debug_mmio_access_t access={0};
-    if(access_type)access=access_type(addr);
+    if(access_type)access=access_type(addr,-1);
     else{
       access.read_since_reset=true;
       access.write_since_reset=true;
@@ -1319,6 +1319,10 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
         igSameLine(0,2);
         se_text("Data");
         igPopID();
+      }
+      igSeparator();
+      if(se_checkbox("CPU breakpoint on access",&access.trigger_breakpoint)){
+          access_type(addr,access.trigger_breakpoint);
       }
       igTreePop();
     }
@@ -1764,8 +1768,8 @@ void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba
 void gb_mmio_debugger(){se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write,NULL);}
 void gb_memory_debugger(){se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write);}
 
-sb_debug_mmio_access_t nds7_mmio_access_type(uint64_t address){return nds_debug_mmio_access(&core.nds,NDS_ARM7,address);}
-sb_debug_mmio_access_t nds9_mmio_access_type(uint64_t address){return nds_debug_mmio_access(&core.nds,NDS_ARM9,address);}
+sb_debug_mmio_access_t nds7_mmio_access_type(uint64_t address,int trigger_breakpoint){return nds_debug_mmio_access(&core.nds,NDS_ARM7,address,trigger_breakpoint);}
+sb_debug_mmio_access_t nds9_mmio_access_type(uint64_t address,int trigger_breakpoint){return nds_debug_mmio_access(&core.nds,NDS_ARM9,address,trigger_breakpoint);}
 void nds7_mmio_debugger(){se_draw_io_state("NDS7 MMIO", nds7_io_reg_desc,sizeof(nds7_io_reg_desc)/sizeof(mmio_reg_t), &nds7_byte_read, &nds7_byte_write,&nds7_mmio_access_type); }
 void nds9_mmio_debugger(){se_draw_io_state("NDS9 MMIO", nds9_io_reg_desc,sizeof(nds9_io_reg_desc)/sizeof(mmio_reg_t), &nds9_byte_read, &nds9_byte_write,&nds9_mmio_access_type); }
 void nds7_mem_debugger(){se_draw_mem_debug_state("NDS9 MEM",&gui_state, &nds9_byte_read, &nds9_byte_write); }

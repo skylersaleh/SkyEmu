@@ -170,6 +170,7 @@ typedef struct{
 
   bool write_since_reset;
   bool write_in_tick;
+  bool trigger_breakpoint;
 }sb_debug_mmio_access_t;
 typedef struct{
   uint32_t addr;
