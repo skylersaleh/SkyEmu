@@ -444,7 +444,9 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 8,8, "V-Count Setting (LYC) (0..227)",},
 
   } }, /* R/W General LCD Status (STAT,LYC) */
-  { GBA_VCOUNT  , "VCOUNT  ", { 0 } }, /* R   Vertical Counter (LY) */
+  { GBA_VCOUNT  , "VCOUNT  ", {  
+    {0,8,"LCD-Y"}
+  } }, /* R   Vertical Counter (LY) */
   { GBA_BG0CNT  , "BG0CNT  ", { 
     { 0,2 , "BG Priority (0-3, 0=Highest)"},
     { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
@@ -1163,23 +1165,6 @@ mmio_reg_t nds9_io_reg_desc[]={
 };
 
 mmio_reg_t nds7_io_reg_desc[]={
-    { GBA_DISPCNT , "DISPCNT ", { 
-    { 0, 3, "BG Mode (0-5=Video Mode 0-5, 6-7=Prohibited)"},
-    { 3 ,1, "Reserved / CGB Mode (0=GBA, 1=CGB)"},
-    { 4 ,1, "Display Frame Select (0-1=Frame 0-1)"},
-    { 5 ,1, "H-Blank Interval Free (1=Allow access to OAM during H-Blank)"},
-    { 6 ,1, "OBJ Character VRAM Mapping (0=2D, 1=1D"},
-    { 7 ,1, "Forced Blank (1=Allow FAST VRAM,Palette,OAM)"},
-    { 8 ,1, "Screen Display BG0 (0=Off, 1=On)"},
-    { 9 ,1, "Screen Display BG1 (0=Off, 1=On)"},
-    { 10,1, "Screen Display BG2 (0=Off, 1=On)"},
-    { 11,1, "Screen Display BG3 (0=Off, 1=On)"},
-    { 12,1, "Screen Display OBJ (0=Off, 1=On)"},
-    { 13,1, "Window 0 Display Flag (0=Off, 1=On)"},
-    { 14,1, "Window 1 Display Flag (0=Off, 1=On)"},
-    { 15,1, "OBJ Window Display Flag (0=Off, 1=On)"},
-  } },
-  { GBA_GREENSWP, "GREENSWP", { {0, 1, "Green Swap  (0=Normal, 1=Swap)" }} }, /* R/W Undocumented - Green Swap */
   { GBA_DISPSTAT, "DISPSTAT", { 
     { 0,1, "V-Blank flag (1=VBlank) (set in line 160..226; not 227",},
     { 1,1, "H-Blank flag (1=HBlank) (toggled in all lines, 0..227",},
@@ -1192,137 +1177,9 @@ mmio_reg_t nds7_io_reg_desc[]={
     { 8,8, "V-Count Setting (LYC) (0..227)",},
 
   } }, /* R/W General LCD Status (STAT,LYC) */
-  { GBA_VCOUNT  , "VCOUNT  ", { 0 } }, /* R   Vertical Counter (LY) */
-  { GBA_BG0CNT  , "BG0CNT  ", { 
-    { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
-    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
-    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
-    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,2, "Screen Size (0-3)"},
-  } }, /* R/W BG0 Control */
-  { GBA_BG1CNT  , "BG1CNT  ", { 
-    { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
-    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
-    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
-    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,2, "Screen Size (0-3)"},
-  } }, /* R/W BG1 Control */
-  { GBA_BG2CNT  , "BG2CNT  ", { 
-    { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
-    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
-    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
-    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,2, "Screen Size (0-3)"},
-  } }, /* R/W BG2 Control */
-  { GBA_BG3CNT  , "BG3CNT  ", { 
-    { 0,2 , "BG Priority (0-3, 0=Highest)"},
-    { 2,4 , "Character Base Block (0-3, in units of 16 KBytes) (=BG Tile Data)"},
-    { 6,1 , "Mosaic (0=Disable, 1=Enable)"},
-    { 7,1 , "Colors/Palettes (0=16/16, 1=256/1)"},
-    { 8,5 , "Screen Base Block (0-31, in units of 2 KBytes) (=BG Map Data)"},
-    { 13,1, "BG0/BG1: (NDS: Ext Palette ) BG2/BG3: Overflow (0=Transp, 1=Wrap)"},
-    { 14,2, "Screen Size (0-3)"},
-  } }, /* R/W BG3 Control */
-  { GBA_BG0HOFS , "BG0HOFS", { 0 } }, /* W   BG0 X-Offset */
-  { GBA_BG0VOFS , "BG0VOFS", { 0 } }, /* W   BG0 Y-Offset */
-  { GBA_BG1HOFS , "BG1HOFS", { 0 } }, /* W   BG1 X-Offset */
-  { GBA_BG1VOFS , "BG1VOFS", { 0 } }, /* W   BG1 Y-Offset */
-  { GBA_BG2HOFS , "BG2HOFS", { 0 } }, /* W   BG2 X-Offset */
-  { GBA_BG2VOFS , "BG2VOFS", { 0 } }, /* W   BG2 Y-Offset */
-  { GBA_BG3HOFS , "BG3HOFS", { 0 } }, /* W   BG3 X-Offset */
-  { GBA_BG3VOFS , "BG3VOFS", { 0 } }, /* W   BG3 Y-Offset */
-  { GBA_BG2PA   , "BG2PA", { 0 } }, /* W   BG2 Rotation/Scaling Parameter A (dx) */
-  { GBA_BG2PB   , "BG2PB", { 0 } }, /* W   BG2 Rotation/Scaling Parameter B (dmx) */
-  { GBA_BG2PC   , "BG2PC", { 0 } }, /* W   BG2 Rotation/Scaling Parameter C (dy) */
-  { GBA_BG2PD   , "BG2PD", { 0 } }, /* W   BG2 Rotation/Scaling Parameter D (dmy) */
-  { GBA_BG2X    , "BG2X", { 0 } }, /* W   BG2 Reference Point X-Coordinate */
-  { GBA_BG2Y    , "BG2Y", { 0 } }, /* W   BG2 Reference Point Y-Coordinate */
-  { GBA_BG3PA   , "BG3PA", { 0 } }, /* W   BG3 Rotation/Scaling Parameter A (dx) */
-  { GBA_BG3PB   , "BG3PB", { 0 } }, /* W   BG3 Rotation/Scaling Parameter B (dmx) */
-  { GBA_BG3PC   , "BG3PC", { 0 } }, /* W   BG3 Rotation/Scaling Parameter C (dy) */
-  { GBA_BG3PD   , "BG3PD", { 0 } }, /* W   BG3 Rotation/Scaling Parameter D (dmy) */
-  { GBA_BG3X    , "BG3X", { 0 } }, /* W   BG3 Reference Point X-Coordinate */
-  { GBA_BG3Y    , "BG3Y", { 0 } }, /* W   BG3 Reference Point Y-Coordinate */
-  { GBA_WIN0H   , "WIN0H", {  
-    { 0, 8, "X2, Rightmost coordinate of window, plus 1 " },
-    { 8, 8,  "X1, Leftmost coordinate of window"}, 
-  } }, /* W   Window 0 Horizontal Dimensions */
-  { GBA_WIN1H   , "WIN1H", { 
-    { 0, 8, "X2, Rightmost coordinate of window, plus 1 " },
-    { 8, 8, "X1, Leftmost coordinate of window"}, 
-  } }, /* W   Window 1 Horizontal Dimensions */
-  { GBA_WIN0V   , "WIN0V", { 
-    {0, 8,  "Y2, Bottom-most coordinate of window, plus 1" },
-    {8, 8,  "Y1, Top-most coordinate of window" },
-  } }, /* W   Window 0 Vertical Dimensions */
-  { GBA_WIN1V   , "WIN1V", { 
-    {0, 8,  "Y2, Bottom-most coordinate of window, plus 1" },
-    {8, 8,  "Y1, Top-most coordinate of window" },
-  } }, /* W   Window 1 Vertical Dimensions */
-  { GBA_WININ   , "WININ", {
-    { 0 , 1,  "Window 0 BG0 Enable Bits (0=No Display, 1=Display)"},
-    { 1 , 1,  "Window 0 BG1 Enable Bits (0=No Display, 1=Display)"},
-    { 2 , 1,  "Window 0 BG2 Enable Bits (0=No Display, 1=Display)"},
-    { 3 , 1,  "Window 0 BG3 Enable Bits (0=No Display, 1=Display)"},
-    { 4 , 1,  "Window 0 OBJ Enable Bit (0=No Display, 1=Display)"},
-    { 5 , 1,  "Window 0 Color Special Effect (0=Disable, 1=Enable)"},
-    { 8 , 1,  "Window 1 BG0 Enable Bits (0=No Display, 1=Display)"},
-    { 9 , 1,  "Window 1 BG1 Enable Bits (0=No Display, 1=Display)"},
-    { 10, 1,  "Window 1 BG2 Enable Bits (0=No Display, 1=Display)"},
-    { 11, 1,  "Window 1 BG3 Enable Bits (0=No Display, 1=Display)"},
-    { 12, 1,  "Window 1 OBJ Enable Bit (0=No Display, 1=Display)"},
-    { 13, 1,  "Window 1 Color Special Effect (0=Disable, 1=Enable)"},
-  } }, /* R/W Inside of Window 0 and 1 */
-  { GBA_WINOUT  , "WINOUT", { 
-    { 0 , 1,  "Window 0 BG0 Enable Bits (0=No Display, 1=Display)"},
-    { 1 , 1,  "Window 0 BG1 Enable Bits (0=No Display, 1=Display)"},
-    { 2 , 1,  "Window 0 BG2 Enable Bits (0=No Display, 1=Display)"},
-    { 3 , 1,  "Window 0 BG3 Enable Bits (0=No Display, 1=Display)"},
-    { 4 , 1,  "Window 0 OBJ Enable Bit (0=No Display, 1=Display)"},
-    { 5 , 1,  "Window 0 Color Special Effect (0=Disable, 1=Enable)"},
-    { 8 , 1,  "Window 1 BG0 Enable Bits (0=No Display, 1=Display)"},
-    { 9 , 1,  "Window 1 BG1 Enable Bits (0=No Display, 1=Display)"},
-    { 10, 1,  "Window 1 BG2 Enable Bits (0=No Display, 1=Display)"},
-    { 11, 1,  "Window 1 BG3 Enable Bits (0=No Display, 1=Display)"},
-    { 12, 1,  "Window 1 OBJ Enable Bit (0=No Display, 1=Display)"},
-    { 13, 1,  "Window 1 Color Special Effect (0=Disable, 1=Enable)"},
-  } }, /* R/W Inside of OBJ Window & Outside of Windows */
-  { GBA_MOSAIC  , "MOSAIC", { 
-    { 0, 4, "BG Mosaic H-Size (minus 1)" },
-    { 4, 4, "BG Mosaic V-Size (minus 1)" },
-    { 8, 4, "OBJ Mosaic H-Size (minus 1)" },
-    { 12,4, "OBJ Mosaic V-Size (minus 1)" },
-  } }, /* W   Mosaic Size */
-  { GBA_BLDCNT  , "BLDCNT", { 
-    { 0 , 1, "BG0 1st Target Pixel (Background 0)" },
-    { 1 , 1, "BG1 1st Target Pixel (Background 1)" },
-    { 2 , 1, "BG2 1st Target Pixel (Background 2)" },
-    { 3 , 1, "BG3 1st Target Pixel (Background 3)" },
-    { 4 , 1, "OBJ 1st Target Pixel (Top-most OBJ pixel)" },
-    { 5 , 1, "BD  1st Target Pixel (Backdrop)" },
-    { 6 , 2, "Color Effect (0: None 1: Alpha 2: Lighten 3: Darken)" },
-    { 8 , 1, "BG0 2nd Target Pixel (Background 0)" },
-    { 9 , 1, "BG1 2nd Target Pixel (Background 1)" },
-    { 10, 1, "BG2 2nd Target Pixel (Background 2)" },
-    { 11, 1, "BG3 2nd Target Pixel (Background 3)" },
-    { 12, 1, "OBJ 2nd Target Pixel (Top-most OBJ pixel)" },
-    { 13, 1, "BD  2nd Target Pixel (Backdrop)" },
-  } }, /* R/W Color Special Effects Selection */
-  { GBA_BLDALPHA, "BLDALPHA", { 
-    {0, 4, "EVA Coef. (1st Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
-    {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
-  } }, /* R/W Alpha Blending Coefficients */
-  { GBA_BLDY    , "BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
-  { NDS_DISP3DCNT,       "DISP3DCNT",       { 0 } }, /* 3D Display Control Register (R/W) */
-  { NDS_DISPCAPCNT,      "DISPCAPCNT",      { 0 } }, /* Display Capture Control Register (R/W) */
-  { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  { 0 } }, /* Main Memory Display FIFO (R?/W) */
-  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", { 0 } }, /* Master Brightness Up/Down */
+  { GBA_VCOUNT  , "VCOUNT  ", { 
+    {0,8,"LCD-Y"}
+  } }, /* R   Vertical Counter (LY) */
 
   // DMA Transfer Channels
   { GBA_DMA0SAD  , "DMA0SAD", { 0 } },   /* W    DMA 0 Source Address */
@@ -3276,7 +3133,7 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   if(nds->mem.card_transfer_bytes<=0)return;
   uint16_t exmemcnt = nds9_io_read16(nds,NDS9_EXMEMCNT);
   bool arm7_has_slot = SB_BFE(exmemcnt,11,1);
-  if(arm7_has_slot&&cpu_id!=NDS_ARM7)return;
+  if(cpu_id==arm7_has_slot)return;
   
   uint8_t data[4]; 
   int bank = nds->mem.card_read_offset&~0xfff;
@@ -3582,6 +3439,10 @@ static FORCE_INLINE uint32_t nds_word_mask(uint32_t addr, int transaction_type){
   return 0xffffffff;
 }
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
+  if(addr>=0x4800000&& addr<0x4900000){
+    printf("Read wifi register: 0x%08x\n",addr);
+    return;
+  } 
   uint32_t word_mask = nds_word_mask(addr,transaction_type);
   addr&=~3;
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
@@ -4063,8 +3924,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       if(tex_p[i]>=sz[i])tex_p[i]=sz[i]-1;
       if(tex_p[i]<0)tex_p[i]=0;
     }else{
-      tex_p[i]-=((int)tex_p[i]/sz[i])*sz[i];
-      //TODO: Repeat
+      int int_part = ((int)tex_p[i]/sz[i]);
+      tex_p[i]-=int_part*sz[i];
+      if(!(int_part&1)&&flip[i])tex_p[i]=sz[i]-tex_p[i]-1;
     }
     if(flip[i])tex_p[i]=sz[i]-1-tex_p[i];
   }
@@ -4202,6 +4064,10 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
   uint32_t poly_attr = nds->gpu.poly_attr;
   int alpha = SB_BFE(poly_attr,16,5);
+  int polygon_mode = SB_BFE(poly_attr,4,2);//(0=Modulation,1=Decal,2=Toon/Highlight Shading,3=Shadow)
+  bool translucent_has_depth = SB_BFE(poly_attr,11,1);
+  //Skip non-normal triangles for now TODO: Fix this
+  if(polygon_mode!=0&&polygon_mode!=2)return;
 
   if(nds->gpu.poly_ram_offset>=2048);//return; Ignore extra polygons for now
   else nds->gpu.poly_ram_offset++;
@@ -4253,18 +4119,26 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       bool discard = false;
       if(tex_map)discard|=nds_sample_texture(nds, tex_color, uv);
       if(discard)continue;
-      nds->framebuffer_3d_depth[p]=z;
 
       float output_col[4];
-      for(int c = 0;c<4;++c){
-        float col = (v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
-        if(c==3)col=alpha/31.;
-        output_col[c]=tex_color[c]*col;
-        if(output_col[c]>1.0)output_col[c]=1.;
-        if(output_col[c]<0.0)output_col[c]=0.;
+      if(polygon_mode==1){ 
+        //Decal Mode
+        output_col[0]=1;
+        output_col[1]=1;
+        output_col[2]=1;
+        output_col[1]=1;
+      }else{
+        for(int c = 0;c<4;++c){
+          float col = (v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
+          if(c==3)col=alpha/31.;
+          output_col[c]=tex_color[c]*col;
+          if(output_col[c]>1.0)output_col[c]=1.;
+          if(output_col[c]<0.0)output_col[c]=0.;
+        }
       }
       float alpha_blend_factor = 1; 
       if(alpha_blend)alpha_blend_factor = output_col[3];
+      if(translucent_has_depth||alpha_blend>0.95)nds->framebuffer_3d_depth[p]=z;
       for(int c=0;c<3;++c){
         nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
       }
@@ -4338,7 +4212,7 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
   if(nds->vert_log){
     fprintf(nds->vert_log,"Vertex {%d %d %d}\n",vx,vy,vz);
   }
-  float v[4] = {vx/4096.,vy/4096.,vz/4096.,1.0};
+  float v[4] = {vx,vy,vz,4096.0};
   float res[4];
   nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr,v,4);
   nds_mult_matrix_vector(v,nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr,res,4);
@@ -4715,21 +4589,26 @@ static void nds_tick_gx(nds_t* nds){
 
     case 0x24:/*VTX_10*/ nds_gpu_process_vertex(nds,((int16_t)SB_BFE(p[0],0,10)<<6),
                                           ((int16_t)SB_BFE(p[0],10,10)<<6),
-                                          ((int16_t)SB_BFE(p[0],20,10)<<6));break;
+                                          ((int16_t)SB_BFE(p[0],20,10)<<6));
+                                          break;
 
     case 0x25: /*VTX_XY*/ nds_gpu_process_vertex(nds,SB_BFE(p[0],0,16),
                                           SB_BFE(p[0],16,16),
-                                          nds->gpu.last_vertex_pos[2]);break;
+                                          nds->gpu.last_vertex_pos[2]);
+                                          break;
     case 0x26: /*VTX_XZ*/ nds_gpu_process_vertex(nds,SB_BFE(p[0],0,16),
                                           nds->gpu.last_vertex_pos[1],
-                                          SB_BFE(p[0],16,16));break;
+                                          SB_BFE(p[0],16,16));
+                                          break;
     case 0x27: /*VTX_YZ*/ nds_gpu_process_vertex(nds,nds->gpu.last_vertex_pos[0],
                                           SB_BFE(p[0],0,16),
-                                          SB_BFE(p[0],16,16));break;
+                                          SB_BFE(p[0],16,16));
+                                          break;
     case 0x28: /*VTX_DIFF*/ 
     nds_gpu_process_vertex(nds,(((int16_t)(SB_BFE(p[0],0,10)<<6))>>6)+nds->gpu.last_vertex_pos[0],
                                           (((int16_t)(SB_BFE(p[0],10,10)<<6))>>6)+nds->gpu.last_vertex_pos[1],
-                                          (((int16_t)(SB_BFE(p[0],20,10)<<6))>>6)+nds->gpu.last_vertex_pos[2]);break;
+                                          (((int16_t)(SB_BFE(p[0],20,10)<<6))>>6)+nds->gpu.last_vertex_pos[2]);
+                                          break;
     
     case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
     case 0x30: /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
@@ -4750,17 +4629,26 @@ static void nds_tick_gx(nds_t* nds){
       nds->gpu.prim_type = SB_BFE(p[0],0,2);
       nds->gpu.curr_draw_vert =0; 
       break;
-    case 0x41: /*END_VTXS  */ break;
+    case 0x41: /*END_VTXS  */  nds->gpu.curr_draw_vert =0; break;
     case 0x50: 
       nds_gpu_swap_buffers(nds);
       nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
       break; //Swap buffers
-    case 0x21: case 0x60: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
+    case 0x60: /*SET_VIEWPORT*/
+    {
+      int x0 = SB_BFE(p[0],0,8);
+      int y0 = SB_BFE(p[0],8,8);
+      int x1 = SB_BFE(p[0],16,8);
+      int y1 = SB_BFE(p[0],24,8);
+      printf("Viewport %d %d %d %d\n",x0,y0,x1,y1);
+      break;
+    }
+    case 0x21: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
     default:
       
-      /*printf("Unhandled GPU CMD: %02x Data: ",cmd);
+      printf("Unhandled GPU CMD: %02x Data: ",cmd);
       for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
-      printf("\n");*/
+      printf("\n");
       
       break;
   }
@@ -4850,6 +4738,10 @@ static void nds_tick_ipc_fifo(nds_t* nds){
   }
 }
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
+  if(baddr>=0x4800000&& baddr<0x4900000){
+    printf("Write wifi register: 0x%08x\n",baddr);
+    return;
+  } 
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
@@ -5067,7 +4959,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
     uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
     vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
     vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
-    bool vblank = lcd_y>=NDS_LCD_H;
+    bool vblank = lcd_y>=NDS_LCD_H&&lcd_y!=262;
     bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
     disp_stat |= vblank ? 0x1: 0; 
     disp_stat |= hblank ? 0x2: 0;      
@@ -5159,12 +5051,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
         }
       }
     }
-    nds9_send_interrupt(nds,3,new_if);
-    nds7_send_interrupt(nds,3,new_if7);
+    if(ppu_id==0&&(new_if|new_if7)){
+      nds9_send_interrupt(nds,3,new_if);
+      nds7_send_interrupt(nds,3,new_if7);
+    }
   }
   uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
   int display_mode = SB_BFE(dispcnt,16,2);
-  bool enable_capture = SB_BFE(dispcapcnt,31,1)&&(display_mode==1)&&ppu_id==0;
+  bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
   render|=enable_capture;
   if(!render)return; 
   
@@ -5693,6 +5587,46 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
       int size = SB_BFE(dispcapcnt, 20,2);
       int szx = 128; int szy = 128;
       if(size!=0){szx=256; szy= size*64;}
+      bool source_a = SB_BFE(dispcapcnt,24,1);
+      if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
+        int p = lcd_x+lcd_y*NDS_LCD_W;
+        color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
+        color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
+        color |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+      }
+      int capture_mode = SB_BFE(dispcapcnt,29,2);
+      
+      if(capture_mode>=2){        
+        int r = SB_BFE(color,0,5);
+        int g = SB_BFE(color,5,5);
+        int b = SB_BFE(color,10,5);
+        int read_offset = SB_BFE(dispcapcnt, 26,2);
+        uint32_t read_address = 0x06800000;
+        read_address+=read_offset*0x08000;
+        read_address+=lcd_y*szx*2+lcd_x*2;
+        uint16_t color2=nds9_read16(nds,read_address);
+        if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
+
+        int r2 = SB_BFE(color2,0,5);
+        int g2 = SB_BFE(color2,5,5);
+        int b2 = SB_BFE(color2,10,5);
+        int eva = SB_BFE(dispcapcnt,0,5);
+        int evb = SB_BFE(dispcapcnt,8,5);
+    
+        if(eva>16)eva=16;
+        if(evb>16)evb=16;
+        r = (r*eva+r2*evb)/16;
+        g = (g*eva+g2*evb)/16;
+        b = (b*eva+b2*evb)/16;
+        if(r>31)r = 31;
+        if(g>31)g = 31;
+        if(b>31)b = 31;
+        color  = SB_BFE(r,0,5);
+        color |= SB_BFE(g,0,5)<<5;
+        color |= SB_BFE(b,0,5)<<10;
+      }
+
+      
       if(lcd_x<szx){
         if(lcd_y<szy){
           uint32_t write_address = 0x06800000;
@@ -5941,13 +5875,13 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           nds->dma_wait_gx = true;
           if(nds->dma[cpu][i].gx_dma_subtransfer<=0){
             if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD){
-              printf("Wait for threshold:%d\n",nds_gxfifo_size(nds));
+              //printf("Wait for threshold:%d\n",nds_gxfifo_size(nds));
               continue;
             }
-            nds->dma[cpu][i].gx_dma_subtransfer=112;
+            nds->dma[cpu][i].gx_dma_subtransfer=111;
           }else{
             nds->dma[cpu][i].gx_dma_subtransfer--;
-            printf("Subtransfer:%d \n",nds->dma[cpu][i].gx_dma_subtransfer);
+            //printf("Subtransfer:%d \n",nds->dma[cpu][i].gx_dma_subtransfer);
           } 
         }
 
