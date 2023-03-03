@@ -3811,10 +3811,10 @@ static void nds_gpu_swap_buffers(nds_t*nds){
     nds->framebuffer_3d_disp[i*4+1]=nds->framebuffer_3d[i*4+1];
     nds->framebuffer_3d_disp[i*4+2]=nds->framebuffer_3d[i*4+2];
     nds->framebuffer_3d_disp[i*4+3]=nds->framebuffer_3d[i*4+3];
-    nds->framebuffer_3d[i*4+0]=SB_BFE(clear_color,0,5);
-    nds->framebuffer_3d[i*4+1]=SB_BFE(clear_color,5,5);
-    nds->framebuffer_3d[i*4+2]=SB_BFE(clear_color,10,5);
-    nds->framebuffer_3d[i*4+3]=SB_BFE(clear_color,24,5);
+    nds->framebuffer_3d[i*4+0]=SB_BFE(clear_color,0,5)*8;
+    nds->framebuffer_3d[i*4+1]=SB_BFE(clear_color,5,5)*8;
+    nds->framebuffer_3d[i*4+2]=SB_BFE(clear_color,10,5)*8;
+    nds->framebuffer_3d[i*4+3]=SB_BFE(clear_color,16,5)*8;
 
     nds->framebuffer_3d_depth[i]=10e6;
   }
@@ -4931,7 +4931,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
   int sc = nds->ppu[0].scan_clock;
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
-  int clocks_til_trigger = 355*(NDS_LCD_H-1)*NDS_CLOCKS_PER_DOT;
+  int clocks_til_trigger = 355*(NDS_LCD_H)*NDS_CLOCKS_PER_DOT;
   if(sc<=clocks_til_trigger){
     return clocks_til_trigger - sc; 
   }
@@ -5343,6 +5343,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
           col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
           col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+          if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
         }else{
           int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
           int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
@@ -5522,7 +5523,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
           uint32_t type2 = SB_BFE(col2,17,3);
           bool blend = SB_BFE(bldcnt,8+type2,1);
           if(blend){
-            uint16_t bldalpha= nds9_io_read16(nds,GBA_BLDALPHA);
+            uint16_t bldalpha= nds9_io_read16(nds,GBA_BLDALPHA+reg_offset);
             //3d engines alpha blend based on the 3d alpha
             
             int r2 = SB_BFE(col2,0,5);
