@@ -3110,7 +3110,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   //nds->io9_log = fopen("io9log.txt","wb");
   //nds->vert_log = fopen("vertlog.txt","wb");
   //nds->gc_log = fopen("gclog.txt","wb");
-  //nds->dma_log = fopen("dmalog.txt","wb");
+  nds->dma_log = fopen("dmalog.txt","wb");
 
   return true; 
 }  
@@ -4938,723 +4938,726 @@ static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   return clocks_per_frame-sc +clocks_til_trigger;
 }
-static FORCE_INLINE void nds_tick_ppu(nds_t* nds, int ppu_id, bool render){
-  nds_ppu_t * ppu = nds->ppu+ppu_id;
-  ppu->scan_clock+=1;
-  if(ppu->scan_clock%NDS_CLOCKS_PER_DOT)return;
+static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
+  nds->ppu[0].scan_clock+=1;
+  if(nds->ppu[0].scan_clock%NDS_CLOCKS_PER_DOT)return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
-  while(ppu->scan_clock>=clocks_per_frame)ppu->scan_clock-=clocks_per_frame;
-  uint32_t dispcapcnt = nds9_io_read32(nds,NDS_DISPCAPCNT);
+  while(nds->ppu[0].scan_clock>=clocks_per_frame)nds->ppu[0].scan_clock-=clocks_per_frame;
+  nds->ppu[1].scan_clock=nds->ppu[0].scan_clock;
+  for(int ppu_id=0;ppu_id<2;++ppu_id){
+    nds_ppu_t * ppu = nds->ppu+ppu_id;
+    uint32_t dispcapcnt = nds9_io_read32(nds,NDS_DISPCAPCNT);
 
-  int reg_offset = ppu_id==0? 0: 0x00001000;
+    int reg_offset = ppu_id==0? 0: 0x00001000;
 
-  int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
-  int lcd_y = (ppu->scan_clock)/clocks_per_line;
-  int lcd_x = ((ppu->scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
-  int early_hblank_exit = 350; 
-  if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==early_hblank_exit){
-    uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
-    uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
-    uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-    uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
-    vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
-    vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
-    bool vblank = lcd_y>=NDS_LCD_H&&lcd_y!=262;
-    bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
-    disp_stat |= vblank ? 0x1: 0; 
-    disp_stat |= hblank ? 0x2: 0;      
-    disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
-    disp_stat7 |= vblank ? 0x1: 0; 
-    disp_stat7 |= hblank ? 0x2: 0;      
-    disp_stat7 |= lcd_y==vcount_cmp7 ? 0x4: 0;   
-    nds7_io_store16(nds,GBA_VCOUNT,lcd_y);   
-    nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
-    nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
-    nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
-    uint32_t new_if = 0;
-    uint32_t new_if7 = 0;
-    if(hblank!=ppu->last_hblank){
-      ppu->last_hblank = hblank;
-      bool hblank_irq_en = SB_BFE(disp_stat,4,1);
-      bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
-      if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-      if(hblank&&hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
-      nds->activate_dmas|=nds->dma_wait_ppu;
-      if(!hblank){
-        ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
-        ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
-        ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT+reg_offset);
-      }else{
-        uint16_t dispcnt = ppu->dispcnt_pipeline[0];
-
-        int bg_mode = SB_BFE(dispcnt,0,3);
-
-        // From Mirei: Affine registers are only incremented when bg_mode is not 0
-        // and the bg is enabled.
-        if(bg_mode!=0){
-          for(int aff=0;aff<2;++aff){
-            bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
-            if(!bg_en)continue;
-            int32_t b = (int16_t)nds9_io_read16(nds,GBA_BG2PB+(aff)*0x10+reg_offset);
-            int32_t d = (int16_t)nds9_io_read16(nds,GBA_BG2PD+(aff)*0x10+reg_offset);
-            uint16_t bgcnt = nds9_io_read16(nds, GBA_BG2CNT+aff*2+reg_offset);
-            bool mosaic = SB_BFE(bgcnt,6,1);
-            if(mosaic){
-              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
-              int mos_y = SB_BFE(mos_reg,4,4)+1;
-              if((lcd_y%mos_y)==0){
-                ppu->aff[aff].internal_bgx+=b*mos_y;
-                ppu->aff[aff].internal_bgy+=d*mos_y;
-              }
-            }else{
-              ppu->aff[aff].internal_bgx+=b;
-              ppu->aff[aff].internal_bgy+=d;
-            }
-          }
-        }
-      }
-    }
-    if(lcd_y != ppu->last_lcd_y){
-      if(vblank!=ppu->last_vblank){
-        ppu->last_vblank = vblank;
-        bool vblank_irq_en = SB_BFE(disp_stat,3,1);
-        bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
-        if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
-        if(vblank&&vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK); 
+    int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
+    int lcd_y = (ppu->scan_clock)/clocks_per_line;
+    int lcd_x = ((ppu->scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
+    int early_hblank_exit = 350; 
+    if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==early_hblank_exit){
+      uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
+      uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
+      uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+      uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
+      vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
+      vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
+      bool vblank = lcd_y>=NDS_LCD_H;
+      bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
+      disp_stat |= vblank ? 0x1: 0; 
+      disp_stat |= hblank ? 0x2: 0;      
+      disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
+      disp_stat7 |= vblank ? 0x1: 0; 
+      disp_stat7 |= hblank ? 0x2: 0;      
+      disp_stat7 |= lcd_y==vcount_cmp7 ? 0x4: 0;   
+      nds7_io_store16(nds,GBA_VCOUNT,lcd_y);   
+      nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
+      nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
+      nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+      uint32_t new_if = 0;
+      uint32_t new_if7 = 0;
+      if(hblank!=ppu->last_hblank){
+        ppu->last_hblank = hblank;
+        bool hblank_irq_en = SB_BFE(disp_stat,4,1);
+        bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
+        if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+        if(hblank&&hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
         nds->activate_dmas|=nds->dma_wait_ppu;
-        if(vblank&&ppu_id==0){
-          //Done with capture
-          dispcapcnt&=~(1<<31);
-          nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
-        }
-      }
-      ppu->last_lcd_y  = lcd_y;
-      if(lcd_y==vcount_cmp) {
-        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
-        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
-      }
-      if(lcd_y==vcount_cmp7) {
-        bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
-        if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
-      }
-      //Latch BGX and BGY registers
-      if(lcd_y==0){
-        for(int aff=0;aff<2;++aff){
-          ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
-          ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10+reg_offset);
-
-          ppu->aff[aff].internal_bgx = SB_BFE(ppu->aff[aff].internal_bgx,0,28);
-          ppu->aff[aff].internal_bgy = SB_BFE(ppu->aff[aff].internal_bgy,0,28);
-
-          ppu->aff[aff].internal_bgx = (ppu->aff[aff].internal_bgx<<4)>>4;
-          ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
-        }
-      }
-    }
-    if(ppu_id==0&&(new_if|new_if7)){
-      nds9_send_interrupt(nds,3,new_if);
-      nds7_send_interrupt(nds,3,new_if7);
-    }
-  }
-  uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
-  int display_mode = SB_BFE(dispcnt,16,2);
-  bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
-  render|=enable_capture;
-  if(!render)return; 
-  
-  bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
-  int bg_mode = SB_BFE(dispcnt,0,3);
-  int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
-  int forced_blank = SB_BFE(dispcnt,7,1);
-  if(forced_blank)return;
-  bool visible = lcd_x<NDS_LCD_W && lcd_y<NDS_LCD_H;
-  //Render sprites over scanline when it completes
-  if(lcd_y<NDS_LCD_H && lcd_x == 0){
-  
-    //Render sprites over scanline when it completes
-    uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
-    bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
-    uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT+reg_offset);
-    if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
-
-    for(int x=0;x<NDS_LCD_W;++x){ppu->window[x] = default_window_control;}
-    uint8_t obj_window_control = default_window_control;
-    bool obj_window_enable = SB_BFE(dispcnt,15,1);
-    if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
-    bool display_obj = SB_BFE(dispcnt,12,1);
-    if(display_obj){
-      int oam_offset = ppu_id*1024;
-      int obj_vram_base = ppu_id ==0? 0x06400000: 0x06600000;
-      for(int o=0;o<128;++o){
-        uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0+oam_offset);
-        //Attr0
-        uint8_t y_coord = SB_BFE(attr0,0,8);
-        bool rot_scale =  SB_BFE(attr0,8,1);
-        bool double_size = SB_BFE(attr0,9,1)&&rot_scale;
-        bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
-        if(obj_disable) continue; 
-
-        int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=bitmap)
-        bool mosaic  = SB_BFE(attr0,12,1);
-        bool colors_or_palettes = SB_BFE(attr0,13,1);
-        int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
-        uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2+oam_offset);
-
-        int rotscale_param = SB_BFE(attr1,9,5);
-        bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
-        bool v_flip = SB_BFE(attr1,13,1)&&!rot_scale;
-        int obj_size = SB_BFE(attr1,14,2);
-        // Size  Square   Horizontal  Vertical
-        // 0     8x8      16x8        8x16
-        // 1     16x16    32x8        8x32
-        // 2     32x32    32x16       16x32
-        // 3     64x64    64x32       32x64
-        const int xsize_lookup[16]={
-          8,16,8,0,
-          16,32,8,0,
-          32,32,16,0,
-          64,64,32,0
-        };
-        const int ysize_lookup[16]={
-          8,8,16,0,
-          16,8,32,0,
-          32,16,32,0,
-          64,32,64,0
-        }; 
-
-        int y_size = ysize_lookup[obj_size*4+obj_shape];
-
-        if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
-
-          int16_t x_coord = SB_BFE(attr1,0,9);
-          if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
-
-          int x_size = xsize_lookup[obj_size*4+obj_shape];
-          int x_start = x_coord>=0?x_coord:0;
-          int x_end   = x_coord+x_size*(double_size?2:1);
-          if(x_end>=NDS_LCD_W)x_end=NDS_LCD_W;
-          //Attr2
-          //Skip objects disabled by window
-          uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4 +oam_offset);
-          int tile_base = SB_BFE(attr2,0,10);
-          // Always place sprites as the highest priority
-          int priority = SB_BFE(attr2,10,2);
-          int palette = SB_BFE(attr2,12,4);
-          for(int x = x_start; x< x_end;++x){
-            int sx = (x-x_coord);
-            int sy = (lcd_y-y_coord)&0xff;
-            if(mosaic){
-              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
-              int mos_x = SB_BFE(mos_reg,8,4)+1;
-              int mos_y = SB_BFE(mos_reg,12,4)+1;
-              sx = ((x/mos_x)*mos_x-x_coord);
-              sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
-            }
-            if(rot_scale){
-              uint32_t param_base = rotscale_param*0x20+oam_offset; 
-              int32_t a = *(int16_t*)(nds->mem.oam+param_base+0x6);
-              int32_t b = *(int16_t*)(nds->mem.oam+param_base+0xe);
-              int32_t c = *(int16_t*)(nds->mem.oam+param_base+0x16);
-              int32_t d = *(int16_t*)(nds->mem.oam+param_base+0x1e);
- 
-              int64_t x1 = sx<<8;
-              int64_t y1 = sy<<8;
-              int64_t objref_x = (x_size<<(double_size?8:7));
-              int64_t objref_y = (y_size<<(double_size?8:7));
-            
-              int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y)+(x_size<<15);
-              int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y)+(y_size<<15);
-
-              sx = (x2>>16);
-              sy = (y2>>16);
-              if(sx>=x_size||sy>=y_size||sx<0||sy<0)continue;
-            }else{
-              if(h_flip)sx=x_size-sx-1;
-              if(v_flip)sy=y_size-sy-1;
-            }
-            uint32_t col =0;
-            if(obj_mode==3){
-
-              bool linear = SB_BFE(dispcnt,6,1);
-              //TODO: Bitmap sprites
-              if(linear){
-                int boundry = SB_BFE(dispcnt,22,1);
-                tile_base *= boundry? 256: 128;
-                int p = sx+sy*x_size;
-                col = nds_ppu_read16(nds,obj_vram_base+tile_base+p*2);
-              }else{
-                bool size = SB_BFE(dispcnt,5,1);
-                int p = 0;             
-                if(size){
-                  int tile_x=SB_BFE(tile_base,0,5);
-                  int tile_y=SB_BFE(tile_base,5,5);
-                  p = (tile_x*8+sx)+(tile_y*8+sy)*32*8;
-                }else{
-                  int tile_x=SB_BFE(tile_base,0,4);
-                  int tile_y=SB_BFE(tile_base,4,6);
-                  p = (tile_x*8+sx)+(tile_y*8+sy)*16*8;
-                }
-                col = nds_ppu_read16(nds,obj_vram_base+p*2);
-                if(!SB_BFE(col,15,1))continue;
-              }
-            }else{
-              int tx = sx%8;
-              int ty = sy%8;
-              bool tile_obj_mapping = SB_BFE(dispcnt,4,1);
-                      
-              int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
-
-              int tile_boundry = 32;
-              if(tile_obj_mapping ==true){
-                int tile_obj_1d_boundry = SB_BFE(dispcnt,20,2);
-                tile_boundry = 32<<tile_obj_1d_boundry;
-                y_tile_stride=x_size/8*(colors_or_palettes? 2:1);
-              }
-              int tile = tile_base*tile_boundry/32 + (((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride);
-              //tile*=tile_boundry/32;
-              uint16_t palette_id;
-              bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
-              if(colors_or_palettes==false){
-                palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
-                palette_id= (palette_id>>((tx&1)*4))&0xf;
-                if(palette_id==0)continue;
-                palette_id+=palette*16;
-                use_obj_ext_palettes=false; //Not supported in 16 color mode
-              }else{
-                palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
-                if(palette_id==0)continue;
-              }
-              if(use_obj_ext_palettes){
-                palette_id=(palette)*256+palette_id;
-                uint32_t read_addr = (ppu_id?NDS_VRAM_OBJB_SLOT0:NDS_VRAM_OBJA_SLOT0)+palette_id*2;
-                col = nds_ppu_read16(nds, read_addr);
-              }else{
-                uint32_t pallete_offset = ppu_id?0x600:0x200; 
-                col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
-              }
-            }
-
-            //Handle window objects(not displayed but control the windowing of other things)
-            if(obj_mode==2){ppu->window[x]=obj_window_control; 
-            }else{
-              int type =4;
-              col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
-              if(obj_mode==1)col|=1<<16;
-              if((col>>17)>(ppu->first_target_buffer[x]>>17))ppu->first_target_buffer[x]=col;
-            }  
-          }
-        }
-      }
-    }
-    int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
-    if(enabled_windows){
-      for(int win=1;win>=0;--win){
-        bool win_enable = SB_BFE(dispcnt,13+win,1);
-        if(!win_enable)continue;
-        uint16_t WINH = nds9_io_read16(nds, GBA_WIN0H+2*win+reg_offset);
-        uint16_t WINV = nds9_io_read16(nds, GBA_WIN0V+2*win+reg_offset);
-        int win_xmin = SB_BFE(WINH,8,8);
-        int win_xmax = SB_BFE(WINH,0,8);
-        int win_ymin = SB_BFE(WINV,8,8);
-        int win_ymax = SB_BFE(WINV,0,8);
-        // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
-        // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
-        if(win_xmin>win_xmax)win_xmax=NDS_LCD_W;
-        if(win_ymin>win_ymax)win_ymax=NDS_LCD_H+1;
-        if(win_xmax>NDS_LCD_W)win_xmax=NDS_LCD_W;
-        if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
-        uint16_t winin = nds9_io_read16(nds,GBA_WININ+reg_offset);
-        uint8_t win_value = SB_BFE(winin,win*8,6);
-        for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
-      }
-      int backdrop_type = 5;
-      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
-      for(int x=0;x<NDS_LCD_W;++x){
-        uint8_t window_control = ppu->window[x];
-        if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
-      }
-    }
-  }
-  if(visible){
-    uint8_t window_control =ppu->window[lcd_x];
-    if(display_mode==2){
-      int vram_block = SB_BFE(dispcnt,18,2);
-      ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
-    }else if(display_mode==0){
-      ppu->first_target_buffer[lcd_x] = 0xffffffff;
-    }else{
-      for(int bg = 3; bg>=0;--bg){
-        #define NDS_BG_TEXT 0
-        #define NDS_BG_AFFINE 1
-        #define NDS_BG_BITMAP 2
-        #define NDS_BG_LARGE_BITMAP 3
-        #define NDS_BG_INVALID 4
-
-        const int bg_mode_table[8*4]={
-          /* mode 0: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,
-          /* mode 1: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,
-          /* mode 2: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_AFFINE,
-          /* mode 3: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,
-          /* mode 4: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_BITMAP,
-          /* mode 5: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,NDS_BG_BITMAP,
-          /* mode 6: */NDS_BG_TEXT,NDS_BG_INVALID,NDS_BG_LARGE_BITMAP,NDS_BG_INVALID,
-          /* mode 7: */NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,
-        };
-        const int bg_size_table[4*4*2]={
-          /* TEXT: */        
-          256,256,
-          512,256,
-          256,512,
-          512,512,
-          /* AFFINE: */ 
-          128,128,
-          256,256,
-          512,512,
-          1024,1024,
-          /* BITMAP: */ 
-          128,128,
-          256,256,
-          512,256,
-          512,512,
-          /* LARGE BITMAP: */
-          512,1024,
-          1024,512,
-          0,0, //INVALID
-          0,0, //INVALID
-        };
-        int bg_type = bg_mode_table[bg_mode*4+bg];
-        if(bg_type==NDS_BG_INVALID)continue;
-        uint32_t col =0;         
-        bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
-        if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
-
-        bool rot_scale = bg_type!=NDS_BG_TEXT;
-        uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
-        int priority = SB_BFE(bgcnt,0,2);
-        int character_base = SB_BFE(bgcnt,2,4);
-        bool mosaic = SB_BFE(bgcnt,6,1);
-        bool colors = SB_BFE(bgcnt,7,1);
-        int screen_base = SB_BFE(bgcnt,8,5);
-        bool display_overflow =SB_BFE(bgcnt,13,1);
-        int screen_size = SB_BFE(bgcnt,14,2); 
-
-        if(SB_UNLIKELY(enable_3d&&bg==0)){
-          int p = lcd_x+lcd_y*NDS_LCD_W;
-          col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
-          col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
-          col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
-          if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
+        if(!hblank){
+          ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
+          ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
+          ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT+reg_offset);
         }else{
-          int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
-          int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
-        
-          int bg_x = 0;
-          int bg_y = 0;
-          uint32_t pallete_offset = ppu_id?0x400:0; 
+          uint16_t dispcnt = ppu->dispcnt_pipeline[0];
 
-          bool use_ext_palettes = SB_BFE(dispcnt,30,1);
+          int bg_mode = SB_BFE(dispcnt,0,3);
 
-          if(rot_scale){
-            colors = true;
-
-            int32_t bgx = ppu->aff[bg-2].internal_bgx;
-            int32_t bgy = ppu->aff[bg-2].internal_bgy;
-
-            int32_t a = (int16_t)nds9_io_read16(nds,GBA_BG2PA+(bg-2)*0x10+reg_offset);
-            int32_t c = (int16_t)nds9_io_read16(nds,GBA_BG2PC+(bg-2)*0x10+reg_offset);
-
-            // Shift lcd_coords into fixed point
-            int64_t x2 = a*lcd_x + (((int64_t)bgx));
-            int64_t y2 = c*lcd_x + (((int64_t)bgy));
-            if(mosaic){
-              int16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
-              int mos_x = SB_BFE(mos_reg,0,4)+1;
-              x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
-              y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
-            }
-            bg_x = (x2>>8);
-            bg_y = (y2>>8);
-
-            if(display_overflow==0){
-              if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
-            }else{
-              bg_x%=screen_size_x;
-              bg_y%=screen_size_y;
-            }
-          }else{
-            int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset);
-            int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4+reg_offset);
-            hoff=(hoff<<7)>>7;
-            voff=(voff<<7)>>7;
-            bg_x = (hoff+lcd_x);
-            bg_y = (voff+lcd_y);
-            if(mosaic){
-              uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
-              int mos_x = SB_BFE(mos_reg,0,4)+1;
-              int mos_y = SB_BFE(mos_reg,4,4)+1;
-              bg_x = hoff+(lcd_x/mos_x)*mos_x;
-              bg_y = voff+(lcd_y/mos_y)*mos_y;
+          // From Mirei: Affine registers are only incremented when bg_mode is not 0
+          // and the bg is enabled.
+          if(bg_mode!=0){
+            for(int aff=0;aff<2;++aff){
+              bool bg_en = SB_BFE(dispcnt,8+aff+2,1);
+              if(!bg_en)continue;
+              int32_t b = (int16_t)nds9_io_read16(nds,GBA_BG2PB+(aff)*0x10+reg_offset);
+              int32_t d = (int16_t)nds9_io_read16(nds,GBA_BG2PD+(aff)*0x10+reg_offset);
+              uint16_t bgcnt = nds9_io_read16(nds, GBA_BG2CNT+aff*2+reg_offset);
+              bool mosaic = SB_BFE(bgcnt,6,1);
+              if(mosaic){
+                uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
+                int mos_y = SB_BFE(mos_reg,4,4)+1;
+                if((lcd_y%mos_y)==0){
+                  ppu->aff[aff].internal_bgx+=b*mos_y;
+                  ppu->aff[aff].internal_bgy+=d*mos_y;
+                }
+              }else{
+                ppu->aff[aff].internal_bgx+=b;
+                ppu->aff[aff].internal_bgy+=d;
+              }
             }
           }
-          int screen_base_addr    = screen_base*2*1024;
-          //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
-          //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
-          int character_base_addr = character_base*16*1024;
-         
-          int32_t bg_base = ppu_id? 0x06200000:0x06000000;
-          bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
-          bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
-          if(bitmap_mode){
-            screen_base_addr=screen_base*16*1024;
-            int p = bg_x+(bg_y)*screen_size_x;
-            if(bitmap_mode){
-              bool direct_color = SB_BFE(bgcnt,2,1);
-              if(direct_color){
-                col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
-                if(!SB_BFE(col,15,1))continue;
+        }
+      }
+      if(lcd_y != ppu->last_lcd_y||true){
+        if(vblank!=ppu->last_vblank){
+          ppu->last_vblank = vblank;
+          bool vblank_irq_en = SB_BFE(disp_stat,3,1);
+          bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
+          if(vblank&&vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
+          if(vblank&&vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK); 
+          nds->activate_dmas|=nds->dma_wait_ppu;
+          if(vblank&&ppu_id==0){
+            //Done with capture
+            dispcapcnt&=~(1<<31);
+            nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
+          }
+        }
+        ppu->last_lcd_y  = lcd_y;
+        if(lcd_y==vcount_cmp) {
+          bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
+          if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
+        }
+        if(lcd_y==vcount_cmp7) {
+          bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
+          if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
+        }
+        //Latch BGX and BGY registers
+        if(lcd_y==0){
+          for(int aff=0;aff<2;++aff){
+            ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
+            ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10+reg_offset);
+
+            ppu->aff[aff].internal_bgx = SB_BFE(ppu->aff[aff].internal_bgx,0,28);
+            ppu->aff[aff].internal_bgy = SB_BFE(ppu->aff[aff].internal_bgy,0,28);
+
+            ppu->aff[aff].internal_bgx = (ppu->aff[aff].internal_bgx<<4)>>4;
+            ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
+          }
+        }
+      }
+      if(ppu_id==0&&(new_if|new_if7)){
+        nds9_send_interrupt(nds,3,new_if);
+        nds7_send_interrupt(nds,3,new_if7);
+      }
+    }
+    uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
+    int display_mode = SB_BFE(dispcnt,16,2);
+    bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
+    render|=enable_capture;
+    if(!render)return; 
+    
+    bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
+    int bg_mode = SB_BFE(dispcnt,0,3);
+    int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
+    int forced_blank = SB_BFE(dispcnt,7,1);
+    if(forced_blank)return;
+    bool visible = lcd_x<NDS_LCD_W && lcd_y<NDS_LCD_H;
+    //Render sprites over scanline when it completes
+    if(lcd_y<NDS_LCD_H && lcd_x == 0){
+    
+      //Render sprites over scanline when it completes
+      uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
+      bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
+      uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT+reg_offset);
+      if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
+
+      for(int x=0;x<NDS_LCD_W;++x){ppu->window[x] = default_window_control;}
+      uint8_t obj_window_control = default_window_control;
+      bool obj_window_enable = SB_BFE(dispcnt,15,1);
+      if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
+      bool display_obj = SB_BFE(dispcnt,12,1);
+      if(display_obj){
+        int oam_offset = ppu_id*1024;
+        int obj_vram_base = ppu_id ==0? 0x06400000: 0x06600000;
+        for(int o=0;o<128;++o){
+          uint16_t attr0 = *(uint16_t*)(nds->mem.oam+o*8+0+oam_offset);
+          //Attr0
+          uint8_t y_coord = SB_BFE(attr0,0,8);
+          bool rot_scale =  SB_BFE(attr0,8,1);
+          bool double_size = SB_BFE(attr0,9,1)&&rot_scale;
+          bool obj_disable = SB_BFE(attr0,9,1)&&!rot_scale;
+          if(obj_disable) continue; 
+
+          int obj_mode = SB_BFE(attr0,10,2); //(0=Normal, 1=Semi-Transparent, 2=OBJ Window, 3=bitmap)
+          bool mosaic  = SB_BFE(attr0,12,1);
+          bool colors_or_palettes = SB_BFE(attr0,13,1);
+          int obj_shape = SB_BFE(attr0,14,2);//(0=Square,1=Horizontal,2=Vertical,3=Prohibited)
+          uint16_t attr1 = *(uint16_t*)(nds->mem.oam+o*8+2+oam_offset);
+
+          int rotscale_param = SB_BFE(attr1,9,5);
+          bool h_flip = SB_BFE(attr1,12,1)&&!rot_scale;
+          bool v_flip = SB_BFE(attr1,13,1)&&!rot_scale;
+          int obj_size = SB_BFE(attr1,14,2);
+          // Size  Square   Horizontal  Vertical
+          // 0     8x8      16x8        8x16
+          // 1     16x16    32x8        8x32
+          // 2     32x32    32x16       16x32
+          // 3     64x64    64x32       32x64
+          const int xsize_lookup[16]={
+            8,16,8,0,
+            16,32,8,0,
+            32,32,16,0,
+            64,64,32,0
+          };
+          const int ysize_lookup[16]={
+            8,8,16,0,
+            16,8,32,0,
+            32,16,32,0,
+            64,32,64,0
+          }; 
+
+          int y_size = ysize_lookup[obj_size*4+obj_shape];
+
+          if(((lcd_y-y_coord)&0xff) <y_size*(double_size?2:1)){
+
+            int16_t x_coord = SB_BFE(attr1,0,9);
+            if (SB_BFE(x_coord,8,1))x_coord|=0xfe00;
+
+            int x_size = xsize_lookup[obj_size*4+obj_shape];
+            int x_start = x_coord>=0?x_coord:0;
+            int x_end   = x_coord+x_size*(double_size?2:1);
+            if(x_end>=NDS_LCD_W)x_end=NDS_LCD_W;
+            //Attr2
+            //Skip objects disabled by window
+            uint16_t attr2 = *(uint16_t*)(nds->mem.oam+o*8+4 +oam_offset);
+            int tile_base = SB_BFE(attr2,0,10);
+            // Always place sprites as the highest priority
+            int priority = SB_BFE(attr2,10,2);
+            int palette = SB_BFE(attr2,12,4);
+            for(int x = x_start; x< x_end;++x){
+              int sx = (x-x_coord);
+              int sy = (lcd_y-y_coord)&0xff;
+              if(mosaic){
+                uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
+                int mos_x = SB_BFE(mos_reg,8,4)+1;
+                int mos_y = SB_BFE(mos_reg,12,4)+1;
+                sx = ((x/mos_x)*mos_x-x_coord);
+                sy = (((lcd_y/mos_y)*mos_y-y_coord)&0xff);
               }
-              else{
-                int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
-                if(pallete_id==0)continue;
-                col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
+              if(rot_scale){
+                uint32_t param_base = rotscale_param*0x20+oam_offset; 
+                int32_t a = *(int16_t*)(nds->mem.oam+param_base+0x6);
+                int32_t b = *(int16_t*)(nds->mem.oam+param_base+0xe);
+                int32_t c = *(int16_t*)(nds->mem.oam+param_base+0x16);
+                int32_t d = *(int16_t*)(nds->mem.oam+param_base+0x1e);
+  
+                int64_t x1 = sx<<8;
+                int64_t y1 = sy<<8;
+                int64_t objref_x = (x_size<<(double_size?8:7));
+                int64_t objref_y = (y_size<<(double_size?8:7));
+              
+                int64_t x2 = a*(x1-objref_x) + b*(y1-objref_y)+(x_size<<15);
+                int64_t y2 = c*(x1-objref_x) + d*(y1-objref_y)+(y_size<<15);
+
+                sx = (x2>>16);
+                sy = (y2>>16);
+                if(sx>=x_size||sy>=y_size||sx<0||sy<0)continue;
+              }else{
+                if(h_flip)sx=x_size-sx-1;
+                if(v_flip)sy=y_size-sy-1;
+              }
+              uint32_t col =0;
+              if(obj_mode==3){
+
+                bool linear = SB_BFE(dispcnt,6,1);
+                //TODO: Bitmap sprites
+                if(linear){
+                  int boundry = SB_BFE(dispcnt,22,1);
+                  tile_base *= boundry? 256: 128;
+                  int p = sx+sy*x_size;
+                  col = nds_ppu_read16(nds,obj_vram_base+tile_base+p*2);
+                }else{
+                  bool size = SB_BFE(dispcnt,5,1);
+                  int p = 0;             
+                  if(size){
+                    int tile_x=SB_BFE(tile_base,0,5);
+                    int tile_y=SB_BFE(tile_base,5,5);
+                    p = (tile_x*8+sx)+(tile_y*8+sy)*32*8;
+                  }else{
+                    int tile_x=SB_BFE(tile_base,0,4);
+                    int tile_y=SB_BFE(tile_base,4,6);
+                    p = (tile_x*8+sx)+(tile_y*8+sy)*16*8;
+                  }
+                  col = nds_ppu_read16(nds,obj_vram_base+p*2);
+                  if(!SB_BFE(col,15,1))continue;
+                }
+              }else{
+                int tx = sx%8;
+                int ty = sy%8;
+                bool tile_obj_mapping = SB_BFE(dispcnt,4,1);
+                        
+                int y_tile_stride = obj_vram_map_2d? 32 : x_size/8*(colors_or_palettes? 2:1);
+
+                int tile_boundry = 32;
+                if(tile_obj_mapping ==true){
+                  int tile_obj_1d_boundry = SB_BFE(dispcnt,20,2);
+                  tile_boundry = 32<<tile_obj_1d_boundry;
+                  y_tile_stride=x_size/8*(colors_or_palettes? 2:1);
+                }
+                int tile = tile_base*tile_boundry/32 + (((sx/8))*(colors_or_palettes? 2:1)+(sy/8)*y_tile_stride);
+                //tile*=tile_boundry/32;
+                uint16_t palette_id;
+                bool use_obj_ext_palettes = SB_BFE(dispcnt,31,1);
+                if(colors_or_palettes==false){
+                  palette_id= nds_ppu_read8(nds,obj_vram_base+tile*32+tx/2+ty*4);
+                  palette_id= (palette_id>>((tx&1)*4))&0xf;
+                  if(palette_id==0)continue;
+                  palette_id+=palette*16;
+                  use_obj_ext_palettes=false; //Not supported in 16 color mode
+                }else{
+                  palette_id=nds_ppu_read8(nds,obj_vram_base+tile*32+tx+ty*8);
+                  if(palette_id==0)continue;
+                }
+                if(use_obj_ext_palettes){
+                  palette_id=(palette)*256+palette_id;
+                  uint32_t read_addr = (ppu_id?NDS_VRAM_OBJB_SLOT0:NDS_VRAM_OBJA_SLOT0)+palette_id*2;
+                  col = nds_ppu_read16(nds, read_addr);
+                }else{
+                  uint32_t pallete_offset = ppu_id?0x600:0x200; 
+                  col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
+                }
+              }
+
+              //Handle window objects(not displayed but control the windowing of other things)
+              if(obj_mode==2){ppu->window[x]=obj_window_control; 
+              }else{
+                int type =4;
+                col=col|(type<<17)|((5-priority)<<28)|((0x7)<<25);
+                if(obj_mode==1)col|=1<<16;
+                if((col>>17)>(ppu->first_target_buffer[x]>>17))ppu->first_target_buffer[x]=col;
+              }  
+            }
+          }
+        }
+      }
+      int enabled_windows = SB_BFE(dispcnt,13,3); // [0: win0, 1:win1, 2: objwin]
+      if(enabled_windows){
+        for(int win=1;win>=0;--win){
+          bool win_enable = SB_BFE(dispcnt,13+win,1);
+          if(!win_enable)continue;
+          uint16_t WINH = nds9_io_read16(nds, GBA_WIN0H+2*win+reg_offset);
+          uint16_t WINV = nds9_io_read16(nds, GBA_WIN0V+2*win+reg_offset);
+          int win_xmin = SB_BFE(WINH,8,8);
+          int win_xmax = SB_BFE(WINH,0,8);
+          int win_ymin = SB_BFE(WINV,8,8);
+          int win_ymax = SB_BFE(WINV,0,8);
+          // Garbage values of X2>240 or X1>X2 are interpreted as X2=240.
+          // Garbage values of Y2>160 or Y1>Y2 are interpreted as Y2=160. 
+          if(win_xmin>win_xmax)win_xmax=NDS_LCD_W;
+          if(win_ymin>win_ymax)win_ymax=NDS_LCD_H+1;
+          if(win_xmax>NDS_LCD_W)win_xmax=NDS_LCD_W;
+          if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
+          uint16_t winin = nds9_io_read16(nds,GBA_WININ+reg_offset);
+          uint8_t win_value = SB_BFE(winin,win*8,6);
+          for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
+        }
+        int backdrop_type = 5;
+        uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
+        for(int x=0;x<NDS_LCD_W;++x){
+          uint8_t window_control = ppu->window[x];
+          if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
+        }
+      }
+    }
+    if(visible){
+      uint8_t window_control =ppu->window[lcd_x];
+      if(display_mode==2){
+        int vram_block = SB_BFE(dispcnt,18,2);
+        ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
+      }else if(display_mode==0){
+        ppu->first_target_buffer[lcd_x] = 0xffffffff;
+      }else{
+        for(int bg = 3; bg>=0;--bg){
+          #define NDS_BG_TEXT 0
+          #define NDS_BG_AFFINE 1
+          #define NDS_BG_BITMAP 2
+          #define NDS_BG_LARGE_BITMAP 3
+          #define NDS_BG_INVALID 4
+
+          const int bg_mode_table[8*4]={
+            /* mode 0: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,
+            /* mode 1: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,
+            /* mode 2: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_AFFINE,
+            /* mode 3: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,
+            /* mode 4: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_AFFINE,NDS_BG_BITMAP,
+            /* mode 5: */NDS_BG_TEXT,NDS_BG_TEXT,NDS_BG_BITMAP,NDS_BG_BITMAP,
+            /* mode 6: */NDS_BG_TEXT,NDS_BG_INVALID,NDS_BG_LARGE_BITMAP,NDS_BG_INVALID,
+            /* mode 7: */NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,NDS_BG_INVALID,
+          };
+          const int bg_size_table[4*4*2]={
+            /* TEXT: */        
+            256,256,
+            512,256,
+            256,512,
+            512,512,
+            /* AFFINE: */ 
+            128,128,
+            256,256,
+            512,512,
+            1024,1024,
+            /* BITMAP: */ 
+            128,128,
+            256,256,
+            512,256,
+            512,512,
+            /* LARGE BITMAP: */
+            512,1024,
+            1024,512,
+            0,0, //INVALID
+            0,0, //INVALID
+          };
+          int bg_type = bg_mode_table[bg_mode*4+bg];
+          if(bg_type==NDS_BG_INVALID)continue;
+          uint32_t col =0;         
+          bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
+          if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
+
+          bool rot_scale = bg_type!=NDS_BG_TEXT;
+          uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
+          int priority = SB_BFE(bgcnt,0,2);
+          int character_base = SB_BFE(bgcnt,2,4);
+          bool mosaic = SB_BFE(bgcnt,6,1);
+          bool colors = SB_BFE(bgcnt,7,1);
+          int screen_base = SB_BFE(bgcnt,8,5);
+          bool display_overflow =SB_BFE(bgcnt,13,1);
+          int screen_size = SB_BFE(bgcnt,14,2); 
+
+          if(SB_UNLIKELY(enable_3d&&bg==0)){
+            int p = lcd_x+lcd_y*NDS_LCD_W;
+            col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
+            col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
+            col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+            if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
+          }else{
+            int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
+            int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
+          
+            int bg_x = 0;
+            int bg_y = 0;
+            uint32_t pallete_offset = ppu_id?0x400:0; 
+
+            bool use_ext_palettes = SB_BFE(dispcnt,30,1);
+
+            if(rot_scale){
+              colors = true;
+
+              int32_t bgx = ppu->aff[bg-2].internal_bgx;
+              int32_t bgy = ppu->aff[bg-2].internal_bgy;
+
+              int32_t a = (int16_t)nds9_io_read16(nds,GBA_BG2PA+(bg-2)*0x10+reg_offset);
+              int32_t c = (int16_t)nds9_io_read16(nds,GBA_BG2PC+(bg-2)*0x10+reg_offset);
+
+              // Shift lcd_coords into fixed point
+              int64_t x2 = a*lcd_x + (((int64_t)bgx));
+              int64_t y2 = c*lcd_x + (((int64_t)bgy));
+              if(mosaic){
+                int16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
+                int mos_x = SB_BFE(mos_reg,0,4)+1;
+                x2 = a*((lcd_x/mos_x)*mos_x) + (((int64_t)bgx));
+                y2 = c*((lcd_x/mos_x)*mos_x) + (((int64_t)bgy));
+              }
+              bg_x = (x2>>8);
+              bg_y = (y2>>8);
+
+              if(display_overflow==0){
+                if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
+              }else{
+                bg_x%=screen_size_x;
+                bg_y%=screen_size_y;
               }
             }else{
-              col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+              int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset);
+              int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4+reg_offset);
+              hoff=(hoff<<7)>>7;
+              voff=(voff<<7)>>7;
+              bg_x = (hoff+lcd_x);
+              bg_y = (voff+lcd_y);
+              if(mosaic){
+                uint16_t mos_reg = nds9_io_read16(nds,GBA_MOSAIC+reg_offset);
+                int mos_x = SB_BFE(mos_reg,0,4)+1;
+                int mos_y = SB_BFE(mos_reg,4,4)+1;
+                bg_x = hoff+(lcd_x/mos_x)*mos_x;
+                bg_y = voff+(lcd_y/mos_y)*mos_y;
+              }
             }
-          }else{
-            bg_x = bg_x&(screen_size_x-1);
-            bg_y = bg_y&(screen_size_y-1);
-            int bg_tile_x = bg_x/8;
-            int bg_tile_y = bg_y/8;
-
-            int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
-
-
+            int screen_base_addr    = screen_base*2*1024;
             //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
             //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
-            if(ppu_id==0){
-              character_base_addr+=SB_BFE(dispcnt,24,3)*64*1024;
-              screen_base+=SB_BFE(dispcnt,27,3)*64*1024;
-            }
-            uint16_t tile_data =0;
-
-            int px = bg_x%8;
-            int py = bg_y%8;
-
-            if(extended_bgmap){
-              tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
-              int h_flip = SB_BFE(tile_data,10,1);
-              int v_flip = SB_BFE(tile_data,11,1);
-              if(h_flip)px=7-px;
-              if(v_flip)py=7-py;
-            }else if(rot_scale){
-              tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
-              use_ext_palettes=false; //Not supported for 8bit bg map
+            int character_base_addr = character_base*16*1024;
+          
+            int32_t bg_base = ppu_id? 0x06200000:0x06000000;
+            bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+            bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+            if(bitmap_mode){
+              screen_base_addr=screen_base*16*1024;
+              int p = bg_x+(bg_y)*screen_size_x;
+              if(bitmap_mode){
+                bool direct_color = SB_BFE(bgcnt,2,1);
+                if(direct_color){
+                  col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+                  if(!SB_BFE(col,15,1))continue;
+                }
+                else{
+                  int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
+                  if(pallete_id==0)continue;
+                  col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
+                }
+              }else{
+                col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+              }
             }else{
-              int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
-              if(bg_tile_x>=32)tile_off+=32*32;
-              if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
-              tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
-              //printf("tx:%d ty:%d tile_off:%08x data:%08x\n",bg_tile_x,bg_tile_y,bg_base+screen_base_addr+tile_off,tile_data);
-              int h_flip = SB_BFE(tile_data,10,1);
-              int v_flip = SB_BFE(tile_data,11,1);
-              if(h_flip)px=7-px;
-              if(v_flip)py=7-py;
-            }
-            int tile_id = SB_BFE(tile_data,0,10);
-            int palette = SB_BFE(tile_data,12,4);
+              bg_x = bg_x&(screen_size_x-1);
+              bg_y = bg_y&(screen_size_y-1);
+              int bg_tile_x = bg_x/8;
+              int bg_tile_y = bg_y/8;
 
-            uint8_t tile_d=tile_id;
-            if(colors==false){
-              tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
-              tile_d= (tile_d>>((px&1)*4))&0xf;
-              if(tile_d==0)continue;
-              tile_d+=palette*16;
-              use_ext_palettes=false;
-            }else{
-              tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
-              if(tile_d==0)continue;
+              int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
+
+
+              //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
+              //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
+              if(ppu_id==0){
+                character_base_addr+=SB_BFE(dispcnt,24,3)*64*1024;
+                screen_base+=SB_BFE(dispcnt,27,3)*64*1024;
+              }
+              uint16_t tile_data =0;
+
+              int px = bg_x%8;
+              int py = bg_y%8;
+
+              if(extended_bgmap){
+                tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
+                int h_flip = SB_BFE(tile_data,10,1);
+                int v_flip = SB_BFE(tile_data,11,1);
+                if(h_flip)px=7-px;
+                if(v_flip)py=7-py;
+              }else if(rot_scale){
+                tile_data=nds_ppu_read8(nds,bg_base+screen_base_addr+tile_off);
+                use_ext_palettes=false; //Not supported for 8bit bg map
+              }else{
+                int tile_off = (bg_tile_y%32)*32+(bg_tile_x%32);
+                if(bg_tile_x>=32)tile_off+=32*32;
+                if(bg_tile_y>=32)tile_off+=32*32*(screen_size==3?2:1);
+                tile_data=nds_ppu_read16(nds,bg_base+screen_base_addr+tile_off*2);
+                //printf("tx:%d ty:%d tile_off:%08x data:%08x\n",bg_tile_x,bg_tile_y,bg_base+screen_base_addr+tile_off,tile_data);
+                int h_flip = SB_BFE(tile_data,10,1);
+                int v_flip = SB_BFE(tile_data,11,1);
+                if(h_flip)px=7-px;
+                if(v_flip)py=7-py;
+              }
+              int tile_id = SB_BFE(tile_data,0,10);
+              int palette = SB_BFE(tile_data,12,4);
+
+              uint8_t tile_d=tile_id;
+              if(colors==false){
+                tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*4+px/2+py*4);
+                tile_d= (tile_d>>((px&1)*4))&0xf;
+                if(tile_d==0)continue;
+                tile_d+=palette*16;
+                use_ext_palettes=false;
+              }else{
+                tile_d=nds_ppu_read8(nds,bg_base+character_base_addr+tile_id*8*8+px+py*8);
+                if(tile_d==0)continue;
+              }
+              uint32_t palette_id = tile_d;
+              if(use_ext_palettes){
+                palette_id=(palette)*256+tile_d;
+                int ext_palette_slot = bg;
+                if(bg<2)ext_palette_slot+=SB_BFE(bgcnt,13,1)*2;
+                uint32_t read_addr = (ppu_id?NDS_VRAM_BGB_SLOT0:NDS_VRAM_BGA_SLOT0)+palette_id*2+0x2000*(ext_palette_slot);
+                col = nds_ppu_read16(nds, read_addr);
+              }else col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
             }
-            uint32_t palette_id = tile_d;
-            if(use_ext_palettes){
-              palette_id=(palette)*256+tile_d;
-              int ext_palette_slot = bg;
-              if(bg<2)ext_palette_slot+=SB_BFE(bgcnt,13,1)*2;
-              uint32_t read_addr = (ppu_id?NDS_VRAM_BGB_SLOT0:NDS_VRAM_BGA_SLOT0)+palette_id*2+0x2000*(ext_palette_slot);
-              col = nds_ppu_read16(nds, read_addr);
-            }else col = *(uint16_t*)(nds->mem.palette+pallete_offset+palette_id*2);
+          }
+          col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
+          if(col>ppu->first_target_buffer[lcd_x]){
+            uint32_t t = ppu->first_target_buffer[lcd_x];
+            ppu->first_target_buffer[lcd_x]=col;
+            col = t;
+          }
+          if(col>ppu->second_target_buffer[lcd_x])ppu->second_target_buffer[lcd_x]=col;          
+        }
+      }
+      uint32_t col = ppu->first_target_buffer[lcd_x];
+      int r = SB_BFE(col,0,5);
+      int g = SB_BFE(col,5,5);
+      int b = SB_BFE(col,10,5);
+      uint32_t type = SB_BFE(col,17,3);
+
+      bool effect_enable = SB_BFE(window_control,5,1);
+      uint16_t bldcnt = nds9_io_read16(nds,GBA_BLDCNT+reg_offset);
+      int mode = SB_BFE(bldcnt,6,2);
+
+      //Semitransparent objects are always selected for blending
+      if(SB_BFE(col,16,1)){
+        uint32_t col2 = ppu->second_target_buffer[lcd_x];
+        uint32_t type2 = SB_BFE(col2,17,3);
+        bool blend = SB_BFE(bldcnt,8+type2,1);
+        if(blend){mode=1;effect_enable=true;}
+        else effect_enable &= SB_BFE(bldcnt,type,1);
+      }else effect_enable &= SB_BFE(bldcnt,type,1);
+      if(effect_enable){
+        uint16_t bldy = nds9_io_read16(nds,GBA_BLDY+reg_offset);
+        float evy = SB_BFE(bldy,0,5)/16.;
+        if(evy>1.0)evy=1;
+        switch(mode){
+          case 0: break; //None
+          case 1: {
+            uint32_t col2 = ppu->second_target_buffer[lcd_x];
+            uint32_t type2 = SB_BFE(col2,17,3);
+            bool blend = SB_BFE(bldcnt,8+type2,1);
+            if(blend){
+              uint16_t bldalpha= nds9_io_read16(nds,GBA_BLDALPHA+reg_offset);
+              //3d engines alpha blend based on the 3d alpha
+              
+              int r2 = SB_BFE(col2,0,5);
+              int g2 = SB_BFE(col2,5,5);
+              int b2 = SB_BFE(col2,10,5);
+              int eva = SB_BFE(bldalpha,0,5);
+              int evb = SB_BFE(bldalpha,8,5);
+              if(enable_3d&&type==0){
+                eva = nds->framebuffer_3d_disp[(lcd_x+lcd_y*NDS_LCD_W)*4+3]/16;
+                if(eva==15)eva=16;
+                evb = 16-eva;
+              }
+              if(eva>16)eva=16;
+              if(evb>16)evb=16;
+              r = (r*eva+r2*evb)/16;
+              g = (g*eva+g2*evb)/16;
+              b = (b*eva+b2*evb)/16;
+              if(r>31)r = 31;
+              if(g>31)g = 31;
+              if(b>31)b = 31;
+            }
+          }break; //Alpha Blend
+          case 2: //Lighten
+            r = r+(31-r)*evy;
+            g = g+(31-g)*evy;
+            b = b+(31-b)*evy;  
+            break; 
+          case 3: //Darken
+            r = r-(r)*evy;
+            g = g-(g)*evy;
+            b = b-(b)*evy;         
+            break; 
+        }
+      }
+      {
+        uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
+        int factor = SB_BFE(master_brightness,0,5);
+        int mode = SB_BFE(master_brightness,14,2);
+        if(factor>16)factor=16;
+        if(mode==1){
+          r += (63-r)*factor/16;
+          g += (63-g)*factor/16;
+          b += (63-b)*factor/16;
+        }else if(mode==2){
+          r -= r*factor/16;
+          g -= g*factor/16;
+          b -= b*factor/16;
+        }
+        if(r<0)r=0;
+        if(g<0)g=0;
+        if(b<0)b=0;
+
+        if(r>31)r=31;
+        if(g>31)g=31;
+        if(b>31)b=31;
+      }
+      if(enable_capture){
+        uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
+        //TODO: EVA/EVB, sources other than 0
+        int write_block = SB_BFE(dispcapcnt, 16,2);
+        int write_offset = SB_BFE(dispcapcnt, 18,2);
+        int size = SB_BFE(dispcapcnt, 20,2);
+        int szx = 128; int szy = 128;
+        if(size!=0){szx=256; szy= size*64;}
+        bool source_a = SB_BFE(dispcapcnt,24,1);
+        if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
+          int p = lcd_x+lcd_y*NDS_LCD_W;
+          color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
+          color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
+          color |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+        }
+        int capture_mode = SB_BFE(dispcapcnt,29,2);
+        
+        if(capture_mode>=2){        
+          int r = SB_BFE(color,0,5);
+          int g = SB_BFE(color,5,5);
+          int b = SB_BFE(color,10,5);
+          int read_offset = SB_BFE(dispcapcnt, 26,2);
+          uint32_t read_address = 0x06800000;
+          read_address+=read_offset*0x08000;
+          read_address+=lcd_y*szx*2+lcd_x*2;
+          uint16_t color2=nds9_read16(nds,read_address);
+          if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
+
+          int r2 = SB_BFE(color2,0,5);
+          int g2 = SB_BFE(color2,5,5);
+          int b2 = SB_BFE(color2,10,5);
+          int eva = SB_BFE(dispcapcnt,0,5);
+          int evb = SB_BFE(dispcapcnt,8,5);
+      
+          if(eva>16)eva=16;
+          if(evb>16)evb=16;
+          r = (r*eva+r2*evb)/16;
+          g = (g*eva+g2*evb)/16;
+          b = (b*eva+b2*evb)/16;
+          if(r>31)r = 31;
+          if(g>31)g = 31;
+          if(b>31)b = 31;
+          color  = SB_BFE(r,0,5);
+          color |= SB_BFE(g,0,5)<<5;
+          color |= SB_BFE(b,0,5)<<10;
+        }
+
+        
+        if(lcd_x<szx){
+          if(lcd_y<szy){
+            uint32_t write_address = 0x06800000;
+            write_address+=write_block*128*1024;
+            write_address+=write_offset*0x08000;
+            write_address+=lcd_y*szx*2+lcd_x*2;
+            color|=0x8000;//TODO: Confirm that captured alpha is always 1
+            nds9_write16(nds,write_address,color);
           }
         }
-        col |= (bg<<17) | ((5-priority)<<28)|((4-bg)<<25);
-        if(col>ppu->first_target_buffer[lcd_x]){
-          uint32_t t = ppu->first_target_buffer[lcd_x];
-          ppu->first_target_buffer[lcd_x]=col;
-          col = t;
-        }
-        if(col>ppu->second_target_buffer[lcd_x])ppu->second_target_buffer[lcd_x]=col;          
       }
-    }
-    uint32_t col = ppu->first_target_buffer[lcd_x];
-    int r = SB_BFE(col,0,5);
-    int g = SB_BFE(col,5,5);
-    int b = SB_BFE(col,10,5);
-    uint32_t type = SB_BFE(col,17,3);
 
-    bool effect_enable = SB_BFE(window_control,5,1);
-    uint16_t bldcnt = nds9_io_read16(nds,GBA_BLDCNT+reg_offset);
-    int mode = SB_BFE(bldcnt,6,2);
-
-    //Semitransparent objects are always selected for blending
-    if(SB_BFE(col,16,1)){
-      uint32_t col2 = ppu->second_target_buffer[lcd_x];
-      uint32_t type2 = SB_BFE(col2,17,3);
-      bool blend = SB_BFE(bldcnt,8+type2,1);
-      if(blend){mode=1;effect_enable=true;}
-      else effect_enable &= SB_BFE(bldcnt,type,1);
-    }else effect_enable &= SB_BFE(bldcnt,type,1);
-    if(effect_enable){
-      uint16_t bldy = nds9_io_read16(nds,GBA_BLDY+reg_offset);
-      float evy = SB_BFE(bldy,0,5)/16.;
-      if(evy>1.0)evy=1;
-      switch(mode){
-        case 0: break; //None
-        case 1: {
-          uint32_t col2 = ppu->second_target_buffer[lcd_x];
-          uint32_t type2 = SB_BFE(col2,17,3);
-          bool blend = SB_BFE(bldcnt,8+type2,1);
-          if(blend){
-            uint16_t bldalpha= nds9_io_read16(nds,GBA_BLDALPHA+reg_offset);
-            //3d engines alpha blend based on the 3d alpha
-            
-            int r2 = SB_BFE(col2,0,5);
-            int g2 = SB_BFE(col2,5,5);
-            int b2 = SB_BFE(col2,10,5);
-            int eva = SB_BFE(bldalpha,0,5);
-            int evb = SB_BFE(bldalpha,8,5);
-            if(enable_3d&&type==0){
-              eva = nds->framebuffer_3d_disp[(lcd_x+lcd_y*NDS_LCD_W)*4+3]/16;
-              if(eva==15)eva=16;
-              evb = 16-eva;
-            }
-            if(eva>16)eva=16;
-            if(evb>16)evb=16;
-            r = (r*eva+r2*evb)/16;
-            g = (g*eva+g2*evb)/16;
-            b = (b*eva+b2*evb)/16;
-            if(r>31)r = 31;
-            if(g>31)g = 31;
-            if(b>31)b = 31;
-          }
-        }break; //Alpha Blend
-        case 2: //Lighten
-          r = r+(31-r)*evy;
-          g = g+(31-g)*evy;
-          b = b+(31-b)*evy;  
-          break; 
-        case 3: //Darken
-          r = r-(r)*evy;
-          g = g-(g)*evy;
-          b = b-(b)*evy;         
-          break; 
-      }
-    }
-    {
-      uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
-      int factor = SB_BFE(master_brightness,0,5);
-      int mode = SB_BFE(master_brightness,14,2);
-      if(factor>16)factor=16;
-      if(mode==1){
-        r += (63-r)*factor/16;
-        g += (63-g)*factor/16;
-        b += (63-b)*factor/16;
-      }else if(mode==2){
-        r -= r*factor/16;
-        g -= g*factor/16;
-        b -= b*factor/16;
-      }
-      if(r<0)r=0;
-      if(g<0)g=0;
-      if(b<0)b=0;
-
-      if(r>31)r=31;
-      if(g>31)g=31;
-      if(b>31)b=31;
-    }
-    if(enable_capture){
-      uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
-      //TODO: EVA/EVB, sources other than 0
-      int write_block = SB_BFE(dispcapcnt, 16,2);
-      int write_offset = SB_BFE(dispcapcnt, 18,2);
-      int size = SB_BFE(dispcapcnt, 20,2);
-      int szx = 128; int szy = 128;
-      if(size!=0){szx=256; szy= size*64;}
-      bool source_a = SB_BFE(dispcapcnt,24,1);
-      if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
-        int p = lcd_x+lcd_y*NDS_LCD_W;
-        color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
-        color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
-        color |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
-      }
-      int capture_mode = SB_BFE(dispcapcnt,29,2);
+      int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
+      float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
+      if(screen_blend_factor>1.0)screen_blend_factor=1;
+      if(screen_blend_factor<0.0)screen_blend_factor=0;
+      uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
+      bool display_flip = SB_BFE(powcnt1,15,1);
+      uint8_t *framebuffer = (ppu_id==0)^display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
+      framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
+      framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
+      framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
+      int backdrop_type = 5;
+      uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
       
-      if(capture_mode>=2){        
-        int r = SB_BFE(color,0,5);
-        int g = SB_BFE(color,5,5);
-        int b = SB_BFE(color,10,5);
-        int read_offset = SB_BFE(dispcapcnt, 26,2);
-        uint32_t read_address = 0x06800000;
-        read_address+=read_offset*0x08000;
-        read_address+=lcd_y*szx*2+lcd_x*2;
-        uint16_t color2=nds9_read16(nds,read_address);
-        if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
-
-        int r2 = SB_BFE(color2,0,5);
-        int g2 = SB_BFE(color2,5,5);
-        int b2 = SB_BFE(color2,10,5);
-        int eva = SB_BFE(dispcapcnt,0,5);
-        int evb = SB_BFE(dispcapcnt,8,5);
-    
-        if(eva>16)eva=16;
-        if(evb>16)evb=16;
-        r = (r*eva+r2*evb)/16;
-        g = (g*eva+g2*evb)/16;
-        b = (b*eva+b2*evb)/16;
-        if(r>31)r = 31;
-        if(g>31)g = 31;
-        if(b>31)b = 31;
-        color  = SB_BFE(r,0,5);
-        color |= SB_BFE(g,0,5)<<5;
-        color |= SB_BFE(b,0,5)<<10;
-      }
-
-      
-      if(lcd_x<szx){
-        if(lcd_y<szy){
-          uint32_t write_address = 0x06800000;
-          write_address+=write_block*128*1024;
-          write_address+=write_offset*0x08000;
-          write_address+=lcd_y*szx*2+lcd_x*2;
-          color|=0x8000;//TODO: Confirm that captured alpha is always 1
-          nds9_write16(nds,write_address,color);
-        }
-      }
+      ppu->first_target_buffer[lcd_x] = backdrop_col;
+      ppu->second_target_buffer[lcd_x] = backdrop_col;
     }
-
-    int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-    float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
-    if(screen_blend_factor>1.0)screen_blend_factor=1;
-    if(screen_blend_factor<0.0)screen_blend_factor=0;
-    uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
-    bool display_flip = SB_BFE(powcnt1,15,1);
-    uint8_t *framebuffer = (ppu_id==0)^display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
-    framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
-    framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
-    framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
-    int backdrop_type = 5;
-    uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
-    
-    ppu->first_target_buffer[lcd_x] = backdrop_col;
-    ppu->second_target_buffer[lcd_x] = backdrop_col;
   }
 }
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
@@ -6343,8 +6346,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
             else arm9_exec_instruction(&nds->arm9);
             gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
             if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-            else if(!gx_fifo_full&&!nds->arm9.trigger_breakpoint) arm9_exec_instruction(&nds->arm9);
+            else if(!gx_fifo_full&&!nds->arm9.trigger_breakpoint&&SB_LIKELY(!nds->arm9.wait_for_interrupt)) arm9_exec_instruction(&nds->arm9);
           }
+         
         }
         if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
           emu->run_mode = SB_MODE_PAUSE;
@@ -6365,8 +6369,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);
       nds_tick_timers(nds);
-      nds_tick_ppu(nds,0,emu->render_frame);
-      nds_tick_ppu(nds,1,emu->render_frame);
+      nds_tick_ppu(nds,emu->render_frame);
       nds_tick_gx(nds);
       nds->current_clock++;
     }
