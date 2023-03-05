@@ -3110,7 +3110,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   //nds->io9_log = fopen("io9log.txt","wb");
   //nds->vert_log = fopen("vertlog.txt","wb");
   //nds->gc_log = fopen("gclog.txt","wb");
-  nds->dma_log = fopen("dmalog.txt","wb");
+  //nds->dma_log = fopen("dmalog.txt","wb");
 
   return true; 
 }  
@@ -4065,12 +4065,26 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   uint32_t poly_attr = nds->gpu.poly_attr;
   int alpha = SB_BFE(poly_attr,16,5);
   int polygon_mode = SB_BFE(poly_attr,4,2);//(0=Modulation,1=Decal,2=Toon/Highlight Shading,3=Shadow)
+  bool render_front =   SB_BFE(poly_attr,6,1);
+  bool render_back =  SB_BFE(poly_attr,7,1);
   bool translucent_has_depth = SB_BFE(poly_attr,11,1);
+  
   //Skip non-normal triangles for now TODO: Fix this
   if(polygon_mode!=0&&polygon_mode!=2)return;
+  bool front_face=true;
+  {
+    float e0[3],e1[3];
+    SE_RPT3 e0[r]=v[1]->clip_pos[r]-v[0]->clip_pos[r];
+    SE_RPT3 e1[r]=v[2]->clip_pos[r]-v[0]->clip_pos[r];
+
+    front_face = (e0[1]*e1[0]-e0[0]*e1[1])<=0;
+    
+    if(!((front_face&&render_front)||(!front_face&&render_back)))return; 
+  }
 
   if(nds->gpu.poly_ram_offset>=2048);//return; Ignore extra polygons for now
   else nds->gpu.poly_ram_offset++;
+
 
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
     for(float x=min_p[0];x<max_p[0];x+=x_inc){
@@ -4142,7 +4156,7 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
         if(output_col[3]<=alpha_test_ref/31.)continue; 
       }
-      if(translucent_has_depth||alpha_blend>0.95)nds->framebuffer_3d_depth[p]=z;
+      if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
       for(int c=0;c<3;++c){
         nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
       }
@@ -4265,8 +4279,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       break;
     /*Quads     */ case 1: 
       if((nds->gpu.curr_draw_vert%4)==0){
-        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
-        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-2,nds->gpu.curr_vert-3);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+0,nds->gpu.curr_vert-4+1,nds->gpu.curr_vert-4+2);
+        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+2,nds->gpu.curr_vert-4+3,nds->gpu.curr_vert-4+0);
       }
       break;
     /*Tristrip  */ case 2: 
@@ -4277,8 +4291,13 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       break;
     /*Quadstrip */ case 3: 
       if(nds->gpu.curr_draw_vert>=4&&(nds->gpu.curr_draw_vert%2)==0){
-        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
-        nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2);
+        if(nds->gpu.curr_draw_vert%4){
+          nds_gpu_clip_tri(nds,nds->gpu.curr_vert-6+2,nds->gpu.curr_vert-6+3,nds->gpu.curr_vert-6+5);
+          nds_gpu_clip_tri(nds,nds->gpu.curr_vert-6+5,nds->gpu.curr_vert-6+4,nds->gpu.curr_vert-6+2);
+        }else{
+          nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+0,nds->gpu.curr_vert-4+1,nds->gpu.curr_vert-4+3);
+          nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+3,nds->gpu.curr_vert-4+2,nds->gpu.curr_vert-4+0);
+        }
       }
       break;
   }
@@ -4965,8 +4984,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
       vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
       vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
-      bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<262;
-      bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
+      bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<263;
+      bool hblank = lcd_x>=NDS_LCD_W;
       bool vcmp = lcd_y==vcount_cmp;
       bool vcmp7 = lcd_y==vcount_cmp7;
       disp_stat |= vblank ? 0x1: 0; 
@@ -5996,9 +6015,9 @@ static void nds_compute_timers(nds_t* nds){
 
   int ticks = nds->deferred_timer_ticks; 
   nds->deferred_timer_ticks=0;
-  int last_timer_overflow = 0; 
   int timer_ticks_before_event = 32768; 
   for(int cpu=0;cpu<2;++cpu){
+    int last_timer_overflow = 0; 
     for(int t=0;t<4;++t){ 
       uint16_t tm_cnt_h = nds_io_read16(nds,cpu,GBA_TM0CNT_H+t*4);
       bool enable = SB_BFE(tm_cnt_h,7,1);
@@ -6328,46 +6347,46 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
 
   while(true){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
-    if(!gx_fifo_full){
-      nds_tick_dma(nds,last_tick);
-      uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-      uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
-      {
-        if(SB_LIKELY(!nds->dma_processed[0])){
-          if(int7_if){
-            uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-            uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-            int7_if&=ie;
-            if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
-          }
-          if(nds->arm7.registers[PC]== emu->pc_breakpoint)nds->arm7.trigger_breakpoint=true;
-          else arm7_exec_instruction(&nds->arm7);
+    if(!gx_fifo_full) nds_tick_dma(nds,last_tick);
+    
+    uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+    uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
+    {
+      if(SB_LIKELY(!nds->dma_processed[0])){
+        if(int7_if){
+          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+          int7_if&=ie;
+          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
         }
-        if(SB_LIKELY(!nds->dma_processed[1])){
-          if(int9_if){
-            int9_if &= nds9_io_read32(nds,NDS9_IE);
-            uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-            if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
-          }
-          if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
-            if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-            else arm9_exec_instruction(&nds->arm9);
-            gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
-            if(nds->arm9.registers[PC]== emu->pc_breakpoint)nds->arm9.trigger_breakpoint=true;
-            else if(!gx_fifo_full&&!nds->arm9.trigger_breakpoint&&SB_LIKELY(!nds->arm9.wait_for_interrupt)) arm9_exec_instruction(&nds->arm9);
-          }
-         
+        if(SB_UNLIKELY(nds->arm7.registers[PC]== emu->pc_breakpoint))nds->arm7.trigger_breakpoint=true;
+        else arm7_exec_instruction(&nds->arm7);
+      }
+      if(SB_LIKELY(!nds->dma_processed[1])&&!gx_fifo_full){
+        if(int9_if){
+          int9_if &= nds9_io_read32(nds,NDS9_IE);
+          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
         }
-        if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
-          emu->run_mode = SB_MODE_PAUSE;
-          nds->arm7.trigger_breakpoint=false;
-          nds->arm9.trigger_breakpoint=false;
-          printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
-          printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
-          break;
+        if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
+          if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
+          else arm9_exec_instruction(&nds->arm9);
+          gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
+          if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
+          else if(!gx_fifo_full&&!nds->arm9.trigger_breakpoint&&SB_LIKELY(!nds->arm9.wait_for_interrupt)) arm9_exec_instruction(&nds->arm9);
         }
-      }      
-    }
+        
+      }
+      if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
+        emu->run_mode = SB_MODE_PAUSE;
+        nds->arm7.trigger_breakpoint=false;
+        nds->arm9.trigger_breakpoint=false;
+        printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
+        printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
+        break;
+      }
+    }      
+    
     
     int ticks = 1;
     last_tick=ticks;
