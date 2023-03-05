@@ -1969,6 +1969,8 @@ typedef struct{
   int scan_clock; 
   bool last_vblank;
   bool last_hblank;
+  bool last_vcmp;
+  bool last_vcmp7;
   int last_lcd_y; 
   struct {
     int32_t internal_bgx;
@@ -4955,7 +4957,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
     int lcd_y = (ppu->scan_clock)/clocks_per_line;
     int lcd_x = ((ppu->scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
-    int early_hblank_exit = 350; 
+    int early_hblank_exit = 354; 
     if(lcd_x==0||lcd_x==NDS_LCD_W||lcd_x==early_hblank_exit){
       uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
       uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
@@ -4963,32 +4965,36 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
       vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
       vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
-      bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<263;
+      bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<262;
       bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
+      bool vcmp = lcd_y==vcount_cmp;
+      bool vcmp7 = lcd_y==vcount_cmp7;
       disp_stat |= vblank ? 0x1: 0; 
       disp_stat |= hblank ? 0x2: 0;      
-      disp_stat |= lcd_y==vcount_cmp ? 0x4: 0;   
+      disp_stat |= vcmp ? 0x4: 0;   
       disp_stat7 |= vblank ? 0x1: 0; 
       disp_stat7 |= hblank ? 0x2: 0;      
-      disp_stat7 |= lcd_y==vcount_cmp7 ? 0x4: 0;   
-      nds7_io_store16(nds,GBA_VCOUNT,lcd_y);   
-      nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
-      nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
-      nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+      disp_stat7 |= vcmp7 ? 0x4: 0;   
+      if(ppu_id==0){
+        nds7_io_store16(nds,GBA_VCOUNT,lcd_y);   
+        nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
+        nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
+        nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+      }
       uint32_t new_if = 0;
       uint32_t new_if7 = 0;
       if(hblank!=ppu->last_hblank){
         ppu->last_hblank = hblank;
-        bool hblank_irq_en = SB_BFE(disp_stat,4,1);
-        bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
-        if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-        if(hblank&&hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
         nds->activate_dmas|=nds->dma_wait_ppu;
         if(!hblank){
           ppu->dispcnt_pipeline[0]=ppu->dispcnt_pipeline[1];
           ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
           ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT+reg_offset);
         }else{
+          bool hblank_irq_en = SB_BFE(disp_stat,4,1);
+          bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
+          if(hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+          if(hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
           uint16_t dispcnt = ppu->dispcnt_pipeline[0];
 
           int bg_mode = SB_BFE(dispcnt,0,3);
@@ -5018,31 +5024,17 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           }
         }
       }
-      if(lcd_y != ppu->last_lcd_y||true){
-        if(vblank!=ppu->last_vblank){
-          ppu->last_vblank = vblank;
+      if(vblank!=ppu->last_vblank){
+        ppu->last_vblank = vblank;
+        if(vblank){
           bool vblank_irq_en = SB_BFE(disp_stat,3,1);
           bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
-          if(vblank&&vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
-          if(vblank&&vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK); 
-          nds->activate_dmas|=nds->dma_wait_ppu;
-          if(vblank&&ppu_id==0){
-            //Done with capture
-            dispcapcnt&=~(1<<31);
-            nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
-          }
-        }
-        ppu->last_lcd_y  = lcd_y;
-        if(lcd_y==vcount_cmp) {
-          bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
-          if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
-        }
-        if(lcd_y==vcount_cmp7) {
-          bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
-          if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
-        }
-        //Latch BGX and BGY registers
-        if(lcd_y==0){
+          if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
+          if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
+          //Done with capture
+          dispcapcnt&=~(1<<31);
+          nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
+        }else{
           for(int aff=0;aff<2;++aff){
             ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
             ppu->aff[aff].internal_bgy=nds9_io_read32(nds,GBA_BG2Y+(aff)*0x10+reg_offset);
@@ -5054,7 +5046,21 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
           }
         }
+        nds->activate_dmas|=nds->dma_wait_ppu;
       }
+      if(vcmp!=ppu->last_vcmp) {
+        ppu->last_vcmp=vcmp;
+        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
+        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
+      }
+      if(vcmp7!=ppu->last_vcmp7) {
+        ppu->last_vcmp7=vcmp7;
+        bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
+        if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
+      }
+      
+      ppu->last_lcd_y  = lcd_y;
+       
       if(ppu_id==0&&(new_if|new_if7)){
         nds9_send_interrupt(nds,3,new_if);
         nds7_send_interrupt(nds,3,new_if7);
@@ -5064,7 +5070,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     int display_mode = SB_BFE(dispcnt,16,2);
     bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
     render|=enable_capture;
-    if(!render)return; 
+    if(!render)continue;
     
     bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
     int bg_mode = SB_BFE(dispcnt,0,3);
