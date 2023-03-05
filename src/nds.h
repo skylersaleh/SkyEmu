@@ -15,7 +15,6 @@ typedef enum{
 
 // There is a bit of a remapping here:
 /*
-- ARM7 registers > #define NDS_IO_MAP_SPLIT_ADDRESS  are or'd by NDS_IO_MAP_SPLIT_OFFSET 
 - 0x04100000-0x041ffffff > are or'd by NDS_IO_MAP_041_OFFSET
 */
 //////////////////
@@ -399,7 +398,6 @@ typedef enum{
 
 #define NDS_FIRMWARE_SIZE (256*1024)
 
-#define NDS_IO_MAP_SPLIT_ADDRESS 0x04000000
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
@@ -2215,52 +2213,52 @@ static FORCE_INLINE sb_debug_mmio_access_t nds_debug_mmio_access(nds_t*nds, int 
   return access; 
 }
 static FORCE_INLINE void nds7_io_store8(nds_t*nds, unsigned baddr, uint8_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   nds->mem.io[baddr&0xffff]=data;
 }
 static FORCE_INLINE void nds7_io_store16(nds_t*nds, unsigned baddr, uint16_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   *(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;
 }
 static FORCE_INLINE void nds7_io_store32(nds_t*nds, unsigned baddr, uint32_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   *(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;
 }
 
 static FORCE_INLINE uint8_t  nds7_io_read8(nds_t*nds, unsigned baddr) {
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return nds->mem.io[baddr&0xffff];
 }
 static FORCE_INLINE uint16_t nds7_io_read16(nds_t*nds, unsigned baddr){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return *(uint16_t*)(nds->mem.io+(baddr&0xffff));
 }
 static FORCE_INLINE uint32_t nds7_io_read32(nds_t*nds, unsigned baddr){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return *(uint32_t*)(nds->mem.io+(baddr&0xffff));
 }
 static FORCE_INLINE void nds_io_store8(nds_t*nds,int cpu_id, unsigned baddr, uint8_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   nds->mem.io[baddr&0xffff]=data;
 }
 static FORCE_INLINE void nds_io_store16(nds_t*nds,int cpu_id, unsigned baddr, uint16_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   *(uint16_t*)(nds->mem.io+(baddr&0xffff))=data;
 }
 static FORCE_INLINE void nds_io_store32(nds_t*nds,int cpu_id, unsigned baddr, uint32_t data){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   *(uint32_t*)(nds->mem.io+(baddr&0xffff))=data;
 }
 static FORCE_INLINE uint8_t  nds_io_read8(nds_t*nds,int cpu_id, unsigned baddr) {
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return nds->mem.io[baddr&0xffff];
 }
 static FORCE_INLINE uint16_t nds_io_read16(nds_t*nds,int cpu_id, unsigned baddr){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return *(uint16_t*)(nds->mem.io+(baddr&0xffff));
 }
 static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr){
-  if(baddr>=NDS_IO_MAP_SPLIT_ADDRESS&&cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
+  if(cpu_id==NDS_ARM7)baddr+=NDS_IO_MAP_SPLIT_OFFSET;
   return *(uint32_t*)(nds->mem.io+(baddr&0xffff));
 }
 
@@ -2505,7 +2503,7 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
         if(addr>=0x04200000)break;
         if(!(transaction_type&NDS_MEM_WRITE))nds_preprocess_mmio_read(nds,addr,transaction_type);
         int baddr =addr;
-        if((transaction_type&NDS_MEM_ARM7)&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
+        if((transaction_type&NDS_MEM_ARM7)){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
         baddr&=0xffff;
         *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
@@ -2586,7 +2584,7 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
         if(addr>=0x04200000)break;
         if(!(transaction_type&NDS_MEM_WRITE))nds_preprocess_mmio_read(nds,addr,transaction_type);
         int baddr =addr;
-        if((transaction_type&NDS_MEM_ARM7)&& addr >=NDS_IO_MAP_SPLIT_ADDRESS){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
+        if((transaction_type&NDS_MEM_ARM7)){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
         baddr&=0xffff;
         *ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
@@ -4016,7 +4014,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       for(int i=0;i<2;++i)tex_color[i]= uv[i]/((float)(sz[i]));
       break;
   }
-  if(palette_zero&&color0_transparent){
+  if(palette_zero&&color0_transparent||tex_color[3]==0){
     tex_color[3]=0;
     return true;
   }
@@ -4124,9 +4122,9 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       if(polygon_mode==1){ 
         //Decal Mode
         output_col[0]=1;
-        output_col[1]=1;
-        output_col[2]=1;
-        output_col[1]=1;
+        output_col[1]=0;
+        output_col[2]=0;
+        output_col[3]=1;
       }else{
         for(int c = 0;c<4;++c){
           float col = (v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
@@ -4138,6 +4136,10 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       }
       float alpha_blend_factor = 1; 
       if(alpha_blend)alpha_blend_factor = output_col[3];
+      if(alpha_test){
+        int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
+        if(output_col[3]<=alpha_test_ref/31.)continue; 
+      }
       if(translucent_has_depth||alpha_blend>0.95)nds->framebuffer_3d_depth[p]=z;
       for(int c=0;c<3;++c){
         nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
@@ -4961,7 +4963,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
       vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
       vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
-      bool vblank = lcd_y>=NDS_LCD_H;
+      bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<263;
       bool hblank = lcd_x>=NDS_LCD_W&&lcd_x< early_hblank_exit;
       disp_stat |= vblank ? 0x1: 0; 
       disp_stat |= hblank ? 0x2: 0;      
