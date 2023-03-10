@@ -1865,7 +1865,7 @@ typedef struct {
 
   uint8_t *card_data;
   size_t card_size;
-  uint8_t card_transfer_data[0xfff];
+  uint8_t card_transfer_data[0x1000];
   uint32_t card_chip_id;
   int card_read_offset;
   int card_transfer_bytes;
@@ -3171,8 +3171,8 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
   uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
   bool start_transfer = SB_BFE(gcbus_ctl,31,1);
   //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
-  gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and start bit 
-  gcbus_ctl|=(1<<23);
+  gcbus_ctl&=~((1u<<31)|(1u<<23));// Clear data ready and start bit 
+  gcbus_ctl|=(1u<<23);
   if(start_transfer){
     //Mask out start bit;
     uint8_t commands[8];
@@ -3592,12 +3592,13 @@ static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction
           break; 
         }
       }
-      result = (numer)/(denom);
-      mod_result = (numer)%(denom);
       if(denom==0){
         mod_result = numer;
         result = numer>-1?-1:1;
         if(mode==0)result^=0xffffffff00000000ull;
+      }else{
+        result = (numer)/(denom);
+        mod_result = (numer)%(denom);
       }
       cnt&=3;
       cnt|= (busy<<15)|(div_zero<<14);
@@ -4143,8 +4144,9 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         output_col[3]=1;
       }else{
         for(int c = 0;c<4;++c){
-          float col = (v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
+          float col; 
           if(c==3)col=alpha/31.;
+          else col =(v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
           output_col[c]=tex_color[c]*col;
           if(output_col[c]>1.0)output_col[c]=1.;
           if(output_col[c]<0.0)output_col[c]=0.;
