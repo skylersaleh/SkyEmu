@@ -285,7 +285,7 @@ typedef struct {
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
 #define SE_REWIND_SEGMENT_SIZE 64
-#define SE_LAST_DELTA_IN_TX (1<<31)
+#define SE_LAST_DELTA_IN_TX (1u<<31)
 
 #define SE_NUM_SAVE_STATES 4
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
@@ -2270,8 +2270,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   line_color|=(int)(opacity*0x8f)<<24;
   line_color2|=(int)(opacity*0x8f)<<24;
   sel_color|=(int)(opacity*0x8f)<<24;
-  hold_color|=(int)(0xff)<<24;
-  turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xff)<<24;
+  hold_color|=(uint32_t)(0xffu)<<24;
+  turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
 
   int line_w0 = 1;
   int line_w1 = 3; 

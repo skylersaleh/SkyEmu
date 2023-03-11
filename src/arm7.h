@@ -1086,7 +1086,7 @@ static FORCE_INLINE void arm7_multiply(arm7_t* cpu, uint32_t opcode){
     bool C = ARM7_BFE(cpsr,29,1);
     bool V = ARM7_BFE(cpsr,28,1);
     cpsr&= 0x0ffffff;
-    cpsr|= (N?1:0)<<31;   
+    cpsr|= (N?1u:0u)<<31;   
     cpsr|= (Z?1:0)<<30;
     cpsr|= (C?1:0)<<29; 
     cpsr|= (V?1:0)<<28;
@@ -1827,7 +1827,7 @@ static FORCE_INLINE void arm7t_alu_op(arm7_t* cpu, uint32_t opcode){
   int shift_op = (0x0000000030021000ULL>>(op*4))&0xf;
   int Rn = (op==9)?Rs:Rd;
 
-  uint32_t arm_op = (0xE<<28)|(alu_op<<21)|(1<<20)|(Rn<<16)|(Rd<<12)|(shift_op<<5);
+  uint32_t arm_op = (0xEu<<28)|(alu_op<<21)|(1<<20)|(Rn<<16)|(Rd<<12)|(shift_op<<5);
   
   if(alu_op==13)arm_op |= (Rs<<8)|(1<<4)|Rd; // Special case shifts
   else if(op==9)arm_op |= 1<<25;          // Special case NEG

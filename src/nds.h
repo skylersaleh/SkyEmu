@@ -1829,6 +1829,7 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_VRAM_OBJA_SLOT0 0x06B00000
 #define NDS_VRAM_OBJB_SLOT0 0x06C00000
 #define NDS_VRAM_TEX_SLOT0  0x06D00000
+#define NDS_VRAM_TEX_SLOT1  (0x06D00000 + 128*1024)
 #define NDS_VRAM_TEX_PAL_SLOT0  0x06E00000
 
 #define NDS_VRAM_SLOT_OFF    0x20000
@@ -3429,13 +3430,13 @@ static void nds_process_gc_spi(nds_t* nds, int cpu_id){
   }
 }
 static FORCE_INLINE uint32_t nds_align_data(uint32_t addr, uint32_t data, int transaction_type){
-  if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&3)*8);
+  if(transaction_type&NDS_MEM_2B)data= (data&0xffff)<<((addr&2)*8);
   if(transaction_type&NDS_MEM_1B)data= (data&0xff)<<((addr&3)*8);
   return data; 
 }
 static FORCE_INLINE uint32_t nds_word_mask(uint32_t addr, int transaction_type){
-  if(transaction_type&NDS_MEM_2B)return (0xffff)<<((addr&3)*8);
-  if(transaction_type&NDS_MEM_1B)return (0xff)<<((addr&3)*8);
+  if(transaction_type&NDS_MEM_2B)return (0xffffu)<<((addr&2)*8);
+  if(transaction_type&NDS_MEM_1B)return (0xffu)<<((addr&3)*8);
   return 0xffffffff;
 }
 static void nds_preprocess_mmio_read(nds_t * nds, uint32_t addr, int transaction_type){
@@ -3911,8 +3912,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
   switch(coord_xform_mode){
     case 0: break;
     case 1:{
-      float tex_p2[4]={tex_p[0],tex_p[1],1.,1.};
+      float tex_p2[4]={tex_p[0],tex_p[1],1./16.,1./16.};
       nds_mult_matrix_vector(tex_p,nds->gpu.tex_matrix+nds->gpu.tex_matrix_stack_ptr*16,tex_p2,4);
+      
     }break;
     default:
       printf("Unknown Tex Coord XForm mode:%d\n",coord_xform_mode);
@@ -3925,11 +3927,10 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       if(tex_p[i]>=sz[i])tex_p[i]=sz[i]-1;
       if(tex_p[i]<0)tex_p[i]=0;
     }else{
-      int int_part = ((int)tex_p[i]/sz[i]);
+      int int_part = (tex_p[i]/sz[i]);
       tex_p[i]-=int_part*sz[i];
-      if(!(int_part&1)&&flip[i])tex_p[i]=sz[i]-tex_p[i]-1;
+      if((int_part&1)&&flip[i])tex_p[i]=sz[i]-tex_p[i]-1;
     }
-    if(flip[i])tex_p[i]=sz[i]-1-tex_p[i];
   }
   bool palette_zero =false;
   switch(format){
@@ -3985,9 +3986,80 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
     }break;
-    case 0x5:
-      for(int i=0;i<2;++i)tex_color[i]= uv[i]/((float)(sz[i]));
-      break;
+    case 0x5:{
+      int x = tex_p[0], y=tex_p[1];
+      int bx = x/4, by =y/4;
+      uint32_t slot0_addr= vram_offset+(bx+by*sz[0])*4;
+      uint32_t block = nds_ppu_read32(nds,NDS_VRAM_TEX_SLOT0+slot0_addr);
+
+      int block_offset = (bx%4)*2 + (by%4)*8;
+      int texel = SB_BFE(block,block_offset,2); 
+
+      uint32_t slot1_addr = vram_offset>=256*1024? vram_offset/2-64*1024 : vram_offset/2;
+
+      uint16_t pal_index_data = nds_ppu_read16(nds,NDS_VRAM_TEX_SLOT1+slot1_addr);
+      int palette_off = SB_BFE(pal_index_data,0,14);
+      int mode = SB_BFE(pal_index_data,14,2);
+      uint32_t palette_addr = palette_off*4+SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+
+      switch(texel){
+        case 0:{
+          uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr);
+          tex_color[0] = SB_BFE(color,0,5)/31.;
+          tex_color[1] = SB_BFE(color,5,5)/31.;
+          tex_color[2] = SB_BFE(color,10,5)/31.;
+          tex_color[3] = 1.0;
+        }break;
+        case 1:{
+          uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
+          tex_color[0] = SB_BFE(color,0,5)/31.;
+          tex_color[1] = SB_BFE(color,5,5)/31.;
+          tex_color[2] = SB_BFE(color,10,5)/31.;
+          tex_color[3] = 1.0;
+        }break;
+        case 2:{
+          if(mode==0||mode==2){
+            uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+4);
+            tex_color[0] = SB_BFE(color,0,5)/31.;
+            tex_color[1] = SB_BFE(color,5,5)/31.;
+            tex_color[2] = SB_BFE(color,10,5)/31.;
+            tex_color[3] = 1.0;
+          }else{
+            uint16_t color0 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+0);
+            uint16_t color1 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
+            if(mode==1){
+              tex_color[0] = (SB_BFE(color0,0,5)+SB_BFE(color1,0,5))/31.*0.5;
+              tex_color[1] = (SB_BFE(color0,5,5)+SB_BFE(color1,5,5))/31.*0.5;
+              tex_color[2] = (SB_BFE(color0,10,5)+SB_BFE(color1,10,5))/31.*0.5;
+            }else{
+              tex_color[0] = (SB_BFE(color0,0,5)*5+SB_BFE(color1,0,5)*3)/8.;
+              tex_color[1] = (SB_BFE(color0,5,5)*5+SB_BFE(color1,5,5)*3)/8.;
+              tex_color[2] = (SB_BFE(color0,10,5)*5+SB_BFE(color1,10,5)*3)/8.;
+            }
+            tex_color[3] = 1.0;
+          }
+        }break;
+        case 3:{
+          if(mode==0||mode==1){
+            tex_color[3]=0; 
+            return true; 
+          }else if(mode==2){
+            uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+6);
+            tex_color[0] = SB_BFE(color,0,5)/31.;
+            tex_color[1] = SB_BFE(color,5,5)/31.;
+            tex_color[2] = SB_BFE(color,10,5)/31.;
+            tex_color[3] = 1.0;
+          }else{
+            uint16_t color0 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+0);
+            uint16_t color1 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
+            tex_color[0] = (SB_BFE(color0,0,5)*3+SB_BFE(color1,0,5)*5)/8.;
+            tex_color[1] = (SB_BFE(color0,5,5)*3+SB_BFE(color1,5,5)*5)/8.;
+            tex_color[2] = (SB_BFE(color0,10,5)*3+SB_BFE(color1,10,5)*5)/8.;
+            tex_color[3] = 1.0;
+          }
+        }break;
+      }
+    }break;
     case 0x6: /*Format 6: A5I3 Translucent Texture (5bit Alpha, 3bit Color Index)*/
     {
       int x = tex_p[0], y=tex_p[1];
@@ -4246,10 +4318,17 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
 
   v[1]*=-1;
 
-  res[0]=v[0]/abs_w;
-  res[1]=v[1]/abs_w;
-  res[2]=v[2]/abs_w;
-  res[3]=v[3]/abs_w;
+  if(abs_w!=0){
+    res[0]=v[0]/abs_w;
+    res[1]=v[1]/abs_w;
+    res[2]=v[2]/abs_w;
+    res[3]=v[3]/abs_w;
+  }else{
+    res[0]=v[0]<0.?-INFINITY:INFINITY;
+    res[1]=v[1]<0.?-INFINITY:INFINITY;
+    res[2]=v[2]<0.?-INFINITY:INFINITY;
+    res[3]=1;
+  }
 
   int x0 = (res[0]*0.5+0.5)*NDS_LCD_W;
   int y0 = (res[1]*0.5+0.5)*NDS_LCD_H;
@@ -5859,7 +5938,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
             uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
-            uint32_t ready_mask = (1<<31)|(1<<23); //Block Status = Word Status = 1; 
+            uint32_t ready_mask = (1u<<31)|(1<<23); //Block Status = Word Status = 1; 
             if((ctl&ready_mask)!=ready_mask)continue;
           }
           if(dst_addr_ctl==3){
@@ -5923,13 +6002,13 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         if(dst>=0x08000000&&dst<0x0e000000) dst_dir=1;
 
         if(!skip_dma){
-          nds->dma_processed[cpu]|=true;
           // This code is complicated to handle the per channel DMA latches that are present
           // Correct implementation is needed to pass latch.gba, Pokemon Pinball (intro explosion),
           // and the text in Lufia
           // TODO: There in theory should be separate latches per DMA, but that breaks Hello Kitty
           // and Tomb Raider
           if(nds->dma[cpu][i].current_transaction<cnt){
+            nds->dma_processed[cpu]|=true;
             int x = nds->dma[cpu][i].current_transaction++;
             int dst_addr = dst+x*transfer_bytes*dst_dir;
             int src_addr = src+x*transfer_bytes*src_dir;
@@ -6207,7 +6286,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         if(format==3){enable=true;audio->channel[c].sample=0;}
       }
       if(!enable){
-        cnt&=~(1<<31);
+        cnt&=~(1u<<31);
         nds7_io_store32(nds,NDS7_SOUND0_CNT+c*16,cnt);
 
       }else{
