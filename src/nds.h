@@ -4680,6 +4680,19 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
     &&addr!= 0x040001c0 && addr!=0x040001c2)printf("MMIO Read: %08x\n",addr);*/
 
   if(addr>=0x4000620&&addr<0x04000800&&!(transaction_type&NDS_MEM_DEBUG))printf("MMIO Read: %08x\n",addr);
+
+  //Reading ClipMTX
+  if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
+    float clipmtx[16];
+    for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix_stack[16*nds->gpu.mv_matrix_stack_ptr+i];
+    nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr);
+
+    for(int i=0;i<16;++i){
+      float val = clipmtx[i];
+      int32_t fixed_val = val*(1<<12);
+      nds9_io_store32(nds,NDS9_CLIPMTX_RESULT+i*4,fixed_val);
+    }
+  }
   switch(addr){
     case NDS9_IF: /*case NDS7_IF: <- duplicate address*/ 
       if(transaction_type&NDS_MEM_WRITE){
@@ -5573,7 +5586,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
               //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
               if(ppu_id==0){
                 character_base_addr+=SB_BFE(dispcnt,24,3)*64*1024;
-                screen_base+=SB_BFE(dispcnt,27,3)*64*1024;
+                screen_base_addr+=SB_BFE(dispcnt,27,3)*64*1024;
               }
               uint16_t tile_data =0;
 
