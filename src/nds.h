@@ -3382,6 +3382,7 @@ static void nds_process_gc_spi(nds_t* nds, int cpu_id){
   uint8_t ret_data = 0; 
   if(nds->backup.backup_type>=NDS_BACKUP_FLASH_256KB&&nds->backup.backup_type<=NDS_BACKUP_FLASH_1MB){
     ret_data = nds_process_flash_write(nds,spi_data,&nds->backup.flash,nds->mem.save_data, nds_get_save_size(nds));
+    nds->backup.is_dirty=true;
   }else{
     if(back->command_offset<sizeof(back->command)){
       back->command[back->command_offset]=spi_data;
@@ -4578,7 +4579,7 @@ static void nds_tick_gx(nds_t* nds){
       int y0 = SB_BFE(p[0],8,8);
       int x1 = SB_BFE(p[0],16,8);
       int y1 = SB_BFE(p[0],24,8);
-      printf("Viewport %d %d %d %d\n",x0,y0,x1,y1);
+      //printf("Viewport %d %d %d %d\n",x0,y0,x1,y1);
       break;
     }
     case 0x21: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
