@@ -2079,8 +2079,13 @@ typedef struct{
   uint32_t curr_draw_vert; 
   uint32_t prim_type;
 
-  float proj_matrix[16*2];
-  float tex_matrix[16*2];
+  float proj_matrix[16];
+  float tex_matrix[16];
+  float mv_matrix[16];
+  float normal_matrix[16];
+
+  float proj_matrix_stack[16*2];
+  float tex_matrix_stack[16*2];
   float mv_matrix_stack[16*32];
   float normal_matrix_stack[16*32];
   uint8_t curr_color[4];
@@ -3588,14 +3593,14 @@ static void nds_deselect_spi(nds_t *nds){
 }
 static float * nds_gpu_get_active_matrix(nds_t*nds){
   switch(nds->gpu.matrix_mode){
-    case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr;
-    case NDS_MATRIX_TBD:case NDS_MATRIX_MV: return nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr;
-    case NDS_MATRIX_TEX: return nds->gpu.tex_matrix+16*nds->gpu.tex_matrix_stack_ptr;
+    case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix;
+    case NDS_MATRIX_TBD:case NDS_MATRIX_MV: return nds->gpu.mv_matrix;
+    case NDS_MATRIX_TEX: return nds->gpu.tex_matrix;
     default:
       printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
       break;
   }
-  return nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr;
+  return nds->gpu.mv_matrix;
 }
 static void nds_identity_matrix(float* m){
   for(int i=0;i<16;++i)m[i]=(i%5)==0?1.0:0.0;;
@@ -3613,6 +3618,10 @@ static void nds_reset_gpu(nds_t*nds){
   }
   nds_identity_matrix(nds->gpu.proj_matrix);
   nds_identity_matrix(nds->gpu.tex_matrix);
+  nds_identity_matrix(nds->gpu.mv_matrix);
+
+  nds_identity_matrix(nds->gpu.proj_matrix_stack);
+  nds_identity_matrix(nds->gpu.tex_matrix_stack);
   nds_identity_matrix(nds->gpu.mv_matrix_stack);
 }
 static void nds_gpu_swap_buffers(nds_t*nds){
@@ -3722,7 +3731,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
     case 0: break;
     case 1:{
       float tex_p2[4]={tex_p[0],tex_p[1],1./16.,1./16.};
-      nds_mult_matrix_vector(tex_p,nds->gpu.tex_matrix+nds->gpu.tex_matrix_stack_ptr*16,tex_p2,4);
+      nds_mult_matrix_vector(tex_p,nds->gpu.tex_matrix,tex_p2,4);
       
     }break;
     default:
@@ -4130,14 +4139,11 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
   }
   float v[4] = {vx,vy,vz,4096.0};
   float res[4];
-  nds_mult_matrix_vector(res,nds->gpu.mv_matrix_stack+16*nds->gpu.mv_matrix_stack_ptr,v,4);
-  nds_mult_matrix_vector(v,nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr,res,4);
+  nds_mult_matrix_vector(res,nds->gpu.mv_matrix,v,4);
+  nds_mult_matrix_vector(v,nds->gpu.proj_matrix,res,4);
   //printf("Vert <%f, %f, %f, %f> matrix_stack_ptr:%d\n",v[0],v[1],v[2],v[3],nds->gpu.mv_matrix_stack_ptr);
 
   float uv[4] = {nds->gpu.curr_tex_coord[0]/16.,nds->gpu.curr_tex_coord[1]/16.,0,1};
-  float res_uv[4];
-  nds_mult_matrix_vector(res_uv,nds->gpu.tex_matrix+nds->gpu.tex_matrix_stack_ptr*16,res_uv,4);
-
   float abs_w = v[3];
 
   v[1]*=-1;
@@ -4347,13 +4353,13 @@ static void nds_tick_gx(nds_t* nds){
   float fixed_to_float = 1.0/(1<<12);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
 
-  if(nds->gx_log&&cmd){
+  if(SB_UNLIKELY(nds->gx_log&&cmd)){
     fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
     fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
     fprintf(nds->gx_log,"proj: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i+gpu->proj_matrix_stack_ptr*16]);
+    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
     fprintf(nds->gx_log,"\nmv: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix_stack[i+gpu->mv_matrix_stack_ptr*16]);
+    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
     fprintf(nds->gx_log,"\n");
   }
   
@@ -4365,20 +4371,21 @@ static void nds_tick_gx(nds_t* nds){
       {
         switch (gpu->matrix_mode){
           case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+            if(gpu->mv_matrix_stack_ptr>=31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=30;}
+            for(int i=0;i<16;++i){gpu->mv_matrix_stack[gpu->mv_matrix_stack_ptr*16+i]=gpu->mv_matrix[i];}
             gpu->mv_matrix_stack_ptr++;
-            if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
             break;
           case NDS_MATRIX_TEX:
+            if(gpu->tex_matrix_stack_ptr>=1){gpu->matrix_stack_error=true;gpu->tex_matrix_stack_ptr=0;}
+            for(int i=0;i<16;++i){gpu->tex_matrix_stack[i]=gpu->tex_matrix[i];}
             gpu->tex_matrix_stack_ptr++;
-            if(gpu->tex_matrix_stack_ptr>1){gpu->matrix_stack_error=true;gpu->tex_matrix_stack_ptr=1;}
             break;
           case NDS_MATRIX_PROJ:
+            if(gpu->proj_matrix_stack_ptr>=1){gpu->matrix_stack_error=true;gpu->proj_matrix_stack_ptr=0;}
+            for(int i=0;i<16;++i){gpu->proj_matrix_stack[i]=gpu->proj_matrix[i];}
             gpu->proj_matrix_stack_ptr++;
-            if(gpu->proj_matrix_stack_ptr>1){gpu->matrix_stack_error=true;gpu->proj_matrix_stack_ptr=1;}
             break;
         }
-        float *m = nds_gpu_get_active_matrix(nds);
-        for(int i=0;i<16;++i){m[i]=m[i-16];}
       }
       break;
     case 0x12:/*MTX_POP*/ 
@@ -4392,18 +4399,21 @@ static void nds_tick_gx(nds_t* nds){
             gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=0;
           }
           if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
+          for(int i=0;i<16;++i){gpu->mv_matrix[i]=gpu->mv_matrix_stack[gpu->mv_matrix_stack_ptr*16+i];}
           break;
         case NDS_MATRIX_TEX:
           gpu->tex_matrix_stack_ptr--;
           if(gpu->tex_matrix_stack_ptr<0){
             gpu->matrix_stack_error=true;gpu->tex_matrix_stack_ptr=0;
           }
+          for(int i=0;i<16;++i){gpu->tex_matrix[i]=gpu->tex_matrix_stack[i];}
           break;
         case NDS_MATRIX_PROJ:
           gpu->proj_matrix_stack_ptr--;
           if(gpu->proj_matrix_stack_ptr<0){
             gpu->matrix_stack_error=true;gpu->proj_matrix_stack_ptr=0;
           }
+          for(int i=0;i<16;++i){gpu->proj_matrix[i]=gpu->proj_matrix_stack[i];}
           break;
       }
       break;
@@ -4416,10 +4426,10 @@ static void nds_tick_gx(nds_t* nds){
           for(int i=0;i<16;++i)gpu->mv_matrix_stack[new_stack+i]=m[i];
           break;
         case NDS_MATRIX_TEX:
-          for(int i=0;i<16;++i)gpu->tex_matrix[i+16]=m[i];
+          for(int i=0;i<16;++i)gpu->tex_matrix_stack[i]=m[i];
           break;
         case NDS_MATRIX_PROJ:
-          for(int i=0;i<16;++i)gpu->proj_matrix[i+16]=m[i];
+          for(int i=0;i<16;++i)gpu->proj_matrix_stack[i]=m[i];
           break;
       }
       break;
@@ -4432,10 +4442,10 @@ static void nds_tick_gx(nds_t* nds){
           for(int i=0;i<16;++i)m[i]=gpu->mv_matrix_stack[new_stack+i];
           break;
         case NDS_MATRIX_TEX:
-          for(int i=0;i<16;++i)m[i]=gpu->tex_matrix[i];
+          for(int i=0;i<16;++i)m[i]=gpu->tex_matrix_stack[i];
           break;
         case NDS_MATRIX_PROJ:
-          for(int i=0;i<16;++i)m[i]=gpu->proj_matrix[i];
+          for(int i=0;i<16;++i)m[i]=gpu->proj_matrix_stack[i];
           break;
       }
       break;
@@ -4679,13 +4689,13 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
   /*if(addr!=0x04000208&&addr!=0x04000301&&addr!=0x04000138
     &&addr!= 0x040001c0 && addr!=0x040001c2)printf("MMIO Read: %08x\n",addr);*/
 
-  if(addr>=0x4000620&&addr<0x04000800&&!(transaction_type&NDS_MEM_DEBUG))printf("MMIO Read: %08x\n",addr);
+  //if(addr>=0x4000620&&addr<0x04000800&&!(transaction_type&NDS_MEM_DEBUG))printf("MMIO Read: %08x\n",addr);
 
   //Reading ClipMTX
   if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
     float clipmtx[16];
-    for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix_stack[16*nds->gpu.mv_matrix_stack_ptr+i];
-    nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix+16*nds->gpu.proj_matrix_stack_ptr);
+    for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix[i];
+    nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix);
 
     for(int i=0;i<16;++i){
       float val = clipmtx[i];
@@ -4767,7 +4777,7 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
       if(cpu!=NDS_ARM9||(transaction_type&NDS_MEM_DEBUG))return true;
       nds9_io_store16(nds,NDS9_RAM_COUNT+2,nds->gpu.vert_ram_offset);
       nds9_io_store16(nds,NDS9_RAM_COUNT,nds->gpu.poly_ram_offset);
-      printf("Read RAMCOUNT: %d %d\n",nds->gpu.vert_ram_offset,nds->gpu.poly_ram_offset);
+      //printf("Read RAMCOUNT: %d %d\n",nds->gpu.vert_ram_offset,nds->gpu.poly_ram_offset);
       break;
     case NDS9_POWCNT1:
       if(cpu!=NDS_ARM9)return true;
@@ -5053,9 +5063,9 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
         nds->gpu.mv_matrix_stack_ptr=0;
         nds->gpu.tex_matrix_stack_ptr=0;
         nds->gpu.proj_matrix_stack_ptr=0;
-        //nds_identity_matrix(nds->gpu.proj_matrix);
-        //nds_identity_matrix(nds->gpu.tex_matrix);
-        //nds_identity_matrix(nds->gpu.mv_matrix_stack);
+        nds_identity_matrix(nds->gpu.proj_matrix);
+        nds_identity_matrix(nds->gpu.tex_matrix);
+        nds_identity_matrix(nds->gpu.mv_matrix_stack);
 
       }
       break;
@@ -5549,8 +5559,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
               }
             }
             int screen_base_addr    = screen_base*2*1024;
-            //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
-            //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
             int character_base_addr = character_base*16*1024;
           
             int32_t bg_base = ppu_id? 0x06200000:0x06000000;
