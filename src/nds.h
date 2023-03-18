@@ -2101,6 +2101,7 @@ typedef struct{
   uint32_t poly_attr;
   uint32_t vert_ram_offset;
   uint32_t poly_ram_offset;
+  bool pending_swap;
 }nds_gpu_t; 
 
 typedef struct{
@@ -4305,6 +4306,7 @@ static void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
 static void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
+  if(gpu->pending_swap){nds_gpu_swap_buffers(nds);gpu->pending_swap=false;}
   int sz = nds_gxfifo_size(nds);
   if(sz<=NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
   uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
@@ -4557,7 +4559,7 @@ static void nds_tick_gx(nds_t* nds){
       break;
     case 0x41: /*END_VTXS  */  nds->gpu.curr_draw_vert =0; break;
     case 0x50: 
-      nds_gpu_swap_buffers(nds);
+      gpu->pending_swap=true;
       nds->gpu.cmd_busy_cycles+=nds_cycles_till_vblank(nds);
       break; //Swap buffers
     case 0x60: /*SET_VIEWPORT*/
@@ -5159,9 +5161,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           //Done with capture
           dispcapcnt&=~(1<<31);
           nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
-
-          uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
-          nds->display_flip = SB_BFE(powcnt1,15,1);
         }else{
           for(int aff=0;aff<2;++aff){
             ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
@@ -5174,6 +5173,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
           }
         }
+        uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
+        nds->display_flip = SB_BFE(powcnt1,15,1);
         nds->activate_dmas|=nds->dma_wait_ppu;
       }
       if(vcmp!=ppu->last_vcmp) {
