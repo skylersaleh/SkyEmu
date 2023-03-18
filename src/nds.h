@@ -1894,7 +1894,7 @@ typedef struct{
   uint8_t save_data[8*1024*1024];
   uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
-  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H*4];
+  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H];
   uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
 }nds_scratch_t; 
@@ -1965,6 +1965,7 @@ typedef struct{
   int startup_delay; 
   bool activate_audio_dma;
   uint32_t gx_dma_subtransfer; 
+  uint16_t trigger_mode; 
 } nds_dma_t; 
 typedef struct{
   int scan_clock; 
@@ -3625,7 +3626,7 @@ static void nds_gpu_swap_buffers(nds_t*nds){
     nds->framebuffer_3d[i*4+2]=SB_BFE(clear_color,10,5)*8;
     nds->framebuffer_3d[i*4+3]=SB_BFE(clear_color,16,5)*8;
 
-    nds->framebuffer_3d_depth[i]=10e6;
+    nds->framebuffer_3d_depth[i]=10e24;
   }
   nds->gpu.curr_vert = 0; 
   printf("Rendered %d verts and %d polys\n",nds->gpu.vert_ram_offset,nds->gpu.poly_ram_offset);
@@ -3728,15 +3729,21 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       break;
   }
   for(int i=0;i<2;++i){
-    sz[i]=8<<sz[i];
+    signed sz_lin = 8<<sz[i];
+    signed tex_coord = tex_p[i];
     if(!repeat[i]){
-      if(tex_p[i]>=sz[i])tex_p[i]=sz[i]-1;
-      if(tex_p[i]<0)tex_p[i]=0;
+      if(tex_coord>=sz_lin)tex_coord=sz_lin-1;
+      if(tex_coord<0)tex_coord=0;
     }else{
-      int int_part = (tex_p[i]/sz[i]);
-      tex_p[i]-=int_part*sz[i];
-      if((int_part%2)!=0&&flip[i])tex_p[i]=sz[i]-tex_p[i];
+      signed int_part = tex_coord>>(3+sz[i]);
+      tex_coord=tex_coord-int_part*sz_lin;
+      if((int_part%2)!=0&&(flip[i])){
+        tex_coord=sz_lin-tex_coord-1;
+      }
     }
+    if(tex_coord<0){printf("Neg coord\n");}
+    tex_p[i]=tex_coord;
+    sz[i]=sz_lin;
   }
   bool palette_zero =false;
   switch(format){
@@ -3757,7 +3764,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       palette = SB_BFE(palette,0,5);
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      palette_zero = palette==0;
+      //palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
@@ -3801,13 +3808,13 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
     case 0x5:{
       int x = tex_p[0], y=tex_p[1];
       int bx = x/4, by =y/4;
-      uint32_t slot0_addr= vram_offset+(bx+by*sz[0])*4;
+      uint32_t slot0_addr= vram_offset+(bx+by*sz[0]/4)*4;
       uint32_t block = nds_ppu_read32(nds,NDS_VRAM_TEX_SLOT0+slot0_addr);
 
-      int block_offset = (bx%4)*2 + (by%4)*8;
+      int block_offset = (x%4)*2 + (y%4)*8;
       int texel = SB_BFE(block,block_offset,2); 
 
-      uint32_t slot1_addr = vram_offset>=256*1024? vram_offset/2-64*1024 : vram_offset/2;
+      uint32_t slot1_addr = slot0_addr>=256*1024? slot0_addr/2-64*1024 : slot0_addr/2;
 
       uint16_t pal_index_data = nds_ppu_read16(nds,NDS_VRAM_TEX_SLOT1+slot1_addr);
       int palette_off = SB_BFE(pal_index_data,0,14);
@@ -3844,9 +3851,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
               tex_color[1] = (SB_BFE(color0,5,5)+SB_BFE(color1,5,5))/31.*0.5;
               tex_color[2] = (SB_BFE(color0,10,5)+SB_BFE(color1,10,5))/31.*0.5;
             }else{
-              tex_color[0] = (SB_BFE(color0,0,5)*5+SB_BFE(color1,0,5)*3)/8.;
-              tex_color[1] = (SB_BFE(color0,5,5)*5+SB_BFE(color1,5,5)*3)/8.;
-              tex_color[2] = (SB_BFE(color0,10,5)*5+SB_BFE(color1,10,5)*3)/8.;
+              tex_color[0] = (SB_BFE(color0,0,5)*5+SB_BFE(color1,0,5)*3)/8./31.;
+              tex_color[1] = (SB_BFE(color0,5,5)*5+SB_BFE(color1,5,5)*3)/8./31.;
+              tex_color[2] = (SB_BFE(color0,10,5)*5+SB_BFE(color1,10,5)*3)/8./31.;
             }
             tex_color[3] = 1.0;
           }
@@ -3864,9 +3871,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
           }else{
             uint16_t color0 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+0);
             uint16_t color1 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
-            tex_color[0] = (SB_BFE(color0,0,5)*3+SB_BFE(color1,0,5)*5)/8.;
-            tex_color[1] = (SB_BFE(color0,5,5)*3+SB_BFE(color1,5,5)*5)/8.;
-            tex_color[2] = (SB_BFE(color0,10,5)*3+SB_BFE(color1,10,5)*5)/8.;
+            tex_color[0] = (SB_BFE(color0,0,5)*3+SB_BFE(color1,0,5)*5)/8./31.;
+            tex_color[1] = (SB_BFE(color0,5,5)*3+SB_BFE(color1,5,5)*5)/8./31.;
+            tex_color[2] = (SB_BFE(color0,10,5)*3+SB_BFE(color1,10,5)*5)/8./31.;
             tex_color[3] = 1.0;
           }
         }break;
@@ -3901,7 +3908,11 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       for(int i=0;i<2;++i)tex_color[i]= uv[i]/((float)(sz[i]));
       break;
   }
-  if(palette_zero&&color0_transparent||tex_color[3]==0){
+  //tex_color[0]= (format&0x1)?0xff:0;
+  //tex_color[1]= (format&0x2)?0xff:0;
+  //tex_color[2]= (format&0x4)?0xff:0;
+
+  if((palette_zero&&color0_transparent)||tex_color[3]==0){
     tex_color[3]=0;
     return true;
   }
@@ -4003,7 +4014,7 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       float w = bary[0]*v[0]->pos[3]+bary[1]*v[1]->pos[3]+bary[2]*v[2]->pos[3];
 
-      float z = bary_nopersp[0]*v[0]->clip_pos[2]+bary_nopersp[1]*v[1]->clip_pos[2]+bary_nopersp[2]*v[2]->clip_pos[2];
+      float z = bary_nopersp[0]*v[0]->pos[2]+bary_nopersp[1]*v[1]->pos[2]+bary_nopersp[2]*v[2]->pos[2];
       //if(z<=0)continue;
 
       int ix = (x*0.5+0.5)*NDS_LCD_W;
@@ -4141,10 +4152,9 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
     res[2]=v[2]<0.?-INFINITY:INFINITY;
     res[3]=1;
   }
-
+  /*
   int x0 = (res[0]*0.5+0.5)*NDS_LCD_W;
   int y0 = (res[1]*0.5+0.5)*NDS_LCD_H;
-  /*
   for(int px = -1;px<1;++px)for(int py=-1;py<1;++py){
     int x = px+x0;
     int y = py+y0;
@@ -4468,7 +4478,7 @@ static void nds_tick_gx(nds_t* nds){
       break;
     }
     
-    case 0x1a: { /*MTX_MULT_3x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
+    case 0x1a: { /*MTX_MULT_3x3 - Multiply Current Matrix by 3x3 Matrix (W)*/
       float m[16]={
         p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
         p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
@@ -5907,11 +5917,12 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           }
           nds->dma[cpu][i].current_transaction=0;
           nds->dma[cpu][i].startup_delay=0;
+          nds->dma[cpu][i].trigger_mode = SB_BFE(cnt_h,11,3);
         }
         int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
         int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
         bool dma_repeat = SB_BFE(cnt_h,9,1); 
-        int  mode = SB_BFE(cnt_h,11,3);
+        int  mode = nds->dma[cpu][i].trigger_mode;
         if(cpu==NDS_ARM7)mode= SB_BFE(cnt_h,12,2);
         bool irq_enable = SB_BFE(cnt_h,14,1);
         bool force_first_write_sequential = false;
