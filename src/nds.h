@@ -2323,7 +2323,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     {0x20000*0, 0x20000*1, 0x20000*2,0x20000*3}, //(0x20000*OFS)
     {0x10000*0, 0x10000*1, 0x10000*2,0x10000*3}, //   E       64K   4    -     Slot 0-3  ;only lower 32K used 
     {0x4000*0, 0x4000*1, 0x4000*0,0x4000*1}, // 16KB slot
-    
+    {16*1024*0, 16*1024*1, 16*1024*4,16*1024*5}, // Slot (OFS.0*1)+(OFS.1*4)
   };
   typedef struct vram_bank_info_t{
     int transaction_mask; // Block transactions of these types
@@ -2382,7 +2382,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
       {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 9, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 8, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -2391,7 +2391,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
       {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
       {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7|NDS_MEM_ARM9, 5, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
+      {NDS_MEM_ARM7|NDS_MEM_ARM9, 9, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 8, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
@@ -3724,7 +3724,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
 
   tex_color[0]=0;
   tex_color[1]=0;
-  tex_color[2]=0;
+  tex_color[2]=1;
   tex_color[3]=1;
 
   float tex_p[4]={uv[0],uv[1],1,1};
@@ -3773,7 +3773,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x+y*sz[0]);
       uint32_t alpha = SB_BFE(palette,5,3);
       palette = SB_BFE(palette,0,5);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       //palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
@@ -3786,7 +3786,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       int x = tex_p[0], y=tex_p[1];
       uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x/4+y*sz[0]/4);
       palette = SB_BFE(palette,2*(x&3),2);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*8;
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*8;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
@@ -3798,7 +3798,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       int x = tex_p[0], y=tex_p[1];
       uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x/2+y*sz[0]/2);
       palette = SB_BFE(palette,(x&1)*4,4);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
@@ -3809,7 +3809,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
     {
       int x = tex_p[0], y=tex_p[1];
       uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x+y*sz[0]);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
@@ -3825,12 +3825,13 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       int block_offset = (x%4)*2 + (y%4)*8;
       int texel = SB_BFE(block,block_offset,2); 
 
-      uint32_t slot1_addr = slot0_addr>=256*1024? slot0_addr/2-64*1024 : slot0_addr/2;
+      uint32_t slot1_addr = slot0_addr>=128*1024? slot0_addr/2-64*1024 : slot0_addr/2;
 
       uint16_t pal_index_data = nds_ppu_read16(nds,NDS_VRAM_TEX_SLOT1+slot1_addr);
       int palette_off = SB_BFE(pal_index_data,0,14);
       int mode = SB_BFE(pal_index_data,14,2);
-      uint32_t palette_addr = palette_off*4+SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      int slot = slot0_addr/(128*1024);
+      uint32_t palette_addr = palette_off*4+SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
 
       switch(texel){
         case 0:{
@@ -3896,7 +3897,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       uint32_t palette = nds_ppu_read8(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x+y*sz[0]);
       uint32_t alpha = SB_BFE(palette,3,5);
       palette = SB_BFE(palette,0,3);
-      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,12)*16;
+      uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
@@ -4048,12 +4049,13 @@ static void nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         output_col[1]=0;
         output_col[2]=0;
         output_col[3]=1;
-      }else{
+      }else if(polygon_mode==0||polygon_mode==2){
         for(int c = 0;c<4;++c){
           float col; 
           if(c==3)col=alpha/31.;
           else col =(v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
           output_col[c]=tex_color[c]*col;
+
           if(output_col[c]>1.0)output_col[c]=1.;
           if(output_col[c]<0.0)output_col[c]=0.;
         }
@@ -4150,10 +4152,10 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
   v[1]*=-1;
 
   if(abs_w!=0){
-    res[0]=v[0]/abs_w;
-    res[1]=v[1]/abs_w;
-    res[2]=v[2]/abs_w;
-    res[3]=v[3]/abs_w;
+    res[0]=(v[0]+abs_w)/abs_w;
+    res[1]=(v[1]+abs_w)/abs_w;
+    res[2]=(v[2]+abs_w)/abs_w;
+    res[3]=(v[3]+abs_w)/abs_w;
   }else{
     res[0]=v[0]<0.?-INFINITY:INFINITY;
     res[1]=v[1]<0.?-INFINITY:INFINITY;
@@ -4257,6 +4259,8 @@ static int nds_gpu_cmd_params(int cmd){
   return 0; 
 }
 static int nds_gpu_cmd_cycles(int cmd){
+  //https://melonds.kuribo64.net/board/thread.php?id=141
+  //return 1; 
   switch(cmd){
     case 0x10:return   1 ; /*MTX_MODE - Set Matrix Mode (W)*/
     case 0x11:return  17 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
@@ -4560,6 +4564,9 @@ static void nds_tick_gx(nds_t* nds){
         nds->gpu.curr_ambient_color[0] = SB_BFE(p[0],16,5)<<3;
         nds->gpu.curr_ambient_color[1] = SB_BFE(p[0],21,5)<<3;
         nds->gpu.curr_ambient_color[2] = SB_BFE(p[0],26,5)<<3;
+
+        if(true)SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_color[r]+nds->gpu.curr_ambient_color[r];
+
       }break;
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
     case 0x2B:nds->gpu.tex_plt_base = p[0];   break; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
@@ -5440,12 +5447,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     }
     if(visible){
       uint8_t window_control =ppu->window[lcd_x];
-      if(display_mode==2){
-        int vram_block = SB_BFE(dispcnt,18,2);
-        ppu->first_target_buffer[lcd_x] = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
-      }else if(display_mode==0){
-        ppu->first_target_buffer[lcd_x] = 0xffffffff;
-      }else{
+      bool render_backgrounds = true; //TODO hook up power management
+      if(render_backgrounds){
         for(int bg = 3; bg>=0;--bg){
           #define NDS_BG_TEXT 0
           #define NDS_BG_AFFINE 1
@@ -5741,6 +5744,22 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         if(g>31)g=31;
         if(b>31)b=31;
       }
+      int disp_r = r; 
+      int disp_g = g; 
+      int disp_b = b; 
+
+      if(display_mode==2&&ppu_id==0){
+        int vram_block = SB_BFE(dispcnt,18,2);
+        uint16_t value = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
+        disp_r = SB_BFE(value,0,5);
+        disp_g = SB_BFE(value,5,5);
+        disp_b = SB_BFE(value,10,5);
+      }else if(display_mode==0){
+        disp_r=31;
+        disp_g=31;
+        disp_b=31;
+      }
+
       if(enable_capture){
         uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
         //TODO: EVA/EVB, sources other than 0
@@ -5786,9 +5805,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           color  = SB_BFE(r,0,5);
           color |= SB_BFE(g,0,5)<<5;
           color |= SB_BFE(b,0,5)<<10;
-        }
-
-        
+        }      
         if(lcd_x<szx){
           if(lcd_y<szy){
             uint32_t write_address = 0x06800000;
@@ -5801,15 +5818,17 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         }
       }
 
+      
+
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
       float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
       if(screen_blend_factor>1.0)screen_blend_factor=1;
       if(screen_blend_factor<0.0)screen_blend_factor=0;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
-      framebuffer[p+0] = r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
-      framebuffer[p+1] = g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
-      framebuffer[p+2] = b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
+      framebuffer[p+0] = disp_r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
+      framebuffer[p+1] = disp_g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
+      framebuffer[p+2] = disp_b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
       int backdrop_type = 5;
       uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
       
