@@ -1842,7 +1842,6 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_GPU_MAX_PARAM 64
 #define NDS_GX_DMA_THRESHOLD 128
 
-
 typedef struct {     
   uint8_t ram[4*1024*1024]; /*4096KB Main RAM (8192KB in debug version)*/
   uint8_t wram[96*1024];    /*96KB   WRAM (64K mapped to NDS7, plus 32K mappable to NDS7 or NDS9)*/
@@ -1852,6 +1851,7 @@ typedef struct {
   uint8_t code_cache[8*1024];
   uint8_t data_cache[4*1024];
   uint8_t vram[1024*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
+  uint64_t vram_translation_cache[1024];
   uint8_t palette[2*1024];   
   uint8_t *save_data;
 
@@ -1874,6 +1874,7 @@ typedef struct {
   uint8_t wait_state_table[16*4];
   bool prefetch_en;
   int prefetch_size;
+  uint64_t curr_vram_translation_key; 
   uint32_t requests;
   uint32_t openbus_word;
   uint32_t arm7_bios_word;
@@ -2296,7 +2297,27 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   return data; 
 }
 static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
-  
+  //1Byte writes are ignored from the ARM9
+  const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
+  if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
+
+  int lookup_addr = SB_BFE(address,14,10);
+  uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
+  if((key&~(1023))==nds->mem.curr_vram_translation_key){
+    int vram_addr = ((key&1023)*16*1024)+SB_BFE(address,0,14);
+    if(transaction_type&NDS_MEM_4B){
+      vram_addr&=~3;
+      if(transaction_type&NDS_MEM_WRITE)return *(uint32_t*)(nds->mem.vram+vram_addr)=data;
+      return *(uint32_t*)(nds->mem.vram+vram_addr);
+    }else if(transaction_type&NDS_MEM_2B){
+      vram_addr&=~1;
+      if(transaction_type&NDS_MEM_WRITE)return *(uint16_t*)(nds->mem.vram+vram_addr)=data;
+      return *(uint16_t*)(nds->mem.vram+vram_addr);
+    }else{
+      if(transaction_type&NDS_MEM_WRITE)return nds->mem.vram[vram_addr]=data;
+      return nds->mem.vram[vram_addr];
+    }
+  }
   const static int bank_size[9]={
     128*1024, //A
     128*1024, //B
@@ -2414,9 +2435,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
   int total_banks = 9;
   int vram_offset = 0; 
 
-  //1Byte writes are ignored from the ARM9
-  const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
-  if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
+  bool special_case_multiple_found = false;
   uint32_t ret_data=0;
 
   for(int b = 0; b<total_banks;++b){
@@ -2439,7 +2458,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     int off = SB_BFE(vramcnt,3,2);
     if(!enable)continue;
 
-    vram_bank_info_t bank = bank_info[b][mst];
+    const vram_bank_info_t bank = bank_info[b][mst];
     if(transaction_type& bank.transaction_mask)continue;
 
     int base = bank.mem_address_start;
@@ -2450,6 +2469,11 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     if(bank_offset>=bank_size[b])continue;
 
     int vram_addr = bank_offset+vram_off;
+
+    if(special_case_multiple_found)nds->mem.vram_translation_cache[lookup_addr]=0;
+    else nds->mem.vram_translation_cache[lookup_addr] = nds->mem.curr_vram_translation_key | SB_BFE(vram_addr,14,10);
+  
+    special_case_multiple_found = true;
     
     if(transaction_type&NDS_MEM_4B){
       vram_addr&=~3;
@@ -2872,6 +2896,28 @@ void nds7_copy_card_region_to_ram(nds_t* nds, const char* region_name, uint32_t 
 int nds_rom_db_compare_func(const void* a, const void *b){
   return ((nds_rom_entry_t*)a)->GameCode-*(uint32_t*)b;
 }
+static void nds_update_vram_mapping(nds_t*nds){
+  const static int vram_cnt_array[]={
+    NDS9_VRAMCNT_A,
+    NDS9_VRAMCNT_B,
+    NDS9_VRAMCNT_C,
+    NDS9_VRAMCNT_D,
+    NDS9_VRAMCNT_E,
+    NDS9_VRAMCNT_F,
+    NDS9_VRAMCNT_G,
+    NDS9_VRAMCNT_H, //These are not contiguous
+    NDS9_VRAMCNT_I, //These are not contiguous
+  };
+  //Recompute VRAM translation key
+  nds->mem.curr_vram_translation_key=0; 
+  for(int b =0;b<sizeof(vram_cnt_array)/sizeof(vram_cnt_array[0]);++b){
+    uint8_t bank_settings = nds9_io_read8(nds,vram_cnt_array[b]);
+    uint64_t bank_key = SB_BFE(bank_settings,0,5);
+    bank_key|= SB_BFE(bank_settings,7,1)<<5;
+    nds->mem.curr_vram_translation_key|= bank_key<<(b*6+10);
+  }
+  nds->mem.curr_vram_translation_key|=(1ull)<<63;
+}
 bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   if(!sb_path_has_file_ext(emu->rom_path, ".nds"))return false; 
 
@@ -3051,6 +3097,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
     printf("Could not find save file: %s\n",emu->save_file_path);
     for(int i=0;i<sizeof(nds->mem.save_data);++i) nds->mem.save_data[i]=0;
   }
+  nds_update_vram_mapping(nds);
 
   //nds->gx_log = fopen("gxlog.txt","wb");
   //nds->io7_log = fopen("io7log.txt","wb");
@@ -4811,6 +4858,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
       nds_gpu_write_packed_cmd(nds,mmio);
   } 
+  if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
   switch(addr){
 
     case NDS7_HALTCNT&~3:
