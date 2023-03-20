@@ -2155,6 +2155,7 @@ typedef struct{
   uint8_t *framebuffer_3d_disp;
   uint64_t current_clock;
   float ghosting_strength;
+  int ppu_fast_forward_ticks;
   FILE * gx_log;
   FILE * io9_log;
   FILE * io7_log;
@@ -2724,15 +2725,16 @@ static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
 static FORCE_INLINE uint8_t nds7_debug_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
 }
+static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type);
 
 static FORCE_INLINE uint8_t nds_ppu_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_PPU);
+  return nds_apply_vram_mem_op(nds,baddr,0,NDS_MEM_1B|NDS_MEM_PPU);
 }
 static FORCE_INLINE uint16_t nds_ppu_read16(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_PPU);
+  return nds_apply_vram_mem_op(nds,baddr,0,NDS_MEM_2B|NDS_MEM_PPU);
 }
 static FORCE_INLINE uint32_t nds_ppu_read32(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_PPU);
+  return nds_apply_vram_mem_op(nds,baddr,0,NDS_MEM_4B|NDS_MEM_PPU);
 }
 uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_cpu_read32((nds_t*)user_data,address);}
 uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_cpu_read16((nds_t*)user_data,address);}
@@ -4086,9 +4088,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
   nds->gpu.last_vertex_pos[1]=vy;
   nds->gpu.last_vertex_pos[2]=vz;
 
-  if(nds->vert_log){
-    fprintf(nds->vert_log,"Vertex {%d %d %d}\n",vx,vy,vz);
-  }
+  if(nds->vert_log)fprintf(nds->vert_log,"Vertex {%d %d %d}\n",vx,vy,vz);
+  
   float v[4] = {vx,vy,vz,4096.0};
   float res[4];
   nds_mult_matrix_vector(res,nds->gpu.mv_matrix,v,4);
@@ -4104,7 +4105,7 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
     res[0]=(v[0]+abs_w)/abs_w;
     res[1]=(v[1]+abs_w)/abs_w;
     res[2]=(v[2]+abs_w)/abs_w;
-    res[3]=(v[3]+abs_w)/abs_w;
+    res[3]=v[3];
   }else{
     res[0]=v[0]<0.?-INFINITY:INFINITY;
     res[1]=v[1]<0.?-INFINITY:INFINITY;
@@ -4526,7 +4527,9 @@ static void nds_tick_gx(nds_t* nds){
         nds->gpu.curr_ambient_color[1] = SB_BFE(p[0],21,5)<<3;
         nds->gpu.curr_ambient_color[2] = SB_BFE(p[0],26,5)<<3;
 
-        if(true)SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_color[r]+nds->gpu.curr_ambient_color[r];
+        if(true){
+          SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_color[r]<nds->gpu.curr_ambient_color[r]?nds->gpu.curr_ambient_color[r]:nds->gpu.curr_color[r];
+        }
 
       }break;
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
@@ -5036,11 +5039,23 @@ static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   return clocks_per_frame-sc +clocks_til_trigger;
 }
+//Returns true if the fast forward failed to be more efficient in main emu loop
+static FORCE_INLINE int nds_ppu_compute_max_fast_forward(nds_t *nds){
+  int scanline_clock = (nds->ppu[0].scan_clock)%(355*NDS_CLOCKS_PER_DOT);
+  //If inside hblank, can fastforward to outside of hblank
+  if(scanline_clock>=NDS_LCD_W*NDS_CLOCKS_PER_DOT&&scanline_clock<=355*NDS_CLOCKS_PER_DOT) return 355*NDS_CLOCKS_PER_DOT-scanline_clock-1;
+  //If inside hrender, can fastforward to hblank if not the first pixel and not visible
+  bool not_visible = nds->ppu[0].scan_clock>NDS_LCD_H*355*NDS_CLOCKS_PER_DOT; 
+  if(not_visible&& (scanline_clock>=1 && scanline_clock<=355*NDS_CLOCKS_PER_DOT))return NDS_LCD_W*NDS_CLOCKS_PER_DOT-scanline_clock-1; 
+  return (NDS_CLOCKS_PER_DOT-1)-((nds->ppu[0].scan_clock)%NDS_CLOCKS_PER_DOT);
+}
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
   nds->ppu[0].scan_clock+=1;
+  nds->ppu_fast_forward_ticks--;
   if(SB_LIKELY(nds->ppu[0].scan_clock%NDS_CLOCKS_PER_DOT))return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   while(nds->ppu[0].scan_clock>=clocks_per_frame)nds->ppu[0].scan_clock-=clocks_per_frame;
+  nds->ppu_fast_forward_ticks=nds_ppu_compute_max_fast_forward(nds);
   nds->ppu[1].scan_clock=nds->ppu[0].scan_clock;
   for(int ppu_id=0;ppu_id<2;++ppu_id){
     nds_ppu_t * ppu = nds->ppu+ppu_id;
@@ -5721,7 +5736,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           uint32_t read_address = 0x06800000;
           read_address+=read_offset*0x08000;
           read_address+=lcd_y*szx*2+lcd_x*2;
-          uint16_t color2=nds9_read16(nds,read_address);
+          uint16_t color2=nds_ppu_read16(nds,read_address);
           if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
 
           int r2 = SB_BFE(color2,0,5);
@@ -6410,8 +6425,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
   nds_tick_touch(&emu->joy,nds);
-  //bool prev_vblank = nds->ppu.last_vblank; 
-  //Skip emulation of a frame if we get too far ahead the audio playback
   static int last_tick =0;
   bool prev_vblank=true;
 
@@ -6420,14 +6433,13 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     d[i]&=0x9191919191919191ULL;
   }
   nds->ppu[0].new_frame=false;
-  while(true){
+  while(!nds->ppu[0].new_frame){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full) nds_tick_dma(nds,last_tick);
     
-    uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-    uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
     {
       if(SB_LIKELY(!nds->dma_processed[0])){
+        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
         if(int7_if){
           uint32_t ie = nds7_io_read32(nds,NDS7_IE);
           uint32_t ime = nds7_io_read32(nds,NDS7_IME);
@@ -6438,6 +6450,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         else arm7_exec_instruction(&nds->arm7);
       }
       if(SB_LIKELY(!nds->dma_processed[1])&&!gx_fifo_full){
+        uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
         if(int9_if){
           int9_if &= nds9_io_read32(nds,NDS9_IE);
           uint32_t ime = nds9_io_read32(nds,NDS9_IME);
@@ -6456,17 +6469,32 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         emu->run_mode = SB_MODE_PAUSE;
         nds->arm7.trigger_breakpoint=false;
         nds->arm9.trigger_breakpoint=false;
-        printf("ITCM %08x-%08x\n",nds->mem.itcm_start_address, nds->mem.itcm_end_address);
-        printf("DTCM %08x-%08x\n",nds->mem.dtcm_start_address, nds->mem.dtcm_end_address);
         break;
       }
     }      
-    
     int ticks = 1;
     last_tick=ticks;
-    //nds_tick_sio(nds);
 
-    double delta_t = ((double)ticks)/(33513982);
+    if(SB_LIKELY(nds->active_if_pipe_stages==0)&&nds->arm9.wait_for_interrupt){
+      int ppu_fast_forward = nds->ppu_fast_forward_ticks;
+      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles-1; 
+      int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
+      int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+      if(fast_forward_ticks){
+        nds->deferred_timer_ticks+=fast_forward_ticks;
+        nds->ppu[0].scan_clock+=fast_forward_ticks;
+        nds->ppu[1].scan_clock+=fast_forward_ticks;
+        nds->ppu_fast_forward_ticks-=fast_forward_ticks;
+        if(nds->gpu.cmd_busy_cycles)nds->gpu.cmd_busy_cycles-=fast_forward_ticks;
+        ticks =ticks<fast_forward_ticks?0:ticks-fast_forward_ticks;
+      }
+      double delta_t = ((double)ticks+fast_forward_ticks)/(33513982);
+      nds_tick_audio(nds, emu,delta_t,ticks+fast_forward_ticks);
+    }else{
+      double delta_t = ((double)ticks)/(33513982);
+      nds_tick_audio(nds,emu,delta_t,ticks);
+    }
+    //nds_tick_sio(nds);
     for(int t = 0;t<ticks;++t){
       nds_tick_interrupts(nds);
       nds_tick_timers(nds);
@@ -6474,9 +6502,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       nds_tick_gx(nds);
       nds->current_clock++;
     }
-    nds_tick_audio(nds,emu,delta_t,ticks);
-    
-    if(nds->ppu[0].new_frame)break;
   }
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
