@@ -3047,7 +3047,7 @@ void se_update_frame() {
   const int frames_per_rewind_state = 8; 
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
-    int max_frames_per_tick =2+ emu_state.step_frames;
+    int max_frames_per_tick =1+ emu_state.step_frames;
 
     emu_state.render_frame = true;
 
@@ -3064,7 +3064,7 @@ void se_update_frame() {
     if(unlocked_mode&&emu_state.run_mode!=SB_MODE_STEP){
       sim_time_increment=0;
       max_frames_per_tick=1000;
-      simulation_time=curr_time+1./50.;
+      simulation_time=curr_time+1./30.;
     }
     while(max_frames_per_tick--){
       double error = curr_time-simulation_time;
