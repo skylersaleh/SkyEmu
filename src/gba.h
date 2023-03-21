@@ -1255,7 +1255,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
           // Check if the bubble made it to the execute stage before being squashed, 
           // and apply the bubble cycle if it was not squashed. 
           // Note, only a single pipeline bubble is tracked using this infrastructure. 
-          int pc_bank = SB_BFE(pc,24,8);
+          int pc_bank = SB_BFE(pc,24,4);
           int prefetch_cycles = gba->mem.wait_state_table[pc_bank*4]; 
           int prefetch_phase = (gba->mem.prefetch_size)%prefetch_cycles;
           if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1)wait+=1;
@@ -1399,14 +1399,14 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
     case 0xD:{
         int maddr = addr&0x1fffffc;
         if(SB_UNLIKELY(maddr>=gba->cart.rom_size)){
-          gba->mem.openbus_word = ((maddr/2)&0xffff)|(((maddr/2+1)&0xffff)<<16);
+          gba->mem.openbus_word = ((uint32_t)((maddr/2)&0xffffu)|(((maddr/2+1)&0xffffu))<<16);
           // Return ready when done writting EEPROM (required by Minish Cap)
           if(gba->cart.backup_type==GBA_BACKUP_EEPROM) gba->mem.openbus_word = 1; 
         }else{
           gba->mem.openbus_word = *(uint32_t*)(gba->mem.cart_rom+maddr);
           if(req_type&0x3){
             uint16_t res16 = gba->mem.openbus_word >> (addr&2)*8;
-            gba->mem.openbus_word = res16*0x10001;
+            gba->mem.openbus_word = res16*0x10001u;
           }
         }
       }
@@ -1430,7 +1430,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
           ret = &gba->mem.sram_word;
         }
       }
-      gba->mem.openbus_word=(*ret&0xffff)*0x10001;
+      gba->mem.openbus_word=(*ret&0xffff)*0x10001u;
       break;
   }
   return ret;
@@ -1742,26 +1742,31 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   gba->ppu.scan_clock+=1;
   gba->ppu.fast_forward_ticks--;
   if(gba->ppu.scan_clock%4)return;
-  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
+  gba->ppu.fast_forward_ticks = 1;gba_ppu_compute_max_fast_forward(gba, render);
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
-  int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
+  int lcd_y = (gba->ppu.scan_clock)/1232;
+  uint16_t last_disp_stat= gba_io_read16(gba, GBA_DISPSTAT);
+  uint16_t disp_stat = last_disp_stat&~0x7;
+  uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+  int vcount = (lcd_y+(lcd_x>=GBA_LCD_HBLANK_END))%228;
+  bool vblank = lcd_y>=160&&lcd_y<227;
+  bool hblank = lcd_x>=GBA_LCD_HBLANK_START&&lcd_x< GBA_LCD_HBLANK_END;
+  disp_stat |= vblank ? 0x1: 0; 
+  disp_stat |= hblank ? 0x2: 0;      
+  disp_stat |= vcount==vcount_cmp ? 0x4: 0;   
+  gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
+  gba_io_store16(gba,GBA_VCOUNT,vcount);   
+
+  uint32_t irq_enable = SB_BFE(disp_stat,3,3);
+
+  uint32_t new_if = ((last_disp_stat^disp_stat)&disp_stat)&irq_enable;
+  if(new_if)gba_send_interrupt(gba,3,new_if);
+
   if(lcd_x==0||lcd_x==GBA_LCD_HBLANK_START||lcd_x==GBA_LCD_HBLANK_END){
-    uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
-    uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-    int vcount = (lcd_y+ (lcd_x>=GBA_LCD_HBLANK_END))%228;
-    bool vblank = lcd_y>=160&&lcd_y<227;
-    bool hblank = lcd_x>=GBA_LCD_HBLANK_START&&lcd_x< GBA_LCD_HBLANK_END;
-    disp_stat |= vblank ? 0x1: 0; 
-    disp_stat |= hblank ? 0x2: 0;      
-    disp_stat |= vcount==vcount_cmp ? 0x4: 0;   
-    gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
-    gba_io_store16(gba,GBA_VCOUNT,vcount);   
-    uint32_t new_if = 0;
+
     if(hblank!=gba->ppu.last_hblank){
       gba->ppu.last_hblank = hblank;
-      bool hblank_irq_en = SB_BFE(disp_stat,4,1);
-      if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
       gba->activate_dmas|=gba->dma_wait_ppu;
       if(!hblank){
         gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
@@ -1773,17 +1778,10 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
       if(vblank!=gba->ppu.last_vblank){
         if(vblank)gba->ppu.has_hit_vblank=true;
         gba->ppu.last_vblank = vblank;
-        bool vblank_irq_en = SB_BFE(disp_stat,3,1);
-        if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
         gba->activate_dmas|=gba->dma_wait_ppu;
       }
       gba->ppu.last_lcd_y  = lcd_y;
-      if(lcd_y==vcount_cmp) {
-        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
-        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
-      }
     }
-    gba_send_interrupt(gba,3,new_if);
   }
 
   if(!render)return; 
