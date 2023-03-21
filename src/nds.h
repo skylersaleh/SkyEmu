@@ -2134,12 +2134,12 @@ typedef struct{
   bool activate_dmas; 
   bool dma_wait_gx;
   bool dma_wait_ppu;
+  bool dma_wait_gc;
   bool dma_processed[2];
   bool display_flip;
   nds_timer_t timers[2][4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
-  bool halt; 
   bool prev_key_interrupt;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
   // This array acts as a FIFO to keep track of that. 
@@ -2496,19 +2496,6 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr, uint32_t data, int t
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
-  *ret=0;
-  if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
-    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))&&(transaction_type&(NDS_MEM_DEBUG|NDS_MEM_CPU))){
-      nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
-      return *ret; 
-    }
-  }
-  if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
-    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE))&&(transaction_type&(NDS_MEM_DEBUG|NDS_MEM_CPU))){
-      nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
-      return *ret; 
-    }
-  }
   switch(addr>>24){
     case 0x2: //Main RAM
       addr&=4*1024*1024-1;
@@ -2528,13 +2515,10 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
       }
       break;
     case 0x4: 
-        if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
+        if((addr&0xffff)>=0x2000||addr>=0x04200000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
-        if(addr>=0x04200000)break;
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
-        int baddr =addr;
-        if((transaction_type&NDS_MEM_ARM7)){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
-        baddr&=0xffff;
+        int baddr =addr&0xffff;
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
@@ -2559,14 +2543,6 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
       *ret = nds_apply_mem_op(nds->mem.oam, addr, data, transaction_type); 
       nds->mem.openbus_word=*ret;
       break;
-    case 0x8:
-    case 0x9:
-    case 0xA:
-    case 0xB:
-    case 0xC:
-    case 0xD:
-    case 0xE: 
-    case 0xF: break;
     case 0xFF: 
       if(addr>=0xFFFF0000){
         addr&=4*1024-1;
@@ -2576,10 +2552,24 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
   }
   return *ret; 
 }
-static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
-
+static uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
-  *ret=0;
+  if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
+    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+      nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
+      return *ret; 
+    }
+  }
+  if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
+    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+      nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
+      return *ret; 
+    }
+  }
+  return nds9_process_memory_transaction(nds,addr,data,transaction_type);
+}
+static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
+  uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
       case 0x0: //BIOS(NDS7), TCM(NDS9)
       if(addr<0x4000){
@@ -2613,8 +2603,7 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         if(addr>=0x04200000)break;
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
-        int baddr =addr;
-        if((transaction_type&NDS_MEM_ARM7)){baddr|=NDS_IO_MAP_SPLIT_OFFSET;}
+        int baddr =addr|NDS_IO_MAP_SPLIT_OFFSET;
         baddr&=0xffff;
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
@@ -2636,22 +2625,6 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
       *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
       nds->mem.openbus_word=*ret;
-      break;
-    case 0x5: //Palette 
-    case 0x7: 
-    case 0x8:
-    case 0x9:
-    case 0xA:
-    case 0xB:
-    case 0xC:
-    case 0xD:
-    case 0xE: 
-    case 0xF: break;
-    case 0xFF: 
-      if(addr>=0xFFFF0000&& (transaction_type& NDS_MEM_ARM9)){
-        addr&=4*1024-1;
-        *ret = nds_apply_mem_op(nds->mem.nds9_bios, addr, data, transaction_type&~NDS_MEM_WRITE); 
-      }
       break;
   }
   return *ret; 
@@ -2676,29 +2649,29 @@ static FORCE_INLINE void nds7_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7);
 }
 static FORCE_INLINE void nds9_debug_write8(nds_t*nds, unsigned baddr, uint8_t data){
-  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
 static FORCE_INLINE void nds7_debug_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
 }
 
 static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write32(nds_t*nds, unsigned baddr, uint32_t data){
-  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write16(nds_t*nds, unsigned baddr, uint16_t data){
-  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write8(nds_t*nds, unsigned baddr, uint8_t data){
-  nds9_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
@@ -2720,7 +2693,7 @@ static FORCE_INLINE uint8_t nds7_read8(nds_t*nds, unsigned baddr){
 }
 
 static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
 static FORCE_INLINE uint8_t nds7_debug_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
@@ -2956,7 +2929,6 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   //nds_store32(nds,GBA_DISPCNT,0xe92d0000);
   nds9_write16(nds,0x04000088,512);
   nds_recompute_waitstate_table(nds,0);
-  nds->halt =false;
   nds->activate_dmas=false;
   nds->deferred_timer_ticks=0;
   bool loaded_bios= true;
@@ -3127,6 +3099,7 @@ uint32_t nds_sqrt_u64(uint64_t value){
 #define NDS_CARD_CHIP_ID_READ 0xB8
 static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   if(nds->mem.card_transfer_bytes<=0)return;
+  nds->activate_dmas=nds->dma_wait_gc;
   uint16_t exmemcnt = nds9_io_read16(nds,NDS9_EXMEMCNT);
   bool arm7_has_slot = SB_BFE(exmemcnt,11,1);
   if(cpu_id==arm7_has_slot)return;
@@ -3145,6 +3118,7 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   nds->mem.card_read_offset = bank|(bank_off&0xfff);
     
   nds->mem.card_transfer_bytes-=4;
+  nds->activate_dmas=nds->dma_wait_gc;
   if(nds->mem.card_transfer_bytes<=0){
     uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
     gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and busy bit 
@@ -3163,7 +3137,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
   uint16_t exmemcnt = nds9_io_read16(nds,NDS9_EXMEMCNT);
   bool arm7_has_slot = SB_BFE(exmemcnt,11,1);
   if(arm7_has_slot&&cpu_id!=NDS_ARM7)return;
-
+  nds->activate_dmas=nds->dma_wait_gc;
   uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
   bool start_transfer = SB_BFE(gcbus_ctl,31,1);
   //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
@@ -3210,6 +3184,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
       else nds9_send_interrupt(nds,4,1<<NDS_INT_GC_TRANSFER_DONE);
     }
   }
+  nds->activate_dmas=nds->dma_wait_gc;
   nds_io_store32(nds,cpu_id,NDS_GCBUS_CTL,gcbus_ctl);
 }    
 /* Only simulates a small subset of the RTC needed to make time events work in the pokemon games. */
@@ -3643,32 +3618,15 @@ void nds_mult_matrix4(float * res, float *m2){
   }
 }
 void nds_translate_matrix(float * m, float x, float y, float z){
-
-  float m2[16]={
-    1.,0,0,0,
-    0,1,0,0,
-    0,0,1,0,
-    x,y,z,1,
-  };
-  nds_mult_matrix4(m,m2);
-  /*m[12]+=m[0]*x+m[4]*y+m[8]*z;
+  m[12]+=m[0]*x+m[4]*y+m[8]*z;
   m[13]+=m[1]*x+m[5]*y+m[9]*z;
   m[14]+=m[2]*x+m[6]*y+m[10]*z;
-  m[15]+=m[3]*x+m[7]*y+m[11]*z;*/
+  m[15]+=m[3]*x+m[7]*y+m[11]*z;
 }
 void nds_scale_matrix(float * m, float x, float y, float z){
-    float m2[16]={
-    x,0,0,0,
-    0,y,0,0,
-    0,0,z,0,
-    0,0,0,1,
-  };
-  nds_mult_matrix4(m,m2);
-  /*
-  SE_RPT4 m[r*4+0] *=x;
-  SE_RPT4 m[r*4+1] *=y;
-  SE_RPT4 m[r*4+2] *=z;
-  */
+  SE_RPT4 m[0*4+r] *=x;
+  SE_RPT4 m[1*4+r] *=y;
+  SE_RPT4 m[2*4+r] *=z;
 }
 void nds_mult_matrix_vector(float * result, float * m, float *v,int dims){
   for(int x=0;x<dims;++x){
@@ -4854,7 +4812,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
-  if(addr>=GBA_DMA0SAD||addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
+  if(addr>=GBA_DMA0SAD&&addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
   if(addr>=0x4000440&& addr<0x40005CC &&cpu==NDS_ARM9){
     nds_gxfifo_push(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
   } 
@@ -4868,7 +4826,6 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       {
         if(cpu!=NDS_ARM7)return; 
         bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)>=2;
-
         if(halt) nds->arm7.wait_for_interrupt=true;
       }
       break;
@@ -4920,7 +4877,6 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
         nds7_io_store8(nds,NDS7_SPI_BUS_DATA,data);
         if(!keep_selected)nds_deselect_spi(nds);
         if(irq_en)nds7_send_interrupt(nds,4,1<<NDS7_INT_SPI);
-
       }
     }break;
     case NDS7_RTC_BUS:
@@ -4991,6 +4947,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       if(nds_word_mask(baddr,transaction_type)&0xff0000)nds_process_gc_spi(nds,cpu); break; 
     case NDS_GCBUS_CTL|NDS_IO_MAP_SPLIT_OFFSET:
     case NDS_GCBUS_CTL:
+      nds->activate_dmas=nds->dma_wait_gc;
       nds_process_gc_bus_ctl(nds,cpu); break;
     case GBA_TM0CNT_L:
     case GBA_TM1CNT_L:
@@ -5013,7 +4970,6 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
         nds_identity_matrix(nds->gpu.proj_matrix);
         nds_identity_matrix(nds->gpu.tex_matrix);
         nds_identity_matrix(nds->gpu.mv_matrix_stack);
-
       }
       break;
     case NDS_DISP3DCNT:
@@ -5033,9 +4989,8 @@ static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds){
   int sc = nds->ppu[0].scan_clock;
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
   int clocks_til_trigger = 355*(NDS_LCD_H)*NDS_CLOCKS_PER_DOT;
-  if(sc<=clocks_til_trigger){
-    return clocks_til_trigger - sc; 
-  }
+  if(sc<=clocks_til_trigger)return clocks_til_trigger - sc; 
+
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
   return clocks_per_frame-sc +clocks_til_trigger;
 }
@@ -5054,7 +5009,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
   nds->ppu_fast_forward_ticks--;
   if(SB_LIKELY(nds->ppu[0].scan_clock%NDS_CLOCKS_PER_DOT))return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
-  while(nds->ppu[0].scan_clock>=clocks_per_frame)nds->ppu[0].scan_clock-=clocks_per_frame;
+  nds->ppu[0].scan_clock%=clocks_per_frame;
   nds->ppu_fast_forward_ticks=nds_ppu_compute_max_fast_forward(nds);
   nds->ppu[1].scan_clock=nds->ppu[0].scan_clock;
   for(int ppu_id=0;ppu_id<2;++ppu_id){
@@ -5544,7 +5499,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
 
               int tile_off = bg_tile_y*(screen_size_x/8)+bg_tile_x;
 
-
               //engine A screen base: BGxCNT.bits*2K + DISPCNT.bits*64K
               //engine A char base: BGxCNT.bits*16K + DISPCNT.bits*64K
               if(ppu_id==0){
@@ -5768,9 +5722,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           }
         }
       }
-
-      
-
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
       float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
       if(screen_blend_factor>1.0)screen_blend_factor=1;
@@ -5875,6 +5826,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
   int ticks =0;
   nds->activate_dmas=false;
   nds->dma_wait_gx = false;
+  nds->dma_wait_gc = false;
   nds->dma_wait_ppu= false;
   for(int cpu = 0;cpu<2;++cpu){
     nds->dma_processed[cpu]=false;
@@ -5946,6 +5898,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           }
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
+            nds->dma_wait_gc=true;
             uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
             uint32_t ready_mask = (1u<<31)|(1<<23); //Block Status = Word Status = 1; 
             if((ctl&ready_mask)!=ready_mask)continue;
@@ -6475,7 +6428,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     int ticks = 1;
     last_tick=ticks;
 
-    if(SB_LIKELY(nds->active_if_pipe_stages==0)&&nds->arm9.wait_for_interrupt){
+    if(SB_LIKELY(nds->active_if_pipe_stages==0)&&nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles-1; 
       int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
