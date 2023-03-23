@@ -2134,7 +2134,6 @@ typedef struct{
   bool activate_dmas; 
   bool dma_wait_gx;
   bool dma_wait_ppu;
-  bool dma_wait_gc;
   bool dma_processed[2];
   bool display_flip;
   nds_timer_t timers[2][4];
@@ -3099,7 +3098,7 @@ uint32_t nds_sqrt_u64(uint64_t value){
 #define NDS_CARD_CHIP_ID_READ 0xB8
 static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   if(nds->mem.card_transfer_bytes<=0)return;
-  nds->activate_dmas=nds->dma_wait_gc;
+  nds->activate_dmas=true;
   uint16_t exmemcnt = nds9_io_read16(nds,NDS9_EXMEMCNT);
   bool arm7_has_slot = SB_BFE(exmemcnt,11,1);
   if(cpu_id==arm7_has_slot)return;
@@ -3118,7 +3117,7 @@ static void nds_process_gc_bus_read(nds_t*nds, int cpu_id){
   nds->mem.card_read_offset = bank|(bank_off&0xfff);
     
   nds->mem.card_transfer_bytes-=4;
-  nds->activate_dmas=nds->dma_wait_gc;
+  nds->activate_dmas=true;
   if(nds->mem.card_transfer_bytes<=0){
     uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
     gcbus_ctl&=~((1<<31)|(1<<23));// Clear data ready and busy bit 
@@ -3137,7 +3136,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
   uint16_t exmemcnt = nds9_io_read16(nds,NDS9_EXMEMCNT);
   bool arm7_has_slot = SB_BFE(exmemcnt,11,1);
   if(arm7_has_slot&&cpu_id!=NDS_ARM7)return;
-  nds->activate_dmas=nds->dma_wait_gc;
+  nds->activate_dmas=true;
   uint32_t gcbus_ctl = nds_io_read32(nds,cpu_id,NDS_GCBUS_CTL);
   bool start_transfer = SB_BFE(gcbus_ctl,31,1);
   //printf("NDS GCBUS: 0x%08x\n",gcbus_ctl);
@@ -3184,7 +3183,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
       else nds9_send_interrupt(nds,4,1<<NDS_INT_GC_TRANSFER_DONE);
     }
   }
-  nds->activate_dmas=nds->dma_wait_gc;
+  nds->activate_dmas=true;
   nds_io_store32(nds,cpu_id,NDS_GCBUS_CTL,gcbus_ctl);
 }    
 /* Only simulates a small subset of the RTC needed to make time events work in the pokemon games. */
@@ -4968,7 +4967,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
       if(nds_word_mask(baddr,transaction_type)&0xff0000)nds_process_gc_spi(nds,cpu); break; 
     case NDS_GCBUS_CTL|NDS_IO_MAP_SPLIT_OFFSET:
     case NDS_GCBUS_CTL:
-      nds->activate_dmas=nds->dma_wait_gc;
+      nds->activate_dmas=true;
       nds_process_gc_bus_ctl(nds,cpu); break;
     case GBA_TM0CNT_L:
     case GBA_TM1CNT_L:
@@ -5845,7 +5844,6 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
   int ticks =0;
   nds->activate_dmas=false;
   nds->dma_wait_gx = false;
-  nds->dma_wait_gc = false;
   nds->dma_wait_ppu= false;
   for(int cpu = 0;cpu<2;++cpu){
     nds->dma_processed[cpu]=false;
@@ -5917,7 +5915,6 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           }
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
-            nds->dma_wait_gc=true;
             uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
             uint32_t ready_mask = (1u<<31)|(1<<23); //Block Status = Word Status = 1; 
             if((ctl&ready_mask)!=ready_mask)continue;
