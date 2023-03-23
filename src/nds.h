@@ -4988,9 +4988,7 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
         nds->gpu.mv_matrix_stack_ptr=0;
         nds->gpu.tex_matrix_stack_ptr=0;
         nds->gpu.proj_matrix_stack_ptr=0;
-        nds_identity_matrix(nds->gpu.proj_matrix);
-        nds_identity_matrix(nds->gpu.tex_matrix);
-        nds_identity_matrix(nds->gpu.mv_matrix_stack);
+        //Don't reinitizliae matrices as this breaks PMD explorers of Sky
       }
       break;
     case NDS_DISP3DCNT:
