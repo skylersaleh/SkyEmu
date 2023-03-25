@@ -5454,8 +5454,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
             if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
           }else{
-            int screen_size_x = bg_size_table[(bg_type*4+screen_size)*2+0];
-            int screen_size_y = bg_size_table[(bg_type*4+screen_size)*2+1];
+            bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+            bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
+            //NDS can have an affine "bitmap" that is really a large affine tile map
+            uint32_t bg_type_for_size = (bg_type==2&&!bitmap_mode)? 1: bg_type; 
+            int screen_size_x = bg_size_table[(bg_type_for_size*4+screen_size)*2+0];
+            int screen_size_y = bg_size_table[(bg_type_for_size*4+screen_size)*2+1];
           
             int bg_x = 0;
             int bg_y = 0;
@@ -5509,8 +5513,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             int character_base_addr = character_base*16*1024;
           
             int32_t bg_base = ppu_id? 0x06200000:0x06000000;
-            bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
-            bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             if(bitmap_mode){
               screen_base_addr=screen_base*16*1024;
               int p = bg_x+(bg_y)*screen_size_x;
