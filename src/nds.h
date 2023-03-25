@@ -3949,22 +3949,43 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       if(discard)continue;
 
       float output_col[4];
-      if(polygon_mode==1){ 
-        //Decal Mode
-        output_col[0]=1;
-        output_col[1]=0;
-        output_col[2]=0;
-        output_col[3]=1;
-      }else if(polygon_mode==0||polygon_mode==2){
-        for(int c = 0;c<4;++c){
-          float col; 
-          if(c==3)col=alpha/31.;
-          else col =(v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
-          output_col[c]=tex_color[c]*col;
+      float col_v[4]; 
+      for(int c = 0;c<3;++c)col_v[c]=(v[0]->color[c]*bary[0]+v[1]->color[c]*bary[1]+v[2]->color[c]*bary[2])/255.;
+      col_v[3]= alpha/31.;
 
-          if(output_col[c]>1.0)output_col[c]=1.;
-          if(output_col[c]<0.0)output_col[c]=0.;
+      if(polygon_mode==2){
+        int toon_highlight_entry = round(col_v[0]*255/8.); 
+        //printf("toon entry: %d\n",toon_highlight_entry);
+        uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+        col_v[0]= SB_BFE(color,0,5)/31.;
+        col_v[1]= SB_BFE(color,5,5)/31.;
+        col_v[2]= SB_BFE(color,10,5)/31.;
+      }
+      if(polygon_mode==0){
+        for(int c = 0;c<4;++c)output_col[c]=tex_color[c]*col_v[c];
+      }else if(polygon_mode==1){ 
+        //Decal Mode
+        output_col[0]=(tex_color[0]*tex_color[3]+col_v[0]*(1-tex_color[3]+0.5));
+        output_col[1]=(tex_color[1]*tex_color[3]+col_v[1]*(1-tex_color[3]+0.5));
+        output_col[2]=(tex_color[2]*tex_color[3]+col_v[2]*(1-tex_color[3]+0.5));
+        output_col[3]=col_v[3];
+      }else if(polygon_mode==2){
+        if(shade_mode){
+          //Highlight shading
+          output_col[0]= tex_color[0]*col_v[0]+col_v[0];
+          output_col[1]= tex_color[1]*col_v[1]+col_v[1];
+          output_col[2]= tex_color[2]*col_v[2]+col_v[2];
+        }else{
+         //Toon shading
+          output_col[0]= tex_color[0]*col_v[0];
+          output_col[1]= tex_color[1]*col_v[1];
+          output_col[2]= tex_color[2]*col_v[2];
         }
+        output_col[3]= col_v[3]*tex_color[3];
+      }
+      for(int c = 0;c<4;++c){
+        if(output_col[c]>1.0)output_col[c]=1.;
+        if(output_col[c]<0.0)output_col[c]=0.;
       }
       float alpha_blend_factor = 1; 
       if(alpha_blend)alpha_blend_factor = output_col[3];
