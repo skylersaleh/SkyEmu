@@ -2064,7 +2064,7 @@ typedef struct{
 #define NDS_MATRIX_TBD 2 //<- TODO: Future Sky problem
 #define NDS_MATRIX_TEX 3
 
-#define NDS_MAX_VERTS 8192*16
+#define NDS_MAX_VERTS 8192
 
 typedef struct{
   float pos[4];
@@ -3840,6 +3840,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
 }
 
 static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
+  if(nds->gpu.poly_ram_offset>=2048)return true;// Ignore extra polygons for now
   uint32_t disp3dcnt = nds9_io_read32(nds,NDS_DISP3DCNT);
 
   bool tex_map     = SB_BFE(disp3dcnt,0,1);/*Texture Mapping      (0=Disable, 1=Enable)*/
@@ -3898,8 +3899,6 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
     if(!((front_face&&render_front)||(!front_face&&render_back)))return true; 
   }
 
-  if(nds->gpu.poly_ram_offset>=2048);//return; Ignore extra polygons for now
-  else nds->gpu.poly_ram_offset++;
   bool tri_not_rendered = true; 
 
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
@@ -3942,7 +3941,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       int iy = (y*0.5+0.5)*NDS_LCD_H;
       int p = ix+iy*NDS_LCD_W;
 
-      if(nds->framebuffer_3d_depth[p]<z)continue;
+      if(nds->framebuffer_3d_depth[p]<z*0.999999)continue;
       float uv[4]={0,0,0,255};
       for(int i=0;i<2;++i)uv[i]=v[0]->tex[i]*bary[0]+v[1]->tex[i]*bary[1]+v[2]->tex[i]*bary[2];
 
@@ -4007,33 +4006,49 @@ static bool nds_gpu_clip_tri(nds_t* nds, int vi0, int vi1, int vi2){
   int wp=0;
   int wn=0; 
 
+  if(vb[inds[0]].pos[3]>0.){
+    if(vb[inds[2]].pos[3]>0.){
+      if(vb[inds[1]].pos[3]>0.)return nds_gpu_draw_tri(nds,inds[0],inds[1],inds[2]);
+      int i = inds[0];
+      inds[0]=inds[2];
+      inds[2]=inds[1];
+      inds[1]=i;
+    }
+  }else if(vb[inds[1]].pos[3]>0.){
+    int i = inds[0];
+    inds[0]=inds[1];
+    inds[1]=inds[2];
+    inds[2]=i;
+  }else if(vb[inds[2]].pos[3]>0.){
+    int i = inds[0];
+    inds[0]=inds[2];
+    inds[2]=inds[1];
+    inds[1]=i;
+  }else return true;
   for(int r = 0;r<3;++r){
     int i = inds[r];
     if(vb[i].pos[3]>0.)inds_wp[wp++]=i;
     else inds_wn[wn++]=i;
   }
-  if(wn==3)return true;
-  if(wp==3){
-    return nds_gpu_draw_tri(nds,inds_wp[0],inds_wp[1],inds_wp[2]);
-  }
-  if(wp==1){
+  
+  if(vb[inds[1]].pos[3]<0.){
     int extra_ind0 = NDS_MAX_VERTS-1;
     int extra_ind1 = NDS_MAX_VERTS-2;
-    vb[extra_ind0]=vb[inds_wn[0]];
-    vb[extra_ind1]=vb[inds_wn[1]];
-    nds_interp_wp_vert(nds,inds_wp[0],extra_ind0);
-    nds_interp_wp_vert(nds,inds_wp[0],extra_ind1);
-    return nds_gpu_draw_tri(nds,inds_wp[0],extra_ind0,extra_ind1);
+    vb[extra_ind0]=vb[inds[1]];
+    vb[extra_ind1]=vb[inds[2]];
+    nds_interp_wp_vert(nds,inds[0],extra_ind0);
+    nds_interp_wp_vert(nds,inds[0],extra_ind1);
+    return nds_gpu_draw_tri(nds,inds[0],extra_ind0,extra_ind1);
   }
 
   int extra_ind0 = NDS_MAX_VERTS-1;
   int extra_ind1 = NDS_MAX_VERTS-2;
-  vb[extra_ind0]=vb[inds_wn[0]];
-  vb[extra_ind1]=vb[inds_wn[0]];
-  nds_interp_wp_vert(nds,inds_wp[0],extra_ind0);
-  nds_interp_wp_vert(nds,inds_wp[1],extra_ind1);
-  bool culled = nds_gpu_draw_tri(nds,inds_wp[0],inds_wp[1],extra_ind0);
-  culled&=nds_gpu_draw_tri(nds,inds_wp[1],extra_ind0,extra_ind1);
+  vb[extra_ind0]=vb[inds[2]];
+  vb[extra_ind1]=vb[inds[2]];
+  nds_interp_wp_vert(nds,inds[0],extra_ind0);
+  nds_interp_wp_vert(nds,inds[1],extra_ind1);
+  bool culled = nds_gpu_draw_tri(nds,inds[0],inds[1],extra_ind1);
+  culled&=nds_gpu_draw_tri(nds,inds[0],extra_ind1,extra_ind0);
   return culled;
 }
 static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz){
@@ -4108,6 +4123,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       if((nds->gpu.curr_draw_vert%3)==0){
         bool culled = nds_gpu_clip_tri(nds,nds->gpu.curr_vert-3,nds->gpu.curr_vert-2,nds->gpu.curr_vert-1);
         if(culled)nds->gpu.curr_vert-=3;
+        else nds->gpu.poly_ram_offset++;
+
       }
       break;
     /*Quads     */ case 1: 
@@ -4115,6 +4132,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
         bool culled=nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+0,nds->gpu.curr_vert-4+1,nds->gpu.curr_vert-4+2);
         culled&=nds_gpu_clip_tri(nds,nds->gpu.curr_vert-4+2,nds->gpu.curr_vert-4+3,nds->gpu.curr_vert-4+0);
         if(culled)nds->gpu.curr_vert-=4;
+        else nds->gpu.poly_ram_offset++;
+
       }
       break;
     /*Tristrip  */ case 2: 
@@ -4129,7 +4148,7 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
             nds->gpu.vert_buffer[nds->gpu.curr_vert-3]=nds->gpu.vert_buffer[nds->gpu.curr_vert-2];
             nds->gpu.vert_buffer[nds->gpu.curr_vert-2]=nds->gpu.vert_buffer[nds->gpu.curr_vert-1];
             nds->gpu.curr_vert--;
-          }
+          }else nds->gpu.poly_ram_offset++;
         }
       }
       break;
@@ -4151,7 +4170,7 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
             nds->gpu.vert_buffer[nds->gpu.curr_vert-3]=nds->gpu.vert_buffer[nds->gpu.curr_vert-1];
             nds->gpu.curr_vert-=2;
           }
-        }
+        }else nds->gpu.poly_ram_offset++;
       }
       break;
   }
