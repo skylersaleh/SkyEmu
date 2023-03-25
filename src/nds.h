@@ -3692,7 +3692,6 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       palette = SB_BFE(palette,0,5);
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      //palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
@@ -3811,7 +3810,6 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       palette = SB_BFE(palette,0,3);
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      palette_zero = palette==0;
       tex_color[0] = SB_BFE(color,0,5)/31.;
       tex_color[1] = SB_BFE(color,5,5)/31.;
       tex_color[2] = SB_BFE(color,10,5)/31.;
