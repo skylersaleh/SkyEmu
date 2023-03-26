@@ -1887,18 +1887,6 @@ typedef struct {
   bool dtcm_enable;
   bool itcm_enable;
 } nds_mem_t;
-typedef struct{
-  uint8_t nds7_bios[16*1024];
-  uint8_t nds9_bios[4*1024];
-  /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
-  uint8_t firmware[NDS_FIRMWARE_SIZE];
-  uint8_t save_data[8*1024*1024];
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
-  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H];
-  uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
-}nds_scratch_t; 
 
 typedef struct {
   //Bytes 0..31
@@ -2076,7 +2064,7 @@ typedef struct{
   uint32_t fifo_data[NDS_GXFIFO_STORAGE];
   uint8_t fifo_cmd[NDS_GXFIFO_STORAGE];
   uint32_t fifo_read_ptr, fifo_write_ptr;
-  nds_vert_t vert_buffer[NDS_MAX_VERTS];
+  nds_vert_t *vert_buffer;
   uint32_t curr_vert; 
   uint32_t curr_draw_vert; 
   uint32_t prim_type;
@@ -2162,7 +2150,19 @@ typedef struct{
   FILE * dma_log;
   FILE * vert_log;
 } nds_t; 
-
+typedef struct{
+  uint8_t nds7_bios[16*1024];
+  uint8_t nds9_bios[4*1024];
+  /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
+  uint8_t firmware[NDS_FIRMWARE_SIZE];
+  uint8_t save_data[8*1024*1024];
+  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+  float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H];
+  uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
+  uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
+  nds_vert_t vert_buffer[NDS_MAX_VERTS];
+}nds_scratch_t; 
 static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
@@ -3884,8 +3884,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   bool render_back =  SB_BFE(poly_attr,7,1);
   bool translucent_has_depth = SB_BFE(poly_attr,11,1);
   
-  //Skip non-normal triangles for now TODO: Fix this
-  if(polygon_mode!=0&&polygon_mode!=2)return true;
+  //Skip shadow triangles for now TODO: Fix this
+  if(polygon_mode==3)return true;
   bool front_face=true;
   {
     float e0[3],e1[3];
@@ -4007,7 +4007,7 @@ static void nds_interp_wp_vert(nds_t*nds, int v_wp, int v_wn){
   nds_vert_t* vb = nds->gpu.vert_buffer;
   float wn = vb[v_wn].pos[3];
   float wp = vb[v_wp].pos[3];
-  float alpha = (0.000001-wn)/(wp-wn);
+  float alpha = (-wn)/(wp-wn)+0.000001;
 
   SE_RPT4 vb[v_wn].pos[r] += (vb[v_wp].pos[r]-vb[v_wn].pos[r])*alpha;
   SE_RPT3 vb[v_wn].color[r] += (vb[v_wp].color[r]-vb[v_wn].color[r])*alpha;
@@ -4303,12 +4303,14 @@ static void nds_tick_gx(nds_t* nds){
   int irq_mode = SB_BFE(gxstat,30,2);
   bool less_than_half_full = sz<128;
   bool empty = sz<=0;
+  uint32_t if9 = nds9_io_read32(nds,NDS9_IF);
   switch(irq_mode){
     case 0: break;
-    case 1: if(less_than_half_full)nds9_send_interrupt(nds,4,1<<NDS9_INT_GX_FIFO); break;
-    case 2: if(empty)nds9_send_interrupt(nds,4,1<<NDS9_INT_GX_FIFO); break;
+    case 1: if(less_than_half_full)if9|=(1<<NDS9_INT_GX_FIFO); break;
+    case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
     default: break;
   }
+  nds9_io_store32(nds,NDS9_IF,if9);
   gxstat&= 0xc0000000;
   gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
   gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
@@ -4355,7 +4357,7 @@ static void nds_tick_gx(nds_t* nds){
       {
         switch (gpu->matrix_mode){
           case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
-            if(gpu->mv_matrix_stack_ptr>=31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=30;}
+            if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
             for(int i=0;i<16;++i){gpu->mv_matrix_stack[gpu->mv_matrix_stack_ptr*16+i]=gpu->mv_matrix[i];}
             gpu->mv_matrix_stack_ptr++;
             break;
@@ -6431,6 +6433,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->framebuffer_3d_depth=scratch->framebuffer_3d_depth;
   nds->framebuffer_3d=scratch->framebuffer_3d;
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
+  nds->gpu.vert_buffer=scratch->vert_buffer;
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
   nds_tick_touch(&emu->joy,nds);
@@ -6486,7 +6489,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
 
     if(SB_LIKELY(nds->active_if_pipe_stages==0)&&nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
-      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles-1; 
+      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
       int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(fast_forward_ticks){
