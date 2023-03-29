@@ -3884,9 +3884,9 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   if(polygon_mode==3)return true;
   bool front_face=true;
   {
-    float e0[3],e1[3];
-    SE_RPT3 e0[r]=v[1]->clip_pos[r]-v[0]->clip_pos[r];
-    SE_RPT3 e1[r]=v[2]->clip_pos[r]-v[0]->clip_pos[r];
+    float e0[2],e1[2];
+    SE_RPT2 e0[r]=v[1]->clip_pos[r]-v[0]->clip_pos[r];
+    SE_RPT2 e1[r]=v[2]->clip_pos[r]-v[0]->clip_pos[r];
 
     front_face = (e0[1]*e1[0]-e0[0]*e1[1])<=0;
     
@@ -3901,42 +3901,41 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
   bool tri_not_rendered = true; 
 
+  float edge0[2],edge1[2],edge2[2];
+  SE_RPT2 edge0[r] = v[0]->clip_pos[r];
+  SE_RPT2 edge1[r] = v[1]->clip_pos[r];
+  SE_RPT2 edge2[r] = v[2]->clip_pos[r];
+  float sub_tri_area_ref[3];
+  sub_tri_area_ref[0]=edge0[1]*edge1[0]-edge0[0]*edge1[1];
+  sub_tri_area_ref[1]=edge1[1]*edge2[0]-edge1[0]*edge2[1];
+  sub_tri_area_ref[2]=edge2[1]*edge0[0]-edge2[0]*edge0[1];
+
+  float tri_area = sub_tri_area_ref[0]+sub_tri_area_ref[1]+sub_tri_area_ref[2];
+  float sub_tri_area_dx[3]={
+      (edge1[1]-edge0[1]),
+      (edge2[1]-edge1[1]),
+      (edge0[1]-edge2[1]),
+  };
+  float sub_tri_area_dy[3]={
+      (edge0[0]-edge1[0]),
+      (edge1[0]-edge2[0]),
+      (edge2[0]-edge0[0]),
+  };
+  SE_RPT3 sub_tri_area_ref[r]+=sub_tri_area_dx[r]*min_p[0];
+  SE_RPT3 sub_tri_area_dx[r]*=x_inc;
+  
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
     bool line_rendered =false; 
+    float sub_tri_area[3];
+    SE_RPT3 sub_tri_area[r]=sub_tri_area_dy[r]*y+sub_tri_area_ref[r];
     for(float x=min_p[0];x<max_p[0];x+=x_inc){
-
-      float sub_tri_area[3]={0,0,0};
-
-      float sample_p[3] = {x,y,0};
-      float edge0[2],edge1[2],edge2[2];
-      SE_RPT2 edge0[r] = v[0]->clip_pos[r]-sample_p[r];
-      SE_RPT2 edge1[r] = v[1]->clip_pos[r]-sample_p[r];
-      SE_RPT2 edge2[r] = v[2]->clip_pos[r]-sample_p[r];
-
-      sub_tri_area[0]=edge0[1]*edge1[0]-edge0[0]*edge1[1];
-      sub_tri_area[1]=edge1[1]*edge2[0]-edge1[0]*edge2[1];
-      sub_tri_area[2]=edge2[1]*edge0[0]-edge2[0]*edge0[1];
 
       if(sub_tri_area[0]>0||sub_tri_area[1]>0||sub_tri_area[2]>0){
         if(line_rendered)break;
+        SE_RPT3 sub_tri_area[r]+=sub_tri_area_dx[r];
         continue;
-      }
-      /*
-      bool cull_bary=false;
-      for(int vid = 0;vid<3;++vid){
-        float edge0[2];
-        float edge1[2];
-        SE_RPT2 edge0[r] = v[vid]->clip_pos[r]-sample_p[r];
-        SE_RPT2 edge1[r] = v[(vid+1)%3]->clip_pos[r]-sample_p[r];
-        sub_tri_area[vid]=edge0[1]*edge1[0]-edge0[0]*edge1[1];
-        if(sub_tri_area[vid]>0){cull_bary=true;break;}
       }
 
-      if(cull_bary){
-        if(line_rendered)break;
-        continue;
-      }*/
-      float tri_area = sub_tri_area[0]+sub_tri_area[1]+sub_tri_area[2];
       line_rendered=true;
 
       float bary_nopersp[3];
@@ -3944,6 +3943,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       SE_RPT3 bary_nopersp[r] = sub_tri_area[(r+1)%3]/tri_area;
       SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/v[r]->pos[3];
+
+      SE_RPT3 sub_tri_area[r]+=sub_tri_area_dx[r];
 
       float bary_area = bary[0]+bary[1]+bary[2];
       SE_RPT3 bary[r] /= bary_area;
@@ -4004,7 +4005,6 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
     }
     tri_not_rendered&=!line_rendered;
-
   }
   return tri_not_rendered;
 }
@@ -4024,12 +4024,7 @@ static bool nds_gpu_clip_tri(nds_t* nds, int vi0, int vi1, int vi2){
   //return;
   int inds[3] = {vi0,vi1,vi2};
   nds_vert_t* vb = nds->gpu.vert_buffer;
-
-  int inds_wp[3] = {-1,-1};
-  int inds_wn[3] = {-1,-1};
-  int wp=0;
-  int wn=0; 
-
+  
   if(vb[inds[0]].pos[3]>0.){
     if(vb[inds[2]].pos[3]>0.){
       if(vb[inds[1]].pos[3]>0.)return nds_gpu_draw_tri(nds,inds[0],inds[1],inds[2]);
@@ -4049,11 +4044,6 @@ static bool nds_gpu_clip_tri(nds_t* nds, int vi0, int vi1, int vi2){
     inds[2]=inds[1];
     inds[1]=i;
   }else return true;
-  for(int r = 0;r<3;++r){
-    int i = inds[r];
-    if(vb[i].pos[3]>0.)inds_wp[wp++]=i;
-    else inds_wn[wn++]=i;
-  }
   
   if(vb[inds[1]].pos[3]<0.){
     int extra_ind0 = NDS_MAX_VERTS-1;
