@@ -2096,6 +2096,8 @@ typedef struct{
   uint32_t poly_attr;
   uint32_t poly_ram_offset;
   bool pending_swap;
+  bool box_test_result;
+  int test_busy;
   uint32_t rendered_primitive_tracker; 
 }nds_gpu_t; 
 
@@ -4224,9 +4226,10 @@ static int nds_gpu_cmd_params(int cmd){
   }
   return 0; 
 }
+
 static int nds_gpu_cmd_cycles(int cmd){
   //https://melonds.kuribo64.net/board/thread.php?id=141
-  //return 1; 
+  return 3; 
   switch(cmd){
     case 0x10:return   1 ; /*MTX_MODE - Set Matrix Mode (W)*/
     case 0x11:return  17 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
@@ -4276,9 +4279,15 @@ static void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
     printf("Error GX FIFO Overflow\n"); 
     return;
   }
+  if(cmd>=0x70&&cmd<=0x72)nds->gpu.test_busy++;
   nds->gpu.fifo_cmd[nds->gpu.fifo_write_ptr%NDS_GXFIFO_STORAGE]=cmd;
   nds->gpu.fifo_data[nds->gpu.fifo_write_ptr%NDS_GXFIFO_STORAGE]=data;
   nds->gpu.fifo_write_ptr++;
+}
+static float nds_point_plane_distance(float * point, float * plane){
+  float dist = plane[3];
+  SE_RPT3 dist+=point[r]*plane[r];
+  return dist; 
 }
 static void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
@@ -4299,7 +4308,7 @@ static void nds_tick_gx(nds_t* nds){
   gxstat&= 0xc0000000;
   gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
   gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
-  
+  if(gpu->box_test_result)gxstat|=(1<<1);//Box test
   if(gpu->matrix_stack_error)gxstat|=1<<15;
   gxstat|= (sz&0x1ff)<<16;
   if(less_than_half_full)gxstat|= 1<<25; //Less than half full
@@ -4307,6 +4316,8 @@ static void nds_tick_gx(nds_t* nds){
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
   if(sz!=0&&sz>=cmd_params)gxstat|= 1<<27;//is busy
+
+  if(nds->gpu.test_busy>0)gxstat|= 1<<0;
 
   nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
   if(sz<cmd_params||sz==0)return; 
@@ -4555,7 +4566,45 @@ static void nds_tick_gx(nds_t* nds){
       //printf("Viewport %d %d %d %d\n",x0,y0,x1,y1);
       break;
     }
+    case 0x70:/*BOX_TEST*/{
+      float m[16];
+      for(int i=0;i<16;++i)m[i] = nds->gpu.proj_matrix[i];
+      nds_mult_matrix4(m, nds->gpu.mv_matrix);
+      int16_t x_min = SB_BFE(p[0],0,16);
+      int16_t y_min = SB_BFE(p[0],16,16);
+      int16_t z_min = SB_BFE(p[1],0,16);
+      int16_t x_max = x_min+SB_BFE(p[1],16,16);
+      int16_t y_max = y_min+SB_BFE(p[2],0,16);
+      int16_t z_max = z_min+SB_BFE(p[2],16,16);
+      //Extract the view frustum planes from the camera
+      float planes[6*4];
+      for(int p=0;p<3;++p){
+        for (int i = 4; i--; ) planes[p*2*4+i]      = m[i*4+3] + m[i*4+p];
+        for (int i = 4; i--; ) planes[(p*2+1)*4+i]  = m[i*4+3] - m[i*4+p];
+      }      
+      int box_position = 0; //0 =inside, 1=outside, 2=collides
+      for(int p=0;p<6;++p){
+        float pos_vert[3]={
+          (planes[p*4+0]<0? x_min: x_max)*fixed_to_float,
+          (planes[p*4+1]<0? y_min: y_max)*fixed_to_float,
+          (planes[p*4+2]<0? z_min: z_max)*fixed_to_float,
+        };
+        float neg_vert[3]={
+          (planes[p*4+0]>0? x_min: x_max)*fixed_to_float,
+          (planes[p*4+1]>0? y_min: y_max)*fixed_to_float,
+          (planes[p*4+2]>0? z_min: z_max)*fixed_to_float,
+        };
+        if(nds_point_plane_distance(pos_vert,planes+p*4)<0.){box_position=1;break;}//outside
+        if(nds_point_plane_distance(neg_vert,planes+p*4)<0.)box_position=2;//collides
+      }
+      nds->gpu.box_test_result=box_position!=1;
+      nds->gpu.test_busy -= 3;
+    }break;
     case 0x21: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
+    case 0x71: 
+        nds->gpu.test_busy -= 1;
+    case 0x72:
+        nds->gpu.test_busy -= 1;
     default:
       
       printf("Unhandled GPU CMD: %02x Data: ",cmd);
