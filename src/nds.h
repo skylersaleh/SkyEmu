@@ -1824,13 +1824,13 @@ mmio_reg_t nds7_io_reg_desc[]={
 #define NDS_LCD_W 256
 #define NDS_LCD_H 192
 
-#define NDS_VRAM_BGA_SLOT0 0x06900000
-#define NDS_VRAM_BGB_SLOT0 0x06A00000
-#define NDS_VRAM_OBJA_SLOT0 0x06B00000
-#define NDS_VRAM_OBJB_SLOT0 0x06C00000
-#define NDS_VRAM_TEX_SLOT0  0x06D00000
-#define NDS_VRAM_TEX_SLOT1  (0x06D00000 + 128*1024)
-#define NDS_VRAM_TEX_PAL_SLOT0  0x06E00000
+#define NDS_VRAM_BGA_SLOT0 0x06A00000
+#define NDS_VRAM_BGB_SLOT0 0x06B00000
+#define NDS_VRAM_OBJA_SLOT0 0x06C00000
+#define NDS_VRAM_OBJB_SLOT0 0x06D00000
+#define NDS_VRAM_TEX_SLOT0  0x06E00000
+#define NDS_VRAM_TEX_SLOT1  (0x06E00000 + 128*1024)
+#define NDS_VRAM_TEX_PAL_SLOT0  0x06F00000
 
 #define NDS_VRAM_SLOT_OFF    0x20000
 #define NDS_ARM9 1
@@ -6293,12 +6293,15 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
   nds_audio_t* audio = &nds->audio;
   if(delta_time>1.0/60.)delta_time = 1.0/60.;
   audio->current_sim_time +=delta_time;
-  audio->cycles_since_tick +=cycles;
   float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
 
   while(audio->current_sample_generated_time < audio->current_sim_time){
+    uint64_t current_cycles = audio->current_sample_generated_time*33513982;
+
 
     audio->current_sample_generated_time+=sample_delta_t;
+    uint64_t next_cycles = audio->current_sample_generated_time*33513982;
+    audio->cycles_since_tick=next_cycles-current_cycles; 
     
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     const float lowpass_coef = 0.999;
@@ -6345,14 +6348,17 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         switch(format){
           case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.;break;
           case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample*2))/32768.;break;
-          case 2: v= audio->channel[c].adpcm_sample / 32768.0;break;
-          case 3: v= audio->channel[c].sample<SB_BFE(cnt,24,3);break; //Todo: add antialiasing
+          case 2: v= ((int16_t)audio->channel[c].adpcm_sample) / 32768.0;break;
+          case 3:
+          if(c>=8&&c<=13)v= (audio->channel[c].sample<SB_BFE(cnt,24,3))*2.-1.;//Todo: add antialiasing
+          //TODO: Add white noise
+          break; 
         }
         uint32_t vol_mul = SB_BFE(cnt,0,7);
         uint32_t vol_div = SB_BFE(cnt,8,2);
         uint16_t pan = SB_BFE(cnt,16,7);
         float div_table[4]={1.0,0.5,0.25,1.0/16.};
-        v*=0.01*vol_mul*div_table[vol_div];
+        v*=vol_mul*div_table[vol_div]/128.;
         emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef + fabs(v)*(1.0-lowpass_coef);
         r+=v*pan/128.;
         l+=v*(128-pan)/128.;
