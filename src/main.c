@@ -1516,11 +1516,13 @@ static bool se_sync_save_to_disk(){return se_write_save_to_disk(emu_state.save_f
 static uint32_t se_save_best_effort_state(se_core_state_t* state){
   if(emu_state.system==SYSTEM_GB)return sb_save_best_effort_state(&state->gb);
   if(emu_state.system==SYSTEM_GBA)return gba_save_best_effort_state(&state->gba);
+  if(emu_state.system==SYSTEM_NDS)return nds_save_best_effort_state(&state->nds);
   return -1; 
 }
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset){
   if(emu_state.system==SYSTEM_GB)return sb_load_best_effort_state(&state->gb,save_state_data,size,bess_offset);
   if(emu_state.system==SYSTEM_GBA)return gba_load_best_effort_state(&state->gba,save_state_data,size,bess_offset);
+  if(emu_state.system==SYSTEM_NDS)return nds_load_best_effort_state(&state->nds,save_state_data,size,bess_offset);
   return false;
 }
 static double se_get_sim_fps(){

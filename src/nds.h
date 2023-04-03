@@ -1870,10 +1870,6 @@ typedef struct {
   uint32_t card_chip_id;
   int card_read_offset;
   int card_transfer_bytes;
-  int transfer_id;
-  uint8_t wait_state_table[16*4];
-  bool prefetch_en;
-  int prefetch_size;
   uint64_t curr_vram_translation_key; 
   uint32_t requests;
   uint32_t openbus_word;
@@ -1952,7 +1948,6 @@ typedef struct{
   bool last_hblank;
   uint32_t latched_transfer;
   int startup_delay; 
-  bool activate_audio_dma;
   uint32_t gx_dma_subtransfer; 
   uint16_t trigger_mode; 
 } nds_dma_t; 
@@ -2006,7 +2001,7 @@ typedef struct{
 }nds_ipc_t;
 typedef struct{
   //[Cn][Cm][Cp]
-  uint32_t reg[16][16][8]; 
+  uint32_t reg[16*16*8]; 
 }nds_system_control_processor;
 typedef struct{
   uint64_t div_last_update_clock;
@@ -2102,6 +2097,61 @@ typedef struct{
 }nds_gpu_t; 
 
 typedef struct{
+  uint32_t bess_version; //Versioning field must be 1
+  /* 
+  r0-r15 
+  CPSR 16
+  SPSR 17 
+  R13_fiq 22 
+  R13_irq 24 
+  R13_svc 26 
+  R13_abt 28 
+  R13_und 30 
+  R14_fiq 23 
+  R14_irq 25 
+  R14_svc 27 
+  R14_abt 29 
+  R14_und 31 
+  SPSR_fiq 32 
+  SPSR_irq 33 
+  SPSR_svc 34 
+  SPSR_abt 35 
+  SPSR_und 36 
+  */
+  uint32_t cpu9_reg_seg;
+  uint32_t cpu7_reg_seg;
+
+  uint32_t ram_seg;
+  uint32_t wram_seg; 
+  uint32_t code_tcm_seg;
+  uint32_t data_tcm_seg;
+  uint32_t code_cache_seg;
+  uint32_t data_cache_seg;
+  uint32_t vram_seg;    
+  uint32_t palette_seg;   
+  uint32_t oam_seg;
+  uint32_t io_seg;
+  uint32_t card_transfer_data_seg;
+  uint32_t coproc_reg_seg;
+
+  uint16_t timer_reload_values[2][4];
+
+  uint32_t dtcm_start_address;
+  uint32_t dtcm_end_address;
+  uint32_t itcm_start_address;
+  uint32_t itcm_end_address;
+  uint8_t dtcm_load_mode;
+  uint8_t itcm_load_mode;
+  uint8_t dtcm_enable;
+  uint8_t itcm_enable;
+
+  uint32_t card_read_offset;
+  uint32_t card_transfer_bytes;
+
+  uint32_t padding[39];
+}nds_bess_info_t;
+
+typedef struct{
   nds_mem_t mem;
   arm7_t arm7;
   arm7_t arm9;
@@ -2119,6 +2169,7 @@ typedef struct{
   nds_touch_t touch;
   nds_audio_t audio;
   nds_card_backup_t backup;
+  nds_bess_info_t bess;
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
@@ -2173,6 +2224,93 @@ static void nds_compute_timers(nds_t* nds);
 static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
 
+
+//Returns offset into savestate where bess info can be found
+static uint32_t nds_save_best_effort_state(nds_t* nds){
+  nds->bess.bess_version = 1;   
+
+  nds->bess.cpu9_reg_seg= (uint8_t*)nds->arm9.registers-(uint8_t*)nds;
+  nds->bess.cpu7_reg_seg= (uint8_t*)nds->arm7.registers-(uint8_t*)nds;
+  nds->bess.ram_seg= (uint8_t*)nds->mem.ram-(uint8_t*)nds;
+  nds->bess.wram_seg= (uint8_t*)nds->mem.wram-(uint8_t*)nds; 
+  nds->bess.code_tcm_seg= (uint8_t*)nds->mem.code_tcm-(uint8_t*)nds;
+  nds->bess.data_tcm_seg= (uint8_t*)nds->mem.data_tcm-(uint8_t*)nds;
+  nds->bess.code_cache_seg= (uint8_t*)nds->mem.code_cache-(uint8_t*)nds;
+  nds->bess.data_cache_seg= (uint8_t*)nds->mem.data_cache-(uint8_t*)nds;
+  nds->bess.vram_seg= (uint8_t*)nds->mem.vram-(uint8_t*)nds;    
+  nds->bess.palette_seg= (uint8_t*)nds->mem.palette-(uint8_t*)nds;   
+  nds->bess.oam_seg= (uint8_t*)nds->mem.oam-(uint8_t*)nds;
+  nds->bess.io_seg= (uint8_t*)nds->mem.io-(uint8_t*)nds;
+  nds->bess.card_transfer_data_seg= (uint8_t*)nds->mem.card_transfer_data-(uint8_t*)nds;
+  nds->bess.coproc_reg_seg= (uint8_t*)nds->cp15.reg-(uint8_t*)nds;
+  nds->bess.dtcm_start_address=nds->mem.dtcm_start_address;
+  nds->bess.dtcm_end_address=nds->mem.dtcm_end_address;
+  nds->bess.itcm_start_address=nds->mem.itcm_start_address;
+  nds->bess.itcm_end_address=nds->mem.itcm_end_address;
+  nds->bess.dtcm_load_mode=nds->mem.dtcm_load_mode;
+  nds->bess.itcm_load_mode=nds->mem.itcm_load_mode;
+  nds->bess.dtcm_enable=nds->mem.dtcm_enable;
+  nds->bess.itcm_enable=nds->mem.itcm_enable;
+  nds->bess.card_read_offset=nds->mem.card_read_offset;
+  nds->bess.card_transfer_bytes=nds->mem.card_transfer_bytes;
+
+  for(int cpu=0;cpu<2;++cpu)
+    for(int i=0;i<4;++i)nds->bess.timer_reload_values[cpu][i]=nds->timers[cpu][i].reload_value;
+  return ((uint8_t*)&nds->bess)-(uint8_t*)(nds); 
+}
+static bool nds_load_best_effort_state(nds_t* nds,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset){
+  if(bess_offset+sizeof(nds_bess_info_t)>size)return false;
+  nds_bess_info_t * bess = (nds_bess_info_t*)(save_state_data+bess_offset);
+  if(bess->bess_version!=1)return false; 
+
+  if(bess->cpu9_reg_seg + sizeof(nds->arm9.registers)>size)return false;
+  if(bess->cpu7_reg_seg + sizeof(nds->arm7.registers)>size)return false;
+  if(bess->ram_seg + sizeof(nds->mem.ram)>size)return false;
+  if(bess->wram_seg + sizeof(nds->mem.wram)>size)return false;
+  if(bess->code_tcm_seg + sizeof(nds->mem.code_tcm)>size)return false;
+  if(bess->data_tcm_seg + sizeof(nds->mem.data_tcm)>size)return false;
+  if(bess->code_cache_seg + sizeof(nds->mem.code_cache)>size)return false;
+  if(bess->data_cache_seg + sizeof(nds->mem.data_cache)>size)return false;
+  if(bess->vram_seg + sizeof(nds->mem.vram)>size)return false;
+  if(bess->palette_seg + sizeof(nds->mem.palette)>size)return false;
+  if(bess->oam_seg + sizeof(nds->mem.oam)>size)return false;
+  if(bess->io_seg + sizeof(nds->mem.io)>size)return false;
+  if(bess->card_transfer_data_seg + sizeof(nds->mem.card_transfer_data)>size)return false;
+  if(bess->coproc_reg_seg + sizeof(nds->cp15.reg)>size)return false;
+
+  memcpy((uint8_t*)nds->arm9.registers, save_state_data+bess->cpu9_reg_seg, sizeof(nds->arm9.registers));
+  memcpy((uint8_t*)nds->arm7.registers, save_state_data+bess->cpu7_reg_seg, sizeof(nds->arm7.registers));
+  memcpy((uint8_t*)nds->mem.ram,        save_state_data+bess->ram_seg, sizeof(nds->mem.ram));
+  memcpy((uint8_t*)nds->mem.wram,       save_state_data+bess->wram_seg, sizeof(nds->mem.wram));
+  memcpy((uint8_t*)nds->mem.code_tcm,   save_state_data+bess->code_tcm_seg, sizeof(nds->mem.code_tcm));
+  memcpy((uint8_t*)nds->mem.data_tcm,   save_state_data+bess->data_tcm_seg, sizeof(nds->mem.data_tcm));
+  memcpy((uint8_t*)nds->mem.code_cache, save_state_data+bess->code_cache_seg, sizeof(nds->mem.code_cache));
+  memcpy((uint8_t*)nds->mem.data_cache, save_state_data+bess->data_cache_seg, sizeof(nds->mem.data_cache));
+  memcpy((uint8_t*)nds->mem.vram,       save_state_data+bess->vram_seg, sizeof(nds->mem.vram));
+  memcpy((uint8_t*)nds->mem.palette,    save_state_data+bess->palette_seg, sizeof(nds->mem.palette));
+  memcpy((uint8_t*)nds->mem.oam,        save_state_data+bess->oam_seg, sizeof(nds->mem.oam));
+  memcpy((uint8_t*)nds->mem.io,         save_state_data+bess->io_seg, sizeof(nds->mem.io));
+  memcpy((uint8_t*)nds->mem.card_transfer_data, save_state_data+bess->card_transfer_data_seg, sizeof(nds->mem.card_transfer_data));
+  memcpy((uint8_t*)nds->cp15.reg,       save_state_data+bess->coproc_reg_seg, sizeof(nds->cp15.reg));
+
+  printf("ARM7 PC: %08x ARM9 PC: %08x\n",nds->arm7.registers[15],nds->arm9.registers[15]);
+
+  nds->mem.dtcm_start_address=bess->dtcm_start_address;
+  nds->mem.dtcm_end_address=bess->dtcm_end_address;
+  nds->mem.itcm_start_address=bess->itcm_start_address;
+  nds->mem.itcm_end_address=bess->itcm_end_address;
+  nds->mem.dtcm_load_mode=bess->dtcm_load_mode;
+  nds->mem.itcm_load_mode=bess->itcm_load_mode;
+  nds->mem.dtcm_enable=bess->dtcm_enable;
+  nds->mem.itcm_enable=bess->itcm_enable;
+
+  nds->mem.card_read_offset=bess->card_read_offset;
+  nds->mem.card_transfer_bytes=bess->card_transfer_bytes;
+  for(int cpu=0;cpu<2;++cpu)
+    for(int i=0;i<4;++i)nds->timers[cpu][i].reload_value=nds->bess.timer_reload_values[cpu][i];
+  printf("Bess restore successful\n");
+  return true; 
+}
 static void FORCE_INLINE nds9_send_interrupt(nds_t*nds,int delay,int if_bit){
   nds->active_if_pipe_stages|=1<<delay;
   nds->nds9_pipelined_if[delay]|= if_bit;
@@ -2731,75 +2869,6 @@ void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data);
 
-static FORCE_INLINE void nds_recompute_waitstate_table(nds_t* nds,uint16_t waitcnt){
-  // TODO: Make the waitstate for the ROM configureable 
-  const int wait_state_table[16*4]={
-    1,1,1,1, //0x00 (bios)
-    1,1,1,1, //0x01 (bios)
-    3,3,6,6, //0x02 (256k WRAM)
-    1,1,1,1, //0x03 (32k WRAM)
-    1,1,1,1, //0x04 (IO)
-    1,1,2,2, //0x05 (BG/OBJ Palette)
-    1,1,2,2, //0x06 (VRAM)
-    1,1,1,1, //0x07 (OAM)
-    4,4,8,8, //0x08 (GAMEPAK ROM 0)
-    4,4,8,8, //0x09 (GAMEPAK ROM 0)
-    4,4,8,8, //0x0A (GAMEPAK ROM 1)
-    4,4,8,8, //0x0B (GAMEPAK ROM 1)
-    4,4,8,8, //0x0C (GAMEPAK ROM 2)
-    4,4,8,8, //0x0D (GAMEPAK ROM 2)
-    4,4,4,4, //0x0E (GAMEPAK SRAM)
-    1,1,1,1, //0x0F (unused)
-  };
-  for(int i=0;i<16*4;++i){
-    nds->mem.wait_state_table[i]=wait_state_table[i];
-  }
-  uint8_t sram_wait = SB_BFE(waitcnt,0,2);
-  uint8_t wait_first[3];
-  uint8_t wait_second[3];
-
-  wait_first[0]  = SB_BFE(waitcnt,2,2);
-  wait_second[0] = SB_BFE(waitcnt,4,1);
-  wait_first[1]  = SB_BFE(waitcnt,5,2);
-  wait_second[1] = SB_BFE(waitcnt,7,1);
-  wait_first[2]  = SB_BFE(waitcnt,8,2);
-  wait_second[2] = SB_BFE(waitcnt,10,1);
-  uint8_t prefetch_en = SB_BFE(waitcnt,14,1);
-
-  int primary_table[4]={4,3,2,8};
-
-  //Each waitstate is two entries in table
-  for(int ws=0;ws<3;++ws){
-    for(int i=0;i<2;++i){
-      uint8_t w_first = primary_table[wait_first[ws]];
-      uint8_t w_second = wait_second[ws]?1:2;
-      if(ws==1)w_second = wait_second[ws]?1:4;
-      if(ws==2)w_second = wait_second[ws]?1:8;
-      w_first+=1;w_second+=1;
-      //Wait 0
-      int wait16b = w_second; 
-      int wait32b = w_second*2; 
-
-      int wait16b_nonseq = w_first; 
-      int wait32b_nonseq = w_first+w_second;
-
-      nds->mem.wait_state_table[(0x08+i+ws*2)*4+0] = wait16b;
-      nds->mem.wait_state_table[(0x08+i+ws*2)*4+1] = wait16b_nonseq;
-      nds->mem.wait_state_table[(0x08+i+ws*2)*4+2] = wait32b;
-      nds->mem.wait_state_table[(0x08+i+ws*2)*4+3] = wait32b_nonseq;
-    }
-  }
-  nds->mem.prefetch_en = prefetch_en;
-  nds->mem.prefetch_size = 0;
-
-  //SRAM
-  nds->mem.wait_state_table[(0x0E*4)+0]= 1+primary_table[sram_wait];
-  nds->mem.wait_state_table[(0x0E*4)+1]= 1+primary_table[sram_wait];
-  nds->mem.wait_state_table[(0x0E*4)+2]= 1+primary_table[sram_wait];
-  nds->mem.wait_state_table[(0x0E*4)+3]= 1+primary_table[sram_wait];
-  waitcnt&=(1<<15); // Force cartridge to report as GBA cart
-  nds9_io_store16(nds,GBA_WAITCNT,waitcnt);
-}
 static FORCE_INLINE void nds_compute_access_cycles(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
 //  int bank = SB_BFE(address,24,4);
 //  bool prefetch_en= nds->mem.prefetch_en;
@@ -2846,11 +2915,7 @@ static FORCE_INLINE void nds_compute_access_cycles(nds_t *nds, uint32_t address,
 }
 static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   return 1;
-  int bank = SB_BFE(address,24,4);
-  uint32_t wait = nds->mem.wait_state_table[bank*4+request_size];
-  return wait;
 }
-
 
 // Try to load a GBA rom, return false on invalid rom
 bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds, nds_scratch_t* scratch);
@@ -2929,7 +2994,6 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
   //nds_store32(nds,GBA_DISPCNT,0xe92d0000);
   nds9_write16(nds,0x04000088,512);
-  nds_recompute_waitstate_table(nds,0);
   nds->activate_dmas=false;
   nds->deferred_timer_ticks=0;
   bool loaded_bios= true;
@@ -3162,7 +3226,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
           nds->mem.card_transfer_data[i]=nds->mem.card_data[(i+(read_off&~0xfff))%nds->mem.card_size];
         }
         nds->mem.card_transfer_bytes=transfer_size_map[data_block_size];
-        if(nds->gc_log)fprintf(nds->gc_log,"Encrypted Read: 0x%08x transfer_size: %08x transfer:%d\n",read_off,nds->mem.card_transfer_bytes,nds->mem.transfer_id++);
+        if(nds->gc_log)fprintf(nds->gc_log,"Encrypted Read: 0x%08x transfer_size: %08x\n",read_off,nds->mem.card_transfer_bytes);
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
       case NDS_CARD_CHIP_ID_READ:{
@@ -3173,7 +3237,7 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
         nds->mem.card_transfer_data[2]=SB_BFE(nds->mem.card_chip_id,16,8);
         nds->mem.card_transfer_data[3]=SB_BFE(nds->mem.card_chip_id,24,8);
         nds->mem.card_transfer_bytes=4;
-        if(nds->gc_log)fprintf(nds->gc_log,"CHIPID Read transfer:%d\n",nds->mem.transfer_id++);
+        if(nds->gc_log)fprintf(nds->gc_log,"CHIPID Read transfer:\n");
         gcbus_ctl|=(1<<23)|(1<<31);//Set data_ready bit and busy
       }break; 
       default: printf("Unknown cmd: %02x\n",commands[0]);break;
@@ -6559,7 +6623,7 @@ uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int
   }
   if(opcode!=0)printf("Unsupported opcode(%x) for coproc %d\n",opcode,coproc);
   nds_t * nds = (nds_t*)(user_data);
-  return nds->cp15.reg[Cn][Cm][Cp]; 
+  return nds->cp15.reg[(Cn*16+Cm)*8+Cp]; 
 }
 void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data){
   if(coproc!=15){
@@ -6568,7 +6632,7 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
   }
   if(opcode!=0)printf("Unsupported opcode(%x) for coproc %d\n",opcode,coproc);
   nds_t * nds = (nds_t*)(user_data);
-  nds->cp15.reg[Cn][Cm][Cp]=data;
+  nds->cp15.reg[(Cn*16+Cm)*8+Cp]=data;
   //C9,C1,0 - Data TCM Size/Base (R/W)
   //C9,C1,1 - Instruction TCM Size/Base (R/W)
   if(Cn==1&&Cm==0){
@@ -6586,7 +6650,7 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     }else if(Cp==1){
       base = 0; 
       //ITCM base is read only on the NDS
-      nds->cp15.reg[Cn][Cm][Cp]=data&(0x3f);
+      nds->cp15.reg[(Cn*16+Cm)*8+Cp]=data&(0x3f);
 
       nds->mem.itcm_start_address = base<<12; 
       nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
