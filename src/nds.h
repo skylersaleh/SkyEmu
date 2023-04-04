@@ -2485,90 +2485,90 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
     int transaction_mask; // Block transactions of these types
     int offset_table;
     uint32_t mem_address_start;
-    int size; 
+    uint32_t mirror;
   }vram_bank_info_t;
 
   const static vram_bank_info_t bank_info[9][8]={
     { //Bank A 
-      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 0 6800000h-681FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7, 0, 0x06800000,0x100000-1}, //MST 0 6800000h-681FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 6, 0x06400000,0x40000-1}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06800000}, //MST 4
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7, 0, 0x06800000,0x100000-1}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 5 
+      {NDS_MEM_ARM7, 6, 0x06400000,0x40000-1}, //MST 6 
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank B
-      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 0 6820000h-683FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7, 0, 0x06820000,0x100000-1}, //MST 0 6820000h-683FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM7, 6, 0x06400000,0x40000-1}, //MST 2 6400000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06820000}, //MST 4
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 5 
-      {NDS_MEM_ARM7, 6, 0x06400000}, //MST 6 
+      {NDS_MEM_ARM7, 0, 0x06820000,0x100000-1}, //MST 4
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 5 
+      {NDS_MEM_ARM7, 6, 0x06400000,0x40000-1}, //MST 6 
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 7
     },{ //Bank C
-      {NDS_MEM_ARM7, 0, 0x06840000}, //MST 0 6840000h-685FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9|NDS_MEM_PPU, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7, 0, 0x06840000,0x100000-1}, //MST 0 6840000h-685FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9|NDS_MEM_PPU, 6, 0x06000000,0x80000-1}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 4 6200000h
+      {NDS_MEM_ARM7, 0, 0x06200000,0x20000-1}, //MST 4 6200000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank D
-      {NDS_MEM_ARM7, 0, 0x06860000}, //MST 0 6860000h-687FFFFh
-      {NDS_MEM_ARM7, 1, 0x06000000}, //MST 1 6000000h+(20000h*OFS)
-      {NDS_MEM_ARM9|NDS_MEM_PPU, 6, 0x06000000}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
+      {NDS_MEM_ARM7, 0, 0x06860000,0x100000-1}, //MST 0 6860000h-687FFFFh
+      {NDS_MEM_ARM7, 1, 0x06000000,0x80000-1}, //MST 1 6000000h+(20000h*OFS)
+      {NDS_MEM_ARM9|NDS_MEM_PPU, 6, 0x06000000,0x80000-1}, //MST 2 6000000h+(20000h*OFS.0)  ;OFS.1 must be zero
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 6, NDS_VRAM_TEX_SLOT0}, //MST 3 Slot OFS(0-3)   ;(Slot2-3: Texture, or Rear-plane)
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 4 6600000h
+      {NDS_MEM_ARM7, 0, 0x06600000,0x20000-1}, //MST 4 6600000h
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank E
-      {NDS_MEM_ARM7, 0, 0x06880000}, //MST 0 6880000h-688FFFFh
-      {NDS_MEM_ARM7, 0, 0x06000000}, //MST 1 6000000h
-      {NDS_MEM_ARM7, 0, 0x06400000}, //MST 2 6400000h
+      {NDS_MEM_ARM7, 0, 0x06880000,0x100000-1}, //MST 0 6880000h-688FFFFh
+      {NDS_MEM_ARM7, 0, 0x06000000,0x80000-1}, //MST 1 6000000h
+      {NDS_MEM_ARM7, 0, 0x06400000,0x40000-1}, //MST 2 6400000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slots 0-3;OFS=don't care
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_BGA_SLOT0}, //MST 4 (64K Slot 0-3  ;only lower 32K used)
       {0xffffffff, 0, 0x0}, // MST 5 INVALID
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank F
-      {NDS_MEM_ARM7, 0, 0x06890000}, //MST 0 6890000h-6893FFFh
-      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 0, 0x06890000,0x100000-1}, //MST 0 6890000h-6893FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000,0x80000-1}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000,0x40000-1}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 9, NDS_VRAM_TEX_PAL_SLOT0}, //MST 3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 8, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank G
-      {NDS_MEM_ARM7, 0, 0x06894000}, //MST 0 6894000h-6897FFFh
-      {NDS_MEM_ARM7, 2, 0x06000000}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
-      {NDS_MEM_ARM7, 2, 0x06400000}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 0, 0x06894000,0x100000-1}, //MST 0 6894000h-6897FFFh
+      {NDS_MEM_ARM7, 2, 0x06000000,0x80000-1}, //MST 1 6000000h+(4000h*OFS.0)+(10000h*OFS.1)
+      {NDS_MEM_ARM7, 2, 0x06400000,0x40000-1}, //MST 2 6400000h+(4000h*OFS.0)+(10000h*OFS.1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 9, NDS_VRAM_TEX_PAL_SLOT0}, //MST3 Slot (OFS.0*1)+(OFS.1*4)  ;ie. Slot 0, 1, 4, or 5
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 8, NDS_VRAM_BGA_SLOT0}, //MST 4 0..1  Slot 0-1 (OFS=0), Slot 2-3 (OFS=1)
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJA_SLOT0}, //MST 5 Slot 0  ;16K each (only lower 8K used)
       {0xffffffff, 0, 0x0}, // MST 6 INVALID
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank H
-      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 0 6898000h-689FFFFh
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 1 6200000h
+      {NDS_MEM_ARM7, 0, 0x06898000,0x100000-1}, //MST 0 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000,0x10000-1}, //MST 1 6200000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_BGB_SLOT0}, //MST 2 Slot 0-3
       {0xffffffff, 0, 0x0}, // MST 3 INVALID
-      {NDS_MEM_ARM7, 0, 0x06898000}, //MST 4 6898000h-689FFFFh
-      {NDS_MEM_ARM7, 0, 0x06200000}, //MST 5 6200000h
+      {NDS_MEM_ARM7, 0, 0x06898000,0x100000-1}, //MST 4 6898000h-689FFFFh
+      {NDS_MEM_ARM7, 0, 0x06200000,0x10000-1}, //MST 5 6200000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_BGB_SLOT0}, //MST 6 Slot 0-3
       {0xffffffff, 0, 0x0}, // MST 7 INVALID
     },{ //Bank I
-      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 0 68A0000h-68A3FFFh
-      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 1 6208000h
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 2 6600000h
+      {NDS_MEM_ARM7, 0, 0x068A0000,0x100000-1}, //MST 0 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000,0x10000-1}, //MST 1 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000,0x4000-1}, //MST 2 6600000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 3 Slot 0  ;16K each (only lower 8K used)
-      {NDS_MEM_ARM7, 0, 0x068A0000}, //MST 4 68A0000h-68A3FFFh
-      {NDS_MEM_ARM7, 0, 0x06208000}, //MST 5 6208000h
-      {NDS_MEM_ARM7, 0, 0x06600000}, //MST 6 6600000h
+      {NDS_MEM_ARM7, 0, 0x068A0000,0x100000-1}, //MST 4 68A0000h-68A3FFFh
+      {NDS_MEM_ARM7, 0, 0x06208000,0x10000-1}, //MST 5 6208000h
+      {NDS_MEM_ARM7, 0, 0x06600000,0x4000-1}, //MST 6 6600000h
       {NDS_MEM_ARM7|NDS_MEM_ARM9, 0, NDS_VRAM_OBJB_SLOT0}, //MST 7 Slot 0  ;16K each (only lower 8K used)
     }
   };
@@ -2603,11 +2603,11 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
 
     int base = bank.mem_address_start;
     base += offset_table[bank.offset_table][off];
-    if(address<base)continue;
+    if((address&0x0ffe0000)!=(base&0x0ffe0000))continue;
 
     int bank_offset = address-base; 
+    bank_offset&=bank.mirror? bank.mirror : -1;
     if(bank_offset>=bank_size[b])continue;
-
     int vram_addr = bank_offset+vram_off;
 
     if(special_case_multiple_found)nds->mem.vram_translation_cache[lookup_addr]=0;
