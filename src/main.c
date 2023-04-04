@@ -344,7 +344,7 @@ typedef struct{
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
-void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation);
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation,bool is_touch);
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview);
 void se_reset_save_states();
@@ -1628,18 +1628,27 @@ static void se_draw_emulated_system_screen(bool preview){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
 
+  float scr_w = igGetWindowWidth();
+  float scr_h = igGetWindowHeight();
+
   float native_w = SB_LCD_W;
   float native_h = SB_LCD_H;
+  bool hybrid_nds=false; 
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
   if(emu_state.system==SYSTEM_GBA){native_w = GBA_LCD_W; native_h = GBA_LCD_H;}
-  else if(emu_state.system==SYSTEM_NDS){native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;}
+  else if(emu_state.system==SYSTEM_NDS){
+    native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;
+    if(scr_w/scr_h>1){
+      native_w = NDS_LCD_W+NDS_LCD_W*0.5;
+      native_h = NDS_LCD_H;
+      hybrid_nds=true;
+    }
+  }
 
   float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
 
   lcd_aspect= native_h/native_w;
 
-  float scr_w = igGetWindowWidth();
-  float scr_h = igGetWindowHeight();
  
   float height = scr_h;
   float render_w = native_w;
@@ -1715,34 +1724,41 @@ static void se_draw_emulated_system_screen(bool preview){
     igRenderFrame(min,max,col,true,0);
   }else{
     if(emu_state.system==SYSTEM_GBA){
-      se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
+      se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
     }else if (emu_state.system==SYSTEM_NDS){
-      float p[4]={
-        0,-lcd_render_h*0.25,
-        0,lcd_render_h*0.25
-      };
-      for(int i=0;i<2;++i){
-        float x = p[i*2+0];
-        float y = p[i*2+1];
-        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
-        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
-      }
+      if(hybrid_nds){
+        float p[6]={
+          0.3333*lcd_render_w,-lcd_render_h*0.25,
+          0.3333*lcd_render_w,lcd_render_h*0.25,
+          -0.1666*lcd_render_w,0,
 
-      float x = gui_state.mouse_pos[0];
-      float y = gui_state.mouse_pos[1];
-      x-=lcd_render_x+p[2];
-      y-=lcd_render_y+p[3];
-      x/=lcd_render_w;
-      y/=lcd_render_h*0.5;
-      x+=0.5;
-      y+=0.5;
-      emu_state.joy.touch_pos[0]=x;
-      emu_state.joy.touch_pos[1]=y;
-      if(gui_state.mouse_button[0]&&x>=0&&x<=1.0&&y>=0.&&y<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
-      se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation);
-      se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation);
+        };
+        for(int i=0;i<3;++i){
+          float x = p[i*2+0];
+          float y = p[i*2+1];
+          p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+          p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+        }
+        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w/3, lcd_render_h*0.5,rotation,false);
+        se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,true);
+        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[4],lcd_render_y+p[5], lcd_render_w*2/3, lcd_render_h,rotation,false);
+
+      }else{
+        float p[4]={
+          0,-lcd_render_h*0.25,
+          0,lcd_render_h*0.25
+        };
+        for(int i=0;i<2;++i){
+          float x = p[i*2+0];
+          float y = p[i*2+1];
+          p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+          p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+        }
+        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
+        se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,true);
+      }
     }else if (emu_state.system==SYSTEM_GB){
-      se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation);
+      se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
     }
   }
   if(!gui_state.block_touchscreen||preview)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad,preview);
@@ -2014,7 +2030,7 @@ void se_draw_image_opacity(uint8_t *data, int im_width, int im_height,int x, int
   if(has_alpha==false)free(rgba8_data);
 }
 
-void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation){
+void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation,bool is_touch){
   sg_image *image = se_get_image();
   if(!image||!data){return; }
   if(im_width<=0)im_width=1;
@@ -2096,6 +2112,26 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     .blue_color = {lcd_info.blue_color[0],lcd_info.blue_color[1],lcd_info.blue_color[2]},
     .color_correction_strength=gui_state.test_runner_mode?0:gui_state.settings.color_correction
   };
+
+  if(is_touch){
+    float tx = gui_state.mouse_pos[0];
+    float ty = gui_state.mouse_pos[1];
+    tx-=x;
+    ty-=y;
+
+    float rx=cos(-rotation)*tx-sin(-rotation)*ty;
+    float ry=sin(-rotation)*tx+cos(-rotation)*ty;
+
+    rx/=render_width;
+    ry/=render_height;
+    rx+=0.5;
+    ry+=0.5;
+
+    emu_state.joy.touch_pos[0]=rx;
+    emu_state.joy.touch_pos[1]=ry;
+    if(gui_state.mouse_button[0]&&rx>=0&&rx<=1.0&&ry>=0.&&ry<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
+
+  }
 
   sg_bindings bind={
     .vertex_buffers[0] = gui_state.quad_vb,
