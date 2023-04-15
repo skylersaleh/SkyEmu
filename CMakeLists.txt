@@ -82,10 +82,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL Linux)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     find_package(ALSA REQUIRED)
+    set(PLATFORM_LINUX TRUE)
 endif()
 
 # TinyFileDialogs
-if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID))
+if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT PLATFORM_LINUX))
     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
     add_library(tinyfd STATIC 
@@ -141,7 +142,6 @@ if(USE_SDL)
     add_subdirectory(src/SDL2)
     set_property(TARGET SDL2-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
-
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
