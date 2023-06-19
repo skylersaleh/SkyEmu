@@ -3775,7 +3775,7 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
   29    Color 0 of 4/16/256-Color Palettes (0=Displayed, 1=Made Transparent)
   30-31 Texture Coordinates Transformation Mode (0..3, see below)*/
   uint32_t tex_param = nds->gpu.tex_image_param;
-  int vram_offset = SB_BFE(tex_param,0,16)*8;
+  uint32_t vram_offset = SB_BFE(tex_param,0,16)*8;
   bool repeat[2]={SB_BFE(tex_param,16,1),SB_BFE(tex_param,17,1)};
   bool flip[2]={SB_BFE(tex_param,18,1),SB_BFE(tex_param,19,1)};
   int sz[2]={SB_BFE(tex_param,20,3),SB_BFE(tex_param,23,3)};
@@ -4087,7 +4087,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       if(nds->framebuffer_3d_depth[p]<z*0.999999)continue;
       float uv[2];
-      SE_RPT2 uv[r]=v[0]->tex[r]*bary[0]+v[1]->tex[r]*bary[1]+v[2]->tex[r]*bary[2];
+      SE_RPT2 uv[r]=v[0]->tex[r]+(v[1]->tex[r]-v[0]->tex[r])*bary[1]+(v[2]->tex[r]-v[0]->tex[r])*bary[2];
 
       float tex_color[4]={1,1,1,1};
       bool discard = false;
@@ -4096,7 +4096,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       float output_col[4];
       float col_v[4]; 
-      SE_RPT3 col_v[r]=(v[0]->color[r]*bary[0]+v[1]->color[r]*bary[1]+v[2]->color[r]*bary[2])/255.;
+      SE_RPT3 col_v[r]=(v[0]->color[r]+(v[1]->color[r]-v[0]->color[r])*bary[1]+(v[2]->color[r]-v[0]->color[r])*bary[2])/255.;
       col_v[3]= alpha/31.;
 
       if(polygon_mode==0){
