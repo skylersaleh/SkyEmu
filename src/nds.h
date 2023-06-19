@@ -572,7 +572,9 @@ mmio_reg_t nds9_io_reg_desc[]={
     {0, 4, "EVA Coef. (1st Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
     {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
   } }, /* R/W Alpha Blending Coefficients */
-  { GBA_BLDY    , "BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
+  { GBA_BLDY    , "BLDY", {
+    {0, 5, "EVY Coefficient (Brightness) (0..16 = 0/16..16/16, 17..31=16/16)"},
+  } }, /* W   Brightness (Fade-In/Out) Coefficient */  
   { NDS_DISP3DCNT,       "DISP3DCNT",       { 
     {0   ,1, "Texture Mapping      (0=Disable, 1=Enable)"},
     {1   ,1, "PolygonAttr Shading  (0=Toon Shading, 1=Highlight Shading)"},
@@ -600,7 +602,10 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 31 ,1, "Capture Enable    (0=Disable/Ready, 1=Enable/Busy)"},
   } }, /* Display Capture Control Register (R/W) */
   { NDS_DISP_MMEM_FIFO,  "DISP_MMEM_FIFO",  { 0 } }, /* Main Memory Display FIFO (R?/W) */
-  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", { 0 } }, /* Master Brightness Up/Down */
+  { NDS_A_MASTER_BRIGHT, "A_MASTER_BRIGHT", { 
+    {0,5,"Factor used for 6bit R,G,B Intensities (0-16, values >16 same as 16)"},
+    {14,2, "Mode (0=Disable, 1=Up, 2=Down, 3=Reserved)"},
+  } }, /* Master Brightness Up/Down */
 
   // DMA Transfer Channels
   { GBA_DMA0SAD  , "DMA0SAD", { 0 } },   /* W    DMA 0 Source Address */
@@ -1159,9 +1164,14 @@ mmio_reg_t nds9_io_reg_desc[]={
     {0, 4, "EVA Coef. (1st Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
     {8, 4, "EVB Coef. (2nd Target) (0..16 = 0/16..16/16, 17..31=16/16)"},
   } }, /* R/W Alpha Blending Coefficients */
-  { NDS9_B_BLDY    , "(2D-B) BLDY", { 0 } }, /* W   Brightness (Fade-In/Out) Coefficient */  
+  { NDS9_B_BLDY    , "(2D-B) BLDY", { 
+    {0, 5, "EVY Coefficient (Brightness) (0..16 = 0/16..16/16, 17..31=16/16)"},
+  } }, /* W   Brightness (Fade-In/Out) Coefficient */  
 
-  { NDS9_B_MASTER_BRIGHT  ,"(2D-B) MASTER_BRIGHT",  { 0 } }, /* Master Brightness Up/Down */
+  { NDS9_B_MASTER_BRIGHT  ,"(2D-B) MASTER_BRIGHT",  {  
+    {0,5, "Factor used for 6bit R,G,B Intensities (0-16, values >16 same as 16)"},
+    {14,2, "Mode (0=Disable, 1=Up, 2=Down, 3=Reserved)"},
+  } }, /* Master Brightness Up/Down */
 };
 
 mmio_reg_t nds7_io_reg_desc[]={
@@ -5826,42 +5836,17 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             break; 
         }
       }
-      {
-        uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
-        int factor = SB_BFE(master_brightness,0,5);
-        int mode = SB_BFE(master_brightness,14,2);
-        if(factor>16)factor=16;
-        if(mode==1){
-          r += (63-r)*factor/16;
-          g += (63-g)*factor/16;
-          b += (63-b)*factor/16;
-        }else if(mode==2){
-          r -= r*factor/16;
-          g -= g*factor/16;
-          b -= b*factor/16;
-        }
-        if(r<0)r=0;
-        if(g<0)g=0;
-        if(b<0)b=0;
-
-        if(r>31)r=31;
-        if(g>31)g=31;
-        if(b>31)b=31;
-      }
-      int disp_r = r; 
-      int disp_g = g; 
-      int disp_b = b; 
 
       if(display_mode==2&&ppu_id==0){
         int vram_block = SB_BFE(dispcnt,18,2);
         uint16_t value = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
-        disp_r = SB_BFE(value,0,5);
-        disp_g = SB_BFE(value,5,5);
-        disp_b = SB_BFE(value,10,5);
+        r = SB_BFE(value,0,5);
+        g = SB_BFE(value,5,5);
+        b = SB_BFE(value,10,5);
       }else if(display_mode==0){
-        disp_r=31;
-        disp_g=31;
-        disp_b=31;
+        r=31;
+        g=31;
+        b=31;
       }
 
       if(enable_capture){
@@ -5920,6 +5905,32 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             nds9_write16(nds,write_address,color);
           }
         }
+      }
+
+      int disp_r = r; 
+      int disp_g = g; 
+      int disp_b = b; 
+      {
+        uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
+        int factor = SB_BFE(master_brightness,0,5);
+        int mode = SB_BFE(master_brightness,14,2);
+        if(factor>16)factor=16;
+        if(mode==1){
+          disp_r += (63-disp_r)*factor/16;
+          disp_g += (63-disp_g)*factor/16;
+          disp_b += (63-disp_b)*factor/16;
+        }else if(mode==2){
+          disp_r -= disp_r*factor/16;
+          disp_g -= disp_g*factor/16;
+          disp_b -= disp_b*factor/16;
+        }
+        if(disp_r<0)r=0;
+        if(disp_g<0)g=0;
+        if(disp_b<0)b=0;
+
+        if(disp_r>31)disp_r=31;
+        if(disp_g>31)disp_g=31;
+        if(disp_b>31)disp_b=31;
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
       float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
