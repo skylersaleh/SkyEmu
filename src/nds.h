@@ -3,6 +3,8 @@
 
 #include "sb_types.h"
 #include "nds_rom_database.h"
+#include "freebios/drastic_bios_arm7.h"
+#include "freebios/drastic_bios_arm9.h"
 
 
 typedef enum{
@@ -2996,17 +2998,15 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   nds9_write16(nds,0x04000088,512);
   nds->activate_dmas=false;
   nds->deferred_timer_ticks=0;
-  bool loaded_bios= true;
   if(nds->mem.card_data)memcpy(&nds->card,nds->mem.card_data,sizeof(nds->card));
-  loaded_bios&= se_load_bios_file("NDS7 BIOS", nds->save_file_path, "nds7.bin", scratch->nds7_bios,sizeof(scratch->nds7_bios));
-  loaded_bios&= se_load_bios_file("NDS9 BIOS", nds->save_file_path, "nds9.bin", scratch->nds9_bios,sizeof(scratch->nds9_bios));
-  loaded_bios&= se_load_bios_file("NDS Firmware", nds->save_file_path, "firmware.bin", scratch->firmware,sizeof(scratch->firmware));
+  bool load_nds7= se_load_bios_file("NDS7 BIOS", nds->save_file_path, "nds7.bin", scratch->nds7_bios,sizeof(scratch->nds7_bios));
+  if(!load_nds7)memcpy(scratch->nds7_bios,drastic_bios_arm7_bin,sizeof(drastic_bios_arm7_bin));
 
-  if(!loaded_bios){
-    printf("FATAL: Failed to load required bios\n");
-  }
+  bool load_nds9= se_load_bios_file("NDS9 BIOS", nds->save_file_path, "nds9.bin", scratch->nds9_bios,sizeof(scratch->nds9_bios));
+  if(!load_nds9)memcpy(scratch->nds9_bios,drastic_bios_arm9_bin,sizeof(drastic_bios_arm9_bin));
 
-  //memcpy(nds->mem.bios,gba_bios_bin,sizeof(gba_bios_bin));
+  bool loaded_firmware = se_load_bios_file("NDS Firmware", nds->save_file_path, "firmware.bin", scratch->firmware,sizeof(scratch->firmware));
+
   bool fast_boot =true;
   if(fast_boot){
     const uint32_t initial_regs[37]={
@@ -3110,7 +3110,36 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   //Preload user settings
   uint8_t* firm_data = scratch->firmware;
   uint32_t user_data_off = ((firm_data[0x21]<<8)|(firm_data[0x20]))*8;
-  for(int i=0;i<0x070;++i)nds9_write8(nds,i+0x27FFC80,firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]);
+    
+  if(!loaded_firmware){
+    firm_data[0x21]=0x7f;
+    firm_data[0x20]=0xc0;
+    user_data_off = ((firm_data[0x21]<<8)|(firm_data[0x20]))*8;
+
+    uint8_t stub_user_data[0x070]={
+      0x05,0x00,0x00,0x07,0x05,0x00,0x53,0x00,
+      0x6b,0x00,0x79,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x03,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0xf0,0x01,0xe0,0x01,0x20,0x20,0xe0,0x0d,
+      0xd0,0x09,0xe0,0xa0,0x01,0xfc,0x05,0x7e,
+      0x28,0xa0,0x3c,0x0a,0x00,0x00,0x00,0x00
+    };
+    for(int i=0;i<0x070;++i){
+      firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]=stub_user_data[i];
+    }
+  }
+
+  for(int i=0;i<0x070;++i){
+    nds9_write8(nds,i+0x27FFC80,firm_data[(user_data_off+i)&(sizeof(scratch->firmware)-1)]);
+  }
   nds_reset_gpu(nds);
 
   uint32_t game_code = (nds->card.gamecode[0]<<0)|(nds->card.gamecode[1]<<8)|(nds->card.gamecode[2]<<16)|(nds->card.gamecode[3]<<24);
@@ -5611,8 +5640,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
                 bg_y%=screen_size_y;
               }
             }else{
-              int16_t hoff = nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset);
-              int16_t voff = nds9_io_read16(nds,GBA_BG0VOFS+bg*4+reg_offset);
+              int16_t hoff = SB_BFE(nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset),0,9);
+              int16_t voff = SB_BFE(nds9_io_read16(nds,GBA_BG0VOFS+bg*4+reg_offset),0,9);
               hoff=(hoff<<7)>>7;
               voff=(voff<<7)>>7;
               bg_x = (hoff+lcd_x);
