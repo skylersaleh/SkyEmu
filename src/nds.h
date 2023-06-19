@@ -1853,7 +1853,7 @@ typedef struct {
   uint8_t code_cache[8*1024];
   uint8_t data_cache[4*1024];
   uint8_t vram[1024*1024];    /* VRAM (allocateable as BG/OBJ/2D/3D/Palette/Texture/WRAM memory) */
-  uint64_t vram_translation_cache[1024];
+  uint64_t vram_translation_cache[1024*16];
   uint8_t palette[2*1024];   
   uint8_t *save_data;
 
@@ -1864,6 +1864,9 @@ typedef struct {
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t *firmware;
   uint8_t io[64*1024];
+  uint8_t wifi_io[64*1024];
+  uint8_t baseband_io[0x70];
+  uint8_t rf_io[0x10];
   uint8_t mmio_debug_access_buffer[16*1024];
 
   uint8_t *card_data;
@@ -2411,17 +2414,18 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
   return *(uint32_t*)(nds->mem.io+(baddr&0xffff));
 }
 
-#define NDS_MEM_1B 0x1
-#define NDS_MEM_2B 0x2
-#define NDS_MEM_4B 0x4
+#define NDS_MEM_ARM7  0x1
+#define NDS_MEM_ARM9  0x2
+#define NDS_MEM_PPU   0x4
+#define NDS_MEM_DEBUG 0x8
 
-#define NDS_MEM_WRITE 0x10
-#define NDS_MEM_SEQ   0x20
-#define NDS_MEM_ARM7  0x40
-#define NDS_MEM_ARM9  0x80
-#define NDS_MEM_PPU   0x100
-#define NDS_MEM_DEBUG 0x200
-#define NDS_MEM_CPU   0x400
+#define NDS_MEM_1B 0x10
+#define NDS_MEM_2B 0x20
+#define NDS_MEM_4B 0x40
+
+#define NDS_MEM_WRITE 0x100
+#define NDS_MEM_SEQ   0x200
+
 
 static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_4B){
@@ -2443,7 +2447,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
   const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
   if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
 
-  int lookup_addr = SB_BFE(address,14,10);
+  int lookup_addr = SB_BFE(address,14,10)*16+(transaction_type&0xf);
   uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
   if((key&~(1023))==nds->mem.curr_vram_translation_key){
     int vram_addr = ((key&1023)*16*1024)+SB_BFE(address,0,14);
@@ -2709,6 +2713,7 @@ static uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, 
   }
   return nds9_process_memory_transaction(nds,addr,data,transaction_type);
 }
+
 static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
@@ -2740,9 +2745,28 @@ static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint
       }
       break;
     case 0x4: 
+        if(addr>=0x04200000){ 
+          //Wifi Registers
+          if(addr>=0x04800000&&addr<=0x0480ffff){
+            nds->mem.wifi_io[0x803D]=2;
+            uint32_t baddr= addr&0xffff;
+            *ret = nds_apply_mem_op(nds->mem.wifi_io, baddr, data, transaction_type); 
+            if((addr&~1) == 0x04808158&&(transaction_type&NDS_MEM_WRITE)&&!(transaction_type&NDS_MEM_1B)){
+              uint8_t value= nds->mem.wifi_io[0x8159];
+              int direction = value >> 4;
+              int index = nds->mem.wifi_io[0x8158];
+
+              if (index < sizeof(nds->mem.baseband_io)) {
+                if (direction == 5) nds->mem.baseband_io[index] = nds->mem.wifi_io[0x815A];
+                if (direction == 6) nds->mem.wifi_io[0x815C] = nds->mem.baseband_io[index];
+              }
+            }
+          }
+          break;
+        }
         if((addr&0xffff)>=0x2000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
-        if(addr>=0x04200000)break;
+        
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
         int baddr =addr|NDS_IO_MAP_SPLIT_OFFSET;
         baddr&=0xffff;
@@ -2797,22 +2821,22 @@ static FORCE_INLINE void nds7_debug_write8(nds_t*nds, unsigned baddr, uint8_t da
 }
 
 static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE void nds9_cpu_write32(nds_t*nds, unsigned baddr, uint32_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE void nds9_cpu_write16(nds_t*nds, unsigned baddr, uint16_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE void nds9_cpu_write8(nds_t*nds, unsigned baddr, uint8_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
 }
 static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
@@ -3540,7 +3564,6 @@ static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash
       case 0xB9: break;  //DeepPowerDown(DP)
       case 0xAB: break;  //ReleaseDeepPowerDown(RDP)
     } 
-    printf("NDS Firmware cmd:%02x\n",flash->cmd);
   }else if(flash->state == NDS_FLASH_RXTX){
     uint32_t page_mask = 0xff;
     uint32_t sector_mask = 0xffff;
@@ -4769,10 +4792,6 @@ static void nds_tick_ipc_fifo(nds_t* nds){
 }
 
 static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int transaction_type){
-  if(addr>=0x4800000&& addr<0x4900000){
-    printf("Read wifi register: 0x%08x\n",addr);
-    return false;
-  } 
   uint32_t word_mask = nds_word_mask(addr,transaction_type);
   uint32_t baddr =addr;
   addr&=~3;
@@ -4989,10 +5008,6 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
 }
 
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t data,int transaction_type){
-  if(baddr>=0x4800000&& baddr<0x4900000){
-    printf("Write wifi register: 0x%08x\n",baddr);
-    return;
-  } 
   uint32_t addr=baddr&~3;
   uint32_t mmio= (transaction_type&NDS_MEM_ARM9)? nds9_io_read32(nds,addr): nds7_io_read32(nds,addr);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
