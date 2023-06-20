@@ -4051,7 +4051,13 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   };
   SE_RPT3 sub_tri_area_ref[r]+=sub_tri_area_dx[r]*min_p[0];
   SE_RPT3 sub_tri_area_dx[r]*=x_inc;
-  
+
+  float tex_i[2], tex_j[2],color_i[3],color_j[3];
+  SE_RPT3 color_i[r]=v[1]->color[r]-v[0]->color[r];
+  SE_RPT3 color_j[r]=v[2]->color[r]-v[0]->color[r];
+  SE_RPT2 tex_i[r]=v[1]->tex[r]-v[0]->tex[r];
+  SE_RPT2 tex_j[r]=v[2]->tex[r]-v[0]->tex[r];
+
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
     bool line_rendered =false; 
     float sub_tri_area[3];
@@ -4077,8 +4083,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       float bary_area = bary[0]+bary[1]+bary[2];
       SE_RPT3 bary[r] /= bary_area;
 
-      float z = bary[0]*v[0]->pos[2]+bary[1]*v[1]->pos[2]+bary[2]*v[2]->pos[2];
-      float w = bary[0]*v[0]->pos[3]+bary[1]*v[1]->pos[3]+bary[2]*v[2]->pos[3];
+      float z = v[0]->pos[2]+bary[1]*(v[1]->pos[2]-v[0]->pos[2])+bary[2]*(v[2]->pos[2]-v[0]->pos[2]);
+      float w = v[0]->pos[3]+bary[1]*(v[1]->pos[3]-v[0]->pos[3])+bary[2]*(v[2]->pos[3]-v[0]->pos[3]);
       //if(z<=0)continue;
 
       int ix = (x*0.5+0.5)*NDS_LCD_W;
@@ -4087,7 +4093,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       if(nds->framebuffer_3d_depth[p]<z*0.999999)continue;
       float uv[2];
-      SE_RPT2 uv[r]=v[0]->tex[r]+(v[1]->tex[r]-v[0]->tex[r])*bary[1]+(v[2]->tex[r]-v[0]->tex[r])*bary[2];
+      SE_RPT2 uv[r]=v[0]->tex[r]+tex_i[r]*bary[1]+tex_j[r]*bary[2];
 
       float tex_color[4]={1,1,1,1};
       bool discard = false;
@@ -4096,7 +4102,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       float output_col[4];
       float col_v[4]; 
-      SE_RPT3 col_v[r]=(v[0]->color[r]+(v[1]->color[r]-v[0]->color[r])*bary[1]+(v[2]->color[r]-v[0]->color[r])*bary[2])/255.;
+      SE_RPT3 col_v[r]=(v[0]->color[r]+color_i[r]*bary[1]+color_j[r]*bary[2])/255.;
       col_v[3]= alpha/31.;
 
       if(polygon_mode==0){
