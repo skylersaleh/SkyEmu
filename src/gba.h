@@ -664,11 +664,6 @@ typedef struct {
   uint32_t gpio_data;
 } gba_cartridge_t;
 typedef struct{
-  bool up,down,left,right;
-  bool a, b, start, select;
-  bool l,r;
-} gba_joy_t;
-typedef struct{
   int source_addr;
   int dest_addr;
   int length;
@@ -751,13 +746,9 @@ typedef struct{
   uint64_t output_register;
   uint32_t state;
   uint8_t status_register;
-  uint16_t year;
-  uint8_t month;
-  uint8_t day;
-  uint8_t day_of_week;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
+  //Used to create an RTC that is real time in the game world. 
+  uint64_t initial_rtc_time;
+  uint64_t total_clocks_ticked;
 }gba_rtc_t;
 typedef struct{
   int ticks_till_transfer_done; 
@@ -806,7 +797,6 @@ typedef struct gba_t{
   gba_mem_t mem;
   arm7_t cpu;
   gba_cartridge_t cart;
-  gba_joy_t joy;       
   gba_ppu_t ppu;
   gba_rtc_t rtc;
   gba_dma_t dma[4]; 
@@ -986,6 +976,10 @@ static uint64_t gba_rev_bits(uint64_t data, int bits){
   }
   return out;
 }
+static uint8_t gba_bin_to_bcd(uint8_t bin){
+  bin%=100;
+  return (bin%10)|((bin/10)<<4);
+}
 /* Only simulates a small subset of the RTC needed to make time events work in the pokemon games. */
 static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
   uint32_t data = gba->cart.gpio_data;
@@ -1011,10 +1005,19 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
   if(cs==0){
     gba->rtc.serial_state=SERIAL_INIT;
     gba->rtc.serial_bits_clocked=0;
-    gba->mem.cart_rom[0x0000C4] &=~3;
-  }
-
-  if(cs!=0){
+    gba->rtc.state = 0;
+    gba->rtc.input_register = 0;
+    gba->rtc.output_register = 0;
+  }else{
+    time_t time_secs= gba->rtc.initial_rtc_time+(gba->rtc.total_clocks_ticked)/(16*1024*1024);
+    struct tm * tm = localtime(&time_secs);
+    uint8_t second = gba_bin_to_bcd(tm->tm_sec);
+    uint8_t minute = gba_bin_to_bcd(tm->tm_min);
+    uint8_t hour  = gba_bin_to_bcd(tm->tm_hour);
+    uint8_t day   = gba_bin_to_bcd(tm->tm_mday);
+    uint8_t month = gba_bin_to_bcd(tm->tm_mon+1);
+    uint8_t year  = gba_bin_to_bcd(tm->tm_year%100);
+    uint8_t day_of_week=gba_bin_to_bcd(tm->tm_wday);
     bool new_bit = false; 
     
     if(gba->rtc.serial_state==SERIAL_CLK_LOW&&clk){
@@ -1023,7 +1026,7 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
       new_bit = true;
     
       bool out_bit = (gba->rtc.output_register&1);
-      gba->mem.cart_rom[0x0000C4] = (gba->mem.cart_rom[0x0000C4]&~2)|(out_bit<<1);
+      gba->mem.cart_rom[0x0000C4] |=(out_bit<<1);
       gba->rtc.output_register>>=1;
     }
     
@@ -1043,16 +1046,11 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
           gba->rtc.input_register&=0xff;
         } 
         gba->rtc.state= SB_BFE(gba->rtc.input_register,0,8);
+        printf("RTC Command %d\n",gba->rtc.state);
       }
       int  cmd = SB_BFE(gba->rtc.state,4,3);
       bool read = SB_BFE(gba->rtc.state,7,1);
       switch(cmd){
-        case RTC_UNUSED: case RTC_UNUSED2: case RTC_UNUSED3: case RTC_FORCE_IRQ:
-        case RTC_RESET: 
-          if(gba->rtc.serial_bits_clocked==8){
-            gba->rtc.serial_bits_clocked=0;
-          }
-        break;
         case RTC_STATUS:{
           if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register = gba->rtc.status_register;
           if(gba->rtc.serial_bits_clocked==16){
@@ -1065,22 +1063,22 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
         }
         case RTC_DATE_TIME:{
           if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register =
-            (((uint64_t)(gba->rtc.year&0xff)       )<<(0*8ull))|
-            (((uint64_t)(gba->rtc.month&0xff)      )<<(1*8ull))|
-            (((uint64_t)(gba->rtc.day&0xff)        )<<(2*8ull))|
-            (((uint64_t)(gba->rtc.day_of_week&0xff))<<(3*8ull))|
-            (((uint64_t)(gba->rtc.hour&0xff)       )<<(4*8ull))|
-            (((uint64_t)(gba->rtc.minute&0xff)     )<<(5*8ull))|
-            (((uint64_t)(gba->rtc.second&0xff)     )<<(6*8ull));
+            (((uint64_t)(year&0xff)       )<<(0*8ull))|
+            (((uint64_t)(month&0xff)      )<<(1*8ull))|
+            (((uint64_t)(day&0xff)        )<<(2*8ull))|
+            (((uint64_t)(day_of_week&0xff))<<(3*8ull))|
+            (((uint64_t)(hour&0xff)       )<<(4*8ull))|
+            (((uint64_t)(minute&0xff)     )<<(5*8ull))|
+            (((uint64_t)(second&0xff)     )<<(6*8ull));
           if(gba->rtc.serial_bits_clocked==8*8){
             if(!read){
-              gba->rtc.year  = SB_BFE(gba->rtc.input_register,6*8,8);
-              gba->rtc.month = SB_BFE(gba->rtc.input_register,5*8,8);
-              gba->rtc.day   = SB_BFE(gba->rtc.input_register,4*8,8);
-              gba->rtc.day_of_week = SB_BFE(gba->rtc.input_register,3*8,8);
-              gba->rtc.hour   = SB_BFE(gba->rtc.input_register,2*8,8);
-              gba->rtc.minute = SB_BFE(gba->rtc.input_register,1*8,8);
-              gba->rtc.second = SB_BFE(gba->rtc.input_register,0*8,8);
+              year  = SB_BFE(gba->rtc.input_register,6*8,8);
+              month = SB_BFE(gba->rtc.input_register,5*8,8);
+              day   = SB_BFE(gba->rtc.input_register,4*8,8);
+              day_of_week = SB_BFE(gba->rtc.input_register,3*8,8);
+              hour   = SB_BFE(gba->rtc.input_register,2*8,8);
+              minute = SB_BFE(gba->rtc.input_register,1*8,8);
+              second = SB_BFE(gba->rtc.input_register,0*8,8);
             }
             gba->rtc.serial_bits_clocked=0;
           }
@@ -1088,20 +1086,30 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
         }
         case RTC_TIME:{
           if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register = 
-            ((uint64_t)(gba->rtc.hour&0xff)<<(0*8))|
-            ((uint64_t)(gba->rtc.minute&0xff)<<(1*8))|
-            ((uint64_t)(gba->rtc.second&0xff)<<(2*8));
+            ((uint64_t)(hour&0xff)<<(0*8))|
+            ((uint64_t)(minute&0xff)<<(1*8))|
+            ((uint64_t)(second&0xff)<<(2*8));
           if(gba->rtc.serial_bits_clocked==4*8){
             if(!read){
-              gba->rtc.hour   = SB_BFE(gba->rtc.input_register,0*8,8);
-              gba->rtc.minute = SB_BFE(gba->rtc.input_register,1*8,8);
-              gba->rtc.second = SB_BFE(gba->rtc.input_register,2*8,8);
+              hour   = SB_BFE(gba->rtc.input_register,0*8,8);
+              minute = SB_BFE(gba->rtc.input_register,1*8,8);
+              second = SB_BFE(gba->rtc.input_register,2*8,8);
             }
             gba->rtc.serial_bits_clocked=0;
           }
           break;
         }
+        default:
+        case RTC_UNUSED: case RTC_UNUSED2: case RTC_UNUSED3: case RTC_FORCE_IRQ: 
+          printf("Error: Unknown RTC Command %d\n",cmd);
+        case RTC_RESET: 
+          if(gba->rtc.serial_bits_clocked==8){
+            gba->rtc.serial_bits_clocked=0;
+          }
+        break;
       }
+      
+
     }
   }
 }
@@ -1116,30 +1124,37 @@ static FORCE_INLINE void gba_process_backup_write(gba_t*gba, unsigned baddr, uin
   }
 }
 static void gba_process_solar_sensor(gba_t*gba){
-  bool clk = SB_BFE(gba->cart.gpio_data,0,1);
-  bool rst = SB_BFE(gba->cart.gpio_data,1,1);
-  bool cs  = SB_BFE(gba->cart.gpio_data,2,1);
+  uint16_t data_and_dir = gba->cart.gpio_data&(gba->cart.gpio_data>>16);
+  bool clk = SB_BFE(data_and_dir,0,1);
+  bool rst = SB_BFE(data_and_dir,1,1);
+  bool cs  = SB_BFE(data_and_dir,2,1);
   if(!cs){
     if(rst){gba->solar_sensor.dac=0;}
-    if(clk&&!gba->solar_sensor.last_clk){
+    else if(!clk&&gba->solar_sensor.last_clk){
       gba->solar_sensor.dac++;
     }
+    bool flag =  gba->solar_sensor.dac> gba->solar_sensor.value;
+    gba->solar_sensor.last_clk=clk;
+    //printf("DAC Value: %d clk: %d rst: %d dir:%d flag:%d\n",gba->solar_sensor.dac,clk,rst,SB_BFE(gba->cart.gpio_data,16,16),flag);
+    if(SB_BFE(gba->cart.gpio_data,16+3,1)==0){
+      gba->mem.cart_rom[0x0000C4] &=~(1<<3);
+      gba->mem.cart_rom[0x0000C4] |=(flag<<3);
+    }
+  }else{
+    gba->solar_sensor.dac=0;
   }
-  bool flag = gba->solar_sensor.value > gba->solar_sensor.dac;
-  gba->solar_sensor.last_clk=clk;
-  gba->mem.cart_rom[0x0000C4] &=~(1<<3);
-  gba->mem.cart_rom[0x0000C4] |=(flag<<3);
 }
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data){
   if(baddr>=0x08000000){
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){gba_process_backup_write(gba,baddr,data>>((baddr&3)*8));return;}
-    if(baddr>=0x080000C4&& baddr<=0x080000C8){
+    if(baddr>=0x080000C4&& baddr<0x080000C8){
       if(baddr==0x080000c4){
         gba->cart.gpio_data = data;
-      }
-      gba_process_rtc_state_machine(gba);
+      }    
+      gba->mem.cart_rom[0x0000C4] =gba->cart.gpio_data&~SB_BFE(gba->cart.gpio_data,16,16);
       gba_process_solar_sensor(gba);
+      gba_process_rtc_state_machine(gba);
       return;
     }
   }
@@ -1153,11 +1168,13 @@ static FORCE_INLINE void gba_store16(gba_t*gba, unsigned baddr, uint32_t data){
       gba_process_backup_write(gba,baddr,data>>  ((baddr&1)*8));
       return;
     }
-    if(baddr>=0x080000C4&& baddr<=0x080000C8){
+    if(baddr>=0x080000C4&& baddr<0x080000C8){
       int addr = baddr&~1;
       if(addr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffff0000)|(data&0xffff);
-      gba_process_rtc_state_machine(gba);
+      if(addr==0x080000c6)gba->cart.gpio_data =(gba->cart.gpio_data&0x0000ffff)|((data&0xffff)<<16);
+      gba->mem.cart_rom[0x0000C4] =gba->cart.gpio_data&~SB_BFE(gba->cart.gpio_data,16,16);
       gba_process_solar_sensor(gba);
+      gba_process_rtc_state_machine(gba);
       return;
     }
   }
@@ -1172,11 +1189,6 @@ static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
     if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF)){gba_store16(gba,baddr&~1,(data&0xff)*0x0101);return;}
     //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
     if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
-    if(baddr==0x080000c4&& baddr<=0x080000C8){
-      if(baddr==0x080000c4)gba->cart.gpio_data =(gba->cart.gpio_data&0xffffff00)|(data&0xff);
-      gba_process_rtc_state_machine(gba);
-      gba_process_solar_sensor(gba);
-    }
     // Remaining 8 bit ops are not supported on VRAM or ROM
     return; 
   }
@@ -1743,6 +1755,7 @@ bool gba_load_rom(sb_emu_state_t*emu,gba_t* gba, gba_scratch_t *scratch){
   gba->cpu.log_cmp_file =se_load_log_file(scratch->save_file_path, "log.bin");
   gba->cpu.executed_instructions+=2;
   gba->audio.current_sample_generated_time=gba->audio.current_sim_time=0;
+  gba->rtc.initial_rtc_time=time(NULL);
   return true; 
 }  
     
@@ -3326,21 +3339,7 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
 // END GB REUSE CODE SHIM//
 
-static uint8_t gba_bin_to_bcd(uint8_t bin){
-  bin%=100;
-  return (bin%10)|((bin/10)<<4);
-}
-void gba_tick_rtc(gba_t*gba){
-  time_t time_secs= time(NULL);
-  struct tm * tm = localtime(&time_secs);
-  gba->rtc.second = gba_bin_to_bcd(tm->tm_sec);
-  gba->rtc.minute = gba_bin_to_bcd(tm->tm_min);
-  gba->rtc.hour  = gba_bin_to_bcd(tm->tm_hour);
-  gba->rtc.day   = gba_bin_to_bcd(tm->tm_mday);
-  gba->rtc.month = gba_bin_to_bcd(tm->tm_mon+1);
-  gba->rtc.year  = gba_bin_to_bcd(tm->tm_year%100);
-  gba->rtc.day_of_week=gba_bin_to_bcd(tm->tm_wday);
-}
+
 void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->framebuffer = scratch->framebuffer;
   gba->mem.bios    = scratch->bios;
@@ -3356,10 +3355,12 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->cpu.write32 = arm7_write32;
   gba->cpu.user_data=gba;
 
-  gba_tick_rtc(gba);
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;
-  gba->solar_sensor.value = 0xE8-emu->joy.solar_sensor*(0xe8-0x40);
+  float solar_value = emu->joy.solar_sensor;
+  if(!(solar_value <1.00))solar_value=1.00;
+  if(!(solar_value >0.00))solar_value=0.00;
+  gba->solar_sensor.value = 0xE7-solar_value*(0xE7-0x32);
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(true){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
@@ -3388,6 +3389,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
         if(gba->cpu.wait_for_interrupt)ticks=fast_forward_ticks;
         else fast_forward_ticks=ticks;
       }
+      gba->rtc.total_clocks_ticked+=fast_forward_ticks;
       gba->deferred_timer_ticks+=fast_forward_ticks;
       gba->ppu.scan_clock+=fast_forward_ticks;
       gba->ppu.fast_forward_ticks-=fast_forward_ticks;
@@ -3396,6 +3398,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
       gba_tick_audio(gba, emu,delta_t,ticks+fast_forward_ticks);
     }else gba_tick_audio(gba, emu,delta_t,ticks);
     bool last_activate_dmas =gba->activate_dmas;
+    gba->rtc.total_clocks_ticked+=ticks;
     for(int t = 0;t<ticks;++t){
       if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;gba->last_cpu_tick=t+1;}
       gba_tick_interrupts(gba);
