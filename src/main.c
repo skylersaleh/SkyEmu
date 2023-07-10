@@ -3959,11 +3959,25 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
     str_result="ok";
   }else if(strcmp(cmd,"/screen")==0){
     if(emu_state.rom_loaded){
-      se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
-      se_capture_state(&core,save_state);
+      bool embed_state = false;
+      while(*params){
+        if(strcmp(params[0],"embed_state")==0)embed_state=atoi(params[1])!=0;
+        params+=2;
+      }
+      uint8_t* imdata = NULL;
       uint32_t width=0, height=0; 
-      uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
-      free(save_state);
+      if(embed_state){
+        se_save_state_t* save_state = (se_save_state_t*)malloc(sizeof(se_save_state_t));
+        se_capture_state(&core,save_state);
+        imdata = se_save_state_to_image(save_state, &width,&height);
+        free(save_state);
+      }else{
+        imdata = (uint8_t*)malloc(SE_MAX_SCREENSHOT_SIZE);
+        int out_width=0, out_height=0;
+        se_screenshot(imdata, &out_width, &out_height);
+        width = out_width;
+        height = out_height;
+      }
       se_png_write_context_t cont ={0};
       stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
       free(imdata);

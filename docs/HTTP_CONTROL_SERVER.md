@@ -75,7 +75,7 @@ The emulator is playing at 1x speed.
 
 # /screen command
 
-Returns a png image of the current screen of the emulated system. 
+Returns a png image of the current screen of the emulated system. The parameter embed_state can be set to 1 to embed the emulation save state similar to the /save commands output on emulators that support it (ie. SkyEmu). The default keeps embed_state set to 0. 
 
 **Example:**
 
@@ -84,6 +84,14 @@ Returns a png image of the current screen of the emulated system.
 **Result:**
 
 ```<png image of screen>```
+
+**Example:**
+
+```http://localhost:8080/screen?embed_state=1```
+
+**Result:**
+
+```<much larger png image of screen with save state embedded>```
 
 # /read_byte command
 
