@@ -83,7 +83,10 @@ typedef enum{
 #define GBA_DMA3DAD    0x40000D8   /* W    DMA 3 Destination Address */
 #define GBA_DMA3CNT_L  0x40000DC   /* W    DMA 3 Word Count */
 #define GBA_DMA3CNT_H  0x40000DE   /* R/W  DMA 3 Control */
-
+#define NDS9_DMA0FILL  0x40000E0   /* NDS9 only - DMA0FILL - DMA 0 Filldata (R/W)*/
+#define NDS9_DMA1FILL  0x40000E4   /* NDS9 only - DMA1FILL - DMA 1 Filldata (R/W)*/
+#define NDS9_DMA2FILL  0x40000E8   /* NDS9 only - DMA2FILL - DMA 2 Filldata (R/W)*/
+#define NDS9_DMA3FILL  0x40000EC   /* NDS9 only - DMA3FILL - DMA 3 Filldata (R/W)*/
 // Timer Registers
 #define GBA_TM0CNT_L   0x4000100   /* R/W   Timer 0 Counter/Reload */
 #define GBA_TM0CNT_H   0x4000102   /* R/W   Timer 0 Control */
@@ -656,6 +659,10 @@ mmio_reg_t nds9_io_reg_desc[]={
     { 14, 1,  "IRQ upon end of Word Count (0=Disable, 1=Enable)" },
     { 15, 1,  "DMA Enable (0=Off, 1=On)" },
   } },   /* R/W  DMA 3 Control */  
+  { NDS9_DMA0FILL, "NDS9_DMA0FILL",{0}},
+  { NDS9_DMA1FILL, "NDS9_DMA1FILL",{0}},
+  { NDS9_DMA2FILL, "NDS9_DMA2FILL",{0}},
+  { NDS9_DMA3FILL, "NDS9_DMA3FILL",{0}},
 
   // Timer Registers
   { GBA_TM0CNT_L, "TM0CNT_L", {0} },   /* R/W   Timer 0 Counter/Reload */
@@ -1954,10 +1961,10 @@ typedef struct{
   float touch_y;
 } nds_input_t;
 typedef struct{
-  int source_addr;
-  int dest_addr;
-  int length;
-  int current_transaction;
+  uint32_t source_addr;
+  uint32_t dest_addr;
+  uint32_t length;
+  uint32_t current_transaction;
   bool last_enable;
   bool last_vblank;
   bool last_hblank;
@@ -2655,7 +2662,6 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
     case 0x2: //Main RAM
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
     case 0x3: //Shared WRAM 
       {
@@ -6100,10 +6106,10 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           if(mode==2){
             nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(vcount>NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(vcount>=NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
           }
           //Video dma
-          if(mode==3&&cpu==NDS_ARM9){
+          if((mode==3)&&cpu==NDS_ARM9){
             nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
             if(!nds->ppu[0].last_hblank||last_hblank)continue;
@@ -6129,8 +6135,6 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           nds->last_transaction_dma=true;
           uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
 
-          cnt&=0x1FFFFF;
-          if(cnt==0)cnt =0x200000;
           if(cpu==NDS_ARM7){
             static const uint32_t src_mask[] = { 0x07FFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
             static const uint32_t dst_mask[] = { 0x07FFFFFF, 0x07FFFFFF, 0x07FFFFFF, 0x0FFFFFFF};
@@ -6144,11 +6148,12 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
             static const uint32_t dst_mask[] = { 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF};
             nds->dma[cpu][i].source_addr&=src_mask[i];
             nds->dma[cpu][i].dest_addr  &=dst_mask[i];
+            cnt&=0x1FFFFF;
+            if(cnt==0)cnt =0x200000;
           }
           nds_io_store16(nds,cpu,GBA_DMA0CNT_L+12*i,cnt);
           if(nds->dma_log)fprintf(nds->dma_log,"DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
           //printf("DMA[%d][%d]: Src: 0x%08x DST: 0x%08x Cnt:%d mode: %d\n",cpu,i,nds->dma[cpu][i].source_addr,nds->dma[cpu][i].dest_addr,cnt,mode);
-
         }
         
         const static int dir_lookup[4]={1,-1,0,1};
@@ -6228,7 +6233,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
             if(cpu==NDS_ARM7)nds7_send_interrupt(nds,4,if_bit);
             else if(cpu==NDS_ARM9)nds9_send_interrupt(nds,4,if_bit);
           }
-          if(!dma_repeat||mode==0){
+          if(!dma_repeat||mode==0||(mode==4&&cpu==NDS_ARM9)){
             cnt_h&=0x7fff;
             //Reload on incr reload     
             enable =false;
