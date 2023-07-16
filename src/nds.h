@@ -6428,12 +6428,10 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
   while(audio->current_sample_generated_time < audio->current_sim_time){
     uint64_t current_cycles = audio->current_sample_generated_time*33513982;
 
-
     audio->current_sample_generated_time+=sample_delta_t;
     uint64_t next_cycles = audio->current_sample_generated_time*33513982;
     audio->cycles_since_tick=next_cycles-current_cycles; 
     
-    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     const float lowpass_coef = 0.999;
 
     float l = 0, r = 0; 
@@ -6548,6 +6546,8 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     if(r<-1.0)r=-1;
     l*=0.5;
     r*=0.5;
+
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
