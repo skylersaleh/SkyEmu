@@ -2164,8 +2164,8 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
       if(gui_state.touch_points[i].active==false)continue;
 
-      float tx = gui_state.touch_points[i].pos[0];
-      float ty = gui_state.touch_points[i].pos[1];
+      float tx = gui_state.touch_points[i].pos[0]/se_dpi_scale();
+      float ty = gui_state.touch_points[i].pos[1]/se_dpi_scale();
       tx-=x;
       ty-=y;
 
@@ -2181,7 +2181,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
         emu_state.joy.touch_pos[0]=rx;
         emu_state.joy.touch_pos[1]=ry;
         emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
-        continue;
+        break;
       }
     }
 
