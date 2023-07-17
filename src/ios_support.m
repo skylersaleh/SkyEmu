@@ -40,6 +40,7 @@ extern void se_load_rom(const char *filename);
       if(error){
         NSLog(@"Error:%@\n",error);
       }else{
+        documentsPath= [@"./" stringByAppendingString:[url lastPathComponent]];
         se_load_rom([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
       }
     }
@@ -51,6 +52,12 @@ extern void se_load_rom(const char *filename);
 
 @end
 
+void se_ios_set_documents_working_directory(){
+  NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+  NSString *documentsPath = [paths objectAtIndex:0];
+  documentsPath = [documentsPath stringByAppendingString:@"/"];
+  chdir([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
+}
 char* se_ios_open_file_picker( int num_extensions, const char ** extensions){
   printf("Open iOS file picker");
     UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.item"]

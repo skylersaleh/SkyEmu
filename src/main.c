@@ -4779,6 +4779,10 @@ sapp_desc sokol_main(int argc, char* argv[]) {
   #endif
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0)headless_mode();
 
+  #ifdef PLATFORM_IOS
+  se_ios_set_documents_working_directory();
+  #endif 
+
   return (sapp_desc){
       .init_cb = init,
       .frame_cb = frame,
