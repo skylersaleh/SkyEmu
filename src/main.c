@@ -2161,6 +2161,30 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     emu_state.joy.touch_pos[1]=ry;
     if(gui_state.mouse_button[0]&&rx>=0&&rx<=1.0&&ry>=0.&&ry<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
 
+    for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
+      if(gui_state.touch_points[i].active==false)continue;
+
+      float tx = gui_state.touch_points[i].pos[0];
+      float ty = gui_state.touch_points[i].pos[1];
+      tx-=x;
+      ty-=y;
+
+      float rx=cos(-rotation)*tx-sin(-rotation)*ty;
+      float ry=sin(-rotation)*tx+cos(-rotation)*ty;
+
+      rx/=render_width;
+      ry/=render_height;
+      rx+=0.5;
+      ry+=0.5;
+
+      if(rx>=0&&rx<=1.0&&ry>=0.&&ry<=1.0){
+        emu_state.joy.touch_pos[0]=rx;
+        emu_state.joy.touch_pos[1]=ry;
+        emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
+        continue;
+      }
+    }
+
   }
 
   sg_bindings bind={
@@ -2386,16 +2410,16 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   if(abxy){
     float fx = win_w-button_r*2.65;
     float fy = face_button_h*0.5+face_button_y; 
-    a_pos[0] = fx-button_r*1.5;
+    a_pos[0] = fx+button_r*1.5;
     a_pos[1] = fy;
 
     b_pos[0] = fx;
-    b_pos[1] = fy-button_r*1.5;
+    b_pos[1] = fy+button_r*1.5;
     
     x_pos[0] = fx;
-    x_pos[1] = fy+button_r*1.5;
+    x_pos[1] = fy-button_r*1.5;
     
-    y_pos[0] = fx+button_r*1.5;
+    y_pos[0] = fx-button_r*1.5;
     y_pos[1] = fy;
   }
 
