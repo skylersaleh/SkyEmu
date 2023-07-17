@@ -1650,10 +1650,11 @@ static void se_draw_emulated_system_screen(bool preview){
   float native_h = SB_LCD_H;
   bool hybrid_nds=false; 
   float lcd_aspect = SB_LCD_H/(float)SB_LCD_W;
+  bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
   if(emu_state.system==SYSTEM_GBA){native_w = GBA_LCD_W; native_h = GBA_LCD_H;}
   else if(emu_state.system==SYSTEM_NDS){
     native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;
-    if(scr_w/scr_h>1){
+    if(scr_w/scr_h>1&&!touch_controller_active){
       native_w = NDS_LCD_W+NDS_LCD_W*0.5;
       native_h = NDS_LCD_H;
       hybrid_nds=true;
@@ -1696,12 +1697,26 @@ static void se_draw_emulated_system_screen(bool preview){
 
   int controller_h = fmin(scr_h,scr_w*0.8); 
   int controller_y_pad = 0; 
-  if(gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false){
-    lcd_render_y = -(height-render_h)*0.9*0.5;
-    if(controller_h+render_h<height){
-      float off = (height-render_h-controller_h)*0.15;
-      lcd_render_y+=off;
-      controller_y_pad=(height-render_h-controller_h-off)*0.20;
+  if(touch_controller_active){
+    if(emu_state.system==SYSTEM_NDS && (gui_state.settings.screen_rotation==0)){
+      if(render_h/height<0.7){
+        controller_h = height-render_h;
+        lcd_render_y = -(height-render_h)*0.5;
+        controller_y_pad=0.00;
+      }else if(lcd_render_w/scr_w>=1.0-0.5*gui_state.settings.touch_controls_scale){
+        controller_h = height*0.5;
+        controller_y_pad=height*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
+      }else{
+        controller_h = height*(1.0-lcd_render_w/scr_w)*1.25;
+        controller_y_pad=(height-controller_h)*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
+      }
+    }else{
+      lcd_render_y = -(height-render_h)*0.9*0.5;
+      if(controller_h+render_h<height){
+        float off = (height-render_h-controller_h)*0.15;
+        lcd_render_y+=off;
+        controller_y_pad=(height-render_h-controller_h-off)*0.40;
+      }
     }
   }
   if(gui_state.settings.integer_scaling){
@@ -2287,6 +2302,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     win_w /=se_dpi_scale();
     win_h /=se_dpi_scale();
     controller_h/=se_dpi_scale();
+    controller_y_pad/=se_dpi_scale();
   }
 
   ImVec2 pos; 
@@ -2335,6 +2351,10 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
 
   float a_pos[2] = {win_w-button_r*1.5,face_button_h*0.48+face_button_y};
   float b_pos[2] = {win_w-button_r*3.8,face_button_h*0.54+face_button_y};
+
+  //Only have the x and y buttons on screen if the emulated system uses them. 
+  float x_pos[2] = {10e9,10e9};
+  float y_pos[2] = {10e9,10e9};
   float dpad_pos[2] = {dpad_sz1+button_padding*2,face_button_h*0.5+face_button_y};
   if(emu_state.system==SYSTEM_GB){
     dpad_pos[1]*=0.8;
@@ -2342,15 +2362,56 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     b_pos[1]*=0.8;
   }
 
+  char * button_name[] ={"Start", "Hold", "Turbo", "Select"};
+  int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
+  int button_x_off = button_padding+win_x;
+  int button_w = dpad_sz1*2+dpad_pos[0]-dpad_sz1-button_padding;
+  int button_y = win_y+win_h-button_h-button_padding;
+  typedef struct{const char* button_name; float x; float width;}button_row_t;
+  button_row_t bottom_row[]={
+    {"Select" , button_x_off,button_w*0.67-button_padding},
+    {"Hold"  , button_x_off+button_w*0.67,button_w*0.33},
+    {"Turbo", b_pos[0]+win_x-button_r,button_w*0.33},
+    {"Start" , b_pos[0]+win_x-button_r+button_w*0.33+button_padding,button_w*0.67-button_padding},
+  };
+
+  button_row_t top_row[]={
+    {"L" , button_x_off,button_w},
+    {"R"  ,b_pos[0]+win_x-button_r,button_w},
+  };
+
+
+  bool abxy= emu_state.system==SYSTEM_NDS;
+
+  if(abxy){
+    float fx = win_w-button_r*2.65;
+    float fy = face_button_h*0.5+face_button_y; 
+    a_pos[0] = fx-button_r*1.5;
+    a_pos[1] = fy;
+
+    b_pos[0] = fx;
+    b_pos[1] = fy-button_r*1.5;
+    
+    x_pos[0] = fx;
+    x_pos[1] = fy+button_r*1.5;
+    
+    y_pos[0] = fx+button_r*1.5;
+    y_pos[1] = fy;
+  }
+
   a_pos[0]+=win_x;
   b_pos[0]+=win_x;
+  x_pos[0]+=win_x;
+  y_pos[0]+=win_x;
   dpad_pos[0]+=win_x;
 
   a_pos[1]+=win_y;
   b_pos[1]+=win_y;
+  x_pos[1]+=win_y;
+  y_pos[1]+=win_y;
   dpad_pos[1]+=win_y;
 
-  bool a=false,b=false,up=false,down=false, left=false,right=false;
+  bool a=false,b=false, x=false, y=false,up=false,down=false, left=false,right=false;
  
   enum{max_points = 5};
   float points[max_points][2]={0};
@@ -2366,8 +2427,6 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   }
 
   for(int i = 0;i<p;++i){
-    if(sb_distance(points[i],a_pos,2)<button_r*1.6)a=true;
-    if(sb_distance(points[i],b_pos,2)<button_r*1.6)b=true;
 
     int dx = points[i][0]-dpad_pos[0];
     int dy = points[i][1]-dpad_pos[1];
@@ -2378,17 +2437,25 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
       if(dx>dpad_sz0)right=true;
       if(dx<-dpad_sz0)left=true;
     }
+    if(sb_distance(points[i],a_pos,2)<button_r*1.6)a=true;
+    if(sb_distance(points[i],b_pos,2)<button_r*1.6)b=true;
+    if(sb_distance(points[i],x_pos,2)<button_r*1.6)x=true;
+    if(sb_distance(points[i],y_pos,2)<button_r*1.6)y=true;
   }
   int scale = 1;
   int button_press=0;
 
   button_press|= a<<0;
   button_press|= b<<1;
+  button_press|= x<<2;
+  button_press|= y<<3;
 
   ImDrawList*dl= igGetWindowDrawList();
 
   ImU32 a_col = SB_BFE(gui_state.touch_controls.hold_toggle,0,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,0,1)? turbo_color: line_color;
   ImU32 b_col = SB_BFE(gui_state.touch_controls.hold_toggle,1,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,1,1)? turbo_color: line_color;
+  ImU32 x_col = SB_BFE(gui_state.touch_controls.hold_toggle,2,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,2,1)? turbo_color: line_color;
+  ImU32 y_col = SB_BFE(gui_state.touch_controls.hold_toggle,3,1)?hold_color: SB_BFE(gui_state.touch_controls.turbo_toggle,3,1)? turbo_color: line_color;
 
   if(a)  ImDrawList_AddCircleFilled(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,sel_color,128);
   ImDrawList_AddCircle(dl,(ImVec2){a_pos[0],a_pos[1]},button_r,line_color2,128,line_w1);
@@ -2399,6 +2466,13 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   ImDrawList_AddCircle(dl,(ImVec2){b_pos[0],b_pos[1]},button_r,b_col,128,line_w0);
 
 
+  if(x)  ImDrawList_AddCircleFilled(dl,(ImVec2){x_pos[0],x_pos[1]},button_r,sel_color,128);
+  ImDrawList_AddCircle(dl,(ImVec2){x_pos[0],x_pos[1]},button_r,line_color2,128,line_w1);
+  ImDrawList_AddCircle(dl,(ImVec2){x_pos[0],x_pos[1]},button_r,x_col,128,line_w0);
+
+  if(y)ImDrawList_AddCircleFilled(dl,(ImVec2){y_pos[0],y_pos[1]},button_r,line_color2,128);
+  ImDrawList_AddCircle(dl,(ImVec2){y_pos[0],y_pos[1]},button_r,line_color2,128,line_w1);
+  ImDrawList_AddCircle(dl,(ImVec2){y_pos[0],y_pos[1]},button_r,y_col,128,line_w0);
   ImVec2 dpad_points[12]={
     //Up
     {dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},
@@ -2426,35 +2500,24 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   if(left) ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]-dpad_sz0,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
   if(right)ImDrawList_AddRectFilled(dl,(ImVec2){dpad_pos[0]+dpad_sz0,dpad_pos[1]-dpad_sz0},(ImVec2){dpad_pos[0]+dpad_sz1,dpad_pos[1]+dpad_sz0},sel_color,0,ImDrawCornerFlags_None);
 
-  char * button_name[] ={"Start", "Hold", "Turbo", "Select"};
-  int num_buttons =  sizeof(button_name)/sizeof(button_name[0]);
-  int button_x_off = button_padding+win_x;
-  int button_w = dpad_sz1*2+dpad_pos[0]-dpad_sz1-button_padding-win_x;
-  int button_y = win_y+win_h-button_h-button_padding;
-  typedef struct{const char* button_name; float x; float width;}button_row_t;
-  button_row_t row[]={
-    {"Select" , button_x_off,button_w*0.67-button_padding},
-    {"Hold"  , button_x_off+button_w*0.67,button_w*0.33},
-    {"Turbo", b_pos[0]-button_r,button_w*0.33},
-    {"Start" , b_pos[0]-button_r+button_w*0.33+button_padding,button_w*0.67-button_padding},
-  };
+  
   int hold_button =1;
   int turbo_button =2; 
   if(gui_state.settings.touch_controls_show_turbo==false){
-    row[0].width = button_w;
-    row[1].width = 0; 
-    row[2].width = 0; 
-    row[3].width = button_w; 
-    row[3].x = row[2].x;
+    bottom_row[0].width = button_w;
+    bottom_row[1].width = 0; 
+    bottom_row[2].width = 0; 
+    bottom_row[3].width = button_w; 
+    bottom_row[3].x = bottom_row[2].x;
     gui_state.touch_controls.hold_toggle=gui_state.touch_controls.turbo_toggle=0;
     gui_state.touch_controls.last_hold_toggle_presses= gui_state.touch_controls.last_turbo_toggle_presses=0;
   }
 
-  for(int b=0;b<sizeof(row)/sizeof(row[0]);++b){                                           
+  for(int b=0;b<sizeof(bottom_row)/sizeof(bottom_row[0]);++b){                                           
     int state = 0;   
-    int x_min = row[b].x;
-    int x_max = row[b].x+row[b].width;
-    if(row[b].width==0)continue;
+    int x_min = bottom_row[b].x;
+    int x_max = bottom_row[b].x+bottom_row[b].width;
+    if(bottom_row[b].width==0)continue;
     bool pressed = false;
     for(int i = 0;i<p;++i){
       int dx = points[i][0]-x_min;
@@ -2475,15 +2538,10 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   }
   button_y=win_y+button_padding;
   if(emu_state.system!=SYSTEM_GB){
-    button_row_t row[]={
-      {"L" , button_x_off,button_w},
-      {"R"  ,b_pos[0]-button_r,button_w},
-    };
-
-    for(int b=0;b<sizeof(row)/sizeof(row[0]);++b){                                           
+    for(int b=0;b<sizeof(top_row)/sizeof(top_row[0]);++b){                                           
       int state = 0;   
-      int x_min = row[b].x;; 
-      int x_max = row[b].x+row[b].width;
+      int x_min = top_row[b].x;; 
+      int x_max = top_row[b].x+top_row[b].width;
       for(int i = 0;i<p;++i){
         int dx = points[i][0]-x_min;
         int dy = points[i][1]-button_y;
