@@ -183,8 +183,9 @@ typedef struct{
   uint32_t force_dmg_mode; 
   uint32_t gba_color_correction_mode; // 0 = SkyEmu, 1 = Higan
   uint32_t http_control_server_port; 
-  uint32_t http_control_server_enable; 
-  uint32_t padding[231];
+  uint32_t http_control_server_enable;
+  uint32_t avoid_overlaping_touchscreen;
+  uint32_t padding[230];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -1704,8 +1705,10 @@ static void se_draw_emulated_system_screen(bool preview){
         lcd_render_y = -(height-render_h)*0.5;
         controller_y_pad=0.00;
       }else if(lcd_render_w/scr_w>=1.0-0.5*gui_state.settings.touch_controls_scale){
-        controller_h = height*0.5;
-        controller_y_pad=height*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
+        if(gui_state.settings.avoid_overlaping_touchscreen){
+          controller_h = height*0.5;
+          controller_y_pad=height*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
+        }
       }else{
         controller_h = height*(1.0-lcd_render_w/scr_w)*1.25;
         controller_y_pad=(height-controller_h)*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
@@ -2164,8 +2167,8 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
       if(gui_state.touch_points[i].active==false)continue;
 
-      float tx = gui_state.touch_points[i].pos[0]/se_dpi_scale();
-      float ty = gui_state.touch_points[i].pos[1]/se_dpi_scale();
+      float tx = gui_state.touch_points[i].pos[0];
+      float ty = gui_state.touch_points[i].pos[1];
       tx-=x;
       ty-=y;
 
@@ -3817,6 +3820,10 @@ void se_draw_menu_panel(){
   bool show_turbo = gui_state.settings.touch_controls_show_turbo;
   se_checkbox("Enable Turbo and Hold Button Modifiers",&show_turbo);
   gui_state.settings.touch_controls_show_turbo = show_turbo;
+  
+  bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
+  se_checkbox("Avoid NDS Touchscreen",&avoid_touchscreen);
+  gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
 
   se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
@@ -4569,6 +4576,7 @@ void se_load_settings(){
       gui_state.settings.save_to_path = false;
       gui_state.settings.http_control_server_enable = false; 
       gui_state.settings.http_control_server_port=8080;
+      gui_state.settings.avoid_overlaping_touchscreen = true;
     }
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
