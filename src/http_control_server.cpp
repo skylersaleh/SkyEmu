@@ -13,6 +13,7 @@ struct HCSServer{
     std::thread thread;
     int64_t port; 
     static void server_thread(HCSServer* server){
+        server->svr.set_tcp_nodelay(true);
         server->svr.set_pre_routing_handler([server](const httplib::Request& req, httplib::Response& res) {
             std::vector<const char*> params;
             for(auto &v :req.params){
