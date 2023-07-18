@@ -19,7 +19,6 @@ struct HCSServer{
             for(auto &v :req.params){
                 params.push_back(v.first.c_str());
                 params.push_back(v.second.c_str());
-                std::cout<<v.first<<" "<<v.second<<std::endl;
             }
             params.push_back(NULL);
             params.push_back(NULL);

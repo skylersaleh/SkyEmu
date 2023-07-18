@@ -77,6 +77,8 @@ The emulator is playing at 1x speed.
 
 Returns a png image of the current screen of the emulated system. The parameter embed_state can be set to 1 to embed the emulation save state similar to the /save commands output on emulators that support it (ie. SkyEmu). The default keeps embed_state set to 0. 
 
+The paramater format specifies which image format to use. It can be set to png, jpg, or bmp. If not specified, png is used by default. 
+
 **Example:**
 
 ```http://localhost:8080/screen```
@@ -84,6 +86,14 @@ Returns a png image of the current screen of the emulated system. The parameter 
 **Result:**
 
 ```<png image of screen>```
+
+**Example:**
+
+```http://localhost:8080/screen?format=jpg```
+
+**Result:**
+
+```<jpg image of screen>```
 
 **Example:**
 

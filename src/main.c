@@ -4014,11 +4014,6 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
   *result_size = 0;
   *mime_type = "text/html";
   printf("Got HCS Cmd: %s\n",cmd);
-  const char ** p = params;
-  while(*p){
-    printf("%s = %s\n",p[0],p[1]);
-    p+=2;
-  }
   const char* str_result = NULL;
   if(strcmp(cmd,"/ping")==0)str_result="pong";
   else if(strcmp(cmd,"/load_rom")==0){
@@ -4049,8 +4044,13 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
   }else if(strcmp(cmd,"/screen")==0){
     if(emu_state.rom_loaded){
       bool embed_state = false;
+      int format = 0; 
       while(*params){
         if(strcmp(params[0],"embed_state")==0)embed_state=atoi(params[1])!=0;
+        if(strcmp(params[0],"format")==0){
+          if(strcmp(params[1],"BMP")==0||strcmp(params[1],"bmp")==0)format = 1; 
+          if(strcmp(params[1],"JPG")==0||strcmp(params[1],"jpg")==0)format = 2; 
+        }
         params+=2;
       }
       uint8_t* imdata = NULL;
@@ -4067,12 +4067,28 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
         width = out_width;
         height = out_height;
       }
-      se_png_write_context_t cont ={0};
-      stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
-      free(imdata);
-      *result_size = cont.size;
-      *mime_type="image/png";
-      return cont.data;
+      if(format==0){
+        se_png_write_context_t cont ={0};
+        stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
+        free(imdata);
+        *result_size = cont.size;
+        *mime_type="image/png";
+        return cont.data;
+      }else if(format==1){
+        se_png_write_context_t cont ={0};
+        stbi_write_bmp_to_func(se_png_write_mem, &cont,width,height,4, imdata);
+        free(imdata);
+        *result_size = cont.size;
+        *mime_type="image/bmp";
+        return cont.data;
+      }else if(format==2){
+        se_png_write_context_t cont ={0};
+        stbi_write_jpg_to_func(se_png_write_mem, &cont,width,height,4, imdata,95);
+        free(imdata);
+        *result_size = cont.size;
+        *mime_type="image/jpg";
+        return cont.data;
+      }
     }else str_result = "Failed (no ROM loaded)";
   }else if(strcmp(cmd,"/read_byte")==0){
     uint64_t response_size = 0; 
