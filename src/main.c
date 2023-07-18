@@ -4093,10 +4093,12 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
   }else if(strcmp(cmd,"/read_byte")==0){
     uint64_t response_size = 0; 
     char *response = NULL;
+    int address_map=0; 
     while(*params){
-      if(strcmp(params[0],"addr")==0){
+      if(strcmp(params[0],"map")==0) address_map = atoi(params[1]);
+      else if(strcmp(params[0],"addr")==0){
         uint64_t addr = se_hex_string_to_int(params[1]);
-        uint8_t byte = se_read_byte(addr,0);
+        uint8_t byte = se_read_byte(addr,address_map);
         const char *map="0123456789abcdef";
         se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,4,4)]);
         se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,0,4)]);
@@ -4110,10 +4112,14 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
   }else if(strcmp(cmd,"/write_byte")==0){
     uint64_t response_size = 0; 
     char *response = NULL;
+    int address_map = 0; 
     while(*params){
-      uint64_t addr = se_hex_string_to_int(params[0]);
-      uint8_t data = se_hex_string_to_int(params[1]);
-      se_write_byte(addr,0,data);
+      if(strcmp(params[0],"map")==0) address_map = atoi(params[1]);
+      else{
+        uint64_t addr = se_hex_string_to_int(params[0]);
+        uint8_t data = se_hex_string_to_int(params[1]);
+        se_write_byte(addr,address_map,data);
+      }
       params+=2;
     }
     str_result="ok";

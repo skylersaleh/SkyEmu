@@ -107,6 +107,8 @@ The paramater format specifies which image format to use. It can be set to png, 
 
 Reads one or multiple bytes of data from the emulated system at addresses provided using parameters. The addr parameter can be repeated an arbitrary amount of times to read an arbitrary amount of bytes. 
 
+The paramater map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
+
 **Example (Read a single byte):**
 
 ```http://localhost:8080/read_byte?addr=02000004```
@@ -127,9 +129,21 @@ Reads one or multiple bytes of data from the emulated system at addresses provid
 
 ```f0bf01```
 
+**Example (Read multiple bytes from different address spaces ):**
+
+```http://localhost:8080/read_byte?addr=02000004&map=7&addr=02000005&addr=02000006```
+
+**Result:**
+
+3 bytes of data are returned in hexadecimal (in the order mem_map0[0x02000004], mem_map7[0x02000005], mem_map7[0x02000006] of map 7)
+
+```f0bf01```
+
 # /write_byte command
 
 Writes one or multiple bytes of data from the emulated system at addresses provided using parameters. Multiple addresses can be written to in a single command. Returns "ok" on completion
+
+The paramater map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
 
 **Example (Write a single byte):**
 
@@ -152,6 +166,20 @@ mem[0x02000000] = 0xff;
 mem[0x02000001] = 0xee; 
 
 mem[0x02000002] = 0xcc; 
+
+```ok```
+
+**Example (Write multiple bytes from different maps ):**
+
+```http://localhost:8080/write_byte?02000000=ff&map=7&02000001=ee&02000002=cc```
+
+**Result:**
+
+mem_map0[0x02000000] = 0xff; 
+
+mem_map7[0x02000001] = 0xee; 
+
+mem_map7[0x02000002] = 0xcc; 
 
 ```ok```
 
