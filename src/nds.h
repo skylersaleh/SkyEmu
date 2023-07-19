@@ -2829,6 +2829,18 @@ static FORCE_INLINE void nds9_write8(nds_t*nds, unsigned baddr, uint8_t data){
 static FORCE_INLINE void nds7_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7);
 }
+static FORCE_INLINE void nds9_debug_write32(nds_t*nds, unsigned baddr, uint32_t data){
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE void nds7_debug_write32(nds_t*nds, unsigned baddr, uint32_t data){
+  nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE void nds9_debug_write16(nds_t*nds, unsigned baddr, uint16_t data){
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE void nds7_debug_write16(nds_t*nds, unsigned baddr, uint16_t data){
+  nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
+}
 static FORCE_INLINE void nds9_debug_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
@@ -2873,6 +2885,18 @@ static FORCE_INLINE uint8_t nds7_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7);
 }
 
+static FORCE_INLINE uint32_t nds9_debug_read32(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE uint32_t nds7_debug_read32(nds_t*nds, unsigned baddr){
+  return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE uint16_t nds9_debug_read16(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE uint16_t nds7_debug_read16(nds_t*nds, unsigned baddr){
+  return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
+}
 static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }

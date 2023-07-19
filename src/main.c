@@ -1797,14 +1797,28 @@ static void se_draw_emulated_system_screen(bool preview){
   if(!gui_state.block_touchscreen||preview)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad,preview);
 }
 static uint8_t gba_byte_read(uint64_t address){return gba_read8(&core.gba,address);}
+static uint16_t gba_halfword_read(uint64_t address){return gba_read16(&core.gba,address);}
+static uint32_t gba_word_read(uint64_t address){return gba_read32(&core.gba,address);}
 static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&core.gba,address,data);}
+static void gba_halfword_write(uint64_t address, uint16_t data){gba_store16(&core.gba,address,data);}
+static void gba_word_write(uint64_t address, uint32_t data){gba_store32(&core.gba,address,data);}
 static uint8_t gb_byte_read(uint64_t address){return sb_read8(&core.gb,address);}
+static uint16_t gb_halfword_read(uint64_t address){return sb_read16(&core.gb,address);}
 static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&core.gb,address,data);}
+static void gb_halfword_write(uint64_t address, uint16_t data){sb_store16(&core.gb,address,data);}
 
 static uint8_t nds9_byte_read(uint64_t address){return nds9_debug_read8(&core.nds,address);}
 static void nds9_byte_write(uint64_t address, uint8_t data){nds9_debug_write8(&core.nds,address,data);}
+static uint16_t nds9_halfword_read(uint64_t address){return nds9_debug_read16(&core.nds,address);}
+static void nds9_halfword_write(uint64_t address, uint16_t data){nds9_debug_write16(&core.nds,address,data);}
+static uint32_t nds9_word_read(uint64_t address){return nds9_debug_read32(&core.nds,address);}
+static void nds9_word_write(uint64_t address, uint32_t data){nds9_debug_write32(&core.nds,address,data);}
 static uint8_t nds7_byte_read(uint64_t address){return nds7_debug_read8(&core.nds,address);}
 static void nds7_byte_write(uint64_t address, uint8_t data){nds7_debug_write8(&core.nds,address,data);}
+static uint16_t nds7_halfword_read(uint64_t address){return nds7_debug_read16(&core.nds,address);}
+static void nds7_halfword_write(uint64_t address, uint16_t data){nds7_debug_write16(&core.nds,address,data);}
+static uint32_t nds7_word_read(uint64_t address){return nds7_debug_read32(&core.nds,address);}
+static void nds7_word_write(uint64_t address, uint32_t data){nds7_debug_write32(&core.nds,address,data);}
 typedef struct{
   const char* short_label;
   const char* label;
@@ -1882,6 +1896,28 @@ void se_write_byte(uint64_t address, int addr_map, uint8_t byte){
   if(emu_state.system ==SYSTEM_GBA)return gba_byte_write(address,byte);
   if(emu_state.system ==SYSTEM_GB)return gb_byte_write(address,byte);
   if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_write(address,byte):nds9_byte_write(address,byte);
+}
+uint16_t se_read_halfword(uint64_t address, int addr_map){
+  if(emu_state.system ==SYSTEM_GBA)return gba_halfword_read(address);
+  if(emu_state.system ==SYSTEM_GB)return gb_halfword_read(address);
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_halfword_read(address):nds9_halfword_read(address);
+  return 0;
+}
+void se_write_halfword(uint64_t address, int addr_map, uint16_t halfword){
+  if(emu_state.system ==SYSTEM_GBA)return gba_halfword_write(address,halfword);
+  if(emu_state.system ==SYSTEM_GB)return gb_halfword_write(address,halfword);
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_halfword_write(address,halfword):nds9_halfword_write(address,halfword);
+}
+uint32_t se_read_word(uint64_t address, int addr_map){
+  if(emu_state.system ==SYSTEM_GBA)return gba_word_read(address);
+  if(emu_state.system ==SYSTEM_GB)return printf("se_read_word not implemented for gb\n");
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_word_read(address):nds9_word_read(address);
+  return 0;
+}
+void se_write_word(uint64_t address, int addr_map, uint32_t word){
+  if(emu_state.system ==SYSTEM_GBA)return gba_word_write(address,word);
+  if(emu_state.system ==SYSTEM_GB)return printf("se_write_word not implemented for gb\n");
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_word_write(address,word):nds9_word_write(address,word);
 }
 ///////////////////////////////
 // END UPDATE FOR NEW SYSTEM //
