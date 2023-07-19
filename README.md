@@ -9,12 +9,14 @@ SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its 
 # Features
 
 - [Highly accurate Game Boy Advance emulation](docs/Accuracy.md)
-- Game Boy and Game Boy Color Emulation 
+- Game Boy and Game Boy Color Emulation
+- Nintendo DS Emulation (Beta Quality)
 - High Quality Upscaling Shaders, Color Correction, and Screen Ghosting
-- Cross Platform: Windows, MacOS, Linux, Web App (with touch screen controls for iOS and Android)
+- Cross Platform: Windows, MacOS, Linux, iOS, Android, and Web
 - Game Controller and Rumble Support with configureable keybinds
 - 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
+- Localization in Armenian, Chinese, Danish, Dutch, English, German and Greek
 - Support for emulating the Real Time Clock
 - CPU, MMIO, and Memory Debuggers
 - Dark and Light Themes
@@ -34,7 +36,7 @@ On Mobile platforms it is recommended to add this to the home screen and launch 
 
 Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
 
-Note: A GBA BIOS is not required as SkyEmu bundles an open source replacement BIOS. However, a dump of an official GBA BIOS should be used if you want to maximize accuracy or you like seeing the GBA intro.
+Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open source replacement BIOS/stubs. However, it is strongly recommended to dump official BIOS/firmware as the open source replacements lack many of the features of the native firmware/BIOS (such as colorizing GB games and the startup splashes) and are not as accurate. 
 
 ## Default Controls:
 
@@ -93,3 +95,10 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - Passes MBCtest
 - Dotclk based PPU implementation
 - Anti-aliased audio synthesis with support for APU changes per sample (supports Pikachu's voice in Pokemon Yellow/Pokemon Pinball)
+
+## Birds of a Feather
+- [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games. 
+- [**Panda3DS**](https://github.com/wheremyfoodat/Panda3DS): Panda themed HLE Nintendo 3DS emulator
+- [**NanoBoyAdvance**](https://github.com/nba-emu/NanoBoyAdvance): A Game Boy Advance emulator focusing on hardware research and cycle-accurate emulation
+- [**Dust**](https://github.com/kelpsyberry/dust): Nintendo DS emulator for desktop devices and the web
+- [**Kaizen**](https://github.com/SimoneN64/Kaizen): Experimental work-in-progress low-level N64 emulator
