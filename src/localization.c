@@ -1238,12 +1238,15 @@ const char* se_language_string(int language_enum){
     switch (language_enum){
         case SE_LANG_DEFAULT: return se_localize("Default");
         case SE_LANG_ENGLISH: return "English";
-        case SE_LANG_CHINESE: return "中文";
-        case SE_LANG_ARMENIAN: return "Հայերեն";
-        case SE_LANG_GREEK: return "Ελληνικά";
         case SE_LANG_DUTCH: return "Nederlands";
         case SE_LANG_DANISH: return "Dansk";
         case SE_LANG_GERMAN: return "Deutsch";
+        // These languages require unicode support to represent correctly
+#ifdef UNICODE_GUI
+        case SE_LANG_CHINESE: return "中文";
+        case SE_LANG_ARMENIAN: return "Հայերեն";
+        case SE_LANG_GREEK: return "Ελληνικά";
+#endif 
     }
     return "";
 }
