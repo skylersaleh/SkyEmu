@@ -356,6 +356,7 @@ void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, int index);
+bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
 static void se_emscripten_flush_fs();
 static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
@@ -4799,6 +4800,37 @@ static void event(const sapp_event* ev) {
     int b = ev->mouse_button;
     if(b<3)gui_state.mouse_button[0] = ev->type==SAPP_EVENTTYPE_MOUSE_DOWN;
   }
+}
+bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
+  if(!buffer){
+    printf("Invalid Action Replay cheat buffer\n");
+    return false;
+  }
+  if(size%2!=0){
+    printf("Invalid Action Replay cheat size:%d\n",size);
+    return false;
+  }
+
+  uint32_t offset_register = 0, stored_register = 0;
+
+  uint8_t current_code = 0;
+  for(int i=0;i<size;i+=2){
+    current_code = buffer[i] >> 28;
+
+    switch(current_code){
+      case 0:{
+        // 0XXXXXXX YYYYYYYY
+        // 32bit write of YYYYYYYY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        address += offset_register;
+        se_write_word(address,data);
+        break;
+      }
+    }
+  }
+
+  return true;
 }
 static void headless_mode(){
   //Leave here so the entry point still exists
