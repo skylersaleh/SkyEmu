@@ -288,6 +288,8 @@ typedef struct {
     uint8_t font_cache_page_valid[(SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE];
     bool update_font_atlas;
     sb_joy_t hcs_joypad; 
+    bool editing_cheat;
+    int editing_cheat_index;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -296,6 +298,9 @@ typedef struct {
 
 #define SE_NUM_SAVE_STATES 4
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
+
+#define SE_NUM_CHEATS 32
+#define SE_CHEAT_NAME_SIZE 32
 
 #define SE_THEME_DARK 0
 #define SE_THEME_LIGHT 1
@@ -342,6 +347,13 @@ typedef struct{
   se_core_state_t state;
 }se_save_state_t; 
 typedef struct{
+  char name[SE_CHEAT_NAME_SIZE];
+  uint32_t* buffer;
+  uint32_t size;
+  int32_t valid; //0: invalid, 1: valid
+  bool active;
+}se_cheat_t;
+typedef struct{
   char name[39]; //Emulator Name
   char build[41];//Emulator build/commit hash
   uint32_t bess_offset; //Number of bytes after the se_emu_id where the save state descriptor is located. 
@@ -355,6 +367,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview);
 void se_reset_save_states();
+void se_reset_cheats();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
 static void se_emscripten_flush_fs();
@@ -591,6 +604,7 @@ se_core_state_t core;
 se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
+se_cheat_t cheats[SE_NUM_CHEATS];
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -1370,6 +1384,7 @@ void se_load_rom_from_emu_state(sb_emu_state_t*emu){
 void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
+  se_reset_cheats();
   se_reset_bios_info();
   emu_state.force_dmg_mode=gui_state.settings.force_dmg_mode;
   char *save_file=emu_state.save_file_path; 
@@ -1937,6 +1952,22 @@ void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
 }
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
+}
+void se_reset_cheats(){
+  for (int i=0;i<SE_NUM_CHEATS;++i){
+    cheats[i].valid=false;
+    cheats[i].buffer=NULL;
+  }
+  gui_state.editing_cheat = false;
+
+  strcpy(cheats[0].name,"Test Cheat");
+  cheats[0].buffer = (uint32_t*)malloc(4 * sizeof(uint32_t));
+  cheats[0].size = 4;
+  cheats[0].valid = true;
+  cheats[0].buffer[0] = 0xABCDEFAA;
+  cheats[0].buffer[1] = 0xAAA123AA;
+  cheats[0].buffer[2] = 0xBBBBCCCC;
+  cheats[0].buffer[3] = 0xDDDDDDFF;
 }
 static void se_draw_debug_menu(){
   se_debug_tool_desc_t* desc=se_get_debug_description();
@@ -3013,7 +3044,68 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
     }
   #endif 
 }
+void se_process_cheat_editor(){
+  if (!gui_state.editing_cheat)return;
 
+  ImGuiContext* g = igGetCurrentContext();
+  igSetNextWindowPos((ImVec2){g->IO.DisplaySize.x * 0.5f, g->IO.DisplaySize.y * 0.5f}, ImGuiCond_Always, (ImVec2){0.5f,0.5f});
+  igSetNextWindowSize((ImVec2){400,400}, ImGuiCond_Always);
+  igBegin("Edit Cheat",&gui_state.editing_cheat,ImGuiWindowFlags_AlwaysAutoResize);
+  static char code_buffer[2048];
+  static char code_buffer_truncated[2048];
+
+  static bool initialized = false;
+  if (!initialized){
+    memset(code_buffer,0,2048);
+    memset(code_buffer_truncated,0,2048);
+
+    int off=0;
+    for(int i=0;i<cheats[gui_state.editing_cheat_index].size;i+=2){
+      off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheats[gui_state.editing_cheat_index].buffer[i], cheats[gui_state.editing_cheat_index].buffer[i+1]);
+    }
+
+    initialized = true;
+  }
+
+  igInputText("Name",cheats[gui_state.editing_cheat_index].name,SE_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
+  // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
+  igInputTextMultiline("##CheatCode",code_buffer,2048,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL);
+  if(igButton("Apply", (ImVec2){0,0})){
+    int char_count = 0;
+    // Remove all the non-hex characters
+    for(int i=0;i<2048;++i){
+      if(code_buffer[i]=='\0')break;
+      else if((code_buffer[i]>='0' && code_buffer[i]<='9') || (code_buffer[i]>='A' && code_buffer[i]<='F')){
+        code_buffer_truncated[char_count]=code_buffer[i];
+        char_count++;
+      }
+    }
+
+    if(char_count==0||(char_count%16)!=0){
+      printf("Invalid cheat length %d\n", char_count);
+    }else{
+      if(cheats[gui_state.editing_cheat_index].buffer!=NULL)free(cheats[gui_state.editing_cheat_index].buffer);
+
+      int cheat_size = char_count/8;
+      cheats[gui_state.editing_cheat_index].valid=true;
+      cheats[gui_state.editing_cheat_index].buffer=(uint32_t*)malloc(cheat_size*sizeof(uint32_t));
+      cheats[gui_state.editing_cheat_index].size=cheat_size;
+
+      for(int i=0;i<cheat_size;i++){
+        char hex[9];
+        memcpy(hex,code_buffer_truncated+i*8,8);
+        hex[8]='\0';
+        cheats[gui_state.editing_cheat_index].buffer[i]=strtol(hex,NULL,16);
+      }
+    }
+
+    memset(code_buffer,0,2048);
+    memset(code_buffer_truncated,0,2048);
+    gui_state.editing_cheat=false;
+    initialized = false;
+  }
+  igEnd();
+}
 bool se_process_file_browser(){
   
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED)return false; 
@@ -4052,7 +4144,54 @@ void se_draw_menu_panel(){
       }
     }
   }
-  
+
+  se_text("Cheats");
+  igSameLine(win_w - 15,0);
+  if(se_button(ICON_FK_PLUS, (ImVec2){0,0})){
+    int index = -1;
+    for(int i=0; i<SE_NUM_CHEATS; ++i){
+      if (!cheats[i].valid){
+        index = i;
+        break;
+      }
+    }
+    if(index!=-1) {
+      if(!gui_state.editing_cheat){
+        gui_state.editing_cheat = true;
+        gui_state.editing_cheat_index = index;
+      }
+    } else {
+      printf("No more cheats can be added\n");
+    }
+  }
+  igSeparator();
+  igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
+  for(int i=0;i<SE_NUM_CHEATS;i++){
+    se_cheat_t* cheat = &cheats[i];
+    if (!cheat->valid) continue;
+    se_checkbox("##CheatActive", &cheat->active);
+    igSameLine(0,0);
+    se_text(cheat->name);
+    igSameLine(win_w-50,0);
+    if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
+      if(!gui_state.editing_cheat){
+        gui_state.editing_cheat = true;
+        gui_state.editing_cheat_index = i;
+      }
+    }
+    igSameLine(win_w-25,0);
+    if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
+      if(gui_state.editing_cheat_index != i){
+        cheat->valid = false;
+        
+        if(cheat->buffer!=NULL){
+          free(cheat->buffer);
+          cheat->buffer=NULL;
+        }
+      }
+    }
+  }
+  igEndChild();
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
   se_text("Solar Sensor");igSameLine(win_w*0.4,0);
@@ -4515,6 +4654,7 @@ static void frame(void) {
     se_end_menu_bar();
   }
   igPopStyleVar(2);
+  se_process_cheat_editor();
   bool active = se_process_file_browser();
   if(!active){
     float screen_x = 0; 
