@@ -4941,13 +4941,39 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
     current_code = buffer[i] >> 28;
 
     switch(current_code){
-      case 0:{
+      case 0x0:{
         // 0XXXXXXX YYYYYYYY
         // 32bit write of YYYYYYYY to location: (xxxxxxx + ‘offset’)
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         address += offset_register;
         se_write_word(address,data);
+        break;
+      }
+      case 0x1:{
+        // 1XXXXXXX ????YYYY
+        // 16bit write of YYYY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        address += offset_register;
+        se_write_halfword(address,data);
+        break;
+      }
+      case 0x2:{
+        // 2XXXXXXX ??????YY
+        // 8bit write of YY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint8_t data = buffer[i+1] & 0x000000ff;
+        address += offset_register;
+        se_write_byte(address,data);
+        break;
+      }
+      case 0xB:{
+        // BXXXXXXX ????????
+        // Loads the offset register with the data at address (XXXXXXX + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        address += offset_register;
+        offset_register = se_read_word(address);
         break;
       }
     }
