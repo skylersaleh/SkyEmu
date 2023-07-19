@@ -80,7 +80,7 @@ Native builds support loading roms through the command line by specifying the pa
 SkyEmu has been tested on 100s of ROMs and most common games should be playable with no to minor bugs currently. However, the GBA emulation is significantly more accurate than the GB/GBC emulation. 
 
 **GBA**:
-- Per Pixel PPU Implementation capable of both scan line and mid scan line effects (SkyEmu and NanoBoyAdvance are the only GBA emulator released to support this) 
+- Per Pixel PPU Implementation capable of both scan line and mid scan line effects (SkyEmu and NanoBoyAdvance are the only GBA emulators released to support this) 
 - Passes the AGS Aging Test ROM (SkyEmu is the second SW based GBA emulator to ever pass this)
 - Can run difficult to emulate GBA games such as the NES Classics Series, Golden Sun and Hello Kitty Miracle Fashion Maker
 - 100% Passes all ArmWrestler Tests
