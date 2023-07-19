@@ -1214,11 +1214,11 @@ static char* de_localization_array[]={
     NULL,NULL
 };
 
-const char ** localization_map=NULL;
+char ** localization_map=NULL;
 size_t localization_size=0;
 int se_localize_cmp(const void *a, const void*b){return strcmp(((const char**)a)[0],((const char**)b)[0]);}
 void se_set_language(int language_enum){
-    const char ** new_map = NULL; 
+    char ** new_map = NULL;
     if(language_enum==SE_LANG_CHINESE)new_map = zh_localization_array; 
     if(language_enum==SE_LANG_ARMENIAN)new_map = hy_localization_array; 
     if(language_enum==SE_LANG_GREEK)new_map = gr_localization_array;
