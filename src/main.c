@@ -288,8 +288,7 @@ typedef struct {
     uint8_t font_cache_page_valid[(SE_MAX_UNICODE_CODE_POINT+1)/SE_FONT_CACHE_PAGE_SIZE];
     bool update_font_atlas;
     sb_joy_t hcs_joypad; 
-    bool editing_cheat;
-    int editing_cheat_index;
+    int editing_cheat_index; //-1 when not editing a cheat
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -300,7 +299,8 @@ typedef struct {
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
 
 #define SE_NUM_CHEATS 32
-#define SE_CHEAT_NAME_SIZE 32
+#define SE_MAX_CHEAT_NAME_SIZE 32
+#define SE_MAX_CHEAT_CODE_SIZE 256
 
 #define SE_THEME_DARK 0
 #define SE_THEME_LIGHT 1
@@ -347,11 +347,10 @@ typedef struct{
   se_core_state_t state;
 }se_save_state_t; 
 typedef struct{
-  char name[SE_CHEAT_NAME_SIZE];
-  uint32_t* buffer;
-  uint32_t size;
-  int32_t valid; //0: invalid, 1: valid
-  bool active;
+  char name[SE_MAX_CHEAT_NAME_SIZE];
+  uint32_t buffer[SE_MAX_CHEAT_CODE_SIZE];
+  uint32_t size; //In 32bit words
+  int32_t state; //-1: invalid, 0: inactive, 1: active
 }se_cheat_t;
 typedef struct{
   char name[39]; //Emulator Name
@@ -376,6 +375,8 @@ static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state
 static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
 void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
+void se_run_all_ar_cheats();
+
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -1621,6 +1622,7 @@ se_lcd_info_t se_get_lcd_info(){
   };
 }
 static void se_emulate_single_frame(){
+  se_run_all_ar_cheats();
   if(emu_state.system == SYSTEM_GB){
     if(gui_state.test_runner_mode){
       uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
@@ -1928,20 +1930,8 @@ void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
 }
 void se_reset_cheats(){
-  for (int i=0;i<SE_NUM_CHEATS;++i){
-    cheats[i].valid=false;
-    cheats[i].buffer=NULL;
-  }
-  gui_state.editing_cheat = false;
-
-  strcpy(cheats[0].name,"Test Cheat");
-  cheats[0].buffer = (uint32_t*)malloc(4 * sizeof(uint32_t));
-  cheats[0].size = 4;
-  cheats[0].valid = true;
-  cheats[0].buffer[0] = 0xABCDEFAA;
-  cheats[0].buffer[1] = 0xAAA123AA;
-  cheats[0].buffer[2] = 0xBBBBCCCC;
-  cheats[0].buffer[3] = 0xDDDDDDFF;
+  for (int i=0;i<SE_NUM_CHEATS;++i){cheats[i].state=-1;cheats[i].size=0;}
+  gui_state.editing_cheat_index = -1;
 }
 static void se_draw_debug_menu(){
   se_debug_tool_desc_t* desc=se_get_debug_description();
@@ -2906,63 +2896,49 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
   #endif 
 }
 void se_process_cheat_editor(){
-  if (!gui_state.editing_cheat)return;
+  if (gui_state.editing_cheat_index>=sizeof(cheats)/sizeof(cheats[0]))return;
 
   ImGuiContext* g = igGetCurrentContext();
   igSetNextWindowPos((ImVec2){g->IO.DisplaySize.x * 0.5f, g->IO.DisplaySize.y * 0.5f}, ImGuiCond_Always, (ImVec2){0.5f,0.5f});
   igSetNextWindowSize((ImVec2){400,400}, ImGuiCond_Always);
-  igBegin("Edit Cheat",&gui_state.editing_cheat,ImGuiWindowFlags_AlwaysAutoResize);
-  static char code_buffer[2048];
-  static char code_buffer_truncated[2048];
+  igBegin("Edit Cheat",NULL,ImGuiWindowFlags_AlwaysAutoResize);
+  char code_buffer[2048] = { 0 };
+  char code_buffer_truncated[2048] = { 0 };
 
-  static bool initialized = false;
-  if (!initialized){
-    memset(code_buffer,0,2048);
-    memset(code_buffer_truncated,0,2048);
-
-    int off=0;
-    for(int i=0;i<cheats[gui_state.editing_cheat_index].size;i+=2){
-      off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheats[gui_state.editing_cheat_index].buffer[i], cheats[gui_state.editing_cheat_index].buffer[i+1]);
-    }
-    initialized = true;
+  se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
+  
+  int off=0;
+  for(int i=0;i<cheat->size;i+=2){
+    off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheat->buffer[i], cheat->buffer[i+1]);
   }
 
-  igInputText("Name",cheats[gui_state.editing_cheat_index].name,SE_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
+  igInputText("Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
   // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-  igInputTextMultiline("##CheatCode",code_buffer,2048,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL);
-  if(igButton("Apply", (ImVec2){0,0})){
+  if(igInputTextMultiline("##CheatCode",code_buffer,2048,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
     int char_count = 0;
     // Remove all the non-hex characters
     for(int i=0;i<2048;++i){
       if(code_buffer[i]=='\0')break;
       else if((code_buffer[i]>='0' && code_buffer[i]<='9') || (code_buffer[i]>='A' && code_buffer[i]<='F')){
-        code_buffer_truncated[char_count]=code_buffer[i];
+        code_buffer_truncated[char_count]=code_buffer[i]; 
         char_count++;
       }
     }
-
-    if(char_count==0||(char_count%16)!=0){
-      printf("Invalid cheat length %d\n", char_count);
-    }else{
-      if(cheats[gui_state.editing_cheat_index].buffer!=NULL)free(cheats[gui_state.editing_cheat_index].buffer);
-
-      int cheat_size = char_count/8;
-      cheats[gui_state.editing_cheat_index].valid=true;
-      cheats[gui_state.editing_cheat_index].buffer=(uint32_t*)malloc(cheat_size*sizeof(uint32_t));
-      cheats[gui_state.editing_cheat_index].size=cheat_size;
-
-      for(int i=0;i<cheat_size;i++){
-        char hex[9];
-        memcpy(hex,code_buffer_truncated+i*8,8);
-        hex[8]='\0';
-        cheats[gui_state.editing_cheat_index].buffer[i]=strtol(hex,NULL,16);
-      }
+    cheat->size = char_count/8;
+    if(cheat->size>=SE_MAX_CHEAT_CODE_SIZE)cheat->size=SE_MAX_CHEAT_CODE_SIZE;
+    for(int i=0;i<cheat->size;++i)cheat->buffer[i]=0; 
+    for(int i=0;i<cheat->size;i++){
+      char hex[9];
+      memcpy(hex,code_buffer_truncated+i*8,8);
+      for(int h=0;h<8;++h)if(hex[h]==0)hex[h]='0';
+      hex[8]='\0';
+      cheat->buffer[i]=strtol(hex,NULL,16);
     }
-
-    memset(code_buffer,0,2048);
-    memset(code_buffer_truncated,0,2048);
-    gui_state.editing_cheat=false;
-    initialized = false;
+  }
+  
+  if(se_button( ICON_FK_CHECK " Done", (ImVec2){0,0})){
+    gui_state.editing_cheat_index = -1;
+    cheat->state=0;
   }
   igEnd();
 }
@@ -4003,40 +3979,36 @@ void se_draw_menu_panel(){
     }
   }
 
-  if(emu_state.system==SYSTEM_NDS){
+  if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA){
     se_text(ICON_FK_KEY " Action Replay Codes");
     igSeparator();
     igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
+    int win_w = igGetWindowContentRegionWidth();//The scroll bar can make this chagne. 
     int free_cheat_index = -1; 
     for(int i=0;i<SE_NUM_CHEATS;i++){
       se_cheat_t* cheat = &cheats[i];
-      if (!cheat->valid){free_cheat_index=i; continue;}
-      se_checkbox(cheat->name, &cheat->active);
+      if (cheat->state==-1){free_cheat_index=i; continue;}
+      igPushIDInt(i);
+      bool active = cheat->state;
+      se_checkbox(cheat->name, &active);
+      cheat->state = active ? 1:0;
       igSameLine(0,0);
       igSameLine(win_w-50,0);
       if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
-        if(!gui_state.editing_cheat){
-          gui_state.editing_cheat = true;
-          gui_state.editing_cheat_index = i;
-        }
+        gui_state.editing_cheat_index = i;
       }
       igSameLine(win_w-25,0);
       if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
-        if(gui_state.editing_cheat_index != i){
-          cheat->valid = false;
-          if(cheat->buffer!=NULL){
-            free(cheat->buffer);
-            cheat->buffer=NULL;
-          }
-        }
+        if(gui_state.editing_cheat_index != i)cheat->state = -1;
       }
+      igPopID();
     }
     if(free_cheat_index!=-1){
       if(se_button(ICON_FK_PLUS " Add New", (ImVec2){0,0})){
-        if(!gui_state.editing_cheat){
-          gui_state.editing_cheat = true;
-          gui_state.editing_cheat_index = free_cheat_index;
-        }
+        gui_state.editing_cheat_index = free_cheat_index;
+        se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
+        cheat->state = 0; 
+        memset(cheat->buffer,0,sizeof(cheat->buffer));
       }
     }
     igEndChild();
@@ -5228,6 +5200,14 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
   }
 
   return true;
+}
+void se_run_all_ar_cheats(){
+  for(int i=0;i< SE_NUM_CHEATS ;++i){
+    se_cheat_t * cheat = cheats+i;
+    if(cheat->state!=1)continue;
+    bool success = se_run_ar_cheat(cheat->buffer,cheat->size);
+    if(!success) cheat->state = 0; 
+  }
 }
 static void headless_mode(){
   //Leave here so the entry point still exists
