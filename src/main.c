@@ -966,6 +966,8 @@ void se_load_recent_games_list(){
 
 bool se_key_is_pressed(int keycode){
   if(keycode>SAPP_MAX_KEYCODES||keycode==-1)return false;
+  //Don't let keyboard input reach emulator when ImGUI is capturing it. 
+  if(igGetIO()->WantCaptureKeyboard)return false; 
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
