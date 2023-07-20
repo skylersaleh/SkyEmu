@@ -1825,16 +1825,9 @@ static void gb_halfword_write(uint64_t address, uint16_t data){sb_store16(&core.
 
 static uint8_t nds9_byte_read(uint64_t address){return nds9_debug_read8(&core.nds,address);}
 static void nds9_byte_write(uint64_t address, uint8_t data){nds9_debug_write8(&core.nds,address,data);}
-static uint16_t nds9_halfword_read(uint64_t address){return nds9_debug_read16(&core.nds,address);}
-static void nds9_halfword_write(uint64_t address, uint16_t data){nds9_debug_write16(&core.nds,address,data);}
-static uint32_t nds9_word_read(uint64_t address){return nds9_debug_read32(&core.nds,address);}
-static void nds9_word_write(uint64_t address, uint32_t data){nds9_debug_write32(&core.nds,address,data);}
 static uint8_t nds7_byte_read(uint64_t address){return nds7_debug_read8(&core.nds,address);}
 static void nds7_byte_write(uint64_t address, uint8_t data){nds7_debug_write8(&core.nds,address,data);}
-static uint16_t nds7_halfword_read(uint64_t address){return nds7_debug_read16(&core.nds,address);}
-static void nds7_halfword_write(uint64_t address, uint16_t data){nds7_debug_write16(&core.nds,address,data);}
-static uint32_t nds7_word_read(uint64_t address){return nds7_debug_read32(&core.nds,address);}
-static void nds7_word_write(uint64_t address, uint32_t data){nds7_debug_write32(&core.nds,address,data);}
+
 typedef struct{
   const char* short_label;
   const char* label;
@@ -1902,42 +1895,21 @@ static se_debug_tool_desc_t* se_get_debug_description(){
   if(emu_state.system ==SYSTEM_NDS)desc = nds_debug_tools;
   return desc; 
 }
-uint8_t se_read_byte(uint64_t address, int addr_map){
-  if(emu_state.system ==SYSTEM_GBA)return gba_byte_read(address);
-  if(emu_state.system ==SYSTEM_GB)return gb_byte_read(address);
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_read(address):nds9_byte_read(address);
+emu_byte_read_t se_read_byte_func(int addr_map){
+  if(emu_state.system ==SYSTEM_GBA)return gba_byte_read;
+  if(emu_state.system ==SYSTEM_GB)return gb_byte_read;
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_read:nds9_byte_read;
   return 0; 
 }
-void se_write_byte(uint64_t address, int addr_map, uint8_t byte){
-  if(emu_state.system ==SYSTEM_GBA)return gba_byte_write(address,byte);
-  if(emu_state.system ==SYSTEM_GB)return gb_byte_write(address,byte);
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_write(address,byte):nds9_byte_write(address,byte);
-}
-uint16_t se_read_halfword(uint64_t address, int addr_map){
-  if(emu_state.system ==SYSTEM_GBA)return gba_halfword_read(address);
-  if(emu_state.system ==SYSTEM_GB)return gb_halfword_read(address);
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_halfword_read(address):nds9_halfword_read(address);
-  return 0;
-}
-void se_write_halfword(uint64_t address, int addr_map, uint16_t halfword){
-  if(emu_state.system ==SYSTEM_GBA)return gba_halfword_write(address,halfword);
-  if(emu_state.system ==SYSTEM_GB)return gb_halfword_write(address,halfword);
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_halfword_write(address,halfword):nds9_halfword_write(address,halfword);
-}
-uint32_t se_read_word(uint64_t address, int addr_map){
-  if(emu_state.system ==SYSTEM_GBA)return gba_word_read(address);
-  if(emu_state.system ==SYSTEM_GB)printf("se_read_word not implemented for gb\n");
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_word_read(address):nds9_word_read(address);
-  return 0;
-}
-void se_write_word(uint64_t address, int addr_map, uint32_t word){
-  if(emu_state.system ==SYSTEM_GBA)return gba_word_write(address,word);
-  if(emu_state.system ==SYSTEM_GB)printf("se_write_word not implemented for gb\n");
-  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_word_write(address,word):nds9_word_write(address,word);
+emu_byte_write_t se_write_byte_func(int addr_map){
+  if(emu_state.system ==SYSTEM_GBA)return gba_byte_write;
+  if(emu_state.system ==SYSTEM_GB)return gb_byte_write;
+  if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_write:nds9_byte_write;
 }
 ///////////////////////////////
 // END UPDATE FOR NEW SYSTEM //
 ///////////////////////////////
+
 void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
   save_state->state = *core; 
   save_state->valid = true;
@@ -2950,7 +2922,6 @@ void se_process_cheat_editor(){
     for(int i=0;i<cheats[gui_state.editing_cheat_index].size;i+=2){
       off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheats[gui_state.editing_cheat_index].buffer[i], cheats[gui_state.editing_cheat_index].buffer[i+1]);
     }
-
     initialized = true;
   }
 
@@ -4030,53 +4001,44 @@ void se_draw_menu_panel(){
     }
   }
 
-  se_text("Cheats");
-  igSameLine(win_w - 15,0);
-  if(se_button(ICON_FK_PLUS, (ImVec2){0,0})){
-    int index = -1;
-    for(int i=0; i<SE_NUM_CHEATS; ++i){
-      if (!cheats[i].valid){
-        index = i;
-        break;
+  if(emu_state.system==SYSTEM_NDS){
+    se_text(ICON_FK_KEY " Action Replay Codes");
+    igSeparator();
+    igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
+    int free_cheat_index = -1; 
+    for(int i=0;i<SE_NUM_CHEATS;i++){
+      se_cheat_t* cheat = &cheats[i];
+      if (!cheat->valid){free_cheat_index=i; continue;}
+      se_checkbox(cheat->name, &cheat->active);
+      igSameLine(0,0);
+      igSameLine(win_w-50,0);
+      if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
+        if(!gui_state.editing_cheat){
+          gui_state.editing_cheat = true;
+          gui_state.editing_cheat_index = i;
+        }
       }
-    }
-    if(index!=-1) {
-      if(!gui_state.editing_cheat){
-        gui_state.editing_cheat = true;
-        gui_state.editing_cheat_index = index;
-      }
-    } else {
-      printf("No more cheats can be added\n");
-    }
-  }
-  igSeparator();
-  igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
-  for(int i=0;i<SE_NUM_CHEATS;i++){
-    se_cheat_t* cheat = &cheats[i];
-    if (!cheat->valid) continue;
-    se_checkbox("##CheatActive", &cheat->active);
-    igSameLine(0,0);
-    se_text(cheat->name);
-    igSameLine(win_w-50,0);
-    if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
-      if(!gui_state.editing_cheat){
-        gui_state.editing_cheat = true;
-        gui_state.editing_cheat_index = i;
-      }
-    }
-    igSameLine(win_w-25,0);
-    if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
-      if(gui_state.editing_cheat_index != i){
-        cheat->valid = false;
-        
-        if(cheat->buffer!=NULL){
-          free(cheat->buffer);
-          cheat->buffer=NULL;
+      igSameLine(win_w-25,0);
+      if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
+        if(gui_state.editing_cheat_index != i){
+          cheat->valid = false;
+          if(cheat->buffer!=NULL){
+            free(cheat->buffer);
+            cheat->buffer=NULL;
+          }
         }
       }
     }
+    if(free_cheat_index!=-1){
+      if(se_button(ICON_FK_PLUS " Add New", (ImVec2){0,0})){
+        if(!gui_state.editing_cheat){
+          gui_state.editing_cheat = true;
+          gui_state.editing_cheat_index = free_cheat_index;
+        }
+      }
+    }
+    igEndChild();
   }
-  igEndChild();
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
   se_text("Solar Sensor");igSameLine(win_w*0.4,0);
@@ -4274,7 +4236,7 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       if(strcmp(params[0],"map")==0) address_map = atoi(params[1]);
       else if(strcmp(params[0],"addr")==0){
         uint64_t addr = se_hex_string_to_int(params[1]);
-        uint8_t byte = se_read_byte(addr,address_map);
+        uint8_t byte = se_read_byte_func(address_map)(addr);
         const char *map="0123456789abcdef";
         se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,4,4)]);
         se_append_char_to_string(&response,&response_size,map[SB_BFE(byte,0,4)]);
@@ -4294,7 +4256,7 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       else{
         uint64_t addr = se_hex_string_to_int(params[0]);
         uint8_t data = se_hex_string_to_int(params[1]);
-        se_write_byte(addr,address_map,data);
+        se_write_byte_func(address_map)(addr,data);
       }
       params+=2;
     }
@@ -4966,6 +4928,9 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
   uint8_t current_code = 0;
   uint16_t current_byte = 0;
 
+  emu_byte_read_t byte_read   = se_read_byte_func(0);
+  emu_byte_write_t byte_write = se_write_byte_func(0);
+
   for(int i=0;i<size;i+=2){
     current_code = buffer[i] >> 28;
     current_byte = buffer[i] >> 24;
@@ -4984,7 +4949,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         address += offset_register;
-        se_write_word(address,0,data);
+        se_write32(byte_write,address,data);
         break;
       }
       case 0x1:{
@@ -4993,7 +4958,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint16_t data = buffer[i+1] & 0x0000ffff;
         address += offset_register;
-        se_write_halfword(address,0,data);
+        se_write16(byte_write,address,data);
         break;
       }
       case 0x2:{
@@ -5002,7 +4967,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint8_t data = buffer[i+1] & 0x000000ff;
         address += offset_register;
-        se_write_byte(address,0,data);
+        byte_write(address,data);
         break;
       }
       case 0x3:{
@@ -5012,7 +4977,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         if (address == 0) address = offset_register;
-        uint32_t value = se_read_word(address,0);
+        uint32_t value = se_read32(byte_read,address);
         bool condition = value < data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5025,7 +4990,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         if (address == 0) address = offset_register;
-        uint32_t value = se_read_word(address,0);
+        uint32_t value = se_read32(byte_read,address);
         bool condition = value > data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5038,7 +5003,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         if (address == 0) address = offset_register;
-        uint32_t value = se_read_word(address,0);
+        uint32_t value = se_read32(byte_read,address);
         bool condition = value == data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5052,7 +5017,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t data = buffer[i+1];
         if (address == 0) address = offset_register;
-        uint32_t value = se_read_word(address,0);
+        uint32_t value = se_read32(byte_read,address);
         bool condition = value != data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5066,7 +5031,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint16_t data = buffer[i+1] & 0x0000ffff;
         uint16_t mask = ~(buffer[i+1] >> 16);
         if (address == 0) address = offset_register;
-        uint16_t value = se_read_halfword(address,0);
+        uint16_t value = se_read16(byte_read,address);
         bool condition = (value & mask) < data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5080,7 +5045,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint16_t data = buffer[i+1] & 0x0000ffff;
         uint16_t mask = ~(buffer[i+1] >> 16);
         if (address == 0) address = offset_register;
-        uint16_t value = se_read_halfword(address,0);
+        uint16_t value = se_read16(byte_read,address);
         bool condition = (value & mask) > data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5094,7 +5059,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint16_t data = buffer[i+1] & 0x0000ffff;
         uint16_t mask = ~(buffer[i+1] >> 16);
         if (address == 0) address = offset_register;
-        uint16_t value = se_read_halfword(address,0);
+        uint16_t value = se_read16(byte_read,address);
         bool condition = (value & mask) == data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5108,7 +5073,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint16_t data = buffer[i+1] & 0x0000ffff;
         uint16_t mask = ~(buffer[i+1] >> 16);
         if (address == 0) address = offset_register;
-        uint16_t value = se_read_halfword(address,0);
+        uint16_t value = se_read16(byte_read, address);
         bool condition = (value & mask) != data;
         if_stack_index++;
         if_stack[if_stack_index] = condition;
@@ -5119,7 +5084,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         // Loads the offset register with the data at address (XXXXXXX + ‘offset’)
         uint32_t address = buffer[i] & 0x0fffffff;
         address += offset_register;
-        offset_register = se_read_word(address,0);
+        offset_register = se_read32(byte_read, address);
         break;
       }
       case 0xC:{
@@ -5178,7 +5143,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
             // 32 bit store and increment
             uint32_t address = buffer[i+1];
             address += offset_register;
-            se_write_word(address,0,stored_register);
+            se_write32(byte_write,address,stored_register);
             offset_register += 4;
             break;
           }
@@ -5186,7 +5151,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
             // 16 bit store and increment
             uint32_t address = buffer[i+1];
             address += offset_register;
-            se_write_halfword(address,0,stored_register);
+            se_write16(byte_write,address,stored_register);
             offset_register += 2;
             break;
           }
@@ -5194,7 +5159,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
             // 8 bit store and increment
             uint32_t address = buffer[i+1];
             address += offset_register;
-            se_write_byte(address,0,stored_register);
+            byte_write(address,stored_register);
             offset_register += 1;
             break;
           }
@@ -5202,21 +5167,21 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
             // 32 bit load into stored register
             uint32_t address = buffer[i+1];
             address += offset_register;
-            stored_register = se_read_word(address,0);
+            stored_register = se_read32(byte_read,address);
             break;
           }
           case 0xDA:{
             // 16 bit load into stored register
             uint32_t address = buffer[i+1];
             address += offset_register;
-            stored_register = se_read_halfword(address,0);
+            stored_register = se_read16(byte_read,address);
             break;
           }
           case 0xDB:{
             // 8 bit load into stored register
             uint32_t address = buffer[i+1];
             address += offset_register;
-            stored_register = se_read_byte(address,0);
+            stored_register = byte_read(address);
             break;
           }
           default:{
@@ -5238,7 +5203,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t count = buffer[i+1];
         for (uint32_t j=0;j<count;j+=4){
           uint32_t current = buffer[i+2+j/4];
-          se_write_word(address+j,0,current);
+          se_write32(byte_write,address+j,current);
         }
         i+=count/4;
         if (i % 2 == 1) i++;
@@ -5251,8 +5216,8 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
         uint32_t address = buffer[i] & 0x0fffffff;
         uint32_t count = buffer[i+1];
         for(uint32_t j=0; j<count; j++){
-          uint8_t value = se_read_byte(offset_register+j,0);
-          se_write_byte(address+j,0,value);
+          uint8_t value = byte_read(offset_register+j);
+          byte_write(address+j,value);
         }
         break;
       }
