@@ -3597,55 +3597,63 @@ static void nds_process_gc_spi(nds_t* nds, int cpu_id){
   if(slot_enable==false||slot_mode==false)return;
   nds_card_backup_t* back = &nds->backup;
   uint8_t ret_data = 0; 
-  if(nds->backup.backup_type>=NDS_BACKUP_FLASH_256KB&&nds->backup.backup_type<=NDS_BACKUP_FLASH_1MB){
-    ret_data = nds_process_flash_write(nds,spi_data,&nds->backup.flash,nds->mem.save_data, nds_get_save_size(nds));
-    nds->backup.is_dirty=true;
+
+  if(back->command_offset<sizeof(back->command)){
+    back->command[back->command_offset]=spi_data;
+  }
+  back->command_offset++;
+  //IR Stub (needed due to Pokemon Black Anti-Piracy Check)
+  //Check for IR-ID command
+  if(back->command[0]==0x08){
+    printf("IR ID Read\n");
+    ret_data=back->command_offset>1?0xAA:0;
   }else{
-    if(back->command_offset<sizeof(back->command)){
-      back->command[back->command_offset]=spi_data;
-    }
-    back->command_offset++;
-    switch(back->command[0]){
-      case 0x00: /*NOP*/  break ;
-      case 0x06: /*WREN*/ back->write_enable=true;break;
-      case 0x04: /*WRDI*/ back->write_enable=false;break;
-      case 0x05: /*RDSR*/ 
-        /*
-          Status Register
-            0   WIP  Write in Progress (1=Busy) (Read only) (always 0 for FRAM chips)
-            1   WEL  Write Enable Latch (1=Enable) (Read only, except by WREN,WRDI)
-            2-3 WP   Write Protect (0=None, 1=Upper quarter, 2=Upper Half, 3=All memory)
-          For 0.5K EEPROM:
-            4-7 ONEs Not used (all four bits are always set to "1" each)
-          For 8K..64K EEPROM and for FRAM:
-            4-6 ZERO Not used (all three bits are always set to "0" each)
-            7   SRWD Status Register Write Disable (0=Normal, 1=Lock) (Only if /W=LOW)
-        */
-        back->status_reg&= (3<<2)|(1<<7);
-        if(back->write_enable)back->status_reg|=0x2;
-        if(back->backup_type==NDS_BACKUP_EEPROM_512B)back->status_reg|=0xf0;
-        ret_data = back->status_reg;
-        break;
-      case 0x01: /*WRSR*/ back->status_reg=spi_data;break;
-      case 0x9f: /*RDID*/ ret_data = 0xff; break;
-      case 0x03: /*RD/RDLO*/
-      case 0x0B: /*RDHI*/{
-        uint32_t addr = nds_get_curr_backup_address(nds);
-        if(addr!=0xffffffff)ret_data = nds->mem.save_data[addr];
-        break;
-      }
-      case 0x02: /*WR/WRLO*/
-      case 0x0A: /*WRHI*/{
-        uint32_t addr = nds_get_curr_backup_address(nds);
-        if(addr!=0xffffffff&&back->write_enable){
-          nds->mem.save_data[addr]=spi_data;
-          back->is_dirty = true;
+    if(nds->backup.backup_type>=NDS_BACKUP_FLASH_256KB&&nds->backup.backup_type<=NDS_BACKUP_FLASH_1MB){
+      ret_data = nds_process_flash_write(nds,spi_data,&nds->backup.flash,nds->mem.save_data, nds_get_save_size(nds));
+      nds->backup.is_dirty=true;
+    }else{
+      switch(back->command[0]){
+        case 0x00: /*NOP*/  break ;
+        case 0x06: /*WREN*/ back->write_enable=true;break;
+        case 0x04: /*WRDI*/ back->write_enable=false;break;
+        case 0x05: /*RDSR*/ 
+          /*
+            Status Register
+              0   WIP  Write in Progress (1=Busy) (Read only) (always 0 for FRAM chips)
+              1   WEL  Write Enable Latch (1=Enable) (Read only, except by WREN,WRDI)
+              2-3 WP   Write Protect (0=None, 1=Upper quarter, 2=Upper Half, 3=All memory)
+            For 0.5K EEPROM:
+              4-7 ONEs Not used (all four bits are always set to "1" each)
+            For 8K..64K EEPROM and for FRAM:
+              4-6 ZERO Not used (all three bits are always set to "0" each)
+              7   SRWD Status Register Write Disable (0=Normal, 1=Lock) (Only if /W=LOW)
+          */
+          back->status_reg&= (3<<2)|(1<<7);
+          if(back->write_enable)back->status_reg|=0x2;
+          if(back->backup_type==NDS_BACKUP_EEPROM_512B)back->status_reg|=0xf0;
+          ret_data = back->status_reg;
+          break;
+        case 0x01: /*WRSR*/ back->status_reg=spi_data;break;
+        case 0x9f: /*RDID*/ ret_data = 0xff; break;
+        case 0x03: /*RD/RDLO*/
+        case 0x0B: /*RDHI*/{
+          uint32_t addr = nds_get_curr_backup_address(nds);
+          if(addr!=0xffffffff)ret_data = nds->mem.save_data[addr];
+          break;
         }
-        break;
+        case 0x02: /*WR/WRLO*/
+        case 0x0A: /*WRHI*/{
+          uint32_t addr = nds_get_curr_backup_address(nds);
+          if(addr!=0xffffffff&&back->write_enable){
+            nds->mem.save_data[addr]=spi_data;
+            back->is_dirty = true;
+          }
+          break;
+        }
+        default:
+          if(back->command_offset==1)printf("Unknown AUX SPI command:%02x\n",back->command[0]);
+          break;
       }
-      default:
-        if(back->command_offset==1)printf("Unknown AUX SPI command:%02x\n",back->command[0]);
-        break;
     }
   }
   nds_io_store8(nds,cpu_id,NDS9_AUXSPIDATA,ret_data);
