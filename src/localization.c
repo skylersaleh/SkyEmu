@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdio.h>
 
+// New strings requiring translation: 
+// - "Avoid NDS Touchscreen"
+
 //#define SHOW_TRANSLATE_ME 1
 
 //Special thanks to https://github.com/shooterspps for the Chinese Translation
