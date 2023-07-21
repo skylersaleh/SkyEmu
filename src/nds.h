@@ -2245,6 +2245,7 @@ static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
 static void nds_compute_timers(nds_t* nds); 
 static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
+static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size);
 
 
 //Returns offset into savestate where bess info can be found
@@ -2829,6 +2830,12 @@ static FORCE_INLINE void nds9_write8(nds_t*nds, unsigned baddr, uint8_t data){
 static FORCE_INLINE void nds7_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds7_process_memory_transaction(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM7);
 }
+static FORCE_INLINE void nds9_debug_write32(nds_t*nds, unsigned baddr, uint32_t data){
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE void nds9_debug_write16(nds_t*nds, unsigned baddr, uint16_t data){
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
 static FORCE_INLINE void nds9_debug_write8(nds_t*nds, unsigned baddr, uint8_t data){
   nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
@@ -2871,6 +2878,12 @@ static FORCE_INLINE uint8_t nds9_read8(nds_t*nds, unsigned baddr){
 }
 static FORCE_INLINE uint8_t nds7_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7);
+}
+static FORCE_INLINE uint32_t nds9_debug_read32(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+}
+static FORCE_INLINE uint16_t nds9_debug_read16(nds_t*nds, unsigned baddr){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
 static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
@@ -6859,5 +6872,326 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
   }else{
     printf("Unhandled: Cn:%d Cm:%d Cp:%d\n",Cn,Cm,Cp);
   }
+}
+static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size){
+  if(!buffer){
+    printf("Invalid Action Replay cheat buffer\n");
+    return false;
+  }
+  if(size%2!=0){
+    printf("Invalid Action Replay cheat size:%d\n",size);
+    return false;
+  }
+
+  uint32_t offset_register = 0, stored_register = 0;
+
+  // stack for if statements
+  // the first element is always true
+  bool if_stack[32] = {true};
+  size_t if_stack_index = 0;
+
+  // repeat blocks can't be nested
+  uint32_t repeat_count = 0;
+  size_t repeat_block_index = 0;
+  size_t repeat_if_stack_index = 0;
+
+  uint8_t current_code = 0;
+  uint16_t current_byte = 0;
+
+  for(int i=0;i<size;i+=2){
+    current_code = buffer[i] >> 28;
+    current_byte = buffer[i] >> 24;
+
+    // check if we're in an if that has evaluated to false, and the current instruction
+    // isn't an "End-if" or an "End-code"
+    if (!if_stack[if_stack_index] && current_byte != 0xD0 && current_byte != 0xD2) {
+      // skip this instruction
+      continue;
+    }
+
+    switch(current_code){
+      case 0x0:{
+        // 0XXXXXXX YYYYYYYY
+        // 32bit write of YYYYYYYY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        address += offset_register;
+        nds9_debug_write32(nds,address,data);
+        break;
+      }
+      case 0x1:{
+        // 1XXXXXXX ????YYYY
+        // 16bit write of YYYY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        address += offset_register;
+        nds9_debug_write16(nds,address,data);
+        break;
+      }
+      case 0x2:{
+        // 2XXXXXXX ??????YY
+        // 8bit write of YY to location: (xxxxxxx + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint8_t data = buffer[i+1] & 0x000000ff;
+        address += offset_register;
+        nds9_debug_write8(nds,address,data);
+        break;
+      }
+      case 0x3:{
+        // 3XXXXXXX YYYYYYYY 32bit ‘If less-than’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) < YYYYYYYY then
+        // execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        if (address == 0) address = offset_register;
+        uint32_t value = nds9_debug_read32(nds,address);
+        bool condition = value < data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0x4:{
+        // 4XXXXXXX YYYYYYYY 32bit ‘If greater-than’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) > YYYYYYYY then
+        // execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        if (address == 0) address = offset_register;
+        uint32_t value = nds9_debug_read32(nds,address);
+        bool condition = value > data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0x5:{
+        // 5XXXXXXX YYYYYYYY 32bit ‘If equal’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) == YYYYYYYY then
+        // execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        if (address == 0) address = offset_register;
+        uint32_t value = nds9_debug_read32(nds,address);
+        bool condition = value == data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        printf("%08x %08x %d\n",value,data,condition);
+        break;
+      }
+      case 0x6:{
+        // 6XXXXXXX YYYYYYYY 32bit ‘If not equal’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) != YYYYYYYY then
+        // execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t data = buffer[i+1];
+        if (address == 0) address = offset_register;
+        uint32_t value = nds9_debug_read32(nds,address);
+        bool condition = value != data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0x7:{
+        // 7XXXXXXX ZZZZYYYY 16bit ‘If less-than’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) masked by ZZZZ <
+        // YYYY then execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        uint16_t mask = ~(buffer[i+1] >> 16);
+        if (address == 0) address = offset_register;
+        uint16_t value = nds9_debug_read16(nds,address);
+        bool condition = (value & mask) < data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0x8:{
+        // 8XXXXXXX ZZZZYYYY 16bit ‘If greater-than’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) masked by ZZZZ >
+        // YYYY then execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        uint16_t mask = ~(buffer[i+1] >> 16);
+        if (address == 0) address = offset_register;
+        uint16_t value = nds9_debug_read16(nds,address);
+        bool condition = (value & mask) > data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0x9:{
+        // 9XXXXXXX ZZZZYYYY 16bit ‘If equal’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) masked by ZZZZ ==
+        // YYYY then execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        uint16_t mask = ~(buffer[i+1] >> 16);
+        if (address == 0) address = offset_register;
+        uint16_t value = nds9_debug_read16(nds,address);
+        bool condition = (value & mask) == data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0xA:{
+        // AXXXXXXX ZZZZYYYY 16bit ‘If not equal’ instruction
+        // If the value at (XXXXXXX or ‘offset’ when address is 0) masked by ZZZZ !=
+        // YYYY then execute the following block of instructions
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint16_t data = buffer[i+1] & 0x0000ffff;
+        uint16_t mask = ~(buffer[i+1] >> 16);
+        if (address == 0) address = offset_register;
+        uint16_t value = nds9_debug_read16(nds,address);
+        bool condition = (value & mask) != data;
+        if_stack_index++;
+        if_stack[if_stack_index] = condition;
+        break;
+      }
+      case 0xB:{
+        // BXXXXXXX ????????
+        // Loads the offset register with the data at address (XXXXXXX + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        address += offset_register;
+        offset_register = nds9_debug_read32(nds,address);
+        break;
+      }
+      case 0xC:{
+        // C??????? NNNNNNNN
+        // Repeat operation, repeats a block of codes for NNNNNNNN times
+        // Repeats blocks cannot contain further repeats
+        uint32_t count = buffer[i+1];
+        repeat_count = buffer[i+1];
+        repeat_block_index = i;
+        repeat_if_stack_index = if_stack_index;
+        break;
+      }
+      case 0xD:{
+        switch(current_byte){
+          case 0xD0:{
+            // End-if instruction
+            if_stack_index--;
+            break;
+          }
+          case 0xD1:{
+            // End-repeat instruction
+            // Also implicitly ends any conditional instructions inside the repeat block
+            if (repeat_count > 0){
+              repeat_count--;
+              i = repeat_block_index;
+              if_stack_index = repeat_if_stack_index;
+            }
+            break;
+          }
+          case 0xD2:{
+            // End-code instruction
+            if (repeat_count > 0){
+              repeat_count--;
+              i = repeat_block_index;
+            } else {
+              if_stack_index=0;
+            }
+            break;
+          }
+          case 0xD3:{
+            // Set offset register
+            offset_register = buffer[i+1];
+            break;
+          }
+          case 0xD4:{
+            // Add to stored register
+            stored_register += buffer[i+1];
+            break;
+          }
+          case 0xD5:{
+            // Set stored register
+            stored_register = buffer[i+1];
+            break;
+          }
+          case 0xD6:{
+            // 32 bit store and increment
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            nds9_debug_write32(nds,address,stored_register);
+            offset_register += 4;
+            break;
+          }
+          case 0xD7:{
+            // 16 bit store and increment
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            nds9_debug_write16(nds,address,stored_register);
+            offset_register += 2;
+            break;
+          }
+          case 0xD8:{
+            // 8 bit store and increment
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            nds9_debug_write8(nds,address,stored_register);
+            offset_register += 1;
+            break;
+          }
+          case 0xD9:{
+            // 32 bit load into stored register
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            stored_register = nds9_debug_read32(nds,address);
+            break;
+          }
+          case 0xDA:{
+            // 16 bit load into stored register
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            stored_register = nds9_debug_read16(nds,address);
+            break;
+          }
+          case 0xDB:{
+            // 8 bit load into stored register
+            uint32_t address = buffer[i+1];
+            address += offset_register;
+            stored_register = nds9_debug_read8(nds,address);
+            break;
+          }
+          default:{
+            // Unknown instruction
+            printf("Unknown instruction: %08X %08X\n", buffer[i], buffer[i+1]);
+            return false;
+          }
+        }
+        break;
+      }
+      case 0xE:{
+        // EXXXXXXX NNNNNNNN Direct memory write
+        // VVVVVVVV VVVVVVVV
+        // ... (NNNNNNNN times)
+        // Writes NNNNNNNN bytes from the list of values VVVVVVVV to the addresses
+        // starting at (XXXXXXX + ‘offset’)
+        uint32_t address = buffer[i] & 0x0fffffff;
+        address += offset_register;
+        uint32_t count = buffer[i+1];
+        for (uint32_t j=0;j<count;j+=4){
+          uint32_t current = buffer[i+2+j/4];
+          nds9_debug_write32(nds,address+j,current);
+        }
+        i+=count/4;
+        if (i % 2 == 1) i++;
+        break;
+      }
+      case 0xF:{
+        // FXXXXXXX NNNNNNNN Memory copy
+        // Copies NNNNNNNN bytes from addresses starting at the ‘offset’ register to
+        // addresses starting at XXXXXXXX
+        uint32_t address = buffer[i] & 0x0fffffff;
+        uint32_t count = buffer[i+1];
+        for(uint32_t j=0; j<count; j++){
+          uint8_t value = nds9_debug_read8(nds,offset_register+j);
+          nds9_debug_write8(nds,address+j,value);
+        }
+        break;
+      }
+    }
+
+  }
+
+  return true;
 }
 #endif
