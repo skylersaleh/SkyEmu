@@ -498,6 +498,7 @@ void sb_lookup_palette_color(sb_gb_t*gb,int color_id, int*r, int *g, int *b);
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time,int cycles);
 static void sb_tick_frame_seq(sb_gb_t*gb,sb_frame_sequencer_t* seq);
 static void sb_process_audio_writes(sb_gb_t* gb); 
+static bool sb_run_ar_cheat(sb_gb_t* gb, const uint32_t* buffer, uint32_t size);
 void sb_draw_pixel(sb_emu_state_t*emu,sb_gb_t* gb, int x, int y);
 
 static FORCE_INLINE uint8_t sb_read8_io(sb_gb_t*gb, int addr){return gb->mem.data[addr];}
@@ -1828,6 +1829,34 @@ static void sb_process_audio_writes(sb_gb_t* gb){
     nrf_52|=active<<i;
   }
   sb_store8_io(gb,SB_IO_SOUND_ON_OFF,nrf_52);
+}
+static bool sb_run_ar_cheat(sb_gb_t* gb, const uint32_t* buffer, uint32_t size){
+  // Formatted as ABCDEFGH
+  // AB External RAM bank number
+  // CD New Data
+  // GHEF Memory Address (internal or external RAM, A000-DFFF)
+  for(int i=0;i<size;i++){
+    uint32_t cheat=buffer[i];
+    uint16_t addr=cheat&0xffff;
+    addr=addr>>8|addr<<8;
+    if (addr < 0xA000 || addr > 0xDFFF)return false;
+    uint8_t data=(cheat>>16)&0xff;
+    uint8_t bank=cheat>>24;
+
+    uint8_t previous_bank=gb->cart.mapped_ram_bank;
+
+    if(addr>=0xA000&&addr<=0xBFFF){
+      gb->cart.mapped_ram_bank=bank;
+    }
+
+    sb_store8_direct(gb,addr,data);
+
+    if(addr>=0xA000&&addr<=0xBFFF){
+      gb->cart.mapped_ram_bank=previous_bank;
+    }
+  }
+
+  return true;
 }
 static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, double delta_time, int cycles){
 

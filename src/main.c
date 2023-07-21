@@ -4094,7 +4094,7 @@ void se_draw_menu_panel(){
     }
   }
 
-  if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA){
+  if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_text(ICON_FK_KEY " Action Replay Codes");
     igSeparator();
     igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
@@ -5001,6 +5001,8 @@ static void event(const sapp_event* ev) {
   }
 }
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
+  if(emu_state.system ==SYSTEM_GBA)return gba_run_ar_cheat(&core.gba, buffer, size);
+  if(emu_state.system ==SYSTEM_GB)return sb_run_ar_cheat(&core.gb, buffer, size);
   if(emu_state.system ==SYSTEM_NDS)return nds_run_ar_cheat(&core.nds, buffer, size);
 
   return false;
