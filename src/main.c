@@ -3015,8 +3015,8 @@ void se_process_cheat_editor(){
   igSetNextWindowPos((ImVec2){g->IO.DisplaySize.x * 0.5f, g->IO.DisplaySize.y * 0.5f}, ImGuiCond_Always, (ImVec2){0.5f,0.5f});
   igSetNextWindowSize((ImVec2){400,400}, ImGuiCond_Always);
   igBegin("Edit Cheat",NULL,ImGuiWindowFlags_AlwaysAutoResize);
-  char code_buffer[2048] = { 0 };
-  char code_buffer_truncated[2048] = { 0 };
+  char code_buffer[SE_MAX_CHEAT_CODE_SIZE] = { 0 };
+  char code_buffer_truncated[SE_MAX_CHEAT_CODE_SIZE] = { 0 };
 
   se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
   
@@ -3027,10 +3027,10 @@ void se_process_cheat_editor(){
 
   igInputText("Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
   // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-  if(igInputTextMultiline("##CheatCode",code_buffer,2048,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
+  if(igInputTextMultiline("##CheatCode",code_buffer,SE_MAX_CHEAT_CODE_SIZE,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
     int char_count = 0;
     // Remove all the non-hex characters
-    for(int i=0;i<2048;++i){
+    for(int i=0;i<SE_MAX_CHEAT_CODE_SIZE;++i){
       if(code_buffer[i]=='\0')break;
       else if((code_buffer[i]>='0' && code_buffer[i]<='9') || (code_buffer[i]>='A' && code_buffer[i]<='F')){
         code_buffer_truncated[char_count]=code_buffer[i]; 
