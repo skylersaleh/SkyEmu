@@ -2945,22 +2945,97 @@ uint64_t gba_decrypt_arv3(uint64_t code){
 
   return ((uint64_t)l << 32) | r;
 }
+bool gba_handle_ar_if_instruction(gba_t* gba, uint32_t left, uint32_t right){
+  uint32_t address = ((left<<4)&0x0F000000) | (left&0x000FFFFF);
+  uint8_t current_code = (left>>24)&0xFF;
+  uint32_t left_compare = gba_read32(gba,address);
+  uint32_t right_compare = right;
+  int32_t left_compare_signed = 0;
+  int32_t right_compare_signed = 0;
+
+  switch(current_code&0x6){
+    case 0:{
+      left_compare &= 0xFF;
+      right_compare &= 0xFF;
+      left_compare_signed = (int8_t)(left_compare);
+      right_compare_signed = (int8_t)(right_compare);
+      break;
+    }
+    case 0x2:{
+      left_compare &= 0xFFFF;
+      right_compare &= 0xFFFF;
+      left_compare_signed = (int16_t)(left_compare);
+      right_compare_signed = (int16_t)(right_compare);
+      break;
+    }
+    case 0x4:{
+      left_compare_signed = (int32_t)(left_compare);
+      right_compare_signed = (int32_t)(right_compare);
+      break;
+    }
+    case 0x6:{
+      // TODO: "Always..." codes ?
+      printf("Invalid AR if instruction\n");
+      return false;
+    }
+  }
+
+  switch(current_code&0x38){
+    case 0x8:{
+      // Equal
+      return left_compare==right_compare;
+    }
+    case 0x10:{
+      // Not equal
+      return left_compare!=right_compare;
+    }
+    case 0x18:{
+      // Signed <
+      return left_compare_signed<right_compare_signed;
+    }
+    case 0x20:{
+      // Signed >
+      return left_compare_signed>right_compare_signed;
+    }
+    case 0x28:{
+      // Unsigned <
+      return left_compare<right_compare;
+    }
+    case 0x30:{
+      // Unsigned >
+      return left_compare>right_compare;
+    }
+    case 0x38:{
+      // Logical AND
+      return left_compare&&right_compare;
+    }
+  }
+
+  return false;
+}
 bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
   if(size%2!=0){
     printf("Invalid Action Replay cheat size:%d\n",size);
     return false;
   }
 
+  // stack for if statements
+  // the first element is always true
+  bool if_stack[32] = {true};
+  size_t if_stack_index = 0;
+
   for(int i=0;i<size;i+=2){
     uint64_t code=gba_decrypt_arv3(buffer[i+1] | ((uint64_t)buffer[i] << 32));
     uint32_t left=code>>32;
     uint32_t right=code&0xFFFFFFFF;
-    printf("AR: %08X %08X\n",left,right);
 
-    uint8_t current_code = (left>>24)&0xFF;
-    uint32_t address = ((left<<4)&0x0F000000) | (left&0x000FFFFF);
+    if (!if_stack[if_stack_index])
+      continue;
 
     if (left!=0){
+      uint8_t current_code = (left>>24)&0xFF;
+      uint32_t address = ((left<<4)&0x0F000000) | (left&0x000FFFFF);
+
       switch(current_code){
         case 0x00:{
           uint32_t offset=right>>8;
@@ -2979,12 +3054,138 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
           gba_store32(gba,address,data);
           break;
         }
+        case 0x40:{
+          uint32_t offset=right>>8;
+          uint8_t data=right&0xFF;
+          address=gba_read32(gba,address);
+          gba_store8(gba,address+offset,data);
+          break;
+        }
+        case 0x42:{
+          uint32_t offset=right>>16;
+          uint16_t data=right&0xFFFF;
+          address=gba_read32(gba,address);
+          gba_store16(gba,address+offset*2,data);
+          break;
+        }
+        case 0x44:{
+          uint32_t data=right;
+          address=gba_read32(gba,address);
+          gba_store32(gba,address,data);
+          break;
+        }
+        case 0x80:{
+          uint8_t data=right&0xFF;
+          uint8_t old_data=gba_read8(gba,address);
+          gba_store8(gba,address,old_data+data);
+          break;
+        }
+        case 0x82:{
+          uint16_t data=right&0xFFFF;
+          uint16_t old_data=gba_read16(gba,address);
+          gba_store16(gba,address,old_data+data);
+          break;
+        }
+        case 0x84:{
+          uint32_t data=right;
+          uint32_t old_data=gba_read32(gba,address);
+          gba_store32(gba,address,old_data+data);
+          break;
+        }
+        case 0xC6:{
+          uint32_t address=0x4000000|(left&0xFFFFFF);
+          uint16_t data=right&0xFFFF;
+          gba_store16(gba,address,data);
+          break;
+        }
+        case 0xC7:{
+          uint32_t address=0x4000000|(left&0xFFFFFF);
+          uint32_t data=right;
+          gba_store32(gba,address,data);
+          break;
+        }
         default:{
+          // if instruction
+          bool condition = gba_handle_ar_if_instruction(gba,left,right);
+
+          switch(current_code&0xC0){
+            case 0x00:{
+              if(!condition){
+                // skip next instruction
+                i+=2;
+                continue;
+              }
+            }
+            case 0x40:{
+              if (!condition){
+              // skip next two instructions
+                i+=4;
+                continue;
+              }
+              break;
+            }
+            case 0x80:{
+              break;
+            }
+            case 0xC0:{
+              if (!condition){
+                // turn off all codes
+                return true;
+              }
+              break;
+            }
+          }
+
+          if_stack_index++;
+
+          if (if_stack_index == 32){
+            printf("Action Replay if stack size exceeded\n");
+            return false;
+          }
+
+          if_stack[if_stack_index] = condition;
           break;
         }
       }
     }else{
+      uint8_t current_code = (right>>24)&0xFF;
 
+      if (right == 0){
+        // end of code list
+        return true;
+      }
+
+      switch(current_code){
+        case 0x60:{
+          // else
+          if_stack[if_stack_index]^=true;
+          break;
+        }
+        case 0x40:{
+          // end if
+          if (if_stack_index == 0){
+            printf("Unexpected Action Replay end if instruction\n");
+            return false;
+          }
+          if_stack_index--;
+          break;
+        }
+        case 0x18:
+        case 0x1A:
+        case 0x1C:
+        case 0x1E:{
+          uint32_t address=0x8000000|((right&0xFFFFFF)<<1);
+          uint64_t decrypted=gba_decrypt_arv3(buffer[i+3] | ((uint64_t)buffer[i+2] << 32));
+          uint16_t data=decrypted>>32;
+          gba->mem.cart_rom[address&0x1FFFFFF]=data;
+          gba->mem.cart_rom[(address+1)&0x1FFFFFF]=data>>8;
+          i+=2;
+          break;
+        }
+        default:{
+          return false;
+        }
+      }
     }
   }
 
