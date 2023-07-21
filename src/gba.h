@@ -2925,8 +2925,70 @@ static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t v
   }
   return value;
 }
+// Thanks fleroviux!
+uint64_t gba_decrypt_arv3(uint64_t code){
+  const uint32_t S0 = 0x7AA9648F;
+  const uint32_t S1 = 0x7FAE6994;
+  const uint32_t S2 = 0xC0EFAAD5;
+  const uint32_t S3 = 0x42712C57;
+
+  uint32_t l = code >> 32;
+  uint32_t r = code & 0xFFFFFFFF;
+
+  uint32_t tmp = 0x9E3779B9 << 5;
+
+  for (int i = 0; i < 32; i++) {
+    r -= ((l << 4) + S2) ^ (l + tmp) ^ ((l >> 5) + S3);
+    l -= ((r << 4) + S0) ^ (r + tmp) ^ ((r >> 5) + S1);
+    tmp -= 0x9E3779B9;
+  }
+
+  return ((uint64_t)l << 32) | r;
+}
 bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
-  return false;
+  if(size%2!=0){
+    printf("Invalid Action Replay cheat size:%d\n",size);
+    return false;
+  }
+
+  for(int i=0;i<size;i+=2){
+    uint64_t code=gba_decrypt_arv3(buffer[i+1] | ((uint64_t)buffer[i] << 32));
+    uint32_t left=code>>32;
+    uint32_t right=code&0xFFFFFFFF;
+    printf("AR: %08X %08X\n",left,right);
+
+    uint8_t current_code = (left>>24)&0xFF;
+    uint32_t address = ((left<<4)&0x0F000000) | (left&0x000FFFFF);
+
+    if (left!=0){
+      switch(current_code){
+        case 0x00:{
+          uint32_t offset=right>>8;
+          uint8_t data=right&0xFF;
+          gba_store8(gba,address+offset,data);
+          break;
+        }
+        case 0x02:{
+          uint32_t offset=right>>16;
+          uint16_t data=right&0xFFFF;
+          gba_store16(gba,address+offset*2,data);
+          break;
+        }
+        case 0x04:{
+          uint32_t data=right;
+          gba_store32(gba,address,data);
+          break;
+        }
+        default:{
+          break;
+        }
+      }
+    }else{
+
+    }
+  }
+
+  return true;
 }
 static uint8_t sb_read_wave_ram(sb_gb_t*gb,int byte){
   return gba_io_read8(gb,GBA_WAVE_RAM+byte);
