@@ -835,6 +835,7 @@ typedef struct{
 }gba_scratch_t;
 static void gba_process_audio_writes(gba_t* gba);
 static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t value);
+static bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size);
 static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt);
 static FORCE_INLINE uint32_t gba_read32(gba_t*gba, unsigned baddr);
 static FORCE_INLINE void gba_store32(gba_t*gba, unsigned baddr, uint32_t data);
@@ -2923,6 +2924,9 @@ static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t v
     seq->frequency[i] = freq_lo | ((int)(SB_BFE(freq_hi,0,3))<<8u);
   }
   return value;
+}
+bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
+  return false;
 }
 static uint8_t sb_read_wave_ram(sb_gb_t*gb,int byte){
   return gba_io_read8(gb,GBA_WAVE_RAM+byte);
