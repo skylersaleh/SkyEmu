@@ -7161,8 +7161,9 @@ static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size){
         address += offset_register;
         uint32_t count = buffer[i+1];
         for (uint32_t j=0;j<count;j+=4){
-          uint32_t current = buffer[i+2+j/4];
-          nds9_debug_write32(nds,address+j,current);
+          int ind = i+2+j/4;
+          if(ind>=size)break;
+          nds9_debug_write32(nds,address+j, buffer[ind]);
         }
         i+=count/4;
         if (i % 2 == 1) i++;
