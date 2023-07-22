@@ -3032,6 +3032,10 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
     if (!if_stack[if_stack_index])
       continue;
 
+    if (right == 0x1DC0DE){
+      continue;
+    }
+
     if (left!=0){
       uint8_t current_code = (left>>24)&0xFF;
       uint32_t address = ((left<<4)&0x0F000000) | (left&0x000FFFFF);
@@ -3091,6 +3095,9 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
           uint32_t old_data=gba_read32(gba,address);
           gba_store32(gba,address,old_data+data);
           break;
+        }
+        case 0xC4:{
+          continue;
         }
         case 0xC6:{
           uint32_t address=0x4000000|(left&0xFFFFFF);
