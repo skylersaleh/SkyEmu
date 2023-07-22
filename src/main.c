@@ -230,7 +230,8 @@ typedef struct{
 typedef struct{
   char save[SB_FILE_PATH_SIZE];
   char bios[SB_FILE_PATH_SIZE];
-  char padding[6][SB_FILE_PATH_SIZE];
+  char cheat_codes[SB_FILE_PATH_SIZE];
+  char padding[5][SB_FILE_PATH_SIZE];
 }se_search_paths_t;
 
 _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
@@ -289,6 +290,8 @@ typedef struct {
     bool update_font_atlas;
     sb_joy_t hcs_joypad; 
     int editing_cheat_index; //-1 when not editing a cheat
+    char cheat_path[SB_FILE_PATH_SIZE];
+
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -376,6 +379,9 @@ static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
 void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
 void se_run_all_ar_cheats();
+void se_load_cheats(const char * filename);
+void se_save_cheats(const char* filename);
+void se_convert_cheat_code(char * text_code, int cheat_index);
 
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
@@ -856,6 +862,7 @@ void se_load_search_paths(){
   char * paths[]={
     gui_state.paths.save,
     gui_state.paths.bios,
+    gui_state.paths.cheat_codes
   };
   for(int i=0;i<sizeof(paths)/sizeof(paths[0]);++i){
     paths[i][SB_FILE_PATH_SIZE-1]=0;
@@ -1390,34 +1397,53 @@ void se_load_rom(const char *filename){
   se_reset_cheats();
   se_reset_bios_info();
   emu_state.force_dmg_mode=gui_state.settings.force_dmg_mode;
-  char *save_file=emu_state.save_file_path; 
-  save_file[0] = '\0';
-  const char* base, *c, *ext; 
-  sb_breakup_path(filename,&base, &c, &ext);
-#if defined(EMSCRIPTEN)
-    if(sb_path_has_file_ext(filename,".sav")){
-      if(strncmp(filename,gui_state.recently_loaded_games[0].path,SB_FILE_PATH_SIZE)!=0){
-        return se_load_rom(gui_state.recently_loaded_games[0].path);
-      }
-      return;
-    }
-    snprintf(emu_state.save_data_base_path, SB_FILE_PATH_SIZE,"/offline/%s", c);
-#else
-    se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
-#endif
-  snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
-  if(!sb_file_exists(save_file)){
+  //Compute Save File Path
+  {
+    char *save_file=emu_state.save_file_path; 
+    save_file[0] = '\0';
     const char* base, *c, *ext; 
     sb_breakup_path(filename,&base, &c, &ext);
-    char tmp_path[SB_FILE_PATH_SIZE];
-    se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
-    printf("c: %s tmp path: %s\n",c,tmp_path);
-    printf("save_base: %s\n",gui_state.paths.save);
+  #if defined(EMSCRIPTEN)
+      if(sb_path_has_file_ext(filename,".sav")||sb_path_has_file_ext(filename,".code")){
+        if(strncmp(filename,gui_state.recently_loaded_games[0].path,SB_FILE_PATH_SIZE)!=0){
+          return se_load_rom(gui_state.recently_loaded_games[0].path);
+        }
+        return;
+      }
+      snprintf(emu_state.save_data_base_path, SB_FILE_PATH_SIZE,"/offline/%s", c);
+  #else
+      se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
+  #endif
+    snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
+    if(!sb_file_exists(save_file)){
+      const char* base, *c, *ext; 
+      sb_breakup_path(filename,&base, &c, &ext);
+      char tmp_path[SB_FILE_PATH_SIZE];
+      se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
 
-    if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
-      se_join_path(emu_state.save_data_base_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
-      strncpy(save_file,tmp_path,SB_FILE_PATH_SIZE);
+      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
+        se_join_path(emu_state.save_data_base_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
+        strncpy(save_file,tmp_path,SB_FILE_PATH_SIZE);
+      }
     }
+  }
+  //Compute Cheat Code File Path
+  {
+    char *cheat_path=gui_state.cheat_path; 
+    cheat_path[0] = '\0';
+    const char* base, *c, *ext; 
+    sb_breakup_path(filename,&base, &c, &ext);
+    snprintf(cheat_path, SB_FILE_PATH_SIZE, "%s.code",emu_state.save_data_base_path);
+    if(!sb_file_exists(cheat_path)){
+      const char* base, *c, *ext; 
+      sb_breakup_path(filename,&base, &c, &ext);
+      char tmp_path[SB_FILE_PATH_SIZE];
+      se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.cheat_codes,c,".code");
+      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
+        strncpy(cheat_path,tmp_path,SB_FILE_PATH_SIZE);
+      }
+    }
+    se_load_cheats(cheat_path);
   }
   strncpy(emu_state.rom_path, filename, sizeof(emu_state.rom_path));
 
@@ -1832,6 +1858,10 @@ static void nds9_byte_write(uint64_t address, uint8_t data){nds9_debug_write8(&c
 static uint8_t nds7_byte_read(uint64_t address){return nds7_debug_read8(&core.nds,address);}
 static void nds7_byte_write(uint64_t address, uint8_t data){nds7_debug_write8(&core.nds,address,data);}
 
+static void null_byte_write(uint64_t address, uint8_t data){}
+static uint8_t null_byte_read(uint64_t address){return 0;}
+
+
 typedef struct{
   const char* short_label;
   const char* label;
@@ -1903,12 +1933,13 @@ emu_byte_read_t se_read_byte_func(int addr_map){
   if(emu_state.system ==SYSTEM_GBA)return gba_byte_read;
   if(emu_state.system ==SYSTEM_GB)return gb_byte_read;
   if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_read:nds9_byte_read;
-  return 0; 
+  return null_byte_read;
 }
 emu_byte_write_t se_write_byte_func(int addr_map){
   if(emu_state.system ==SYSTEM_GBA)return gba_byte_write;
   if(emu_state.system ==SYSTEM_GB)return gb_byte_write;
   if(emu_state.system ==SYSTEM_NDS)return addr_map==7? nds7_byte_write:nds9_byte_write;
+  return null_byte_write;
 }
 ///////////////////////////////
 // END UPDATE FOR NEW SYSTEM //
@@ -1930,8 +1961,69 @@ void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
 }
 void se_reset_cheats(){
-  for (int i=0;i<SE_NUM_CHEATS;++i){cheats[i].state=-1;cheats[i].size=0;}
+  memset(cheats,0,sizeof(cheats));
+  for (int i=0;i<SE_NUM_CHEATS;++i){cheats[i].state=-1;}
   gui_state.editing_cheat_index = -1;
+}
+void se_save_cheats(const char * filename){
+  FILE *f = fopen(filename, "wb");
+  if(!f){
+    printf("Failed to save cheats to %s\n",filename);
+    return; 
+  }
+  for (int i=0;i<SE_NUM_CHEATS;++i){
+    if(cheats[i].state==-1)continue;
+    fprintf(f,"%s ", cheats[i].state==0? "0" : "1" );
+    fprintf(f,"\"%s\" ",cheats[i].name);
+    fprintf(f,"\"");
+    for(int d=0;d<cheats[i].size;++d){
+      if(d)fprintf(f," ");
+      fprintf(f,"%08x",cheats[i].buffer[d]);
+    }
+    fprintf(f,"\"\n");
+  }
+  fclose(f);
+}
+void se_load_cheats(const char * filename){
+  size_t data_size=0;
+  uint8_t*data = sb_load_file_data(filename,&data_size);
+  if(!data_size){
+    printf("Failed to load cheats from %s\n",filename);
+    return; 
+  }
+  int cheat_index = 0; 
+  int state = 0; 
+  int cheat_name_size =0; 
+  int cheat_code_size =0; 
+  char cheat_buffer[SE_MAX_CHEAT_CODE_SIZE*8] ={ 0 };
+  for(size_t i = 0; i < data_size;++i){
+    char c = data[i];
+    if(c=='\n'){
+      state = 0; 
+      cheat_name_size = 0; 
+      cheat_code_size = 0;
+      cheat_index++;
+      if(cheat_index>=SE_NUM_CHEATS)break;
+      continue; 
+    }
+    se_cheat_t * ch = cheats+cheat_index;
+    if(state==0 && (c=='1'||c=='0')) ch->state = c=='1';
+    if(c=='"'){
+      state++; 
+      if(state==4){
+        se_convert_cheat_code(cheat_buffer,cheat_index);
+        memset(cheat_buffer, 0, sizeof(cheat_buffer));
+      }
+      continue;
+    }
+    if(state == 1){
+      if(cheat_name_size<SE_MAX_CHEAT_NAME_SIZE)ch->name[cheat_name_size++]=c; 
+    }
+    if(state == 3){
+      if(cheat_name_size<SE_MAX_CHEAT_CODE_SIZE*8)cheat_buffer[cheat_code_size++]=c; 
+    }
+  }
+  free(data);
 }
 static void se_draw_debug_menu(){
   se_debug_tool_desc_t* desc=se_get_debug_description();
@@ -3008,53 +3100,32 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
     }
   #endif 
 }
-void se_process_cheat_editor(){
-  if (gui_state.editing_cheat_index>=sizeof(cheats)/sizeof(cheats[0]))return;
-
-  ImGuiContext* g = igGetCurrentContext();
-  igSetNextWindowPos((ImVec2){g->IO.DisplaySize.x * 0.5f, g->IO.DisplaySize.y * 0.5f}, ImGuiCond_Always, (ImVec2){0.5f,0.5f});
-  igSetNextWindowSize((ImVec2){400,400}, ImGuiCond_Always);
-  igBegin("Edit Cheat",NULL,ImGuiWindowFlags_AlwaysAutoResize);
-  char code_buffer[SE_MAX_CHEAT_CODE_SIZE] = { 0 };
-  char code_buffer_truncated[SE_MAX_CHEAT_CODE_SIZE] = { 0 };
-
-  se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
-  
-  int off=0;
-  for(int i=0;i<cheat->size;i+=2){
-    off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheat->buffer[i], cheat->buffer[i+1]);
-  }
-
-  igInputText("Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
-  // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-  if(igInputTextMultiline("##CheatCode",code_buffer,SE_MAX_CHEAT_CODE_SIZE,(ImVec2){380,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
-    int char_count = 0;
-    // Remove all the non-hex characters
-    for(int i=0;i<SE_MAX_CHEAT_CODE_SIZE;++i){
-      if(code_buffer[i]=='\0')break;
-      else if((code_buffer[i]>='0' && code_buffer[i]<='9') || (code_buffer[i]>='A' && code_buffer[i]<='F')){
-        code_buffer_truncated[char_count]=code_buffer[i]; 
-        char_count++;
-      }
-    }
-    cheat->size = char_count/8;
-    if(cheat->size>=SE_MAX_CHEAT_CODE_SIZE)cheat->size=SE_MAX_CHEAT_CODE_SIZE;
-    for(int i=0;i<cheat->size;++i)cheat->buffer[i]=0; 
-    for(int i=0;i<cheat->size;i++){
-      char hex[9];
-      memcpy(hex,code_buffer_truncated+i*8,8);
-      for(int h=0;h<8;++h)if(hex[h]==0)hex[h]='0';
-      hex[8]='\0';
-      cheat->buffer[i]=strtol(hex,NULL,16);
+void se_convert_cheat_code(char * text_code, int cheat_index){
+  if(cheat_index>=SE_NUM_CHEATS)return; 
+  se_cheat_t *cheat = cheats+cheat_index; 
+  int char_count = 0;
+  uint8_t code_buffer_truncated[SE_MAX_CHEAT_CODE_SIZE*8];
+  // Remove all the non-hex characters
+  for(int i=0;i<SE_MAX_CHEAT_CODE_SIZE*8;++i){
+    if(text_code[i]=='\0')break;
+    else if((text_code[i]>='0' && text_code[i]<='9') || (text_code[i]>='A' && text_code[i]<='F') || (text_code[i]>='a' && text_code[i]<='f')){
+      code_buffer_truncated[char_count]=text_code[i]; 
+      char_count++;
     }
   }
-  
-  if(se_button( ICON_FK_CHECK " Done", (ImVec2){0,0})){
-    gui_state.editing_cheat_index = -1;
-    cheat->state=0;
+  cheat->size = char_count/8;
+  if(cheat->size>=SE_MAX_CHEAT_CODE_SIZE)cheat->size=SE_MAX_CHEAT_CODE_SIZE;
+  for(int i=0;i<cheat->size;++i)cheat->buffer[i]=0; 
+  for(int i=0;i<cheat->size;i++){
+    char hex[9];
+    memcpy(hex,code_buffer_truncated+i*8,8);
+    for(int h=0;h<8;++h)if(hex[h]==0)hex[h]='0';
+    hex[8]='\0';
+    cheat->buffer[i]=strtol(hex,NULL,16);
   }
-  igEnd();
+
 }
+
 bool se_process_file_browser(){
   
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED)return false; 
@@ -4055,8 +4126,9 @@ void se_draw_menu_panel(){
     igSeparator();
     se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
     se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
+    se_input_path("Cheat Code Path", gui_state.paths.cheat_codes,ImGuiInputTextFlags_None);
     bool save_to_path=gui_state.settings.save_to_path;
-    se_checkbox("Create new save files in Save Path",&save_to_path);
+    se_checkbox("Create new files in path",&save_to_path);
     gui_state.settings.save_to_path=save_to_path;
     if(memcmp(&gui_state.last_saved_paths, &gui_state.paths,sizeof(gui_state.paths))){
       se_save_search_paths();
@@ -4097,36 +4169,59 @@ void se_draw_menu_panel(){
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_text(ICON_FK_KEY " Action Replay Codes");
     igSeparator();
-    igBeginChildStr(("##Cheats"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
-    int win_w = igGetWindowContentRegionWidth();//The scroll bar can make this chagne. 
     int free_cheat_index = -1; 
     for(int i=0;i<SE_NUM_CHEATS;i++){
       se_cheat_t* cheat = &cheats[i];
       if (cheat->state==-1){free_cheat_index=i; continue;}
       igPushIDInt(i);
-      bool active = cheat->state;
-      se_checkbox(cheat->name, &active);
-      cheat->state = active ? 1:0;
-      igSameLine(0,0);
-      igSameLine(win_w-50,0);
-      if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
-        gui_state.editing_cheat_index = i;
+      if(gui_state.editing_cheat_index==i){
+        igSetNextItemWidth(win_w-55);
+        igInputText("##Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
+        cheat->state = 0; 
+        igSameLine(win_w-40,0);
+        if(se_button(ICON_FK_CHECK, (ImVec2){0,0})) {
+          gui_state.editing_cheat_index = -1;
+          se_save_cheats(gui_state.cheat_path);
+        }
+      }else{
+        bool active = cheat->state;
+        if(se_checkbox(cheat->name, &active)){
+          cheat->state = active ? 1:0;
+          se_save_cheats(gui_state.cheat_path);
+        }
+        igSameLine(win_w-40,0);
+        if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
+          gui_state.editing_cheat_index = i;
+        }
       }
-      igSameLine(win_w-25,0);
+      igSameLine(win_w-15,0);
       if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
-        if(gui_state.editing_cheat_index != i)cheat->state = -1;
+        if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
+        cheat->state = -1;
+        se_save_cheats(gui_state.cheat_path);
+      }
+      if(gui_state.editing_cheat_index==i){
+        char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
+        int off=0;
+        for(int i=0;i<cheat->size;i+=2){
+          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheat->buffer[i], cheat->buffer[i+1]);
+        }
+        // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
+        if(igInputTextMultiline("##CheatCode",code_buffer,SE_MAX_CHEAT_CODE_SIZE,(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
+          se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
+        }
       }
       igPopID();
     }
     if(free_cheat_index!=-1){
-      if(se_button(ICON_FK_PLUS " Add New", (ImVec2){0,0})){
+      if(se_button(ICON_FK_PLUS " New", (ImVec2){0,0})){
         gui_state.editing_cheat_index = free_cheat_index;
         se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
         cheat->state = 0; 
+        strcpy(cheat->name,"Untitled Code");
         memset(cheat->buffer,0,sizeof(cheat->buffer));
       }
     }
-    igEndChild();
   }
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
@@ -4590,7 +4685,6 @@ static void frame(void) {
     se_end_menu_bar();
   }
   igPopStyleVar(2);
-  se_process_cheat_editor();
   bool active = se_process_file_browser();
   if(!active){
     float screen_x = 0; 
