@@ -1648,7 +1648,6 @@ se_lcd_info_t se_get_lcd_info(){
   };
 }
 static void se_emulate_single_frame(){
-  se_run_all_ar_cheats();
   if(emu_state.system == SYSTEM_GB){
     if(gui_state.test_runner_mode){
       uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
@@ -1665,7 +1664,8 @@ static void se_emulate_single_frame(){
   }
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba, &scratch.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
-  
+
+  se_run_all_ar_cheats();
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
   *out_height=*out_width=0;
