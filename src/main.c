@@ -4092,11 +4092,13 @@ void se_draw_menu_panel(){
         igPushFont(gui_state.mono_font);
         char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
         int off=0;
-        for(int i=0;i<cheat->size;i+=2){
-          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X %08X\n",cheat->buffer[i], cheat->buffer[i+1]);
+        for(int i=0;i<cheat->size;i+=1){
+          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X",cheat->buffer[i]);
+          if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
+          else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
         }
         // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-        if(igInputTextMultiline("##CheatCode",code_buffer,SE_MAX_CHEAT_CODE_SIZE,(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
+        if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
           se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
         }
         igPopFont();
