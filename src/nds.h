@@ -7151,6 +7151,11 @@ static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size){
             stored_register = nds9_debug_read8(nds,address);
             break;
           }
+          case 0xDC:{
+            // increment offset register
+            offset_register += buffer[i+1];
+            break;
+          }
           default:{
             // Unknown instruction
             printf("Unknown instruction: %08X %08X\n", buffer[i], buffer[i+1]);
