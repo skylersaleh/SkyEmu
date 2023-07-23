@@ -8,6 +8,7 @@
 #define SE_FORKAWESOME 2
 #define SE_NOTO_ARMENIAN 3
 #define SE_NOTO_SANS 4
+#define SE_SV_BASIC_MANUAL 5
 
 const uint8_t* se_get_resource(int res_id, uint64_t* size);
 

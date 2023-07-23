@@ -291,6 +291,7 @@ typedef struct {
     sb_joy_t hcs_joypad; 
     int editing_cheat_index; //-1 when not editing a cheat
     char cheat_path[SB_FILE_PATH_SIZE];
+    ImFont* mono_font; 
 
 } gui_state_t;
 
@@ -974,8 +975,10 @@ void se_load_recent_games_list(){
 
 bool se_key_is_pressed(int keycode){
   if(keycode>SAPP_MAX_KEYCODES||keycode==-1)return false;
-  //Don't let keyboard input reach emulator when ImGUI is capturing it. 
-  if(igGetIO()->WantCaptureKeyboard)return false; 
+  // Don't let keyboard input reach emulator when ImGUI is capturing it. 
+  // Allow inputs if the touch screen is being pressed as the screen is an ImGUI object that 
+  // registers drag events. 
+  if(igGetIO()->WantCaptureKeyboard && ! emu_state.joy.inputs[SE_KEY_PEN_DOWN] )return false; 
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
@@ -4086,6 +4089,7 @@ void se_draw_menu_panel(){
         se_save_cheats(gui_state.cheat_path);
       }
       if(gui_state.editing_cheat_index==i){
+        igPushFont(gui_state.mono_font);
         char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
         int off=0;
         for(int i=0;i<cheat->size;i+=2){
@@ -4095,6 +4099,7 @@ void se_draw_menu_panel(){
         if(igInputTextMultiline("##CheatCode",code_buffer,SE_MAX_CHEAT_CODE_SIZE,(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
           se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
         }
+        igPopFont();
       }
       igPopID();
     }
@@ -4689,6 +4694,13 @@ static void frame(void) {
       ImFontConfig_destroy(config3);
       igGetIO()->FontDefault=font3;
     #endif
+
+    {
+      uint64_t karla_compressed_size; 
+      const uint8_t* karla_compressed_data = se_get_resource(SE_SV_BASIC_MANUAL,&karla_compressed_size);
+      gui_state.mono_font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
+        atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
+    }
     
 
     unsigned char* font_pixels;
