@@ -4486,6 +4486,9 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       off+=snprintf(buffer+off,sizeof(buffer)-off,"- %s: %f\n",se_keybind_names[i],gui_state.hcs_joypad.inputs[i]);
     }
     str_result = buffer;
+    const char* result=strdup(str_result);
+    *result_size=strlen(result)+1;
+    return (uint8_t*)result;
   }else if(strcmp(cmd,"/save")==0){
     bool okay=false;; 
     while(*params){
