@@ -3024,6 +3024,9 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
   bool if_stack[32] = {true};
   size_t if_stack_index = 0;
 
+  // Let's treat the AR button as always pressed for now
+  bool ar_button_pressed = true;
+
   for(int i=0;i<size;i+=2){
     uint64_t code=gba_decrypt_arv3(buffer[i+1] | ((uint64_t)buffer[i] << 32));
     uint32_t left=code>>32;
@@ -3177,15 +3180,87 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
           if_stack_index--;
           break;
         }
+        case 0x08: {
+          // AR slowdown
+          // Probably has no effect on emulators
+          break;
+        }
         case 0x18:
         case 0x1A:
         case 0x1C:
         case 0x1E:{
+          if(i+3>=size)break;
           uint32_t address=0x8000000|((right&0xFFFFFF)<<1);
           uint64_t decrypted=gba_decrypt_arv3(buffer[i+3] | ((uint64_t)buffer[i+2] << 32));
           uint16_t data=decrypted>>32;
           gba->mem.cart_rom[address&0x1FFFFFF]=data;
           gba->mem.cart_rom[(address+1)&0x1FFFFFF]=data>>8;
+          i+=2;
+          break;
+        }
+        case 0x10:{
+          // IF AR_BUTTON THEN [a0aaaaa]=zz
+          if(i+3>=size)break;
+          if (ar_button_pressed) {
+            uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
+            uint8_t data = buffer[i+2];
+            gba_store8(gba,address,data);
+          }
+          i+=2;
+          break;
+        }
+        case 0x12:{
+          // IF AR_BUTTON THEN [a0aaaaa]=zzzz
+          if(i+3>=size)break;
+          if (ar_button_pressed) {
+            uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
+            uint16_t data = buffer[i+2];
+            gba_store16(gba,address,data);
+          }
+          i+=2;
+          break;
+        }
+        case 0x14:{
+          // IF AR_BUTTON THEN [a0aaaaa]=zzzzzzzz
+          if(i+3>=size)break;
+          if (ar_button_pressed) {
+            uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
+            uint32_t data = buffer[i+2];
+            gba_store32(gba,address,data);
+          }
+          i+=2;
+          break;
+        }
+        case 0x80:
+        case 0x82:
+        case 0x84:{
+          // 00000000 8naaaaaa 000000yy ssccssss  repeat cc times [a0aaaaa]=yy
+          // (with yy=yy+ss, a0aaaaa=a0aaaaa+ssss after each step)
+          if(i+3>=size)break;
+          uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
+          uint8_t repeat=(buffer[i+3]>>16)&0xFF;
+          uint8_t data_increment=(buffer[i+3]>>24)&0xFF;
+          uint32_t address_increment=buffer[i+3]&0xFFFF;
+          uint32_t data=buffer[i+2];
+
+          if((current_code&0xF)==0x2){
+            address_increment*=2;
+          } else if((current_code&0xF)==0x4){
+            address_increment*=4;
+          }
+
+          for (int j=0;j<repeat;j++){
+            if((current_code&0xF)==0x2){
+              gba_store16(gba,address,data);
+            } else if((current_code&0xF)==0x4){
+              gba_store32(gba,address,data);
+            } else {
+              gba_store8(gba,address,data);
+            }
+            address+=address_increment;
+            data+=data_increment;
+          }
+
           i+=2;
           break;
         }
