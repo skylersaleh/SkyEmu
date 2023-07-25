@@ -319,3 +319,17 @@ Loads a rom from a parameter specified "path" on the server. Can be initially pa
 Loads the rom at /tmp/rom.gba and pauses the emulator.
 
 ```ok```
+
+# /cheats command
+
+Lists the current cheats and their status
+
+**Example**
+```http://localhost:8080/cheats```
+
+**Result:**
+
+```
+0 - My first cheat: 12345678 AABBCCDD (enabled)
+1 - My second cheat: 12345678 90ABCDEF (disabled)
+```
