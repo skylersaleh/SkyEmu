@@ -4515,6 +4515,42 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       params+=2;
     }
     str_result=okay? "ok":"failed";
+  }else if(strcmp(cmd,"/cheats")==0){
+    *mime_type = "text/plain";
+    size_t cheat_count = 0;
+    for(int i=0; i<SE_NUM_CHEATS;++i){
+      if(cheats[i].state!=-1) cheat_count++;
+    }
+    if(cheat_count==0){
+      str_result = "No cheats enabled";
+    }else{
+      size_t max_size = SE_MAX_CHEAT_CODE_SIZE*cheat_count + SE_MAX_CHEAT_NAME_SIZE*cheat_count + 64*cheat_count;
+      char* max_buffer = (char*)calloc(max_size,sizeof(char));
+      int off = 0;
+
+      for(int i=0; i<SE_NUM_CHEATS;++i){
+        if(cheats[i].state!=-1){
+          off+=snprintf(max_buffer+off,max_size-off,"%d - %s:",i,cheats[i].name);
+          for(int j=0;j<cheats[i].size;++j){
+            off+=snprintf(max_buffer+off,max_size-off," %08x",cheats[i].buffer[j]);
+          }
+          if(cheats[i].state==0){
+            off+=snprintf(max_buffer+off,max_size-off," (disabled)");
+          }else{
+            off+=snprintf(max_buffer+off,max_size-off," (enabled)");
+          }
+          off+=snprintf(max_buffer+off,max_size-off,"\n");
+        }
+      }
+
+      size_t actual_size = off+1;
+      char* buffer = (char*)malloc(actual_size);
+      memcpy(buffer,max_buffer,actual_size);
+      buffer[actual_size-1]='\0';
+      free(max_buffer);
+      *result_size = actual_size;
+      return (uint8_t*)buffer;
+    }
   }
   if(str_result){
     const char * result = strdup(str_result);
@@ -4957,6 +4993,7 @@ static void se_init(){
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
   stm_setup();
   se_load_settings();
+  se_reset_cheats();
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
