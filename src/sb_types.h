@@ -322,8 +322,10 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
 }
 static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
   char * seperator = base_path[0]==0? "" : "/"; 
-  char last_base_char = base_path[strlen(base_path)-1];
-  if(last_base_char=='/'||last_base_char=='\\')seperator="";
+  if(strlen(base_path)!=0){
+    char last_base_char = base_path[strlen(base_path)-1];
+    if(last_base_char=='/'||last_base_char=='\\')seperator="";
+  }
   if(add_extension){
     const char * ext_sep = add_extension[0]=='.' ? "": ".";
     snprintf(dest_path,dest_size,"%s%s%s%s%s",base_path, seperator, file_name,ext_sep,add_extension);
