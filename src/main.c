@@ -2928,15 +2928,6 @@ void se_android_set_keyboard_visible(bool visible){
     float size = (bottom-top);
     gui_state.screen_height= (bottom-top)*se_dpi_scale();
 
-    ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
-    if(igGetCurrentContext()->ActiveIdWindow)window=igGetCurrentContext()->ActiveIdWindow;
-
-    if (window!=NULL) {
-      float y = igGetCurrentContext()->PlatformImeLastPos.y+30;
-
-      if (y >= size)
-        igSetScrollYWindowPtr(window, window->Scroll.y + (y - size));
-    }
     ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
     // Attaches the current thread to the JVM.
     JavaVM *pJavaVM = activity->vm;
@@ -3025,8 +3016,8 @@ void se_download_emscripten_file(const char * path){
   }, name, data, data_size);
 }
 #endif 
-#ifdef PLATFORM_IOS
-void se_ios_handle_soft_keyboard(){
+
+void se_bring_text_field_into_view(){
   if(sapp_keyboard_shown()){
     
     ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
@@ -3039,7 +3030,6 @@ void se_ios_handle_soft_keyboard(){
     }
   }
 }
-#endif
 
 int file_sorter (const void * a, const void * b) {
   tinydir_file*af = (tinydir_file*)a;
@@ -4560,9 +4550,8 @@ static void frame(void) {
 #ifdef PLATFORM_ANDROID
   se_android_set_keyboard_visible(igGetIO()->WantTextInput);
 #endif
-#ifdef PLATFORM_IOS
-  se_ios_handle_soft_keyboard();
-#endif
+
+  se_bring_text_field_into_view();
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
