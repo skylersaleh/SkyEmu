@@ -3188,7 +3188,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
         case 0x1A:
         case 0x1C:
         case 0x1E:{
-          if(i+3>=size)break;
+          if(i+3>=size)return false;
           uint32_t address=0x8000000|((right&0xFFFFFF)<<1);
           uint64_t decrypted=gba_decrypt_arv3(buffer[i+3] | ((uint64_t)buffer[i+2] << 32));
           uint16_t data=decrypted>>32;
@@ -3199,7 +3199,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
         }
         case 0x10:{
           // IF AR_BUTTON THEN [a0aaaaa]=zz
-          if(i+3>=size)break;
+          if(i+3>=size)return false;
           if (ar_button_pressed) {
             uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
             uint8_t data = buffer[i+2];
@@ -3210,7 +3210,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
         }
         case 0x12:{
           // IF AR_BUTTON THEN [a0aaaaa]=zzzz
-          if(i+3>=size)break;
+          if(i+3>=size)return false;
           if (ar_button_pressed) {
             uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
             uint16_t data = buffer[i+2];
@@ -3221,7 +3221,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
         }
         case 0x14:{
           // IF AR_BUTTON THEN [a0aaaaa]=zzzzzzzz
-          if(i+3>=size)break;
+          if(i+3>=size)return false;
           if (ar_button_pressed) {
             uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
             uint32_t data = buffer[i+2];
@@ -3235,7 +3235,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
         case 0x84:{
           // 00000000 8naaaaaa 000000yy ssccssss  repeat cc times [a0aaaaa]=yy
           // (with yy=yy+ss, a0aaaaa=a0aaaaa+ssss after each step)
-          if(i+3>=size)break;
+          if(i+3>=size)return false;
           uint32_t address=((right<<4)&0x0F000000) | (right&0x000FFFFF);
           uint8_t repeat=(buffer[i+3]>>16)&0xFF;
           uint8_t data_increment=(buffer[i+3]>>24)&0xFF;
