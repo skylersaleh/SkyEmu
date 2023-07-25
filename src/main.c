@@ -450,7 +450,7 @@ static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags fla
   if(!read_only){
     igSameLine(0,2);
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){23,0})){
-      static const char *types[]={"$DIR$","NULL"};
+      static const char *types[]={"$DIR$",NULL};
       se_open_file_browser(NULL,types,path);
     }
     igPopItemWidth();
