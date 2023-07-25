@@ -2898,6 +2898,21 @@ void se_download_emscripten_file(const char * path){
   }, name, data, data_size);
 }
 #endif 
+#ifdef PLATFORM_IOS
+void se_ios_handle_soft_keyboard(){
+  if(sapp_keyboard_shown()){
+    
+    ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
+    if(igGetCurrentContext()->ActiveIdWindow)window=igGetCurrentContext()->ActiveIdWindow;
+    
+    if (window!=NULL) {
+      float size = gui_state.screen_height/se_dpi_scale();
+      float y = igGetCurrentContext()->PlatformImeLastPos.y+30;
+      if (y >= size) igSetScrollYWindowPtr(window, window->Scroll.y + (y - size));
+    }
+  }
+}
+#endif
 
 int file_sorter (const void * a, const void * b) {
   tinydir_file*af = (tinydir_file*)a;
@@ -4330,6 +4345,9 @@ static void frame(void) {
 
 #ifdef PLATFORM_ANDROID
   se_android_set_keyboard_visible(igGetIO()->WantTextInput);
+#endif
+#ifdef PLATFORM_IOS
+  se_ios_handle_soft_keyboard();
 #endif
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
