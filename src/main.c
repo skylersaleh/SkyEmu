@@ -2749,6 +2749,104 @@ void se_android_open_file_picker(){
       (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
 }
+void se_android_get_visible_rect(float * top, float * bottom){
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
+
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  if ( nResult != JNI_ERR ){
+    // Retrieves NativeActivity.
+    jobject nativeActivity = activity->clazz;
+    jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+    jmethodID MethodBottom= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getVisibleBottom", "()F" );
+    *bottom = (*pJNIEnv)->CallFloatMethod(pJNIEnv, nativeActivity, MethodBottom )/se_dpi_scale();
+    jmethodID MethodTop= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getVisibleTop", "()F" );
+    *top = (*pJNIEnv)->CallFloatMethod(pJNIEnv, nativeActivity, MethodTop )/se_dpi_scale();
+    // Finished with the JVM.
+    (*pJavaVM)->DetachCurrentThread(pJavaVM);
+  }
+}
+void se_android_set_keyboard_visible(bool visible){
+  static bool last_visible = false;
+  if(visible!=last_visible){
+    ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+    // Attaches the current thread to the JVM.
+    JavaVM *pJavaVM = activity->vm;
+    JNIEnv *pJNIEnv = activity->env;
+
+    jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+    if ( nResult != JNI_ERR )
+    {
+      // Retrieves NativeActivity.
+      jobject nativeActivity = activity->clazz;
+      jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+      if(visible){
+        jmethodID MethodShowKeyboard = (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "showKeyboard", "()V" );
+        (*pJNIEnv)->CallVoidMethod(pJNIEnv, nativeActivity, MethodShowKeyboard );
+      }else{
+        jmethodID MethodShowKeyboard = (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "hideKeyboard", "()V" );
+        (*pJNIEnv)->CallVoidMethod(pJNIEnv, nativeActivity, MethodShowKeyboard );
+      }
+      // Finished with the JVM.
+      (*pJavaVM)->DetachCurrentThread(pJavaVM);
+    }
+    last_visible = visible;
+  }
+  if(visible){
+    float top = 0;
+    float bottom = 0;
+    se_android_get_visible_rect(&top, &bottom);
+    float size = (bottom-top);
+    gui_state.screen_height= (bottom-top)*se_dpi_scale();
+
+    ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
+    if(igGetCurrentContext()->ActiveIdWindow)window=igGetCurrentContext()->ActiveIdWindow;
+
+    if (window!=NULL) {
+      float y = igGetCurrentContext()->PlatformImeLastPos.y+30;
+
+      if (y >= size)
+        igSetScrollYWindowPtr(window, window->Scroll.y + (y - size));
+    }
+    ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+    // Attaches the current thread to the JVM.
+    JavaVM *pJavaVM = activity->vm;
+    JNIEnv *pJNIEnv = activity->env;
+
+
+    jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+    if ( nResult != JNI_ERR ) {
+      // Retrieves NativeActivity.
+      jobject nativeActivity = activity->clazz;
+      jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity);
+      jmethodID getEvent= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getEvent", "()I" );
+      jmethodID pollKeyboard= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "pollKeyboard", "()V" );
+      (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, pollKeyboard );
+      ImGuiIO* io= igGetIO();
+
+      io->KeysDown[io->KeyMap[ImGuiKey_Backspace]]=false;
+      io->KeysDown[io->KeyMap[ImGuiKey_LeftArrow]]=false;
+      io->KeysDown[io->KeyMap[ImGuiKey_RightArrow]]=false;
+      io->KeysDown[io->KeyMap[ImGuiKey_Enter]]=false;
+      while (true) {
+        int32_t event = (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, getEvent );
+        if(event==-1)break;
+        if(!(event&0xC0000000))
+            ImGuiIO_AddInputCharacter(igGetIO(),event&0x7fffffff);
+        else if(event&0x40000000){
+            int imgui_key = io->KeyMap[event&0xff];
+            io->KeysDown[imgui_key] = (event&0x80000000)==0;
+            io->KeysDownDuration[imgui_key]=0;
+        }
+      }
+      (*pJavaVM)->DetachCurrentThread(pJavaVM);
+    }
+
+  }
+}
+
 void se_android_request_permissions(){
   ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
   // Attaches the current thread to the JVM.
@@ -3794,6 +3892,7 @@ void se_draw_menu_panel(){
   float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
   float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
 
+  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
   if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
     se_draw_emulated_system_screen(true);
   }
@@ -3804,6 +3903,7 @@ void se_draw_menu_panel(){
     se_draw_emulated_system_screen(true);
   }
   igEndChildFrame();
+  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
 
   se_text("Scale");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
@@ -4205,8 +4305,9 @@ static void frame(void) {
   if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
   last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
 #endif
+
   int width = sapp_width();
-  const int height = sapp_height();
+  int height = sapp_height();
   const double delta_time = stm_sec(stm_round_to_common_refresh_rate(stm_laptime(&gui_state.laptime)));
   gui_state.screen_width=width;
   gui_state.screen_height=height;
@@ -4225,6 +4326,10 @@ static void frame(void) {
   style->ScrollbarSize=4;
   style->DisplaySafeAreaPadding.x = left_padding;
   style->DisplaySafeAreaPadding.y = top_padding;
+#endif
+
+#ifdef PLATFORM_ANDROID
+  se_android_set_keyboard_visible(igGetIO()->WantTextInput);
 #endif
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
@@ -4381,7 +4486,7 @@ static void frame(void) {
     screen_width-=(left_padding+right_padding)*se_dpi_scale();
     if(gui_state.sidebar_open){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
-      igSetNextWindowSize((ImVec2){sidebar_w, (height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
+      igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
       igBegin(se_localize_and_cache("Menu"),&gui_state.sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       se_draw_menu_panel();
       igEnd();

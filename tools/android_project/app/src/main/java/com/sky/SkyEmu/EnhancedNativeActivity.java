@@ -1,30 +1,39 @@
 package com.sky.SkyEmu;
 
 import static android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION;
+import static android.view.KeyEvent.*;
 
-import android.app.ActionBar;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.text.InputType;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
-import android.view.WindowManager;
+import android.view.ViewTreeObserver;
+import android.view.Window;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
-
-
 import android.app.NativeActivity;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 
 import java.io.File;
+import java.util.Vector;
 
 public class EnhancedNativeActivity extends NativeActivity {
     final static int APP_STORAGE_ACCESS_REQUEST_CODE = 501; // Any value
     final static int STORAGE_PERMISSION_CODE = 501; // Any value
     final static String TAG="SkyEmu"; // Any value
+    public Rect visibleRect;
+    public EditText invisibleEditText;
+    private Vector<Integer> keyboardEvents;
     public void requestPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
@@ -55,39 +64,120 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         }
     }
+    public float getVisibleBottom(){
+        return visibleRect.bottom;
+    }
+    public float getVisibleTop(){
+        return visibleRect.top;
+    }
+    public int getEvent(){
+        if(keyboardEvents.isEmpty())return -1;
+        int val = keyboardEvents.get(0);
+        keyboardEvents.remove(0);
+        return val;
+    }
     public void showKeyboard(){
-        InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
-        imm.showSoftInput( this.getWindow().getDecorView(), InputMethodManager.SHOW_FORCED );
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                invisibleEditText.requestFocus();
+                invisibleEditText.setFocusableInTouchMode(true);
+
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.showSoftInput(invisibleEditText, InputMethodManager.SHOW_FORCED);
+            }
+        });
     }
 
     public void hideKeyboard()
     {
-        InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
-        imm.hideSoftInputFromWindow( this.getWindow().getDecorView().getWindowToken(), 0 );
+        Window win =this.getWindow();
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
+                imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), 0 );
+            }
+        });
     }
-    // Request code for selecting a PDF document.
-    private static final int PICK_ROM_FILE = 2;
-
-    public void openFile() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-
-        // Optionally, specify a URI for the file that should appear in the
-        // system file picker when it loads.
-
-        startActivityForResult(intent, PICK_ROM_FILE);
+    public void pollKeyboard(){
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                keyboardEvents.add(-2);
+                int pre = 0;
+                boolean inserted = false;
+                if(invisibleEditText.getSelectionEnd()!= invisibleEditText.getText().length()-8){
+                    int distance =  invisibleEditText.getText().length()-invisibleEditText.getSelectionEnd()-8;
+                    for(int c=0; c<distance;++c ){
+                        //Left Arrow
+                        keyboardEvents.add(1| 0x40000000);
+                    }
+                    distance =  invisibleEditText.getSelectionEnd()-(invisibleEditText.getText().length()-8);
+                    for(int c=0; c<distance;++c ){
+                        //Right Arrow
+                        keyboardEvents.add(2| 0x40000000);
+                    }
+                }
+                for (int c : invisibleEditText.getText().toString().chars().toArray()) {
+                    if (pre < 8) {
+                        if (c == '\1') {
+                            pre++;
+                            continue;
+                        } else {
+                            while (pre < 8) {
+                                inserted=true;
+                                // Backspace
+                                keyboardEvents.add(11 | 0x40000000);
+                                pre++;
+                            }
+                        }
+                    }
+                    if(pre>=invisibleEditText.getText().length()-8){
+                        break;
+                    }
+                    pre++;
+                    inserted=true;
+                    //Enter
+                    if(c=='\n'){keyboardEvents.add(13 |0x40000000);
+                    }else keyboardEvents.add(c);
+                }
+                while (pre < 8) {
+                    inserted=true;
+                    keyboardEvents.add(11 | 0x40000000);
+                    pre++;
+                }
+                if(inserted) {
+                    invisibleEditText.setText("\1\1\1\1\1\1\1\1\2\2\2\2\2\2\2\2");
+                    invisibleEditText.setSelection(invisibleEditText.getText().length()-8);
+                }
+                if(invisibleEditText.getSelectionEnd()!= invisibleEditText.getText().length()-8)
+                    invisibleEditText.setSelection(invisibleEditText.getText().length()-8);
+            }
+        });
     }
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Window mRootWindow = getWindow();
+        FrameLayout.LayoutParams mRparams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        invisibleEditText = new EditText(this);
+        invisibleEditText.setLayoutParams(mRparams);
+        invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
+        invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        keyboardEvents = new Vector<Integer>(5);
+        View mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
+        ((FrameLayout)mRootView).addView(invisibleEditText);
 
-        this.getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        EnhancedNativeActivity activity = this;
+        mRootView.getViewTreeObserver().addOnGlobalLayoutListener(
+            new ViewTreeObserver.OnGlobalLayoutListener() {
+                public void onGlobalLayout(){
+                    Rect r = new Rect();
+                    View view = mRootWindow.getDecorView();
+                    view.getWindowVisibleDisplayFrame(r);
+                    activity.visibleRect = r;
+                }
+            });
 
     }
     @Override
@@ -114,5 +204,4 @@ public class EnhancedNativeActivity extends NativeActivity {
 
         }
     }
-
 }
