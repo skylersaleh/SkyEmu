@@ -2974,7 +2974,6 @@ bool gba_handle_ar_if_instruction(gba_t* gba, uint32_t left, uint32_t right){
       break;
     }
     case 0x6:{
-      // TODO: "Always..." codes ?
       printf("Invalid AR if instruction\n");
       return false;
     }
@@ -3128,7 +3127,7 @@ bool gba_run_ar_cheat(gba_t* gba, const uint32_t* buffer, uint32_t size){
             }
             case 0x40:{
               if (!condition){
-              // skip next two instructions
+                // skip next two instructions
                 i+=4;
                 continue;
               }
