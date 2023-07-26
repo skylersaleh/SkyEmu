@@ -4541,6 +4541,22 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       *result_size = actual_size;
       return (uint8_t*)buffer;
     }
+  }else if(strcmp(cmd,"/remove_cheat")==0){
+    bool okay=false;
+    while(*params){
+      if(strcmp(params[0],"id")==0){
+        int id=-1;
+        int result=sscanf(params[1],"%d",&id);
+        if(result!=EOF&&id>=0&&id<SE_NUM_CHEATS){
+          cheats[id].state=-1;
+          okay=true;
+        }else{
+          okay=false;
+        }
+      }
+      params+=2;
+    }
+    str_result=okay? "ok":"failed";
   }
   if(str_result){
     const char * result = strdup(str_result);
