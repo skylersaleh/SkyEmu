@@ -333,3 +333,16 @@ Lists the current cheats and their status
 0 - My first cheat: 12345678 AABBCCDD (enabled)
 1 - My second cheat: 12345678 90ABCDEF (disabled)
 ```
+
+# /remove_cheat command
+
+Remove a cheat
+
+**Example**
+```http://localhost:8080/remove_cheat?id=0&id=1```
+
+**Result:**
+
+Removes cheats at index 0 and 1
+
+```ok```
