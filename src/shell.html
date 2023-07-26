@@ -107,7 +107,11 @@
     <input type="file" id="fileInput" value="">
     <input id="fileStaging" value="">
     <input id="fileStagingName" value="">
-    <script type='text/javascript'>                          
+    <script type='text/javascript'>    
+      if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('sw.js').then(worker => {
+          }).catch(e => console.log('Failed to register service worker', e));
+      }                      
       window.scroll(0,1);
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');
