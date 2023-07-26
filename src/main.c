@@ -6,6 +6,7 @@
  *
 **/
 
+#include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
 #define SE_REBIND_TIMER_LENGTH 5.0
@@ -4556,6 +4557,71 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       }
       params+=2;
     }
+    str_result=okay? "ok":"failed";
+  }else if(strcmp(cmd,"/edit_cheat")==0){
+    bool okay=true;
+    int editing_id=-1;
+    bool name_changed=false, code_changed=false, enabled_changed=false;
+    char new_name[SE_MAX_CHEAT_NAME_SIZE+1] = {0};
+    char new_code[SE_MAX_CHEAT_CODE_SIZE+1] = {0};
+    int new_enabled=1;
+    while(*params){
+      if(strcmp(params[0],"id")==0){
+        int result=sscanf(params[1],"%d",&editing_id);
+        if(result==EOF||(editing_id<0||editing_id>=SE_NUM_CHEATS)){
+          okay=false;
+          break;
+        }
+      }else if(strcmp(params[0],"name")==0){
+        name_changed=true;
+        strncpy(new_name,params[1],SE_MAX_CHEAT_NAME_SIZE);
+      }else if(strcmp(params[0],"code")==0){
+        code_changed=true;
+        strncpy(new_code,params[1],SE_MAX_CHEAT_CODE_SIZE);
+      }else if(strcmp(params[0],"enabled")==0){
+        int result=sscanf(params[1],"%d",&new_enabled);
+        if(result==EOF){
+          okay=false;
+          break;
+        }
+        enabled_changed=true;
+      }
+      params+=2;
+    }
+
+    if(okay){
+      // Find an empty slot if an id wasn't specified
+      if(editing_id==-1){
+        okay=false;
+        for(int i=0;i<SE_NUM_CHEATS;++i){
+          if(cheats[i].state==-1){
+            editing_id=i;
+            okay=true;
+            break;
+          }
+        }
+      }
+
+      if(editing_id!=-1){
+        if(!name_changed&&!code_changed&&!enabled_changed){
+          okay=false;
+        }else{
+          if(name_changed){
+            strncpy(cheats[editing_id].name,new_name,SE_MAX_CHEAT_NAME_SIZE);
+          }
+          if(code_changed){
+            se_convert_cheat_code(new_code,editing_id);
+          }
+          if(enabled_changed){
+            cheats[editing_id].state=new_enabled;
+          }
+          if(cheats[editing_id].state==-1){
+            cheats[editing_id].state=1;
+          }
+        }
+      }
+    }
+
     str_result=okay? "ok":"failed";
   }
   if(str_result){
