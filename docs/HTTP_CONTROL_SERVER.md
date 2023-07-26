@@ -336,7 +336,7 @@ Lists the current cheats and their status
 
 # /remove_cheat command
 
-Remove a cheat
+Remove one or more cheats
 
 **Example**
 ```http://localhost:8080/remove_cheat?id=0&id=1```
@@ -346,3 +346,18 @@ Remove a cheat
 Removes cheats at index 0 and 1
 
 ```ok```
+
+# /edit_cheat
+
+Edits or adds a cheat. If the `id` field is not specified, it will try to add a cheat on the first available id. There's a guarantee for at least 32 cheat slots.
+All of the fields are optional, but at least one field other than `id` must exist. `enabled` defaults to 1.
+
+**Example**
+```http://localhost:8080/add_cheat?name=My cheat&code=12345678AABBCCDD&id=0&enabled=1```
+
+**Result:**
+
+The following cheat will be added:
+```0 - My cheat: 12345678 AABBCCDD (enabled)```
+
+If a cheat already existed at id 0, because id 0 was specified, the cheat will be overwritten with the new one
