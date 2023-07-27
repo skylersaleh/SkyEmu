@@ -1,8 +1,15 @@
+<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_win/dev/WindowsRelease.zip" rel="Download Windows">![Windows Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_win.yml/badge.svg)</a>
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/dev/MacOSRelease.zip" rel="Download macOS">![Mac Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_mac.yml/badge.svg)
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/dev/LinuxRelease.zip" rel="Download Linux">![Linux Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_linux.yml/badge.svg)
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_android/dev/AndroidRelease.zip" rel="Download Android">![Android Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_android.yml/badge.svg)
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)
+
 <img width="90" align="left" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430950-1d969fa8-e192-4e0d-a585-521b4b286725.png">
 
 # SkyEmu
 
-SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
+SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
 
 <img width="1015" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/197385606-b12439ca-48d4-46f2-b0d5-311037430f94.png">
 
@@ -16,10 +23,10 @@ SkyEmu is a low level GameBoy, GameBoy Color and Game Boy Advance emulator. Its 
 - Game Controller and Rumble Support with configureable keybinds
 - 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
+- Action Replay Cheat Code Engine 
 - Localization in Armenian, Chinese, Danish, Dutch, English, German and Greek
-- Support for emulating the Real Time Clock
+- Support for emulating the Real Time Clock and Solar Sensor
 - CPU, MMIO, and Memory Debuggers
-- Dark and Light Themes
 - Support for loading official BIOS and Boot ROM dumps
 - Support for loading roms compressed in .zip archives
 - [REST-like API for asynchronous scripting and other automation](docs/HTTP_CONTROL_SERVER.md)
@@ -37,6 +44,10 @@ On Mobile platforms it is recommended to add this to the home screen and launch 
 Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
 
 Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open source replacement BIOS/stubs. However, it is strongly recommended to dump official BIOS/firmware as the open source replacements lack many of the features of the native firmware/BIOS (such as colorizing GB games and the startup splashes) and are not as accurate. 
+
+## Discord Server
+
+<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Banner 2](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=banner2)</a>
 
 ## Default Controls:
 
