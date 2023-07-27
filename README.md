@@ -1,9 +1,9 @@
-<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_win/dev/WindowsRelease.zip" rel="Download Windows">![Windows Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_win.yml/badge.svg)</a>
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/dev/MacOSRelease.zip" rel="Download macOS">![Mac Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_mac.yml/badge.svg)
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/dev/LinuxRelease.zip" rel="Download Linux">![Linux Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_linux.yml/badge.svg)
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_android/dev/AndroidRelease.zip" rel="Download Android">![Android Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_android.yml/badge.svg)
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)
+<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
 
 <img width="90" align="left" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430950-1d969fa8-e192-4e0d-a585-521b4b286725.png">
 
