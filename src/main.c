@@ -4784,6 +4784,12 @@ static void frame(void) {
       if(i==num_toggles-1)igPopStyleVar(1);
     }
     if(!emu_state.rom_loaded)se_pop_disabled();
+
+    if(curr_toggle==next_toggle_id && curr_toggle!=2){
+      //Clicking the same toggle that is already active unclicks it. 
+      next_toggle_id = 2; 
+    }
+    
     switch(next_toggle_id){
       case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
       case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
