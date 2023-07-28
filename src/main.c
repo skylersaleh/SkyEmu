@@ -3510,6 +3510,7 @@ void se_update_frame() {
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
     int max_frames_per_tick =1+ emu_state.step_frames;
+    if(emu_state.run_mode==SB_MODE_STEP)max_frames_per_tick= emu_state.step_frames;
 
     emu_state.render_frame = true;
 
