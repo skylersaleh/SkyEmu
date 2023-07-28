@@ -4241,7 +4241,8 @@ void se_draw_menu_panel(){
     int port = gui_state.settings.http_control_server_port;
     se_text("Server Port");igSameLine(win_w*0.4,0);
     igPushItemWidth(-1);
-    if(se_input_int("##Server Port",&port,1,10,ImGuiInputTextFlags_None))gui_state.settings.http_control_server_port=port; 
+    se_input_int("##Server Port",&port,1,10,ImGuiInputTextFlags_None);
+    if(igIsItemDeactivated())gui_state.settings.http_control_server_port=port; 
     igPopItemWidth();
   }
 #endif 
