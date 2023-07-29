@@ -4,12 +4,16 @@
 #include <string.h>
 #include <stdio.h>
 
-// New strings requiring translation: 
+// Strings added in v3 requiring translation: 
 // - "Avoid NDS Touchscreen"
+// - ICON_FK_PLUS " New"
+// - "Create new files in path" (which replaced "Create new save files in Save Path")
+// - ICON_FK_KEY " Action Replay Codes" (optional)
+// - "Cheat Code Path" 
 
 //#define SHOW_TRANSLATE_ME 1
 
-//Special thanks to https://github.com/shooterspps for the Chinese Translation
+//Special thanks to https://github.com/shooterspps and Nilay for the Chinese Translation
 static char* zh_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " 载入游戏",
     "Up", "上",
@@ -206,6 +210,12 @@ static char* zh_localization_array[]={
     "Enable HTTP Control Server","启用 HTTP 服务器控制",
     "Server Port","服务器端口",
     "Toggle Full Screen","切换全屏",
+    //Strings added in V3
+    "Avoid NDS Touchscreen", "避开NDS触屏",
+    ICON_FK_PLUS " New", ICON_FK_PLUS " 新建",
+    ICON_FK_KEY " Action Replay Codes", "Action Replay 代码",
+    "Create new files in paths", "在路径中创建新文件",
+    "Cheat Code Path", "作弊码路径",
     NULL,NULL
 };
 
@@ -409,6 +419,13 @@ static char* hy_localization_array[]={
     "Toggle Full Screen","Ամբողջ էկրանը",
     "Can't find all needed BIOS/Boot ROM/Firmware Files.","Չենք կարող գտնել բոլոր անհրաժեշտ\nBIOS/Գործարկման ROM/Որոնվածային ֆայլերը:",
     "Accuracy will suffer and some features won't work.","Ճշգրտությունը կտուժի\nև որոշ գործառույթներ չեն աշխատի:",
+    //New in v3
+    "Avoid NDS Touchscreen", "Մի ծածկեք NDS-ի էկրանը կառավարիչներով",
+    ICON_FK_PLUS " New", ICON_FK_PLUS "Ավելացնեք",
+    // ICON_FK_KEY " Action Replay Codes", "TRANSLATE_ME",
+    // "Create new files in paths", "TRANSLATE_ME",
+    // "Cheat Code Path", "Translate Me",
+
     NULL,NULL
 };
 
@@ -611,6 +628,12 @@ static char* gr_localization_array[]={
     "Toggle Full Screen","Εναλλ. Πλήρους Οθ.",
     "Can't find all needed BIOS/Boot ROM/Firmware Files.","Δεν βρέθηκαν όλα τα απαραίτητα BIOS/Boot ROM/Υλικολογισμικά αρχεία.",
     "Accuracy will suffer and some features won't work.","Η ακρίβεια θα επηρεαστεί και ορισμένες λειτουργίες δεν θα λειτουργήσουν.",
+    // New in v3
+    "Avoid NDS Touchscreen", "Αποφυγή οθ. αφής NDS",
+    ICON_FK_PLUS " New", ICON_FK_PLUS " Νέο",
+    ICON_FK_KEY " Action Replay Codes", "Action Replay",
+    "Create new files in paths", "Δημιουργία νέων αρχείων στα μονοπάτια",
+    // "Cheat Code Path", "Translate Me",
     NULL,NULL
 };
 
@@ -813,9 +836,15 @@ static char* nl_localization_array[]={
     "Toggle Full Screen","Volledig Scherm In- of Uitschakelen",
     "Can't find all needed BIOS/Boot ROM/Firmware Files.","Kan niet alle benodigde BIOS/Boot ROM/Firmwarebestanden vinden",
     "Accuracy will suffer and some features won't work.","Precisie zal minder worden en sommige functies zullen niet werken",
+    //New in v3
+    "Avoid NDS Touchscreen", "Vermijd NDS Aanraakscherm",
+    ICON_FK_PLUS " New", ICON_FK_PLUS "  Nieuw",
+    // ICON_FK_KEY " Action Replay Codes", "TRANSLATE_ME",
+    // "Create new files in paths", "TRANSLATE_ME",
+    // "Cheat Code Path", "Translate Me",
     NULL,NULL
 };
-
+// Danish Translation by https://github.com/nadiaholmquist
 static char* da_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Åbn spil",
     "Up", "Op",
@@ -1013,9 +1042,15 @@ static char* da_localization_array[]={
     "Toggle Full Screen","Fuld skærm til/fra",
     "Can't find all needed BIOS/Boot ROM/Firmware Files.","Kan ikke finde alle nødvendige BIOS-, boot ROM-\neller firmware-filer.",
     "Accuracy will suffer and some features won't work.","Emulering vil være mindre akkurat og nogle funk-\ntioner vil ikke virke.",
+    //New in V3
+    "Avoid NDS Touchscreen", "Undgå NDS-touchskærm",
+    ICON_FK_PLUS " New", ICON_FK_PLUS " Ny",
+    ICON_FK_KEY " Action Replay Codes", "Action Replay-koder",
+    "Create new files in paths", "Opret nye filer under stierne",
+    // "Cheat Code Path", "Translate Me",
     NULL,NULL
 };
-
+// German translation https://github.com/ladystarbreeze
 static char* de_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Lade Spiel",
     "Up", "Hoch",
@@ -1214,6 +1249,12 @@ static char* de_localization_array[]={
     "Toggle Full Screen","Vollbild ein/aus",
     "Can't find all needed BIOS/Boot ROM/Firmware Files.","Nicht alle benötigten BIOS-/Boot-ROM-/Firmwaredateien konnten gefunden werden.",
     "Accuracy will suffer and some features won't work.","Genauigkeit ist verringert und einige Funktionen werden nicht funkionieren.",
+    // New in v3
+    "Avoid NDS Touchscreen", "Meide NDS-Touchscreen",
+    ICON_FK_PLUS " New", ICON_FK_PLUS " Neu"
+    ICON_FK_KEY " Action Replay Codes", "Action Replay-Codes",
+    "Create new files in paths", "Erstelle neue Dateien in Pfaden",
+    // "Cheat Code Path", "Translate Me",
     NULL,NULL
 };
 

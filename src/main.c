@@ -4123,7 +4123,7 @@ void se_draw_menu_panel(){
     se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
     se_input_path("Cheat Code Path", gui_state.paths.cheat_codes,ImGuiInputTextFlags_None);
     bool save_to_path=gui_state.settings.save_to_path;
-    se_checkbox("Create new files in path",&save_to_path);
+    se_checkbox("Create new files in paths",&save_to_path);
     gui_state.settings.save_to_path=save_to_path;
     if(memcmp(&gui_state.last_saved_paths, &gui_state.paths,sizeof(gui_state.paths))){
       se_save_search_paths();
