@@ -156,6 +156,7 @@ typedef struct{
   bool connected;
   se_keybind_state_t key;
   se_keybind_state_t analog;
+  double axis_last_zero_time[256];
 }se_controller_state_t;
 typedef struct{
   char path[SB_FILE_PATH_SIZE];
@@ -3376,6 +3377,7 @@ static void se_poll_sdl(){
   se_controller_state_t *cont = &gui_state.controller;
   cont->key.last_bind_activitiy=-1;
   cont->analog.last_bind_activitiy=-1;
+
   while( SDL_PollEvent( &sdlEvent ) ) {
       switch( sdlEvent.type ) {
       case SDL_JOYDEVICEADDED:{
@@ -3415,11 +3417,14 @@ static void se_poll_sdl(){
       case SDL_JOYAXISMOTION:
         if(SDL_JoystickFromInstanceID(sdlEvent.jaxis.which)==cont->sdl_joystick){
           float v = sdlEvent.jaxis.value/32768.f;
+          if(v<0.2&&v>-0.2 && sdlEvent.jaxis.axis < sizeof(cont->axis_last_zero_time)/sizeof(cont->axis_last_zero_time[0])){
+            cont->axis_last_zero_time[sdlEvent.jaxis.axis]=se_time();
+          }
           if((v>0.3)||(v<-0.3&&v>-0.6))
             cont->analog.last_bind_activitiy = sdlEvent.jaxis.axis;  
-
-          if(v>0.3&&v<0.6)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_POS_MASK;
-          if(v<-0.3&&v>-0.6)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_NEG_MASK;
+          double delta = se_time()-cont->axis_last_zero_time[sdlEvent.jaxis.axis];
+          if(v>0.4&&delta<2)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_POS_MASK;
+          if(v<-0.4&&delta<2)cont->key.last_bind_activitiy = sdlEvent.jaxis.axis|SE_JOY_NEG_MASK;
         }
         break;      
       }
@@ -3757,7 +3762,7 @@ void se_imgui_theme()
   });
   #endif
 #ifdef USE_SDL
-int se_get_sdl_key_bind(SDL_GameController* gc, int button){
+int se_get_sdl_key_bind(SDL_GameController* gc, int button, int joystick_direction_mask){
   SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
   if(bind.bindType==SDL_CONTROLLER_BINDTYPE_HAT){
     int hat_id = bind.value.hat.hat;
@@ -3770,6 +3775,9 @@ int se_get_sdl_key_bind(SDL_GameController* gc, int button){
     if(!mask)return -1;
     return SE_HAT_MASK| (hat_id<<8)|mask;
   };
+  if(bind.bindType==SDL_CONTROLLER_BINDTYPE_AXIS){
+    return bind.value.axis|joystick_direction_mask;
+  }
   if(bind.bindType!=SDL_CONTROLLER_BINDTYPE_BUTTON)return -1;
   else return bind.value.button;
 }
@@ -3798,23 +3806,23 @@ void se_set_default_controller_binds(se_controller_state_t* cont){
   SDL_GameController * gc = cont->sdl_gc;
   SDL_GameControllerUpdate();
   for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key.bound_id[i]=-1;
-  cont->key.bound_id[SE_KEY_A]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_A);
-  cont->key.bound_id[SE_KEY_B]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_B);
-  cont->key.bound_id[SE_KEY_X]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_X);
-  cont->key.bound_id[SE_KEY_Y]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_Y);
-  cont->key.bound_id[SE_KEY_L]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
-  cont->key.bound_id[SE_KEY_R]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
-  cont->key.bound_id[SE_KEY_UP]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_UP);
-  cont->key.bound_id[SE_KEY_DOWN]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_DOWN);
-  cont->key.bound_id[SE_KEY_LEFT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_LEFT);
-  cont->key.bound_id[SE_KEY_RIGHT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
-  cont->key.bound_id[SE_KEY_START]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_START);
-  cont->key.bound_id[SE_KEY_SELECT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_BACK);
+  cont->key.bound_id[SE_KEY_A]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_A,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_B]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_B,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_X]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_X,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_Y]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_Y,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_L]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_LEFTSHOULDER,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_R]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_UP]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_UP,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_DOWN]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_DOWN,SE_JOY_NEG_MASK);
+  cont->key.bound_id[SE_KEY_LEFT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_LEFT,SE_JOY_NEG_MASK);
+  cont->key.bound_id[SE_KEY_RIGHT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_DPAD_RIGHT,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_START]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_START,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_SELECT]= se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_BACK,SE_JOY_POS_MASK);
 
-  cont->key.bound_id[SE_KEY_EMU_PAUSE] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_GUIDE);
-  cont->key.bound_id[SE_KEY_EMU_REWIND] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE1);
-  cont->key.bound_id[SE_KEY_EMU_FF_2X] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE2);
-  cont->key.bound_id[SE_KEY_EMU_FF_MAX] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE3);
+  cont->key.bound_id[SE_KEY_EMU_PAUSE] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_GUIDE,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_REWIND] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE1,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_FF_2X] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE2,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_FF_MAX] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE3,SE_JOY_POS_MASK);
 
   cont->analog.bound_id[SE_ANALOG_UP_DOWN] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTY);
   cont->analog.bound_id[SE_ANALOG_LEFT_RIGHT] = se_get_sdl_axis_bind(gc,SDL_CONTROLLER_AXIS_LEFTX);
