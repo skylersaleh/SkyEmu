@@ -633,7 +633,7 @@ static char* gr_localization_array[]={
     ICON_FK_PLUS " New", ICON_FK_PLUS " Νέο",
     ICON_FK_KEY " Action Replay Codes", "Action Replay",
     "Create new files in paths", "Δημιουργία νέων αρχείων στα μονοπάτια",
-    // "Cheat Code Path", "Translate Me",
+    "Cheat Code Path", "Μονοπάτι Cheat Code",
     NULL,NULL
 };
 
@@ -840,8 +840,8 @@ static char* nl_localization_array[]={
     "Avoid NDS Touchscreen", "Vermijd NDS Aanraakscherm",
     ICON_FK_PLUS " New", ICON_FK_PLUS "  Nieuw",
     // ICON_FK_KEY " Action Replay Codes", "TRANSLATE_ME",
-    // "Create new files in paths", "TRANSLATE_ME",
-    // "Cheat Code Path", "Translate Me",
+    "Create new files in paths", "Maak nieuwe bestanden in paden",
+    "Cheat Code Path", "Cheat Code Pad",
     NULL,NULL
 };
 // Danish Translation by https://github.com/nadiaholmquist
@@ -1047,7 +1047,7 @@ static char* da_localization_array[]={
     ICON_FK_PLUS " New", ICON_FK_PLUS " Ny",
     ICON_FK_KEY " Action Replay Codes", "Action Replay-koder",
     "Create new files in paths", "Opret nye filer under stierne",
-    // "Cheat Code Path", "Translate Me",
+    "Cheat Code Path", "Snydekode-sti",
     NULL,NULL
 };
 // German translation https://github.com/ladystarbreeze
@@ -1254,7 +1254,7 @@ static char* de_localization_array[]={
     ICON_FK_PLUS " New", ICON_FK_PLUS " Neu"
     ICON_FK_KEY " Action Replay Codes", "Action Replay-Codes",
     "Create new files in paths", "Erstelle neue Dateien in Pfaden",
-    // "Cheat Code Path", "Translate Me",
+    "Cheat Code Path", "Cheatcode-Pfad",
     NULL,NULL
 };
 
