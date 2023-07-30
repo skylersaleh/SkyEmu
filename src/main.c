@@ -2377,6 +2377,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     button_labels = se_analog_bind_names;
     action = "Move Axis " ICON_FK_SIGN_IN;
   }
+  action = se_localize(action);
   if(rebind_timer<0){state->bind_being_set=-1;}
   igPushIDInt(keybind_type);
   ImGuiStyle* style = igGetStyle();
@@ -2408,18 +2409,18 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
               if(hat_val == SDL_HAT_LEFT)dir="LEFT";
               if(hat_val == SDL_HAT_RIGHT)dir="RIGHT";
 
-              snprintf(buff, sizeof(buff),"Hat %d %s", hat_id, dir);
+              snprintf(buff, sizeof(buff),se_localize("Hat %d %s"), hat_id, dir);
               button_label=buff;
             }else if(is_joy){
               int joy_id = SB_BFE(key,0,16);
               const char* dir = (key&SE_JOY_NEG_MASK)? "<-0.3": ">0.3";
-              snprintf(buff, sizeof(buff),"Analog %d %s",joy_id,dir);
-            }else snprintf(buff, sizeof(buff),"Key %d", state->bound_id[k]);button_label=buff;
+              snprintf(buff, sizeof(buff),se_localize("Analog %d %s"),joy_id,dir);
+            }else snprintf(buff, sizeof(buff),se_localize("Key %d"), state->bound_id[k]);button_label=buff;
           }
           button_label=buff;
           break;
         case SE_BIND_ANALOG: 
-          snprintf(buff, sizeof(buff),"Analog %d (%0.2f)", state->bound_id[k],state->value[k]);button_label=buff;
+          snprintf(buff, sizeof(buff),se_localize("Analog %d (%0.2f)"), state->bound_id[k],state->value[k]);button_label=buff;
           button_label=buff;
           break;
         #endif
