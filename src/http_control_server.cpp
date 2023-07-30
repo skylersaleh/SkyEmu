@@ -56,6 +56,7 @@ extern "C"{
     void hcs_update(bool enable, int64_t port, hcs_callback callback){
         if(server)server->mutex.lock();
         if(server&&(!enable||port!=server->port)){
+            server->mutex.unlock();
             delete server;
             server = NULL;
         }
