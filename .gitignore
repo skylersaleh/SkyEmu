@@ -33,6 +33,7 @@
 *.app
 *.apk
 build*/
+cmake-build-*/
 .DS_Store
 *_template.h
 *.swo 
@@ -43,6 +44,6 @@ build*/
 *.metal
 *.metallib
 .cxx
-.idea
+.idea/
 .gradle
 .google
