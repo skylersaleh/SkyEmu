@@ -470,14 +470,15 @@ static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags fla
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
   if(!read_only)igPushItemWidth(-25);
+  else igPushItemWidth(-1);
   bool b = igInputText("##",path,SB_FILE_PATH_SIZE,flags,NULL,NULL);
+  igPopItemWidth();
   if(!read_only){
     igSameLine(0,2);
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){23,0})){
       static const char *types[]={"$DIR$",NULL};
       se_open_file_browser(NULL,types,path);
     }
-    igPopItemWidth();
   }
   igPopID();
   return b; 
@@ -3985,6 +3986,98 @@ void se_draw_menu_panel(){
     igEndChildFrame();
   }
   if(!emu_state.rom_loaded)se_pop_disabled();
+
+  if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
+    se_text(ICON_FK_KEY " Action Replay Codes");
+    igSeparator();
+    int free_cheat_index = -1; 
+    for(int i=0;i<SE_NUM_CHEATS;i++){
+      se_cheat_t* cheat = &cheats[i];
+      if (cheat->state==-1){free_cheat_index=i; continue;}
+      igPushIDInt(i);
+      if(gui_state.editing_cheat_index==i){
+        igSetNextItemWidth(win_w-55);
+        igInputText("##Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
+        cheat->state = 0; 
+        igSameLine(win_w-40,0);
+        if(se_button(ICON_FK_CHECK, (ImVec2){0,0})) {
+          gui_state.editing_cheat_index = -1;
+          se_save_cheats(gui_state.cheat_path);
+        }
+      }else{
+        bool active = cheat->state;
+        if(se_checkbox(cheat->name, &active)){
+          cheat->state = active ? 1:0;
+          se_save_cheats(gui_state.cheat_path);
+        }
+        igSameLine(win_w-40,0);
+        if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
+          gui_state.editing_cheat_index = i;
+        }
+      }
+      igSameLine(win_w-15,0);
+      if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
+        if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
+        cheat->state = -1;
+        se_save_cheats(gui_state.cheat_path);
+      }
+      if(gui_state.editing_cheat_index==i){
+        igPushFont(gui_state.mono_font);
+        char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
+        int off=0;
+        for(int i=0;i<cheat->size;i+=1){
+          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X",cheat->buffer[i]);
+          if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
+          else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
+        }
+        // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
+        if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
+          se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
+        }
+        igPopFont();
+      }
+      igPopID();
+    }
+    if(free_cheat_index!=-1){
+      if(se_button(ICON_FK_PLUS " New", (ImVec2){0,0})){
+        gui_state.editing_cheat_index = free_cheat_index;
+        se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
+        cheat->state = 0; 
+        strcpy(cheat->name,"Untitled Code");
+        memset(cheat->buffer,0,sizeof(cheat->buffer));
+      }
+    }
+  }
+  {
+    se_bios_info_t * info = &gui_state.bios_info;
+    if(emu_state.rom_loaded){
+      se_text(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
+      igSeparator();
+      bool missing_bios = false;
+      for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
+        if(info->name[i][0]){
+          if(info->success[i]){
+            igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
+            se_text(ICON_FK_CHECK);
+          }else{
+            igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
+            se_text(ICON_FK_TIMES);
+            missing_bios=true;
+          }
+          igPopStyleColor(1);
+          igSameLine(0,2);
+          igSetNextItemWidth(win_w-55);
+          se_input_path(info->name[i],info->path[i],ImGuiInputTextFlags_ReadOnly);
+        }
+      }
+      if(missing_bios){
+        igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
+        se_text("Can't find all needed BIOS/Boot ROM/Firmware Files.");
+        se_text("Accuracy will suffer and some features won't work.");
+        igPopStyleColor(1);
+      }
+    }
+  }
   se_text(ICON_FK_DESKTOP " Display Settings");
   igSeparator();
   int v = gui_state.settings.screen_shader;
@@ -4140,97 +4233,6 @@ void se_draw_menu_panel(){
     }
   }
 #endif
-  {
-    se_bios_info_t * info = &gui_state.bios_info;
-    if(emu_state.rom_loaded){
-      se_text(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
-      igSeparator();
-      bool missing_bios = false;
-      for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
-        if(info->name[i][0]){
-          if(info->success[i]){
-            igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
-            se_text(ICON_FK_CHECK);
-          }else{
-            igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
-            se_text(ICON_FK_TIMES);
-            missing_bios=true;
-          }
-          igPopStyleColor(1);
-          igSameLine(0,2);
-          se_input_path(info->name[i],info->path[i],ImGuiInputTextFlags_ReadOnly);
-        }
-      }
-      if(missing_bios){
-        igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
-        se_text("Can't find all needed BIOS/Boot ROM/Firmware Files.");
-        se_text("Accuracy will suffer and some features won't work.");
-        igPopStyleColor(1);
-      }
-    }
-  }
-
-  if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
-    se_text(ICON_FK_KEY " Action Replay Codes");
-    igSeparator();
-    int free_cheat_index = -1; 
-    for(int i=0;i<SE_NUM_CHEATS;i++){
-      se_cheat_t* cheat = &cheats[i];
-      if (cheat->state==-1){free_cheat_index=i; continue;}
-      igPushIDInt(i);
-      if(gui_state.editing_cheat_index==i){
-        igSetNextItemWidth(win_w-55);
-        igInputText("##Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
-        cheat->state = 0; 
-        igSameLine(win_w-40,0);
-        if(se_button(ICON_FK_CHECK, (ImVec2){0,0})) {
-          gui_state.editing_cheat_index = -1;
-          se_save_cheats(gui_state.cheat_path);
-        }
-      }else{
-        bool active = cheat->state;
-        if(se_checkbox(cheat->name, &active)){
-          cheat->state = active ? 1:0;
-          se_save_cheats(gui_state.cheat_path);
-        }
-        igSameLine(win_w-40,0);
-        if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
-          gui_state.editing_cheat_index = i;
-        }
-      }
-      igSameLine(win_w-15,0);
-      if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
-        if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
-        cheat->state = -1;
-        se_save_cheats(gui_state.cheat_path);
-      }
-      if(gui_state.editing_cheat_index==i){
-        igPushFont(gui_state.mono_font);
-        char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
-        int off=0;
-        for(int i=0;i<cheat->size;i+=1){
-          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X",cheat->buffer[i]);
-          if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
-          else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
-        }
-        // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-        if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
-          se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
-        }
-        igPopFont();
-      }
-      igPopID();
-    }
-    if(free_cheat_index!=-1){
-      if(se_button(ICON_FK_PLUS " New", (ImVec2){0,0})){
-        gui_state.editing_cheat_index = free_cheat_index;
-        se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
-        cheat->state = 0; 
-        strcpy(cheat->name,"Untitled Code");
-        memset(cheat->buffer,0,sizeof(cheat->buffer));
-      }
-    }
-  }
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
   se_text("Solar Sensor");igSameLine(win_w*0.4,0);

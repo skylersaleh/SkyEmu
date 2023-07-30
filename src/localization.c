@@ -213,7 +213,7 @@ static char* zh_localization_array[]={
     //Strings added in V3
     "Avoid NDS Touchscreen", "避开NDS触屏",
     ICON_FK_PLUS " New", ICON_FK_PLUS " 新建",
-    ICON_FK_KEY " Action Replay Codes", "Action Replay 代码",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay 代码",
     "Create new files in paths", "在路径中创建新文件",
     "Cheat Code Path", "作弊码路径",
     NULL,NULL
@@ -631,7 +631,7 @@ static char* gr_localization_array[]={
     // New in v3
     "Avoid NDS Touchscreen", "Αποφυγή οθ. αφής NDS",
     ICON_FK_PLUS " New", ICON_FK_PLUS " Νέο",
-    ICON_FK_KEY " Action Replay Codes", "Action Replay",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay",
     "Create new files in paths", "Δημιουργία νέων αρχείων στα μονοπάτια",
     "Cheat Code Path", "Μονοπάτι Cheat Code",
     NULL,NULL
@@ -839,7 +839,7 @@ static char* nl_localization_array[]={
     //New in v3
     "Avoid NDS Touchscreen", "Vermijd NDS Aanraakscherm",
     ICON_FK_PLUS " New", ICON_FK_PLUS "  Nieuw",
-    // ICON_FK_KEY " Action Replay Codes", "TRANSLATE_ME",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay Codes",
     "Create new files in paths", "Maak nieuwe bestanden in paden",
     "Cheat Code Path", "Cheat Code Pad",
     NULL,NULL
@@ -1045,7 +1045,7 @@ static char* da_localization_array[]={
     //New in V3
     "Avoid NDS Touchscreen", "Undgå NDS-touchskærm",
     ICON_FK_PLUS " New", ICON_FK_PLUS " Ny",
-    ICON_FK_KEY " Action Replay Codes", "Action Replay-koder",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay-koder",
     "Create new files in paths", "Opret nye filer under stierne",
     "Cheat Code Path", "Snydekode-sti",
     NULL,NULL
@@ -1252,7 +1252,7 @@ static char* de_localization_array[]={
     // New in v3
     "Avoid NDS Touchscreen", "Meide NDS-Touchscreen",
     ICON_FK_PLUS " New", ICON_FK_PLUS " Neu"
-    ICON_FK_KEY " Action Replay Codes", "Action Replay-Codes",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay-Codes",
     "Create new files in paths", "Erstelle neue Dateien in Pfaden",
     "Cheat Code Path", "Cheatcode-Pfad",
     NULL,NULL
@@ -1460,7 +1460,7 @@ static char* it_localization_array[]={
    //New in V3
   "Avoid NDS Touchscreen", "Evita il touchscreen del NDS",
   ICON_FK_PLUS " New", ICON_FK_PLUS " Nuovo",
-  ICON_FK_KEY " Action Replay Codes", "Codici Action Replay",
+  ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Codici Action Replay",
   "Create new files in paths", "Crea nuovi file nei path",
   "Cheat Code Path", "Path dei trucchi",
   NULL,NULL
