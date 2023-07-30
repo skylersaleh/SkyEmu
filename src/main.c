@@ -4097,7 +4097,7 @@ void se_draw_menu_panel(){
   igSeparator();
   se_text("Language");igSameLine(win_w*0.4,0);
   igPushItemWidth(-1);
-  if(igBeginCombo("##Language", se_language_string(gui_state.settings.language), ImGuiComboFlags_None)){
+  if(igBeginCombo("##Language", se_language_string(gui_state.settings.language), ImGuiComboFlags_HeightLargest)){
     int lang_id = 0; 
     for(int lang_id=0;lang_id<SE_MAX_LANG_VALUE;++lang_id){
       const char* lang = se_language_string(lang_id);
