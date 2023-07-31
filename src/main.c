@@ -3514,6 +3514,10 @@ void se_update_frame() {
 
   emu_state.screen_ghosting_strength = gui_state.settings.ghosting;
   const int frames_per_rewind_state = 8; 
+  static double simulation_time = -1;
+  double curr_time = se_time();
+  
+  if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
     int max_frames_per_tick =1+ emu_state.step_frames;
@@ -3521,15 +3525,12 @@ void se_update_frame() {
 
     emu_state.render_frame = true;
 
-    static double simulation_time = -1;
     static double display_time = 0;
     if(emu_state.step_frames==0)emu_state.step_frames=1;
 
     double sim_fps= se_get_sim_fps();
     double sim_time_increment = 1./sim_fps/emu_state.step_frames;
     bool unlocked_mode = emu_state.step_frames<0;
-    double curr_time = se_time();
-    if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time-sim_time_increment;
     if(gui_state.test_runner_mode)unlocked_mode=true;
     if(unlocked_mode&&emu_state.run_mode!=SB_MODE_STEP){
       sim_time_increment=0;
