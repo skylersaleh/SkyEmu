@@ -422,9 +422,9 @@ static char* hy_localization_array[]={
     //New in v3
     "Avoid NDS Touchscreen", "Մի ծածկեք NDS-ի էկրանը կառավարիչներով",
     ICON_FK_PLUS " New", ICON_FK_PLUS "Ավելացնեք",
-    // ICON_FK_KEY " Action Replay Codes", "TRANSLATE_ME",
-    // "Create new files in paths", "TRANSLATE_ME",
-    // "Cheat Code Path", "Translate Me",
+    ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " «Action Replay» Կոդեր",
+    "Create new files in paths", "Ստեղծեք նոր ֆայլեր ուղիներով",
+    "Cheat Code Path", "Խաբել Կոդը Ուղին",
 
     NULL,NULL
 };
