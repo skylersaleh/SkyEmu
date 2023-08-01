@@ -3516,7 +3516,7 @@ void se_update_frame() {
   const int frames_per_rewind_state = 8; 
   static double simulation_time = -1;
   double curr_time = se_time();
-  
+
   if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
@@ -5023,9 +5023,6 @@ static void frame(void) {
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
   }
-  #ifdef ENABLE_HTTP_CONTROL_SERVER
-  hcs_resume_callbacks();
-  #endif
 }
 void se_load_settings(){
   se_load_recent_games_list();
