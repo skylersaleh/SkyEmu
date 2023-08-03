@@ -4013,7 +4013,7 @@ void se_draw_menu_panel(){
         }
       }
       igSameLine(win_w-15,0);
-      if(se_button(ICON_FK_TRASH, (ImVec2){0,0})){
+      if(se_button(ICON_FK_TRASH, (ImVec2){-1,0})){
         if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
         cheat->state = -1;
         se_save_cheats(gui_state.cheat_path);
@@ -4027,6 +4027,7 @@ void se_draw_menu_panel(){
           if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
           else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
         }
+        igSetNextItemWidth(win_w);
         // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
         if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
           se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
@@ -4673,6 +4674,7 @@ static void frame(void) {
   ImGuiStyle* style = igGetStyle();
   float top_padding =0;
   float left_padding = 0, right_padding=0;
+  style->DisplaySafeAreaPadding.x = style->DisplaySafeAreaPadding.y =0;
 #ifdef PLATFORM_IOS
   se_ios_get_safe_ui_padding(&top_padding,NULL,&left_padding,&right_padding);
   style->ScrollbarSize=4;
@@ -4681,6 +4683,7 @@ static void frame(void) {
 #endif
 
 #ifdef PLATFORM_ANDROID
+  style->ScrollbarSize=4;
   se_android_set_keyboard_visible(igGetIO()->WantTextInput);
 #endif
 
