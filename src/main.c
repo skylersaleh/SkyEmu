@@ -65,10 +65,6 @@
 #ifdef UNICODE_GUI
 #include "utf8proc.h"
 #endif
-#ifdef PLATFORM_WINDOWS
-//Needed for setlocale(...)
-#include <locale.h>
-#endif
 
 #include "lcd_shaders.h"
 
@@ -5261,10 +5257,6 @@ static void headless_mode(){
 }
 
 sapp_desc sokol_main(int argc, char* argv[]) {
-  #ifdef PLATFORM_WINDOWS
-  //Should let windows open UTF-8 files
-  setlocale(LC_ALL, ".65001");
-  #endif
   emu_state.cmd_line_arg_count =argc;
   emu_state.cmd_line_args =argv;
   int width = 1280;

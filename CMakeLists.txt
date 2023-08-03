@@ -166,6 +166,7 @@ endif()
 if(MACOS OR IOS)
     add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
     if(MACOS AND (NOT IOS))
+        add_definitions(-DPLATFORM_MACOS)
         target_link_libraries(sokol PUBLIC
             "-framework QuartzCore"
             "-framework Cocoa"

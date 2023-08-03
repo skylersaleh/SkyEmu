@@ -3,6 +3,12 @@
 #include "localization.h"
 #include <string.h>
 #include <stdio.h>
+#include <locale.h>
+#include <ctype.h>
+
+#if defined(PLATFORM_IOS) || defined(PLATFORM_MACOS)
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 // Strings added in v3 requiring translation: 
 // - "Avoid NDS Touchscreen"
@@ -1468,9 +1474,12 @@ static char* it_localization_array[]={
 
 char ** localization_map=NULL;
 size_t localization_size=0;
+int se_get_default_language();
+
 int se_localize_cmp(const void *a, const void*b){return strcmp(((const char**)a)[0],((const char**)b)[0]);}
 void se_set_language(int language_enum){
     char ** new_map = NULL;
+    if(language_enum==SE_LANG_DEFAULT)language_enum = se_get_default_language(); 
     if(language_enum==SE_LANG_CHINESE)new_map = zh_localization_array; 
     if(language_enum==SE_LANG_ARMENIAN)new_map = hy_localization_array; 
     if(language_enum==SE_LANG_GREEK)new_map = gr_localization_array;
@@ -1486,6 +1495,57 @@ void se_set_language(int language_enum){
             qsort(localization_map,localization_size,sizeof(const char*)*2,se_localize_cmp);
         }
     }
+}
+int se_convert_locale_to_enum(const char* clocale) {
+    // Convert the detected language to lowercase for easier comparison
+    char lowercase_locale[128]; // Assuming the language code won't exceed 16 characters
+    int i = 0;
+
+    //Normalize case, remove country code, and code page
+    while (clocale[i] != '\0' && clocale[i] != '.' &&  clocale[i] != '_' &&  clocale[i] != '-' && i < 127) {
+        lowercase_locale[i] = tolower(clocale[i]);
+        i++;
+    }
+    lowercase_locale[i] = '\0';
+
+    // Match the language to the enumeration based on ISO 639-1 and ISO 639-2 codes
+    // See (https://www.loc.gov/standards/iso639-2/php/code_list.php)
+    if (strcmp(lowercase_locale, "en") == 0 || strcmp(lowercase_locale, "eng") == 0 || strcmp(lowercase_locale, "english") == 0) {
+        return SE_LANG_ENGLISH;
+    } else if (strcmp(lowercase_locale, "ar") == 0 || strcmp(lowercase_locale, "ara") == 0 || strcmp(lowercase_locale, "arabic") == 0) {
+        return SE_LANG_ARABIC;
+    } else if (strcmp(lowercase_locale, "hy") == 0 || strcmp(lowercase_locale, "arm") == 0 || strcmp(lowercase_locale, "armenian") == 0) {
+        return SE_LANG_ARMENIAN;
+    } else if (strcmp(lowercase_locale, "bn") == 0 || strcmp(lowercase_locale, "ben") == 0 || strcmp(lowercase_locale, "bengali") == 0) {
+        return SE_LANG_BENGALI;
+    } else if (strcmp(lowercase_locale, "zh") == 0 || strcmp(lowercase_locale, "chi") == 0 || strcmp(lowercase_locale, "zho") == 0 || strcmp(lowercase_locale, "chinese") == 0) {
+        return SE_LANG_CHINESE;
+    } else if (strcmp(lowercase_locale, "da") == 0 || strcmp(lowercase_locale, "dan") == 0 || strcmp(lowercase_locale, "danish") == 0) {
+        return SE_LANG_DANISH;
+    } else if (strcmp(lowercase_locale, "nl") == 0 || strcmp(lowercase_locale, "dut") == 0 || strcmp(lowercase_locale, "dutch") == 0) {
+        return SE_LANG_DUTCH;
+    } else if (strcmp(lowercase_locale, "fr") == 0 || strcmp(lowercase_locale, "fre") == 0 || strcmp(lowercase_locale, "fra") == 0 || strcmp(lowercase_locale, "french") == 0) {
+        return SE_LANG_FRENCH;
+    } else if (strcmp(lowercase_locale, "de") == 0 || strcmp(lowercase_locale, "ger") == 0 || strcmp(lowercase_locale, "deu") == 0 || strcmp(lowercase_locale, "german") == 0) {
+        return SE_LANG_GERMAN;
+    } else if (strcmp(lowercase_locale, "el") == 0 || strcmp(lowercase_locale, "gre") == 0 || strcmp(lowercase_locale, "ell") == 0 || strcmp(lowercase_locale, "greek") == 0) {
+        return SE_LANG_GREEK;
+    } else if (strcmp(lowercase_locale, "hi") == 0 || strcmp(lowercase_locale, "hin") == 0 || strcmp(lowercase_locale, "hindi") == 0) {
+        return SE_LANG_HINDI;
+    } else if (strcmp(lowercase_locale, "it") == 0 || strcmp(lowercase_locale, "ita") == 0 || strcmp(lowercase_locale, "italian") == 0) {
+        return SE_LANG_ITALIAN;
+    } else if (strcmp(lowercase_locale, "ja") == 0 || strcmp(lowercase_locale, "jpn") == 0 || strcmp(lowercase_locale, "japanese") == 0) {
+        return SE_LANG_JAPANESE;
+    } else if (strcmp(lowercase_locale, "ko") == 0 || strcmp(lowercase_locale, "kor") == 0 || strcmp(lowercase_locale, "korean") == 0) {
+        return SE_LANG_KOREAN;
+    } else if (strcmp(lowercase_locale, "pt") == 0 || strcmp(lowercase_locale, "por") == 0 || strcmp(lowercase_locale, "portuguese") == 0) {
+        return SE_LANG_PORTUGESE;
+    } else if (strcmp(lowercase_locale, "ru") == 0 || strcmp(lowercase_locale, "rus") == 0 || strcmp(lowercase_locale, "russian") == 0) {
+        return SE_LANG_RUSSIAN;
+    } else if (strcmp(lowercase_locale, "es") == 0 || strcmp(lowercase_locale, "spa") == 0 || strcmp(lowercase_locale, "spanish") == 0) {
+        return SE_LANG_SPANISH;
+    }
+    return SE_LANG_DEFAULT;
 }
 const char* se_language_string(int language_enum){
     switch (language_enum){
@@ -1503,6 +1563,47 @@ const char* se_language_string(int language_enum){
 #endif 
     }
     return "";
+}
+int se_get_default_language(){
+    static int default_lang = SE_LANG_DEFAULT;
+    if(default_lang==SE_LANG_DEFAULT){
+        #if defined(PLATFORM_IOS) || defined(PLATFORM_MACOS)
+        // Try to get from CF Locale
+        if(default_lang == SE_LANG_DEFAULT){
+            char lang_buffer[128];
+            CFArrayRef langs = CFLocaleCopyPreferredLanguages();
+            CFStringRef lang_code = CFArrayGetValueAtIndex(langs, 0);
+            CFStringGetCString(lang_code, lang_buffer, 128, kCFStringEncodingUTF8);        
+            default_lang = se_convert_locale_to_enum(lang_buffer);
+            if(default_lang != SE_LANG_DEFAULT) printf("Detected CF locale language: %s (enum: %s)\n", lang_buffer ,se_language_string(default_lang));
+        }
+        #endif 
+        // Try to get from environment
+        if(default_lang == SE_LANG_DEFAULT){
+            char* clocale = getenv("LANG");
+            if(clocale) default_lang = se_convert_locale_to_enum(clocale);
+            if(default_lang != SE_LANG_DEFAULT) printf("Detected environment locale language: %s (enum: %s)\n", clocale ,se_language_string(default_lang));
+        }
+
+        // Try to get from setlocale
+        if(default_lang == SE_LANG_DEFAULT){
+            setlocale(LC_ALL, "");
+            char* clocale = setlocale(LC_ALL, NULL);
+            if(clocale) default_lang = se_convert_locale_to_enum(clocale);
+            if(default_lang != SE_LANG_DEFAULT) printf("Detected C locale language: %s (enum: %s)\n", clocale ,se_language_string(default_lang));
+        }
+        
+        if(default_lang == SE_LANG_DEFAULT){
+            printf("Couldn't detect language, defaulting to English\n");
+            default_lang = SE_LANG_ENGLISH;
+        }
+        #ifdef PLATFORM_WINDOWS
+            //Needed to let windows open files from UTF-8 paths
+            setlocale(LC_ALL, ".65001");
+        #endif
+    }
+    return default_lang;
+
 }
 const char* se_localize(const char* string){
     if(localization_map==NULL)return string; 
