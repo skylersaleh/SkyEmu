@@ -25,6 +25,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import java.io.File;
+import java.util.Locale;
 import java.util.Vector;
 
 public class EnhancedNativeActivity extends NativeActivity {
@@ -41,7 +42,9 @@ public class EnhancedNativeActivity extends NativeActivity {
                 startActivityForResult(intent, APP_STORAGE_ACCESS_REQUEST_CODE);
             }
         }
-
+    }
+    public String getLanguage() {
+        return Locale.getDefault().toString();
     }
     /*Handle permission request results*/
     @Override

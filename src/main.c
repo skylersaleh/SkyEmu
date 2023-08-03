@@ -2856,6 +2856,15 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   return clicked; 
 }
 #ifdef PLATFORM_ANDROID
+#include <android/log.h>
+
+#define TAG "SkyEmu"
+
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,    TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN,     TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,     TAG, __VA_ARGS__)
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,    TAG, __VA_ARGS__)
+
 void se_android_open_file_picker(){
   ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
   // Attaches the current thread to the JVM.
@@ -2891,6 +2900,30 @@ void se_android_get_visible_rect(float * top, float * bottom){
     *bottom = (*pJNIEnv)->CallFloatMethod(pJNIEnv, nativeActivity, MethodBottom )/se_dpi_scale();
     jmethodID MethodTop= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getVisibleTop", "()F" );
     *top = (*pJNIEnv)->CallFloatMethod(pJNIEnv, nativeActivity, MethodTop )/se_dpi_scale();
+    // Finished with the JVM.
+    (*pJavaVM)->DetachCurrentThread(pJavaVM);
+  }
+}
+void se_android_get_language(char* language_buffer, size_t buffer_size){
+
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
+
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  if ( nResult != JNI_ERR ){
+    // Retrieves NativeActivity.
+    jobject nativeActivity = activity->clazz;
+    jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+    jmethodID getLanguageMethod= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getLanguage", "()Ljava/lang/String;" );
+    if(getLanguageMethod) {
+        jstring joStringPropVal = (jstring) (*pJNIEnv)->CallStaticObjectMethod(pJNIEnv,ClassNativeActivity,getLanguageMethod);
+        const jchar *jcVal = (*pJNIEnv)->GetStringUTFChars(pJNIEnv, joStringPropVal, JNI_FALSE);
+        LOGD("Android Language is %s", jcVal);
+        strncpy(language_buffer, jcVal, buffer_size);
+        (*pJNIEnv)->ReleaseStringChars(pJNIEnv, joStringPropVal, jcVal);
+    }else LOGE("Failed to find getLanguage() method in JNIEnv");
     // Finished with the JVM.
     (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }

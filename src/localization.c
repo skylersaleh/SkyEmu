@@ -1774,6 +1774,9 @@ const char* se_language_string(int language_enum){
     }
     return "";
 }
+#ifdef PLATFORM_ANDROID
+extern void se_android_get_language(char* language_buffer, size_t buffer_size);
+#endif
 int se_get_default_language(){
     static int default_lang = SE_LANG_DEFAULT;
     if(default_lang==SE_LANG_DEFAULT){
@@ -1783,11 +1786,20 @@ int se_get_default_language(){
             char lang_buffer[128];
             CFArrayRef langs = CFLocaleCopyPreferredLanguages();
             CFStringRef lang_code = CFArrayGetValueAtIndex(langs, 0);
-            CFStringGetCString(lang_code, lang_buffer, 128, kCFStringEncodingUTF8);        
+            CFStringGetCString(lang_code, lang_buffer, 128, kCFStringEncodingUTF8);
             default_lang = se_convert_locale_to_enum(lang_buffer);
             if(default_lang != SE_LANG_DEFAULT) printf("Detected CF locale language: %s (enum: %s)\n", lang_buffer ,se_language_string(default_lang));
         }
-        #endif 
+        #endif
+#ifdef PLATFORM_ANDROID
+        // Try to get from JNI
+        if(default_lang == SE_LANG_DEFAULT){
+            char lang_buffer[128];
+            se_android_get_language(lang_buffer,sizeof(lang_buffer));
+            default_lang = se_convert_locale_to_enum(lang_buffer);
+            if(default_lang != SE_LANG_DEFAULT) printf("Detected language from JNI: %s (enum: %s)\n", lang_buffer ,se_language_string(default_lang));
+        }
+#endif
         // Try to get from environment
         if(default_lang == SE_LANG_DEFAULT){
             char* clocale = getenv("LANG");
