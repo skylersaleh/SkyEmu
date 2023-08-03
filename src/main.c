@@ -4282,11 +4282,12 @@ static void se_init_audio(){
 // For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.
 bool se_begin_menu_bar(){
   ImGuiContext* g = igGetCurrentContext();
+  ImGuiStyle *style = igGetStyle();
   ImVec2 menu_bar_size={g->IO.DisplaySize.x, g->NextWindowData.MenuBarOffsetMinVal.y + SE_MENU_BAR_HEIGHT};
   float y_off = (3+gui_state.menubar_hide_timer-se_time())*2.;
   if(y_off>0)y_off=0;
   if(gui_state.settings.always_show_menubar)y_off=0;
-  y_off = y_off*menu_bar_size.y;
+  y_off = y_off*menu_bar_size.y+style->DisplaySafeAreaPadding.y;
   if(y_off<-menu_bar_size.y)y_off=-menu_bar_size.y;
   float y_pos = g->Style.DisplaySafeAreaPadding.y - g->Style.FramePadding.y;
   if(y_pos<0)y_pos=0;
@@ -4304,6 +4305,7 @@ bool se_begin_menu_bar(){
       return false;
   }
   igSetCursorPosY(0);
+  igSetCursorPosX(style->DisplaySafeAreaPadding.x);
   return true; //-V1020
 }
 

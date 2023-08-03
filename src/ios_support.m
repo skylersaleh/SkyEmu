@@ -75,7 +75,7 @@ void se_ios_get_safe_ui_padding(float *top, float* bottom,float* left, float *ri
   if(left)*left=0;
   if(right)*right=0;
   if (@available(iOS 11.0, *)) {
-    UIWindow *window = UIApplication.sharedApplication.windows.firstObject;
+    UIWindow *window = [UIApplication.sharedApplication.windows lastObject];
     if(top)*top = window.safeAreaInsets.top;
     if(bottom)*bottom = window.safeAreaInsets.bottom;
     if(left)*left = window.safeAreaInsets.left;
