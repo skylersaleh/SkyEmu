@@ -1614,7 +1614,7 @@ static char* ru_localization_array[]={
   "DOWN", "ВНИЗ",
   "LEFT", "ЛЕВО",
   "RIGHT", "ПРАВО",
-  "Reset Game", "Перезапуск игру",
+  "Reset Game", "Перезапуск игри",
   "Turbo A", "Турбо A",
   "Turbo B", "Турбо B",
   "Turbo X", "Турбо X",
