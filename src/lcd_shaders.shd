@@ -1,5 +1,5 @@
 // Shader compilation instructions: 
-// sokol-shdc -i lcd_shaders.shd -o lcd_shaders.h -l glsl330:glsl100:hlsl4:metal_macos:metal_ios:metal_sim:wgpu -b
+// sokol-shdc -i lcd_shaders.shd -o lcd_shaders.h -l glsl330:glsl100:glsl300es:hlsl4:metal_macos:metal_ios:metal_sim:wgpu -b
 // (note that for Metal and D3D11 byte code, sokol-shdc must be run on macOS and Windows)
 
 @vs lcdvs
