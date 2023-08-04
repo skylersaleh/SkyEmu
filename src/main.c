@@ -3075,7 +3075,7 @@ void se_download_emscripten_file(const char * path){
 #endif 
 
 void se_bring_text_field_into_view(){
-  if(sapp_keyboard_shown()){
+  if(igGetIO()->WantTextInput){
     
     ImGuiWindow* window = igGetCurrentContext()->HoveredWindow;
     if(igGetCurrentContext()->ActiveIdWindow)window=igGetCurrentContext()->ActiveIdWindow;
