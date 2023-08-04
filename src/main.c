@@ -395,13 +395,17 @@ static const char* se_get_pref_path(){
 #endif
   return "";
 }
-
+#ifdef PLATFORM_ANDROID
+float se_android_get_display_dpi_scale();
+#endif
 static float se_dpi_scale(){
-  float dpi_scale = sapp_dpi_scale();
+  static float dpi_scale = -1.0;
+  if(dpi_scale>0.)return dpi_scale;
+  dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
   dpi_scale*=1.10;
 #ifdef PLATFORM_ANDROID
-  dpi_scale*=3.3;
+  dpi_scale = se_android_get_display_dpi_scale();
 #endif
   return dpi_scale;
 }
@@ -2884,6 +2888,26 @@ void se_android_open_file_picker(){
       // Finished with the JVM.
       (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
+}
+float se_android_get_display_dpi_scale(){
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
+
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  float result = 1.0;
+  if ( nResult != JNI_ERR ){
+    // Retrieves NativeActivity.
+    jobject nativeActivity = activity->clazz;
+    jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
+    jmethodID MethodDPI= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getDPIScale", "()F" );
+    result = (*pJNIEnv)->CallFloatMethod(pJNIEnv, nativeActivity, MethodDPI );
+
+    // Finished with the JVM.
+    (*pJavaVM)->DetachCurrentThread(pJavaVM);
+  }
+  return result;
 }
 void se_android_get_visible_rect(float * top, float * bottom){
   ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();

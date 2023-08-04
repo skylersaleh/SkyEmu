@@ -12,11 +12,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.InputType;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
@@ -42,6 +44,11 @@ public class EnhancedNativeActivity extends NativeActivity {
                 startActivityForResult(intent, APP_STORAGE_ACCESS_REQUEST_CODE);
             }
         }
+    }
+    public float getDPIScale(){
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+        return metrics.xdpi/120.0f;
     }
     public String getLanguage() {
         return Locale.getDefault().toString();
