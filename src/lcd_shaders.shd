@@ -24,7 +24,8 @@ out vec2 uv;
 out vec2 screen_px;
 void main() {
     vec2 p = position*render_size-render_size*0.5;
-    p = round((p.x*render_scale_x+p.y*render_scale_y)+render_off);
+    // round not supported in WebGL / GLSL ES 2.0
+    p = floor((p.x*render_scale_x+p.y*render_scale_y+0.5)+render_off);
     gl_Position = vec4(((p/display_size)-0.5)*vec2(2.0,-2.0), 0.5, 1.0);
     uv = texcoord0;
     screen_px = uv*emu_lcd_size;
