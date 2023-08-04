@@ -378,10 +378,11 @@ void main() {
     v[3] = sample_color_correct(ip+vec2(1.0,1.0)/emu_lcd_size);
 
     vec2 smooth_dim = vec2(smooth_width,smooth_height);
-    if(fract(render_size.x/emu_lcd_size.x)*emu_lcd_size.x<0.001)smooth_dim.x=0.0;;
-    if(fract(render_size.y/emu_lcd_size.y)*emu_lcd_size.y<0.001)smooth_dim.y=0.0;;
+    if(fract(render_size.x/emu_lcd_size.x)*emu_lcd_size.x<0.001)smooth_dim.x=0.0;
+    if(fract(render_size.y/emu_lcd_size.y)*emu_lcd_size.y<0.001)smooth_dim.y=0.0;
 
-    vec2 alpha = smoothstep(0.5-smooth_dim*0.5,0.5+smooth_dim*0.5,residual);
+    vec2 alpha = vec2(smoothstep(0.5-smooth_dim.x*0.5,0.5+smooth_dim.x*0.5,residual.x),
+                      smoothstep(0.5-smooth_dim.y*0.5,0.5+smooth_dim.y*0.5,residual.y));
     
     val = frag_color = mix(mix(v[0],v[1],alpha.x),mix(v[2],v[3],alpha.x),alpha.y);
   }
