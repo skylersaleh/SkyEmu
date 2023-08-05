@@ -51,6 +51,40 @@ extern void se_load_rom(const char *filename);
 }
 
 @end
+#import <UIKit/UIViewController.h>
+#import <objc/runtime.h>
+
+@implementation UIViewController (Swizzling)
+
++ (void)load
+{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class class = [self class];
+        SEL originalSelector = @selector(prefersHomeIndicatorAutoHidden);
+        SEL swizzledSelector = @selector(swizzledPrefersHomeIndicatorAutoHidden);
+        Method originalMethod = class_getInstanceMethod(class, originalSelector);
+        Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
+
+        const BOOL didAdd = class_addMethod(class, originalSelector, method_getImplementation(swizzledMethod), method_getTypeEncoding(swizzledMethod));
+        if (didAdd)
+            class_replaceMethod(class, swizzledSelector, method_getImplementation(originalMethod), method_getTypeEncoding(originalMethod));
+        else
+            method_exchangeImplementations(originalMethod, swizzledMethod);
+    });
+}
+
+- (BOOL)prefersHomeIndicatorAutoHidden
+{
+    return YES; //Doesn't matter what you return here. In this you could return the actual property value.
+}
+
+- (BOOL)swizzledPrefersHomeIndicatorAutoHidden //This is the actual `prefersHomeIndicatorAutoHidden ` call
+{
+    return YES;
+}
+
+@end
 
 void se_ios_set_documents_working_directory(){
   NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
