@@ -3570,7 +3570,7 @@ void se_update_frame() {
   static double simulation_time = -1;
   double curr_time = se_time();
 
-  if(fabs(curr_time-simulation_time)>0.5||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
+  if(fabs(curr_time-simulation_time)>1.0/60.*4||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
     int max_frames_per_tick =1+ emu_state.step_frames;
