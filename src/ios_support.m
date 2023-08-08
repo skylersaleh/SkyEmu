@@ -61,28 +61,29 @@ extern void se_load_rom(const char *filename);
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         Class class = [self class];
-        SEL originalSelector = @selector(prefersHomeIndicatorAutoHidden);
-        SEL swizzledSelector = @selector(swizzledPrefersHomeIndicatorAutoHidden);
+        SEL originalSelector = @selector(preferredScreenEdgesDeferringSystemGestures);
+        SEL swizzledSelector = @selector(preferredScreenEdgesDeferringSystemGesturesSwizzled);
         Method originalMethod = class_getInstanceMethod(class, originalSelector);
         Method swizzledMethod = class_getInstanceMethod(class, swizzledSelector);
-
+        
         const BOOL didAdd = class_addMethod(class, originalSelector, method_getImplementation(swizzledMethod), method_getTypeEncoding(swizzledMethod));
         if (didAdd)
-            class_replaceMethod(class, swizzledSelector, method_getImplementation(originalMethod), method_getTypeEncoding(originalMethod));
+          class_replaceMethod(class, swizzledSelector, method_getImplementation(originalMethod), method_getTypeEncoding(originalMethod));
         else
-            method_exchangeImplementations(originalMethod, swizzledMethod);
+          method_exchangeImplementations(originalMethod, swizzledMethod);
     });
 }
 
-- (BOOL)prefersHomeIndicatorAutoHidden
+- (UIRectEdge)preferredScreenEdgesDeferringSystemGestures
 {
-    return YES; //Doesn't matter what you return here. In this you could return the actual property value.
+    return UIRectEdgeAll;
 }
 
-- (BOOL)swizzledPrefersHomeIndicatorAutoHidden //This is the actual `prefersHomeIndicatorAutoHidden ` call
+- (UIRectEdge)preferredScreenEdgesDeferringSystemGesturesSwizzled
 {
-    return YES;
+    return UIRectEdgeAll;
 }
+
 
 @end
 
