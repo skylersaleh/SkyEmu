@@ -3148,7 +3148,11 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
       se_file_browser_accept(out_path);
       free(out_path);
     }
-  #endif 
+  #endif
+  #ifdef PLATFORM_ANDROID
+    gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+    se_android_open_file_picker();
+  #endif
 }
 void se_convert_cheat_code(char * text_code, int cheat_index){
   if(cheat_index>=SE_NUM_CHEATS)return; 
@@ -4272,7 +4276,7 @@ void se_draw_menu_panel(){
   if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
 #endif
 
-#if !defined(EMSCRIPTEN) && !defined(PLATFORM_IOS)
+#if !defined(EMSCRIPTEN) && !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
   {
     se_text(ICON_FK_CODE_FORK " Additional Search Paths");
     igSeparator();
@@ -5317,6 +5321,14 @@ static void headless_mode(){
   hcs_join_server_thread();
 #endif 
 }
+
+#ifdef PLATFORM_ANDROID
+void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1file(JNIEnv *env, jobject thiz, jstring filePath) {
+  const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
+  se_load_rom(nativeFilePath);
+  (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
+}
+#endif
 
 sapp_desc sokol_main(int argc, char* argv[]) {
   emu_state.cmd_line_arg_count =argc;
