@@ -24,6 +24,6 @@ jobs:
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
         with:
-           name: LinuxRelease
+           name: FreeBSDRelease
            path: build/bin/
        
