@@ -13,7 +13,8 @@ jobs:
           envs: 'MYTOKEN MYTOKEN2'
           usesh: true
           prepare: |
-            pkg install -y curl
+            pkg install -y curl cmake libX11 libXi libXrandr libXinerama libXcursor libglvnd alsa-lib
+
 
           run: |
             mkdir build
