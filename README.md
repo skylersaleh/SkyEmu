@@ -3,6 +3,8 @@
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/dev/LinuxRelease.zip" rel="Download Linux">![Linux Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_linux.yml/badge.svg)
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_android/dev/AndroidRelease.zip" rel="Download Android">![Android Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_android.yml/badge.svg)
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_freebsd/dev/FreeBSDRelease.zip" rel="Download FreeBSD">![FreeBSD Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_freebsd.yml/badge.svg)
+<a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)
 <a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
 
 <img width="90" align="left" alt="SkyEmu App Screenshot" src="https://user-images.githubusercontent.com/7118296/175430950-1d969fa8-e192-4e0d-a585-521b4b286725.png">
@@ -19,7 +21,7 @@ SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS 
 - Game Boy and Game Boy Color Emulation
 - Nintendo DS Emulation (Beta Quality)
 - High Quality Upscaling Shaders, Color Correction, and Screen Ghosting
-- Cross Platform: Windows, MacOS, Linux, iOS, Android, and Web
+- Cross Platform: Windows, MacOS, Linux, FreeBSD, iOS, Android, and Web
 - Game Controller and Rumble Support with configureable keybinds
 - 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
