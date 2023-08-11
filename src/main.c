@@ -291,6 +291,8 @@ typedef struct {
     char cheat_path[SB_FILE_PATH_SIZE];
     ImFont* mono_font; 
 
+    uint32_t current_click_region_id;
+    uint32_t max_click_region_id; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -381,6 +383,7 @@ void se_run_all_ar_cheats();
 void se_load_cheats(const char * filename);
 void se_save_cheats(const char* filename);
 void se_convert_cheat_code(char * text_code, int cheat_index);
+static void se_reset_core();
 
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
@@ -480,6 +483,115 @@ static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags fla
       se_open_file_browser(NULL,types,path);
     }
   }
+  igPopID();
+  return b; 
+}
+static bool se_file_picker_click_region(int x, int y, int w, int h, bool (*accept_func)(const char*)){
+
+  bool hovered = false;
+    #ifdef EMSCRIPTEN
+      if(gui_state.current_click_region_id>=gui_state.max_click_region_id){
+        EM_ASM({
+            var input = document.createElement('fileInput'+$0);
+            input.type = "file";
+            document.body.appendChild(input);
+        },gui_state.current_click_region_id);
+        gui_state.max_click_region_id++;
+      }
+      char * new_path = (char*)EM_ASM_INT({
+      var input = document.getElementById('fileInput'+$0);
+      input.style.left = $0 +'px';
+      input.style.top = $1 +'px';
+      input.style.width = $2 +'px';
+      input.style.height= $3 +'px';
+      input.style.visibility = 'visible';
+      input = document.getElementById('fileInput'+$0);
+      if(input.value!= ''){
+        console.log(input.value);
+        var reader= new FileReader();
+        var file = input.files[0];
+        function print_file(e){
+            var result=reader.result;
+            const uint8_view = new Uint8Array(result);
+            var out_file = '/offline/'+filename;
+            FS.writeFile(out_file, uint8_view);
+            FS.syncfs(function (err) {});
+            var input_stage = document.getElementById('fileStaging');
+            input_stage.value = out_file;
+        }
+        reader.addEventListener('loadend', print_file);
+        reader.readAsArrayBuffer(file);
+        var filename = file.name;
+        input.value = '';
+      }
+      var input_stage = document.getElementById('fileStaging');
+      var ret_path = '';
+      if(input_stage.value !=''){
+        ret_path = input_stage.value;
+        input_stage.value = '';
+      }
+      var sz = lengthBytesUTF8(ret_path)+1;
+      var string_on_heap = _malloc(sz);
+      stringToUTF8(ret_path, string_on_heap, sz);
+      return string_on_heap;
+    },x,y,w,h);
+
+    if(new_path[0])accept_func(new_path);
+    free(new_path);
+    hover = (bool)EM_ASM_INT({
+      var input = document.getElementById('fileInput'+$0);
+      return input.matches('#fileInput'+$0+':hover');
+    },gui_state.current_click_region_id);
+  #endif 
+  ++gui_state.current_click_region_id;
+  return hovered;
+}
+static void se_reset_html_click_regions(){
+  while(gui_state.current_click_region_id<gui_state.max_click_region_id){
+#if defined(EMSCRIPTEN)
+    EM_ASM({
+      var input = document.getElementById('fileInput'+$0);
+      input.style.visibility= "hidden";
+    },gui_state.current_click_region_id);
+#endif
+    gui_state.current_click_region_id++;
+  }
+  gui_state.current_click_region_id=0;
+}
+char se_bios_file_open_tmp_path[SB_FILE_PATH_SIZE];
+bool se_bios_file_open_fn(const char* dir){
+  if(strncmp(dir,se_bios_file_open_tmp_path,SB_FILE_PATH_SIZE)==0)return true;
+  if(sb_file_exists(se_bios_file_open_tmp_path))remove(se_bios_file_open_tmp_path);
+  rename(dir,se_bios_file_open_tmp_path);
+  se_reset_core();
+  return true;
+}
+static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputTextFlags flags){
+  int win_w = igGetWindowWidth();
+  se_text(label);igSameLine(win_w*0.4,0);
+  igPushIDStr(label);
+  bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
+  float button_w = 25; 
+  if(!read_only)igPushItemWidth(-button_w);
+  else igPushItemWidth(-1);
+  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags,NULL,NULL);
+  igPopItemWidth();
+  if(!read_only){
+    igSameLine(0,2);
+    strncpy(se_bios_file_open_tmp_path,new_path,SB_FILE_PATH_SIZE);
+    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0})){
+      static const char *types[]={NULL};
+      se_open_file_browser(se_bios_file_open_fn,types,new_path);
+    }
+    ImVec2 min, max;
+    igGetItemRectMin(&min);
+    igGetItemRectMax(&max);
+    ImGuiStyle *style = igGetStyle();
+    max.x+=style->FramePadding.y;
+    max.y+=style->FramePadding.y;
+    se_file_picker_click_region(min.x, min.y, max.x-min.x, max.y-min.y, se_bios_file_open_fn);
+  }
+
   igPopID();
   return b; 
 }
@@ -3295,21 +3407,7 @@ bool se_load_rom_file_browser_callback(const char* path){
   return emu_state.rom_loaded;
 }
 void se_load_rom_overlay(bool visible){
-  static bool last_visible = false;
-  if(visible==false){
-#if defined(EMSCRIPTEN)
-    if(last_visible==true){
-      EM_ASM({
-        var input = document.getElementById('fileInput');
-        input.style.visibility= "hidden";
-      });
-    }
-#endif
-    last_visible=false;
-    return;
-  }
-  last_visible=true;
-
+  if(visible==false)return;
   ImVec2 w_pos, w_size;
   igGetWindowPos(&w_pos);
   igGetWindowSize(&w_size);
@@ -3321,62 +3419,16 @@ void se_load_rom_overlay(bool visible){
   igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
-  bool hover = false;
-  #ifdef EMSCRIPTEN
-    int x, y, w,  h;
-    ImVec2 win_p,win_max;
-    igGetWindowContentRegionMin(&win_p);
-    igGetWindowContentRegionMax(&win_max);
-    x = win_p.x;
-    y = win_p.y;
-    w = win_max.x-win_p.x;
-    h = win_max.y-win_p.y;
-    y+=w_pos.y;
-      char * new_path = (char*)EM_ASM_INT({
-      var input = document.getElementById('fileInput');
-      input.style.left = $0 +'px';
-      input.style.top = $1 +'px';
-      input.style.width = $2 +'px';
-      input.style.height= $3 +'px';
-      input.style.visibility = 'visible';
-      input = document.getElementById('fileInput');
-      if(input.value!= ''){
-        console.log(input.value);
-        var reader= new FileReader();
-        var file = input.files[0];
-        function print_file(e){
-            var result=reader.result;
-            const uint8_view = new Uint8Array(result);
-            var out_file = '/offline/'+filename;
-            FS.writeFile(out_file, uint8_view);
-            FS.syncfs(function (err) {});
-            var input_stage = document.getElementById('fileStaging');
-            input_stage.value = out_file;
-        }
-        reader.addEventListener('loadend', print_file);
-        reader.readAsArrayBuffer(file);
-        var filename = file.name;
-        input.value = '';
-      }
-      var input_stage = document.getElementById('fileStaging');
-      var ret_path = '';
-      if(input_stage.value !=''){
-        ret_path = input_stage.value;
-        input_stage.value = '';
-      }
-      var sz = lengthBytesUTF8(ret_path)+1;
-      var string_on_heap = _malloc(sz);
-      stringToUTF8(ret_path, string_on_heap, sz);
-      return string_on_heap;
-    },x,y,w,h);
-
-    if(new_path[0])se_load_rom(new_path);
-    free(new_path);
-    hover = (bool)EM_ASM_INT({
-      var input = document.getElementById('fileInput');
-      return input.matches('#fileInput:hover');
-    });
-  #endif 
+  int x, y, w,  h;
+  ImVec2 win_p,win_max;
+  igGetWindowContentRegionMin(&win_p);
+  igGetWindowContentRegionMax(&win_max);
+  x = win_p.x;
+  y = win_p.y;
+  w = win_max.x-win_p.x;
+  h = win_max.y-win_p.y;
+  y+=w_pos.y;
+  bool hover = se_file_picker_click_region(x,y,w,h,se_load_rom);
   const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba, .zip)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
   #if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
@@ -3545,6 +3597,7 @@ static void se_poll_sdl(){
 }
 #endif
 void se_update_frame() {
+  se_reset_html_click_regions();
   #ifdef ENABLE_HTTP_CONTROL_SERVER
   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
   if(gui_state.settings.http_control_server_enable){
@@ -4126,7 +4179,7 @@ void se_draw_menu_panel(){
           igPopStyleColor(1);
           igSameLine(0,2);
           igSetNextItemWidth(win_w-55);
-          se_input_path(info->name[i],info->path[i],ImGuiInputTextFlags_ReadOnly);
+          se_input_bios_file(info->name[i],info->path[i],ImGuiInputTextFlags_None);
         }
       }
       if(missing_bios){
@@ -5325,7 +5378,7 @@ static void headless_mode(){
 #ifdef PLATFORM_ANDROID
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1file(JNIEnv *env, jobject thiz, jstring filePath) {
   const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
-  se_load_rom(nativeFilePath);
+  se_file_browser_accept(nativeFilePath);
   (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
 }
 #endif
