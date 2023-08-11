@@ -215,7 +215,7 @@ typedef struct{
   bool allow_directory;
   unsigned num_file_types;
   const char** file_types; 
-  bool (*file_open_fn)(const char* dir);
+  void (*file_open_fn)(const char* dir);
   char * output_path;
 }se_file_browser_state_t;
 typedef struct{
@@ -378,7 +378,7 @@ static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
-void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
+void se_open_file_browser(bool clicked, float x, float y, float w, float h, void (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
 void se_run_all_ar_cheats();
 void se_load_cheats(const char * filename);
 void se_save_cheats(const char* filename);
@@ -467,104 +467,87 @@ static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiIn
 static bool se_button(const char* label, ImVec2 size){
   return igButton(se_localize_and_cache(label),size);
 }
-static bool se_input_path(const char* label, char* path, ImGuiInputTextFlags flags){
+static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
   se_text(label);igSameLine(win_w*0.4,0);
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
-  if(!read_only)igPushItemWidth(-25);
+  float button_w = 25; 
+  if(!read_only)igPushItemWidth(-button_w);
   else igPushItemWidth(-1);
-  bool b = igInputText("##",path,SB_FILE_PATH_SIZE,flags,NULL,NULL);
+  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
     igSameLine(0,2);
-    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){23,0})){
+    bool clicked = false; 
+    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
+    
+    if(igIsItemVisible()){
+      ImVec2 min, max;
+      igGetItemRectMin(&min);
+      igGetItemRectMax(&max);
+      ImGuiStyle *style = igGetStyle();
+      max.x+=style->FramePadding.y;
+      max.y+=style->FramePadding.y;
       static const char *types[]={"$DIR$",NULL};
-      se_open_file_browser(NULL,types,path);
+      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, NULL,types,new_path);
     }
   }
+
   igPopID();
   return b; 
 }
-static bool se_file_picker_click_region(int x, int y, int w, int h, bool (*accept_func)(const char*)){
-
-  bool hovered = false;
-    #ifdef EMSCRIPTEN
-      if(gui_state.current_click_region_id>=gui_state.max_click_region_id){
-        EM_ASM({
-            var input = document.createElement('fileInput'+$0);
-            input.type = "file";
-            document.body.appendChild(input);
-        },gui_state.current_click_region_id);
-        gui_state.max_click_region_id++;
-      }
-      char * new_path = (char*)EM_ASM_INT({
-      var input = document.getElementById('fileInput'+$0);
-      input.style.left = $0 +'px';
-      input.style.top = $1 +'px';
-      input.style.width = $2 +'px';
-      input.style.height= $3 +'px';
-      input.style.visibility = 'visible';
-      input = document.getElementById('fileInput'+$0);
-      if(input.value!= ''){
-        console.log(input.value);
-        var reader= new FileReader();
-        var file = input.files[0];
-        function print_file(e){
-            var result=reader.result;
-            const uint8_view = new Uint8Array(result);
-            var out_file = '/offline/'+filename;
-            FS.writeFile(out_file, uint8_view);
-            FS.syncfs(function (err) {});
-            var input_stage = document.getElementById('fileStaging');
-            input_stage.value = out_file;
-        }
-        reader.addEventListener('loadend', print_file);
-        reader.readAsArrayBuffer(file);
-        var filename = file.name;
-        input.value = '';
-      }
-      var input_stage = document.getElementById('fileStaging');
-      var ret_path = '';
-      if(input_stage.value !=''){
-        ret_path = input_stage.value;
-        input_stage.value = '';
-      }
-      var sz = lengthBytesUTF8(ret_path)+1;
-      var string_on_heap = _malloc(sz);
-      stringToUTF8(ret_path, string_on_heap, sz);
-      return string_on_heap;
-    },x,y,w,h);
-
-    if(new_path[0])accept_func(new_path);
-    free(new_path);
-    hover = (bool)EM_ASM_INT({
-      var input = document.getElementById('fileInput'+$0);
-      return input.matches('#fileInput'+$0+':hover');
-    },gui_state.current_click_region_id);
-  #endif 
-  ++gui_state.current_click_region_id;
-  return hovered;
+void se_mkdir(char *path) {
+    char *sep = strrchr(path, '/');
+    if(sep != NULL) {
+        *sep = 0;
+        se_mkdir(path);
+        *sep = '/';
+    }
+    if(mkdir(path, 0777) && errno != EEXIST)
+        printf("error while trying to create '%s'\n%m\n", path); 
 }
-static void se_reset_html_click_regions(){
-  while(gui_state.current_click_region_id<gui_state.max_click_region_id){
-#if defined(EMSCRIPTEN)
-    EM_ASM({
-      var input = document.getElementById('fileInput'+$0);
-      input.style.visibility= "hidden";
-    },gui_state.current_click_region_id);
-#endif
-    gui_state.current_click_region_id++;
+FILE *se_fopen_mkdir(const char *fpath, char *mode) {
+    char *path = strdup(fpath);
+    char *sep = strrchr(path, '/');
+    char *sep2 = strrchr(path, '\\');
+    if(sep2&&(!sep||sep2<sep))sep=sep2;
+    if(sep) { 
+        char *path0 = strdup(path);
+        path0[ sep - path ] = 0;
+        se_mkdir(path0);
+        free(path0);
+    }
+    free(path);
+    return fopen(fpath,mode);
+}
+void se_copy_file(const char * original_path, const char* copy_path){
+
+  FILE* source = fopen(original_path, "rb");
+  FILE* dest  = se_fopen_mkdir(copy_path, "wb");
+  if (source == NULL ||dest==NULL) {
+    perror("Error opening source or dest file for copy\n");
+    if(source)fclose(source);
+    if(dest)fclose(dest);
+    return; 
   }
-  gui_state.current_click_region_id=0;
+  char buffer[1024];
+  size_t read = 0;;
+
+  while ((read = fread(buffer, 1, sizeof(buffer), source)) > 0) {
+      fwrite(buffer, 1, read, dest);
+  }
+  fclose(source);
+  fclose(dest);
 }
-char se_bios_file_open_tmp_path[SB_FILE_PATH_SIZE];
-bool se_bios_file_open_fn(const char* dir){
-  if(strncmp(dir,se_bios_file_open_tmp_path,SB_FILE_PATH_SIZE)==0)return true;
-  if(sb_file_exists(se_bios_file_open_tmp_path))remove(se_bios_file_open_tmp_path);
-  rename(dir,se_bios_file_open_tmp_path);
+void se_bios_file_open_fn(const char* dir){
+  //Make use of the fact that the accept function is called before the output path is updated.
+  char * se_bios_file_open_tmp_path = gui_state.file_browser.output_path;
+  if(strncmp(dir,se_bios_file_open_tmp_path,SB_FILE_PATH_SIZE)!=0){
+    if(sb_file_exists(se_bios_file_open_tmp_path))remove(se_bios_file_open_tmp_path);
+    se_copy_file(dir,se_bios_file_open_tmp_path);
+  }
   se_reset_core();
-  return true;
 }
 static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
@@ -574,24 +557,24 @@ static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputText
   float button_w = 25; 
   if(!read_only)igPushItemWidth(-button_w);
   else igPushItemWidth(-1);
-  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags,NULL,NULL);
+  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
     igSameLine(0,2);
-    strncpy(se_bios_file_open_tmp_path,new_path,SB_FILE_PATH_SIZE);
-    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0})){
+    bool clicked = false; 
+    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
+    
+    if(igIsItemVisible()){
+      ImVec2 min, max;
+      igGetItemRectMin(&min);
+      igGetItemRectMax(&max);
+      ImGuiStyle *style = igGetStyle();
+      max.x+=style->FramePadding.y;
+      max.y+=style->FramePadding.y;
       static const char *types[]={NULL};
-      se_open_file_browser(se_bios_file_open_fn,types,new_path);
+      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, se_bios_file_open_fn,types,new_path);
     }
-    ImVec2 min, max;
-    igGetItemRectMin(&min);
-    igGetItemRectMax(&max);
-    ImGuiStyle *style = igGetStyle();
-    max.x+=style->FramePadding.y;
-    max.y+=style->FramePadding.y;
-    se_file_picker_click_region(min.x, min.y, max.x-min.x, max.y-min.y, se_bios_file_open_fn);
   }
-
   igPopID();
   return b; 
 }
@@ -1006,8 +989,10 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   const char* base, *file, *ext; 
   sb_breakup_path(base_path, &base,&file, &ext);
   static char bios_path[SB_FILE_PATH_SIZE];
+  static char bios_create_path[SB_FILE_PATH_SIZE];
   se_join_path(bios_path,SB_FILE_PATH_SIZE,base,file_name,NULL);
   size_t bios_bytes=0;
+  strncpy(bios_create_path,bios_path,SB_FILE_PATH_SIZE);
   uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
   if(bios_data){
     if(bios_bytes==data_size){
@@ -1021,6 +1006,8 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   if(!loaded_bios){
     se_join_path(bios_path,SB_FILE_PATH_SIZE,gui_state.paths.bios,file_name,NULL);
     size_t bios_bytes=0;
+    if(gui_state.settings.save_to_path)strncpy(bios_create_path,bios_path,SB_FILE_PATH_SIZE);
+
     uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
     if(bios_data){
       if(bios_bytes==data_size){
@@ -1036,7 +1023,7 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
     if(info->name[i][0]==0){
       strncpy(info->name[i],name,sizeof(info->name[i]));
-      strncpy(info->path[i],bios_path,sizeof(info->path[i]));
+      strncpy(info->path[i],bios_create_path,sizeof(info->path[i]));
       info->success[i]=loaded_bios;
       break;
     }
@@ -3219,14 +3206,104 @@ int file_sorter (const void * a, const void * b) {
 void se_file_browser_accept(const char * path){
   se_file_browser_state_t* file_browse = &gui_state.file_browser;
   if(file_browse->file_open_fn){
-    if(file_browse->file_open_fn(path))gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+    gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+    file_browse->file_open_fn(path);
   }
   if(file_browse->output_path){
     strncpy(file_browse->output_path,path,SB_FILE_PATH_SIZE);
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
   }
 }
-void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** file_types,char * output_path){
+static void se_file_picker_click_region(int x, int y, int w, int h, void (*accept_func)(const char*)){
+  float delta_dpi_scale = se_dpi_scale()/sapp_dpi_scale();
+
+    #ifdef EMSCRIPTEN
+      while(gui_state.current_click_region_id>=gui_state.max_click_region_id){
+        EM_ASM({
+            var input = document.createElement('input');
+            input.id = 'fileInput'+$0;
+            input.value = '';
+            input.type = 'file';
+            document.body.appendChild(input);
+            var inputStage = document.createElement('input');
+            inputStage.id = 'fileStaging'+$0;
+            inputStage.value = '';
+            document.body.appendChild(inputStage);
+            input.onmousemove =  input.onmouseover =  function(e) {
+              const mouseMoveEvent = new MouseEvent('mousemove', {
+                bubbles: true,
+                cancelable: true,
+                clientX: event.clientX,
+                clientY: event.clientY
+              });
+              document.getElementById('canvas').dispatchEvent(mouseMoveEvent);
+            };
+        },gui_state.current_click_region_id);
+        gui_state.max_click_region_id++;
+      }
+      char * new_path = (char*)EM_ASM_INT({
+      var input = document.getElementById('fileInput'+$0);
+      input.style.left = $1 +'px';
+      input.style.top = $2 +'px';
+      input.style.width = $3 +'px';
+      input.style.height= $4 +'px';
+      input.style.visibility = 'visible';
+      input = document.getElementById('fileInput'+$0);
+      if(input.value!= ''){
+        console.log(input.value);
+        var reader= new FileReader();
+        var file = input.files[0];
+        function print_file(e){
+            var result=reader.result;
+            const uint8_view = new Uint8Array(result);
+            var out_file = '/offline/'+filename;
+            if(FS.analyzePath(out_file)["exists"])FS.unlink(out_file);
+            FS.writeFile(out_file, uint8_view);
+            FS.syncfs(function (err) {});
+            var input_stage = document.getElementById('fileStaging'+$0);
+            input_stage.value = out_file;
+        }
+        reader.addEventListener('loadend', print_file);
+        reader.readAsArrayBuffer(file);
+        var filename = file.name;
+        input.value = '';
+      }
+      var input_stage = document.getElementById('fileStaging'+$0);
+      var ret_path = '';
+      if(input_stage.value !=''){
+        ret_path = input_stage.value;
+        input_stage.value = '';
+      }
+      var sz = lengthBytesUTF8(ret_path)+1;
+      var string_on_heap = _malloc(sz);
+      stringToUTF8(ret_path, string_on_heap, sz);
+      return string_on_heap;
+    },gui_state.current_click_region_id,x*delta_dpi_scale,y*delta_dpi_scale,w*delta_dpi_scale,h*delta_dpi_scale);
+
+    if(new_path[0])accept_func(new_path);
+    free(new_path);
+  #endif 
+  ++gui_state.current_click_region_id;
+}
+static void se_reset_html_click_regions(){
+  while(gui_state.current_click_region_id<gui_state.max_click_region_id){
+#if defined(EMSCRIPTEN)
+    EM_ASM({
+      var input = document.getElementById('fileInput'+$0);
+      input.style.visibility= "hidden";
+    },gui_state.current_click_region_id);
+#endif
+    gui_state.current_click_region_id++;
+  }
+  gui_state.current_click_region_id=0;
+}
+//Opens a file picker when clicked is true or a user clicks in the click region defined by x,y,w,h in ImGUI coordinates
+//File pickers only open for the click region on web platforms due to web security precautions. On Desktop/Native platforms
+//they only open if clicked is set to true. 
+void se_open_file_browser(bool clicked, float x, float y, float w, float h, void (*file_open_fn)(const char* dir), const char ** file_types,char * output_path){
+  #ifndef EMSCRIPTEN
+  if(!clicked)return; 
+  #endif 
   unsigned num_file_types = 0; 
   bool allow_directory =false;
   while(file_types[num_file_types]){
@@ -3238,6 +3315,12 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
   gui_state.file_browser.file_types = file_types;
   gui_state.file_browser.file_open_fn = file_open_fn;
   gui_state.file_browser.output_path = output_path;
+
+  #ifdef EMSCRIPTEN
+    gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
+    se_file_picker_click_region(x,y,w,h,file_open_fn);
+    return;
+  #endif
 
   #ifdef USE_BUILT_IN_FILEBROWSER
     gui_state.file_browser.state=SE_FILE_BROWSER_OPEN;
@@ -3255,11 +3338,7 @@ void se_open_file_browser(bool (*file_open_fn)(const char* dir), const char ** f
   #endif
   #ifdef PLATFORM_IOS
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
-    char * out_path= se_ios_open_file_picker(num_file_types,file_types);
-    if(out_path){
-      se_file_browser_accept(out_path);
-      free(out_path);
-    }
+    se_ios_open_file_picker(num_file_types,file_types);
   #endif
   #ifdef PLATFORM_ANDROID
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
@@ -3308,12 +3387,11 @@ bool se_process_file_browser(){
 
   igBegin(se_localize_and_cache(ICON_FK_FILE_O " File Browser"),&file_browser_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   if(!file_browser_open)gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
-  bool hover = false;
-  if(se_selectable_with_box("Exit File Browser","Go back to recently loaded games",ICON_FK_BAN,hover,0)){
+  if(se_selectable_with_box("Exit File Browser","Go back to recently loaded games",ICON_FK_BAN,false,0)){
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
   }
   if(file_browse->allow_directory){
-    if(se_selectable_with_box("Select Folder",gui_state.file_browser.current_path,ICON_FK_CHECK,hover,0)){
+    if(se_selectable_with_box("Select Folder",gui_state.file_browser.current_path,ICON_FK_CHECK,false,0)){
       size_t len = strnlen(gui_state.file_browser.current_path,SB_FILE_PATH_SIZE);
       if(len<SB_FILE_PATH_SIZE-2){
         if(gui_state.file_browser.current_path[len-1]!='\\' && gui_state.file_browser.current_path[len-1]!= '/' ){
@@ -3325,7 +3403,7 @@ bool se_process_file_browser(){
     }
   }
   const char* parent_dir = sb_parent_path(gui_state.file_browser.current_path);
-  if(se_selectable_with_box("Go to parent directory",parent_dir,ICON_FK_ARROW_UP,hover,0)){
+  if(se_selectable_with_box("Go to parent directory",parent_dir,ICON_FK_ARROW_UP,false,0)){
     strncpy(gui_state.file_browser.current_path, parent_dir, SB_FILE_PATH_SIZE);
   }
   float list_y_off = igGetWindowHeight(); 
@@ -3389,13 +3467,7 @@ bool se_process_file_browser(){
       if (file_browse->cached_files[f].is_dir)
         strncpy(gui_state.file_browser.current_path, file_browse->cached_files[f].path, SB_FILE_PATH_SIZE);
       else {
-        if(file_browse->file_open_fn){
-          if(file_browse->file_open_fn(file_browse->cached_files[f].path))gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
-        }
-        if(file_browse->output_path){
-          strncpy(file_browse->output_path,file_browse->cached_files[f].path,SB_FILE_PATH_SIZE);
-          gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
-        }
+        se_file_browser_accept(file_browse->cached_files[f].path);
       }
     }
   }
@@ -3428,7 +3500,7 @@ void se_load_rom_overlay(bool visible){
   w = win_max.x-win_p.x;
   h = win_max.y-win_p.y;
   y+=w_pos.y;
-  bool hover = se_file_picker_click_region(x,y,w,h,se_load_rom);
+  x+=w_pos.x;
   const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba, .zip)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
   #if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
@@ -3438,8 +3510,8 @@ void se_load_rom_overlay(bool visible){
   prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
   prompt2 = "You can also drag & drop a ROM/save file to load it";
   #endif
-
-  if(se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,hover,0))se_open_file_browser(se_load_rom_file_browser_callback,valid_rom_file_types,NULL);
+  bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
+  se_open_file_browser(clicked, x,y,w,h, se_load_rom,valid_rom_file_types,NULL);
   
   igEnd();
   ImVec2 child_size; 
@@ -3528,7 +3600,7 @@ static void se_poll_sdl(){
       case SDL_JOYAXISMOTION:
         if(SDL_JoystickFromInstanceID(sdlEvent.jaxis.which)==cont->sdl_joystick){
           float v = sdlEvent.jaxis.value/32768.f;
-          if(v<0.2&&v>-0.2 && sdlEvent.jaxis.axis < sizeof(cont->axis_last_zero_time)/sizeof(cont->axis_last_zero_time[0])){
+          if(v<0.2&&v>-0.2 && (int)sdlEvent.jaxis.axis < sizeof(cont->axis_last_zero_time)/sizeof(cont->axis_last_zero_time[0])){
             cont->axis_last_zero_time[sdlEvent.jaxis.axis]=se_time();
           }
           if((v>0.3)||(v<-0.3&&v>-0.6))
@@ -3597,7 +3669,6 @@ static void se_poll_sdl(){
 }
 #endif
 void se_update_frame() {
-  se_reset_html_click_regions();
   #ifdef ENABLE_HTTP_CONTROL_SERVER
   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
   if(gui_state.settings.http_control_server_enable){
@@ -4762,6 +4833,7 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
 #endif 
 
 static void frame(void) {
+  se_reset_html_click_regions();
   sb_poll_controller_input(&emu_state.joy);
 #ifdef USE_SDL
   se_poll_sdl();

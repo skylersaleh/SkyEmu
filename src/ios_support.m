@@ -12,7 +12,7 @@
 
 @implementation SelectorDelegate
 
-extern void se_load_rom(const char *filename);
+extern void se_file_browser_accept(const char *filename);
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url {
     if (controller.documentPickerMode == UIDocumentPickerModeImport) {
@@ -41,7 +41,7 @@ extern void se_load_rom(const char *filename);
         NSLog(@"Error:%@\n",error);
       }else{
         documentsPath= [@"./" stringByAppendingString:[url lastPathComponent]];
-        se_load_rom([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
+        se_file_browser_accept([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
       }
     }
 }
@@ -93,7 +93,7 @@ void se_ios_set_documents_working_directory(){
   documentsPath = [documentsPath stringByAppendingString:@"/"];
   chdir([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
 }
-char* se_ios_open_file_picker( int num_extensions, const char ** extensions){
+void se_ios_open_file_picker( int num_extensions, const char ** extensions){
   printf("Open iOS file picker");
     UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.item"]
         inMode:UIDocumentPickerModeImport];
@@ -102,7 +102,6 @@ char* se_ios_open_file_picker( int num_extensions, const char ** extensions){
     documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
   documentPicker.delegate = [SelectorDelegate alloc];
     [view presentViewController:documentPicker animated:YES completion:nil];
-    return NULL;
 }
 void se_ios_get_safe_ui_padding(float *top, float* bottom,float* left, float *right){
   if(top)*top=0;
