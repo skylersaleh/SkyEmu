@@ -478,7 +478,7 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
   bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
-    igSameLine(0,2);
+    igSameLine(0,1);
     bool clicked = false; 
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
     
@@ -560,7 +560,7 @@ static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputText
   bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
-    igSameLine(0,2);
+    igSameLine(0,1);
     bool clicked = false; 
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
     
@@ -2534,15 +2534,16 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
         state->bind_being_set=-1; 
         settings_changed = true;
       }
-      if(gui_state.button_state[SAPP_KEYCODE_BACKSPACE]){
-        state->bound_id[k]=-1;
-        state->bind_being_set=-1;
-        settings_changed = true;
-      }
     }
-    if(se_button(button_label,(ImVec2){-1, 0})){
+    if(se_button(button_label,(ImVec2){-25, 0})){
       state->bind_being_set = k;
       state->rebind_start_time = se_time();
+    }
+    igSameLine(0,1);
+    if(se_button(ICON_FK_TIMES,(ImVec2){-1, 0})){
+      state->bound_id[k]=-1;
+      state->bind_being_set=-1;
+      settings_changed = true;
     }
     if(active)igPopStyleColor(1);
     igPopID();
