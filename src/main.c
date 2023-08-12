@@ -75,6 +75,8 @@
 #define GBA_SKYEMU_CORRECTION 0 
 #define GBA_HIGAN_CORRECTION  1
 
+#define SE_FIELD_INDENT 125
+
 const static char* se_keybind_names[SE_NUM_KEYBINDS]={
   "A",
   "B",
@@ -469,7 +471,7 @@ static bool se_button(const char* label, ImVec2 size){
 }
 static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
-  se_text(label);igSameLine(win_w*0.4,0);
+  se_text(label);igSameLine(SE_FIELD_INDENT,0);
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
   float button_w = 25; 
@@ -551,7 +553,7 @@ void se_bios_file_open_fn(const char* dir){
 }
 static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
-  se_text(label);igSameLine(win_w*0.4,0);
+  se_text(label);igSameLine(SE_FIELD_INDENT,0);
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
   float button_w = 25; 
@@ -1791,12 +1793,47 @@ static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_he
   }
   for(int i=3;i<SE_MAX_SCREENSHOT_SIZE;i+=4)output_buffer[i]=0xff;
 }
+typedef struct{
+  uint8_t *data;
+  int im_width; 
+  int im_height;
+  int x;
+  int y;
+  int render_width;
+  int render_height;
+  float rotation;
+  bool is_touch;
+}se_draw_lcd_callback_t;
+void se_draw_lcd_callback(const ImDrawList* parent_list, const ImDrawCmd* cmd){
+  if(cmd->UserCallbackData==NULL)return;
+  se_draw_lcd_callback_t *call = (se_draw_lcd_callback_t*)cmd->UserCallbackData;
+  se_draw_lcd(call->data,call->im_width,call->im_height,call->x,call->y,call->render_width,call->render_height,call->rotation,call->is_touch);
+  free(call);
+}
+void se_draw_lcd_defer(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation,bool is_touch){
+  se_draw_lcd_callback_t *call = (se_draw_lcd_callback_t*)malloc(sizeof(se_draw_lcd_callback_t));
+  call->data = data;
+  call->im_width=im_width;
+  call->im_height=im_height;
+  call->x = x;
+  call->y = y;
+  call->render_width=render_width;
+  call->render_height=render_height;
+  call->rotation=rotation;
+  call->is_touch=is_touch;
+  ImDrawList_AddCallback(igGetWindowDrawList(),se_draw_lcd_callback,call);
+}
 static void se_draw_emulated_system_screen(bool preview){
   int lcd_render_x = 0, lcd_render_y = 0; 
   int lcd_render_w = 0, lcd_render_h = 0; 
 
   float scr_w = igGetWindowWidth();
   float scr_h = igGetWindowHeight();
+
+  if(preview==true){
+    scr_w *=se_dpi_scale();
+    scr_h *=se_dpi_scale();
+  }
 
   float native_w = SB_LCD_W;
   float native_h = SB_LCD_H;
@@ -1840,7 +1877,7 @@ static void se_draw_emulated_system_screen(bool preview){
   render_w*=render_scale;
   render_h*=render_scale;
 
-  float dpi_scale =  preview?1.0: se_dpi_scale();
+  float dpi_scale =  se_dpi_scale();
 
   //Don't hide menubar if it doesn't make the screen smaller
   if(gui_state.screen_height/dpi_scale-SE_MENU_BAR_HEIGHT>gui_state.screen_width/dpi_scale*render_aspect&&!preview){
@@ -1899,8 +1936,7 @@ static void se_draw_emulated_system_screen(bool preview){
   igGetWindowPos(&v);
   lcd_render_x+=v.x*dpi_scale+scr_w*0.5;
   lcd_render_y+=v.y*dpi_scale+scr_h*0.5;
-  if(preview){
-    
+  if(preview&&emu_state.rom_loaded==false){
     ImVec2 min = {lcd_render_x-lcd_render_w*0.5,lcd_render_y-lcd_render_h*0.5};
     ImVec2 max = {lcd_render_x+lcd_render_w*0.5,lcd_render_y+lcd_render_h*0.5};
     
@@ -1908,7 +1944,7 @@ static void se_draw_emulated_system_screen(bool preview){
     igRenderFrame(min,max,col,true,0);
   }else{
     if(emu_state.system==SYSTEM_GBA){
-      se_draw_lcd(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
+      se_draw_lcd_defer(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
     }else if (emu_state.system==SYSTEM_NDS){
       if(hybrid_nds){
         float p[6]={
@@ -1923,9 +1959,9 @@ static void se_draw_emulated_system_screen(bool preview){
           p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
           p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
         }
-        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w/3, lcd_render_h*0.5,rotation,false);
-        se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,true);
-        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[4],lcd_render_y+p[5], lcd_render_w*2/3, lcd_render_h,rotation,false);
+        se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w/3, lcd_render_h*0.5,rotation,false);
+        se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,true);
+        se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[4],lcd_render_y+p[5], lcd_render_w*2/3, lcd_render_h,rotation,false);
 
       }else{
         float p[4]={
@@ -1938,11 +1974,11 @@ static void se_draw_emulated_system_screen(bool preview){
           p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
           p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
         }
-        se_draw_lcd(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
-        se_draw_lcd(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,true);
+        se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
+        se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,true);
       }
     }else if (emu_state.system==SYSTEM_GB){
-      se_draw_lcd(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
+      se_draw_lcd_defer(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
     }
   }
   if(!gui_state.block_touchscreen||preview)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad,preview);
@@ -2486,7 +2522,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     igPushIDInt(k);
     se_text("%s",se_localize_and_cache(button_labels[k]));
     float active = (state->value[k])>0.4;
-    igSameLine(100,0);
+    igSameLine(SE_FIELD_INDENT,0);
     if(state->bind_being_set==k)active=true;
     if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
     const char* button_label = "Not bound"; 
@@ -2552,16 +2588,16 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
   return settings_changed;
 }
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview){
-  if(state->run_mode!=SB_MODE_RUN)return;
+  if(state->run_mode!=SB_MODE_RUN&&preview==false)return;
   controller_h*=gui_state.settings.touch_controls_scale;
   float win_w = igGetWindowWidth();
   float win_h = igGetWindowHeight();
   if(preview==false){
     win_w /=se_dpi_scale();
     win_h /=se_dpi_scale();
-    controller_h/=se_dpi_scale();
-    controller_y_pad/=se_dpi_scale();
   }
+  controller_h/=se_dpi_scale();
+  controller_y_pad/=se_dpi_scale();
 
   ImVec2 pos; 
   igGetWindowPos(&pos);
@@ -4267,17 +4303,17 @@ void se_draw_menu_panel(){
   igSeparator();
   int v = gui_state.settings.screen_shader;
   igPushItemWidth(-1);
-  se_text("Screen Shader");igSameLine(win_w*0.4,0);
+  se_text("Screen Shader");igSameLine(SE_FIELD_INDENT,0);
   se_combo_str("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
   gui_state.settings.screen_shader=v;
   v = gui_state.settings.screen_rotation;
-  se_text("Screen Rotation");igSameLine(win_w*0.4,0);
+  se_text("Screen Rotation");igSameLine(SE_FIELD_INDENT,0);
   se_combo_str("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
   gui_state.settings.screen_rotation=v;
-  se_text("Color Correction");igSameLine(win_w*0.4,0);
+  se_text("Color Correction");igSameLine(SE_FIELD_INDENT,0);
   se_slider_float("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f");
   int color_correct = gui_state.settings.gba_color_correction_mode;
-  se_text("GBA Color Correction Type");igSameLine(win_w*0.6,0);
+  se_text("GBA Color Correction Type");igSameLine(180,0);
   se_combo_str("##ColorAlgorithm",&color_correct,"SkyEmu\0Higan\0",0);
   igPopItemWidth();
   gui_state.settings.gba_color_correction_mode=color_correct;
@@ -4351,11 +4387,11 @@ void se_draw_menu_panel(){
   igEndChildFrame();
   igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
 
-  se_text("Scale");igSameLine(win_w*0.4,0);
+  se_text("Scale");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
 
-  se_text("Opacity");igSameLine(win_w*0.4,0);
+  se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
   igPopItemWidth();
@@ -4373,7 +4409,7 @@ void se_draw_menu_panel(){
 
   se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
-  se_text("Language");igSameLine(win_w*0.4,0);
+  se_text("Language");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   if(igBeginCombo("##Language", se_language_string(gui_state.settings.language), ImGuiComboFlags_HeightLargest)){
     int lang_id = 0; 
@@ -4388,7 +4424,7 @@ void se_draw_menu_panel(){
   }
   igPopItemWidth();
   int theme = gui_state.settings.theme; 
-  se_text("Theme");igSameLine(win_w*0.4,0);
+  se_text("Theme");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0",0);
   igPopItemWidth();
@@ -4420,7 +4456,7 @@ void se_draw_menu_panel(){
 #endif
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
-  se_text("Solar Sensor");igSameLine(win_w*0.4,0);
+  se_text("Solar Sensor");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   se_slider_float("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f");
   bool force_dmg_mode = gui_state.settings.force_dmg_mode;
@@ -4436,7 +4472,7 @@ void se_draw_menu_panel(){
   gui_state.settings.http_control_server_enable =enable_hcs;
   if(enable_hcs){
     int port = gui_state.settings.http_control_server_port;
-    se_text("Server Port");igSameLine(win_w*0.4,0);
+    se_text("Server Port");igSameLine(SE_FIELD_INDENT,0);
     igPushItemWidth(-1);
     se_input_int("##Server Port",&port,1,10,ImGuiInputTextFlags_None);
     if(igIsItemDeactivated())gui_state.settings.http_control_server_port=port; 
