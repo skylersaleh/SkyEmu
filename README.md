@@ -26,7 +26,7 @@ SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS 
 - 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
 - Action Replay Cheat Code Engine 
-- Localization in Armenian, Chinese, Danish, Dutch, English, German and Greek
+- Localization in Armenian, Chinese, Danish, Dutch, English, German, Greek, Italian, and Russian
 - Support for emulating the Real Time Clock and Solar Sensor
 - CPU, MMIO, and Memory Debuggers
 - Support for loading official BIOS and Boot ROM dumps
