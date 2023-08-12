@@ -1937,8 +1937,8 @@ static void se_draw_emulated_system_screen(bool preview){
   lcd_render_x+=v.x*dpi_scale+scr_w*0.5;
   lcd_render_y+=v.y*dpi_scale+scr_h*0.5;
   if(preview&&emu_state.rom_loaded==false){
-    ImVec2 min = {lcd_render_x-lcd_render_w*0.5,lcd_render_y-lcd_render_h*0.5};
-    ImVec2 max = {lcd_render_x+lcd_render_w*0.5,lcd_render_y+lcd_render_h*0.5};
+    ImVec2 min = {(lcd_render_x-lcd_render_w*0.5)/se_dpi_scale(),(lcd_render_y-lcd_render_h*0.5)/se_dpi_scale()};
+    ImVec2 max = {(lcd_render_x+lcd_render_w*0.5)/se_dpi_scale(),(lcd_render_y+lcd_render_h*0.5)/se_dpi_scale()};
     
     ImU32 col = 0xffC08000;
     igRenderFrame(min,max,col,true,0);
@@ -3815,7 +3815,7 @@ void se_imgui_theme()
   colors[ImGuiCol_PopupBg]                = (ImVec4){0.19f, 0.19f, 0.19f, 0.92f};
   colors[ImGuiCol_Border]                 = (ImVec4){0.1f, 0.1f, 0.1f, 1.0f};
   colors[ImGuiCol_BorderShadow]           = (ImVec4){0.00f, 0.00f, 0.00f, 0.24f};
-  colors[ImGuiCol_FrameBg]                = (ImVec4){0.2f, 0.2f, 0.2f, 0.8f};
+  colors[ImGuiCol_FrameBg]                = (ImVec4){0.2f, 0.2f, 0.2f, 0.9f};
   colors[ImGuiCol_FrameBgHovered]         = (ImVec4){0.1f, 0.1f, 0.1f, 1.0f};
   colors[ImGuiCol_FrameBgActive]          = (ImVec4){0.29f, 0.29f, 0.29f, 1.00f};
   colors[ImGuiCol_TitleBg]                = (ImVec4){0.00f, 0.00f, 0.00f, 1.00f};
@@ -3827,8 +3827,8 @@ void se_imgui_theme()
   colors[ImGuiCol_ScrollbarGrabHovered]   = (ImVec4){0.40f, 0.40f, 0.40f, 0.54f};
   colors[ImGuiCol_ScrollbarGrabActive]    = (ImVec4){0.56f, 0.56f, 0.56f, 0.54f};
   colors[ImGuiCol_CheckMark]              = (ImVec4){0.33f, 0.67f, 0.86f, 1.00f};
-  colors[ImGuiCol_SliderGrab]             = (ImVec4){0.34f, 0.34f, 0.34f, 0.54f};
-  colors[ImGuiCol_SliderGrabActive]       = (ImVec4){0.56f, 0.56f, 0.56f, 0.54f};
+  colors[ImGuiCol_SliderGrab]             = (ImVec4){0.34f, 0.34f, 0.34f, 0.8f};
+  colors[ImGuiCol_SliderGrabActive]       = (ImVec4){0.56f, 0.56f, 0.56f, 0.8f};
   colors[ImGuiCol_Button]                 = (ImVec4){0.25f, 0.25f, 0.25f, 1.00f};
   colors[ImGuiCol_ButtonHovered]          = (ImVec4){0.19f, 0.19f, 0.19f, 0.54f};
   colors[ImGuiCol_ButtonActive]           = (ImVec4){0.4f, 0.4f, 0.4f, 1.00f};
@@ -3942,7 +3942,7 @@ void se_imgui_theme()
   style->FrameRounding                     = 0;
   style->PopupRounding                     = 0;
   style->ScrollbarRounding                 = 9;
-  style->GrabRounding                      = 3;
+  style->GrabRounding                      = 100;
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
   style->ButtonTextAlign = (ImVec2){0.5,0.5};
@@ -3958,7 +3958,7 @@ void se_imgui_theme()
       //ImGuiCol_ScrollbarBg,
     };
     colors[ImGuiCol_Button]                 = (ImVec4){0.18f, 0.18f, 0.18f, 1.00f};
-    colors[ImGuiCol_FrameBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.8f};
+    colors[ImGuiCol_FrameBg]                = (ImVec4){0.15f, 0.15f, 0.15f, 0.9f};
     colors[ImGuiCol_ScrollbarBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.6f};
 
     for(int i=0;i<sizeof(black_list)/sizeof(black_list[0]);++i){
