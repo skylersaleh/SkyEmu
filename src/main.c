@@ -3445,6 +3445,7 @@ bool se_process_file_browser(){
           for(int i=0;i<file_browse->num_file_types;++i){
             if(sb_path_has_file_ext(file_browse->cached_files[f].path,file_browse->file_types[i])){show_item=true;break;}
           }
+          if(file_browse->num_file_types==0)show_item=true;
         }else{
           const char* name = file_browse->cached_files[f].name;
           if(strcmp(name,".")==0||strcmp(name,"..")==0)show_item=false;

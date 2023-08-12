@@ -189,6 +189,7 @@ static inline float sb_random_float(float min, float max){
 static inline bool sb_path_has_file_ext(const char * path, const char * ext){
   if(ext[0]=='*')ext++;
   if(ext[0]=='.')ext++;
+  if(ext[0]=='*')return true;
   int ext_len = strlen(ext);
   int path_len = strlen(path);
   if(path_len<ext_len)return false;
