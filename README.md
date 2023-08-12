@@ -43,23 +43,7 @@ https://web.skyemu.app/
 
 On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen. 
 
-Drag and drop a rom in to load it or click on the Load .GB/.GBC/.GBA button to open a menu to select a rom. 
-
 Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open source replacement BIOS/stubs. However, it is strongly recommended to dump official BIOS/firmware as the open source replacements lack many of the features of the native firmware/BIOS (such as colorizing GB games and the startup splashes) and are not as accurate. 
-=======
-- Dark and Light Themes
-- Support for loading official BIOS and Boot ROM dumps
-- Support for loading roms compressed in .zip archives
-
-## Download / Usage
-
-Native builds can be downloaded at: https://github.com/skylersaleh/SkyEmu/releases
-
-The latest version of the emulator can also be played without installing at the following address as a progressive web app:
-
-https://web.skyemu.app/
-
-On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen. 
 
 ## Discord Server
 
