@@ -2465,24 +2465,14 @@ static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, 
   //1Byte writes are ignored from the ARM9
   const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
   if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
-
+  
   int lookup_addr = SB_BFE(address,14,10)*16+(transaction_type&0xf);
   uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
   if((key&~(1023))==nds->mem.curr_vram_translation_key){
     int vram_addr = ((key&1023)*16*1024)+SB_BFE(address,0,14);
-    if(transaction_type&NDS_MEM_4B){
-      vram_addr&=~3;
-      if(transaction_type&NDS_MEM_WRITE)return *(uint32_t*)(nds->mem.vram+vram_addr)=data;
-      return *(uint32_t*)(nds->mem.vram+vram_addr);
-    }else if(transaction_type&NDS_MEM_2B){
-      vram_addr&=~1;
-      if(transaction_type&NDS_MEM_WRITE)return *(uint16_t*)(nds->mem.vram+vram_addr)=data;
-      return *(uint16_t*)(nds->mem.vram+vram_addr);
-    }else{
-      if(transaction_type&NDS_MEM_WRITE)return nds->mem.vram[vram_addr]=data;
-      return nds->mem.vram[vram_addr];
-    }
+    return nds_apply_mem_op(nds->mem.vram,vram_addr,data,transaction_type);
   }
+
   const static int bank_size[9]={
     128*1024, //A
     128*1024, //B
@@ -2640,18 +2630,7 @@ static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, 
   
     special_case_multiple_found = true;
     
-    if(transaction_type&NDS_MEM_4B){
-      vram_addr&=~3;
-      if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(nds->mem.vram+vram_addr)=data;
-      else ret_data |= *(uint32_t*)(nds->mem.vram+vram_addr);
-    }else if(transaction_type&NDS_MEM_2B){
-      vram_addr&=~1;
-      if(transaction_type&NDS_MEM_WRITE)*(uint16_t*)(nds->mem.vram+vram_addr)=data;
-      else ret_data |= *(uint16_t*)(nds->mem.vram+vram_addr);
-    }else{
-      if(transaction_type&NDS_MEM_WRITE)nds->mem.vram[vram_addr]=data;
-      else ret_data |= nds->mem.vram[vram_addr];
-    }
+    ret_data|= nds_apply_mem_op(nds->mem.vram,vram_addr,data,transaction_type);
   }
   return ret_data; 
 }
@@ -2924,50 +2903,7 @@ void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data);
 
-static FORCE_INLINE void nds_compute_access_cycles(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
-//  int bank = SB_BFE(address,24,4);
-//  bool prefetch_en= nds->mem.prefetch_en;
-//  if(!prefetch_en){
-//    if(nds->cpu.i_cycles)request_size|=1;
-//    if(request_size&1)nds->cpu.next_fetch_sequential =false;
-//    nds->mem.prefetch_size = 0;
-//  }
-//  uint32_t wait = nds->mem.wait_state_table[bank*4+request_size];
-//  if(prefetch_en){        
-//    nds->mem.prefetch_size+=nds->cpu.i_cycles;
-//    if(bank>=0x08&&bank<=0x0D){
-//      if((request_size&1)){
-//        //Non sequential->reset prefetch buffer
-//        nds->mem.prefetch_size = 0;
-//        // Check if the bubble made it to the execute stage before being squashed, 
-//        // and apply the bubble cycle if it was not squashed. 
-//        // Note, only a single pipeline bubble is tracked using this infrastructure. 
-//        if(nds->mem.pipeline_bubble_shift_register){
-//          wait+=1;
-//          nds->mem.pipeline_bubble_shift_register=0;
-//        }
-//        nds->cpu.next_fetch_sequential =false;
-//      }else{
-//        nds->mem.pipeline_bubble_shift_register>>=wait;
-//        //Sequential fetch from prefetch buffer based on available wait states
-//        if(nds->mem.prefetch_size>=wait){
-//          nds->mem.prefetch_size-=wait-1; 
-//          wait = 1; 
-//        }else{
-//          wait -= nds->mem.prefetch_size;
-//          nds->mem.prefetch_size=0;
-//        }
-//      }
-//    }else {
-//      nds->mem.pipeline_bubble_shift_register=((bank==0x03||bank==0x07||bank<=0x01)&& (request_size&1))*4; 
-//      nds->mem.prefetch_size+=wait; 
-//    }
-//  }
-  uint32_t wait = 1; 
-  //wait+=nds->cpu.i_cycles;
-  //nds->cpu.i_cycles=0;
-  nds->mem.requests+=wait;
-}
+
 static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
   return 1;
 }
@@ -5514,7 +5450,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       uint16_t WINOUT = nds9_io_read16(nds, GBA_WINOUT+reg_offset);
       if(winout_enable)default_window_control = SB_BFE(WINOUT,0,8);
 
-      for(int x=0;x<NDS_LCD_W;++x){ppu->window[x] = default_window_control;}
+      memset(ppu->window,default_window_control,NDS_LCD_W);
+
       uint8_t obj_window_control = default_window_control;
       bool obj_window_enable = SB_BFE(dispcnt,15,1);
       if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
@@ -5702,7 +5639,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           if(lcd_y<win_ymin||lcd_y>=win_ymax)continue;
           uint16_t winin = nds9_io_read16(nds,GBA_WININ+reg_offset);
           uint8_t win_value = SB_BFE(winin,win*8,6);
-          for(int x=win_xmin;x<win_xmax;++x)ppu->window[x] = win_value;
+          memset(ppu->window+win_xmin,win_value,win_xmax-win_xmin);
         }
         int backdrop_type = 5;
         uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
