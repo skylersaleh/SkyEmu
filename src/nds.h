@@ -1905,6 +1905,7 @@ typedef struct {
   bool itcm_load_mode;
   bool dtcm_enable;
   bool itcm_enable;
+  uint32_t slow_bus_cycles; 
 } nds_mem_t;
 
 typedef struct {
@@ -2646,6 +2647,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       break;
     case 0x3: //Shared WRAM 
       {
+        nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
         uint32_t orig_addr = addr;
         uint8_t cnt = nds9_io_read8(nds,NDS9_WRAMCNT)&0x3;
         const int offset[4]={0,16*1024,0,0};
@@ -2656,6 +2658,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       }
       break;
     case 0x4: 
+        nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
         if((addr&0xffff)>=0x2000||addr>=0x04200000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
@@ -2670,13 +2673,16 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         }
       break;
     case 0x5: //Palette 
+      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.palette, addr, data, transaction_type); 
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
+      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
       *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
       break;
     case 0x7: 
+      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.oam, addr, data, transaction_type); 
       break;
@@ -6728,7 +6734,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }      
-    int ticks = 1;
+    int ticks = nds->mem.slow_bus_cycles;
+    if(!ticks)ticks = 1;
+    nds->mem.slow_bus_cycles = 0; 
 
     if(SB_LIKELY(!nds->active_if_pipe_stages)){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
