@@ -6,6 +6,7 @@
 #include "freebios/drastic_bios_arm7.h"
 #include "freebios/drastic_bios_arm9.h"
 
+#define NDS_SCANLINE_PPU 1
 
 typedef enum{
   kARM7,
@@ -2445,7 +2446,7 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 #define NDS_MEM_SEQ   0x200
 
 
-static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
+static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
   if(transaction_type&NDS_MEM_4B){
     address&=~3;
     if(transaction_type&NDS_MEM_WRITE)*(uint32_t*)(memory+address)=data;
@@ -2460,7 +2461,7 @@ static uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t dat
   }
   return data; 
 }
-static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
+static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
   //1Byte writes are ignored from the ARM9
   const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
   if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
@@ -2657,7 +2658,7 @@ static uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data
 
 static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
 static void nds_postprocess_mmio_write(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type);
-static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
+static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
@@ -2714,7 +2715,7 @@ static uint32_t nds9_process_memory_transaction(nds_t * nds, uint32_t addr, uint
   }
   return *ret; 
 }
-static uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
+static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
     if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
@@ -2731,7 +2732,7 @@ static uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, 
   return nds9_process_memory_transaction(nds,addr,data,transaction_type);
 }
 
-static uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
+static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
       case 0x0: //BIOS(NDS7), TCM(NDS9)
@@ -4550,10 +4551,10 @@ static int nds_gpu_cmd_cycles(int cmd){
   }
   return 1; 
 }
-static int32_t nds_gxfifo_size(nds_t*nds){
+static FORCE_INLINE int32_t nds_gxfifo_size(nds_t*nds){
   return (nds->gpu.fifo_write_ptr-nds->gpu.fifo_read_ptr)%(NDS_GXFIFO_MASK);
 }
-static void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
+static FORCE_INLINE void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
   if(nds_gxfifo_size(nds)>=NDS_GXFIFO_STORAGE){
     printf("Error GX FIFO Overflow\n"); 
     return;
@@ -4568,7 +4569,7 @@ static float nds_point_plane_distance(float * point, float * plane){
   SE_RPT3 dist+=point[r]*plane[r];
   return dist; 
 }
-static void nds_tick_gx(nds_t* nds){
+static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
   if(gpu->pending_swap){nds_gpu_swap_buffers(nds);gpu->pending_swap=false;}
@@ -5361,7 +5362,7 @@ static FORCE_INLINE int nds_ppu_compute_max_fast_forward(nds_t *nds){
   //If inside hblank, can fastforward to outside of hblank
   if(scanline_clock>=NDS_LCD_W*NDS_CLOCKS_PER_DOT&&scanline_clock<=355*NDS_CLOCKS_PER_DOT) return 355*NDS_CLOCKS_PER_DOT-scanline_clock-1;
   //If inside hrender, can fastforward to hblank if not the first pixel and not visible
-  bool not_visible = nds->ppu[0].scan_clock>NDS_LCD_H*355*NDS_CLOCKS_PER_DOT; 
+  bool not_visible = nds->ppu[0].scan_clock>NDS_LCD_H*355*NDS_CLOCKS_PER_DOT|| NDS_SCANLINE_PPU; 
   if(not_visible&& (scanline_clock>=1 && scanline_clock<=NDS_LCD_W*NDS_CLOCKS_PER_DOT))return NDS_LCD_W*NDS_CLOCKS_PER_DOT-scanline_clock-1; 
   return (NDS_CLOCKS_PER_DOT-1)-((nds->ppu[0].scan_clock)%NDS_CLOCKS_PER_DOT);
 }
@@ -5712,6 +5713,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       }
     }
     if(visible){
+      #if NDS_SCANLINE_PPU == 1
+      if(lcd_x==0){while(lcd_x<NDS_LCD_W){
+      #endif
       uint8_t window_control =ppu->window[lcd_x];
       bool render_backgrounds = true; //TODO hook up power management
       if(render_backgrounds){
@@ -6099,6 +6103,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       
       ppu->first_target_buffer[lcd_x] = backdrop_col;
       ppu->second_target_buffer[lcd_x] = backdrop_col;
+    #if NDS_SCANLINE_PPU == 1
+    lcd_x++;
+    }
+    lcd_x = 0; 
+    }
+    #endif
     }
   }
 }
@@ -6745,7 +6755,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds_tick_rtc(nds);
   nds_tick_keypad(&emu->joy,nds);
   nds_tick_touch(&emu->joy,nds);
-  static int last_tick =0;
   bool prev_vblank=true;
 
   uint64_t* d = (uint64_t*)nds->mem.mmio_debug_access_buffer;
@@ -6756,7 +6765,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   while(!nds->ppu[0].new_frame){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
-      nds_tick_dma(nds,last_tick);
+      nds_tick_dma(nds,true);
       if(SB_LIKELY(!nds->dma_processed[0])){
         uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
         if(int7_if){
@@ -6792,7 +6801,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       }
     }      
     int ticks = 1;
-    last_tick=ticks;
 
     if(SB_LIKELY(nds->active_if_pipe_stages==0)&&(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt||gx_fifo_full)){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
@@ -6818,8 +6826,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       nds_tick_timers(nds);
       nds_tick_ppu(nds,emu->render_frame);
       nds_tick_gx(nds);
-      nds->current_clock++;
     }
+    nds->current_clock+=ticks;
   }
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
