@@ -7,7 +7,7 @@
 <a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)
 <a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
 
-![SkyEmu Ad_1 2](https://github.com/skylersaleh/SkyEmu/assets/7118296/62f5e4e3-6655-4b8a-8d2f-dd1563e01956)
+![SkyEmu](https://github.com/skylersaleh/SkyEmu/assets/7118296/367de77a-d370-40f7-a8b5-f387bd3a6218)
 
 SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
 
