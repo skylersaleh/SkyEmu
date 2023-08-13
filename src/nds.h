@@ -5317,30 +5317,54 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
 
     int reg_offset = ppu_id==0? 0: 0x00001000;
     if(lcd_x==0||lcd_x==NDS_LCD_W){
-      uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
-      uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
-      uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
-      uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
-      vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
-      vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
       bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<263;
       bool hblank = lcd_x>=NDS_LCD_W;
-      bool vcmp = lcd_y==vcount_cmp;
-      bool vcmp7 = lcd_y==vcount_cmp7;
-      disp_stat |= vblank ? 0x1: 0; 
-      disp_stat |= hblank ? 0x2: 0;      
-      disp_stat |= vcmp ? 0x4: 0;   
-      disp_stat7 |= vblank ? 0x1: 0; 
-      disp_stat7 |= hblank ? 0x2: 0;      
-      disp_stat7 |= vcmp7 ? 0x4: 0;   
+      uint32_t new_if = 0;
+      uint32_t new_if7 = 0;
       if(ppu_id==0){
+        uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
+        uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
+        uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
+        uint16_t vcount_cmp7 = SB_BFE(disp_stat7,8,8);
+        vcount_cmp|= SB_BFE(disp_stat,7,1)<<8;
+        vcount_cmp7|= SB_BFE(disp_stat7,7,1)<<8;
+        bool vcmp = lcd_y==vcount_cmp;
+        bool vcmp7 = lcd_y==vcount_cmp7;
+        disp_stat |= vblank ? 0x1: 0; 
+        disp_stat |= hblank ? 0x2: 0;      
+        disp_stat |= vcmp ? 0x4: 0;   
+        disp_stat7 |= vblank ? 0x1: 0; 
+        disp_stat7 |= hblank ? 0x2: 0;      
+        disp_stat7 |= vcmp7 ? 0x4: 0;   
         nds7_io_store16(nds,GBA_VCOUNT,lcd_y);   
         nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
         nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
         nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+        if(vcmp!=ppu->last_vcmp) {
+          ppu->last_vcmp=vcmp;
+          bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
+          if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
+        }
+        if(vcmp7!=ppu->last_vcmp7) {
+          ppu->last_vcmp7=vcmp7;
+          bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
+          if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
+        }
+        if(hblank&&!ppu->last_hblank){
+          bool hblank_irq_en = SB_BFE(disp_stat,4,1);
+          bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
+          if(hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
+          if(hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
+        }
+        if(vblank&&!ppu->last_vblank){
+          bool vblank_irq_en = SB_BFE(disp_stat,3,1);
+          bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
+          if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
+          if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
+        }
+        if(new_if)nds9_send_interrupt(nds,3,new_if);
+        if(new_if7)nds7_send_interrupt(nds,3,new_if7);
       }
-      uint32_t new_if = 0;
-      uint32_t new_if7 = 0;
       if(hblank!=ppu->last_hblank){
         ppu->last_hblank = hblank;
         nds->activate_dmas|=nds->dma_wait_ppu;
@@ -5349,14 +5373,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           ppu->dispcnt_pipeline[1]=ppu->dispcnt_pipeline[2];
           ppu->dispcnt_pipeline[2]=nds9_io_read16(nds, GBA_DISPCNT+reg_offset);
         }else{
-          bool hblank_irq_en = SB_BFE(disp_stat,4,1);
-          bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
-          if(hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-          if(hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
           uint16_t dispcnt = ppu->dispcnt_pipeline[0];
-
           int bg_mode = SB_BFE(dispcnt,0,3);
-
           // From Mirei: Affine registers are only incremented when bg_mode is not 0
           // and the bg is enabled.
           if(bg_mode!=0){
@@ -5385,10 +5403,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       if(vblank!=ppu->last_vblank){
         ppu->last_vblank = vblank;
         if(vblank){
-          bool vblank_irq_en = SB_BFE(disp_stat,3,1);
-          bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
-          if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
-          if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
           //Done with capture
           dispcapcnt&=~(1<<31);
           nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
@@ -5409,39 +5423,22 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         nds->display_flip = SB_BFE(powcnt1,15,1);
         nds->activate_dmas|=nds->dma_wait_ppu;
       }
-      if(vcmp!=ppu->last_vcmp) {
-        ppu->last_vcmp=vcmp;
-        bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
-        if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
-      }
-      if(vcmp7!=ppu->last_vcmp7) {
-        ppu->last_vcmp7=vcmp7;
-        bool vcnt_irq_en7 = SB_BFE(disp_stat7,5,1);
-        if(vcnt_irq_en7)new_if7 |= (1<<GBA_INT_LCD_VCOUNT);
-      }
-      
       ppu->last_lcd_y  = lcd_y;
-       
-      if(ppu_id==0&&(new_if|new_if7)){
-        nds9_send_interrupt(nds,3,new_if);
-        nds7_send_interrupt(nds,3,new_if7);
-      }
     }
     uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
     int display_mode = SB_BFE(dispcnt,16,2);
     bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
     render|=enable_capture;
+    int forced_blank = SB_BFE(dispcnt,7,1);
+    render&= !forced_blank;
     if(!render)continue;
     
     bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
     int bg_mode = SB_BFE(dispcnt,0,3);
-    int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
-    int forced_blank = SB_BFE(dispcnt,7,1);
-    if(forced_blank)return;
     bool visible = lcd_x<NDS_LCD_W && lcd_y<NDS_LCD_H;
     //Render sprites over scanline when it completes
     if(lcd_y<NDS_LCD_H && lcd_x == 0){
-    
+      int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
       //Render sprites over scanline when it completes
       uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
       bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
@@ -5450,11 +5447,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
 
       memset(ppu->window,default_window_control,NDS_LCD_W);
 
-      uint8_t obj_window_control = default_window_control;
-      bool obj_window_enable = SB_BFE(dispcnt,15,1);
-      if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
       bool display_obj = SB_BFE(dispcnt,12,1);
       if(display_obj){
+        uint8_t obj_window_control = default_window_control;
+        bool obj_window_enable = SB_BFE(dispcnt,15,1);
+        if(obj_window_enable)obj_window_control = SB_BFE(WINOUT,8,6);
         int oam_offset = ppu_id*1024;
         int obj_vram_base = ppu_id ==0? 0x06400000: 0x06600000;
         for(int o=0;o<128;++o){
@@ -5694,9 +5691,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             0,0, //INVALID
           };
           int bg_type = bg_mode_table[bg_mode*4+bg];
-          if(bg_type==NDS_BG_INVALID)continue;
           uint32_t col =0;         
-          bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1);
+          bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1)&&bg_type!=NDS_BG_INVALID;
           if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
 
           bool rot_scale = bg_type!=NDS_BG_TEXT;
@@ -5942,60 +5938,58 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       }
 
       if(enable_capture){
-        uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
-        //TODO: EVA/EVB, sources other than 0
-        int write_block = SB_BFE(dispcapcnt, 16,2);
-        int write_offset = SB_BFE(dispcapcnt, 18,2);
         int size = SB_BFE(dispcapcnt, 20,2);
         int szx = 128; int szy = 128;
         if(size!=0){szx=256; szy= size*64;}
-        bool source_a = SB_BFE(dispcapcnt,24,1);
-        if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
-          int p = lcd_x+lcd_y*NDS_LCD_W;
-          color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
-          color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
-          color |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
-        }
-        int capture_mode = SB_BFE(dispcapcnt,29,2);
-        
-        if(capture_mode>=2){        
-          int r = SB_BFE(color,0,5);
-          int g = SB_BFE(color,5,5);
-          int b = SB_BFE(color,10,5);
-          int read_offset = SB_BFE(dispcapcnt, 26,2);
-          uint32_t read_address = 0x06800000;
-          read_address+=read_offset*0x08000;
-          read_address+=lcd_y*szx*2+lcd_x*2;
-          uint16_t color2=nds_ppu_read16(nds,read_address);
-          if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
-
-          int r2 = SB_BFE(color2,0,5);
-          int g2 = SB_BFE(color2,5,5);
-          int b2 = SB_BFE(color2,10,5);
-          int eva = SB_BFE(dispcapcnt,0,5);
-          int evb = SB_BFE(dispcapcnt,8,5);
-      
-          if(eva>16)eva=16;
-          if(evb>16)evb=16;
-          r = (r*eva+r2*evb)/16;
-          g = (g*eva+g2*evb)/16;
-          b = (b*eva+b2*evb)/16;
-          if(r>31)r = 31;
-          if(g>31)g = 31;
-          if(b>31)b = 31;
-          color  = SB_BFE(r,0,5);
-          color |= SB_BFE(g,0,5)<<5;
-          color |= SB_BFE(b,0,5)<<10;
-        }      
-        if(lcd_x<szx){
-          if(lcd_y<szy){
-            uint32_t write_address = 0x06800000;
-            write_address+=write_block*128*1024;
-            write_address+=write_offset*0x08000;
-            write_address+=lcd_y*szx*2+lcd_x*2;
-            color|=0x8000;//TODO: Confirm that captured alpha is always 1
-            nds9_write16(nds,write_address,color);
+        if(lcd_x<szx&&lcd_y<szy){
+          uint16_t color = (((uint16_t)r&0x1f))|(((uint16_t)g&0x1f)<<5)|(((uint16_t)b&0x1f)<<10);
+          //TODO: EVA/EVB, sources other than 0
+          int write_block = SB_BFE(dispcapcnt, 16,2);
+          int write_offset = SB_BFE(dispcapcnt, 18,2);
+          bool source_a = SB_BFE(dispcapcnt,24,1);
+          if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
+            int p = lcd_x+lcd_y*NDS_LCD_W;
+            color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
+            color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
+            color |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
           }
+          int capture_mode = SB_BFE(dispcapcnt,29,2);
+          
+          if(capture_mode>=2){        
+            int r = SB_BFE(color,0,5);
+            int g = SB_BFE(color,5,5);
+            int b = SB_BFE(color,10,5);
+            int read_offset = SB_BFE(dispcapcnt, 26,2);
+            uint32_t read_address = 0x06800000;
+            read_address+=read_offset*0x08000;
+            read_address+=lcd_y*szx*2+lcd_x*2;
+            uint16_t color2=nds_ppu_read16(nds,read_address);
+            if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
+
+            int r2 = SB_BFE(color2,0,5);
+            int g2 = SB_BFE(color2,5,5);
+            int b2 = SB_BFE(color2,10,5);
+            int eva = SB_BFE(dispcapcnt,0,5);
+            int evb = SB_BFE(dispcapcnt,8,5);
+        
+            if(eva>16)eva=16;
+            if(evb>16)evb=16;
+            r = (r*eva+r2*evb)/16;
+            g = (g*eva+g2*evb)/16;
+            b = (b*eva+b2*evb)/16;
+            if(r>31)r = 31;
+            if(g>31)g = 31;
+            if(b>31)b = 31;
+            color  = SB_BFE(r,0,5);
+            color |= SB_BFE(g,0,5)<<5;
+            color |= SB_BFE(b,0,5)<<10;
+          }      
+          uint32_t write_address = 0x06800000;
+          write_address+=write_block*128*1024;
+          write_address+=write_offset*0x08000;
+          write_address+=lcd_y*szx*2+lcd_x*2;
+          color|=0x8000;//TODO: Confirm that captured alpha is always 1
+          nds9_write16(nds,write_address,color);
         }
       }
 
