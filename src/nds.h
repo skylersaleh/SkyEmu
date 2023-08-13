@@ -6730,16 +6730,21 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     }      
     int ticks = 1;
 
-    if(SB_LIKELY(nds->active_if_pipe_stages==0)&&(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt||gx_fifo_full)){
+    if(SB_LIKELY(!nds->active_if_pipe_stages)){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
       int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(fast_forward_ticks){
+        if(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt))fast_forward_ticks=1;
         nds->deferred_timer_ticks+=fast_forward_ticks;
         nds->ppu[0].scan_clock+=fast_forward_ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
-        if(nds->gpu.cmd_busy_cycles)nds->gpu.cmd_busy_cycles-=fast_forward_ticks;
+        if(nds->gpu.cmd_busy_cycles){
+          nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
+        }
+        nds_tick_gx(nds);
+        nds->current_clock+=fast_forward_ticks;
         ticks =ticks<fast_forward_ticks?0:ticks-fast_forward_ticks;
       }
       double delta_t = ((double)ticks+fast_forward_ticks)/(33513982);
