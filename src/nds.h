@@ -2642,6 +2642,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
+      if(!(transaction_type&NDS_MEM_ARM9))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -6744,7 +6745,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(fast_forward_ticks){
-        if(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt))fast_forward_ticks=1;
+        if(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks)fast_forward_ticks=ticks;
         nds->deferred_timer_ticks+=fast_forward_ticks;
         nds->ppu[0].scan_clock+=fast_forward_ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
