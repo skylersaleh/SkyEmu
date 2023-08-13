@@ -2465,7 +2465,7 @@ static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, 
   //1Byte writes are ignored from the ARM9
   const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
   if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
-  
+
   int lookup_addr = SB_BFE(address,14,10)*16+(transaction_type&0xf);
   uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
   if((key&~(1023))==nds->mem.curr_vram_translation_key){
@@ -2653,7 +2653,6 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         if(cnt==3)break;
         addr=(addr&mask[cnt])+offset[cnt];
         *ret = nds_apply_mem_op(nds->mem.wram, addr, data, transaction_type); 
-        nds->mem.openbus_word=*ret;
       }
       break;
     case 0x4: 
@@ -2666,7 +2665,6 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
           if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
         }
-        nds->mem.openbus_word=*ret;
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
         }
@@ -2674,16 +2672,13 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
     case 0x5: //Palette 
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.palette, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
       *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
     case 0x7: 
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.oam, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
     case 0xFF: 
       if(addr>=0xFFFF0000){
@@ -2719,13 +2714,12 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
         if(nds->arm7.registers[PC]<0x4000)
           nds->mem.arm7_bios_word = nds_apply_mem_op(nds->mem.nds7_bios,addr,data,transaction_type&~NDS_MEM_WRITE);
         //else nds->mem.bios_word=0;
-        *ret = nds->mem.openbus_word=nds->mem.arm7_bios_word;
+        *ret = nds->mem.arm7_bios_word;
       } 
       break;
     case 0x2: //Main RAM
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
     case 0x3: //Shared WRAM 
       {
@@ -2738,7 +2732,6 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
           else            addr=(addr&mask[cnt])+offset[cnt];
         }else addr= 32*1024+((addr-0x03800000)&(64*1024-1));
         *ret = nds_apply_mem_op(nds->mem.wram, addr, data, transaction_type); 
-        nds->mem.openbus_word=*ret;
       }
       break;
     case 0x4: 
@@ -2772,7 +2765,6 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
           if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
         }
-        nds->mem.openbus_word=*ret;
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
         }
@@ -2786,7 +2778,6 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
       *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
-      nds->mem.openbus_word=*ret;
       break;
   }
   return *ret; 
