@@ -2445,6 +2445,7 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 
 #define NDS_MEM_WRITE 0x100
 #define NDS_MEM_SEQ   0x200
+#define NDS_MEM_CODE  0x400
 
 
 static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
@@ -2642,7 +2643,29 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&NDS_MEM_ARM9))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
+      if(!(transaction_type&(NDS_MEM_ARM9))||(transaction_type&NDS_MEM_WRITE))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
+      /*else{
+        bool found = false; 
+        bool code = (transaction_type&NDS_MEM_CODE);
+        static uint32_t dcache[4*1024/32];
+        static uint32_t icache[8*1024/32];
+        uint32_t * cache = code?icache:dcache;
+        uint32_t hash =    code? 8*1024/4/32- 1: 4*1024/4/32-1;
+        uint32_t key = addr/32;
+        uint32_t cache_addr = (key&hash);
+        uint32_t shift_val = key; 
+        for(int i=0;i<4;++i){
+          uint32_t t = cache[cache_addr*4+i];
+          cache[cache_addr*4+i] = shift_val;
+          shift_val = t; 
+          if(key==shift_val){found=true;break;}
+        }
+        
+        if(!found){
+          if(code)nds->mem.slow_bus_cycles+=21;
+          else nds->mem.slow_bus_cycles+=23;
+        }
+      }*/
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -2827,6 +2850,12 @@ static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
 static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9);
 }
+static FORCE_INLINE uint32_t nds9_cpu_read32_seq(nds_t*nds, unsigned baddr, bool is_sequential){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+}
+static FORCE_INLINE uint16_t nds9_cpu_read16_seq(nds_t*nds, unsigned baddr, bool is_sequential){
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+}
 static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9);
 }
@@ -2845,8 +2874,14 @@ static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
 static FORCE_INLINE uint32_t nds7_read32(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM7);
 }
+static FORCE_INLINE uint32_t nds7_read32_seq(nds_t*nds, unsigned baddr,bool is_sequential){
+  return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM7|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+}
 static FORCE_INLINE uint16_t nds9_read16(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9);
+}
+static FORCE_INLINE uint16_t nds7_read16_seq(nds_t*nds, unsigned baddr,bool is_sequential){
+  return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM7|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
 }
 static FORCE_INLINE uint16_t nds7_read16(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM7);
@@ -2882,8 +2917,8 @@ static FORCE_INLINE uint32_t nds_ppu_read32(nds_t*nds, unsigned baddr){
 }
 uint32_t nds9_arm_read32(void* user_data, uint32_t address){return nds9_cpu_read32((nds_t*)user_data,address);}
 uint32_t nds9_arm_read16(void* user_data, uint32_t address){return nds9_cpu_read16((nds_t*)user_data,address);}
-uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read32((nds_t*)user_data,address);}
-uint32_t nds9_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read16((nds_t*)user_data,address);}
+uint32_t nds9_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read32_seq((nds_t*)user_data,address,is_sequential);}
+uint32_t nds9_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds9_cpu_read16_seq((nds_t*)user_data,address,is_sequential);}
 uint8_t nds9_arm_read8(void* user_data, uint32_t address){return nds9_cpu_read8((nds_t*)user_data,address);}
 void nds9_arm_write32(void* user_data, uint32_t address, uint32_t data){nds9_cpu_write32((nds_t*)user_data,address,data);}
 void nds9_arm_write16(void* user_data, uint32_t address, uint16_t data){nds9_cpu_write16((nds_t*)user_data,address,data);}
@@ -2891,8 +2926,8 @@ void nds9_arm_write8(void* user_data, uint32_t address, uint8_t data){nds9_cpu_w
 
 uint32_t nds7_arm_read32(void* user_data, uint32_t address){return nds7_read32((nds_t*)user_data,address);}
 uint32_t nds7_arm_read16(void* user_data, uint32_t address){return nds7_read16((nds_t*)user_data,address);}
-uint32_t nds7_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read32((nds_t*)user_data,address);}
-uint32_t nds7_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read16((nds_t*)user_data,address);}
+uint32_t nds7_arm_read32_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read32_seq((nds_t*)user_data,address,is_sequential);}
+uint32_t nds7_arm_read16_seq(void* user_data, uint32_t address,bool is_sequential){return nds7_read16_seq((nds_t*)user_data,address,is_sequential);}
 uint8_t nds7_arm_read8(void* user_data, uint32_t address){return nds7_read8((nds_t*)user_data,address);}
 void nds7_arm_write32(void* user_data, uint32_t address, uint32_t data){nds7_write32((nds_t*)user_data,address,data);}
 void nds7_arm_write16(void* user_data, uint32_t address, uint16_t data){nds7_write16((nds_t*)user_data,address,data);}
