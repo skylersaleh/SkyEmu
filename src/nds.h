@@ -6123,9 +6123,8 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
   }
   
 }
-static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
-  if(nds->activate_dmas==false)return 0;
-  int ticks =0;
+static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
+  if(nds->activate_dmas==false)return;
   nds->activate_dmas=false;
   nds->dma_wait_gx = false;
   nds->dma_wait_ppu= false;
@@ -6248,13 +6247,11 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           nds->dma_wait_gx = true;
           if(nds->dma[cpu][i].gx_dma_subtransfer<=0){
             if(nds_gxfifo_size(nds)>=NDS_GX_DMA_THRESHOLD){
-              //printf("Wait for threshold:%d\n",nds_gxfifo_size(nds));
               continue;
             }
             nds->dma[cpu][i].gx_dma_subtransfer=111;
           }else{
             nds->dma[cpu][i].gx_dma_subtransfer--;
-            //printf("Subtransfer:%d \n",nds->dma[cpu][i].gx_dma_subtransfer);
           } 
         }
 
@@ -6270,6 +6267,7 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
           // and Tomb Raider
           if(nds->dma[cpu][i].current_transaction<cnt){
             nds->dma_processed[cpu]|=true;
+            nds->activate_dmas|=true;
             int x = nds->dma[cpu][i].current_transaction++;
             int dst_addr = dst+x*transfer_bytes*dst_dir;
             int src_addr = src+x*transfer_bytes*src_dir;
@@ -6277,35 +6275,28 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
               if(src_addr>=0x02000000){
                 if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr);
                 else nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr);
-                ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 2:3);
               }
               if(cpu==NDS_ARM7)nds7_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
               else nds9_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 2:3);
             }else{
               int v = 0;
               if(src_addr>=0x02000000){
                 if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read16(nds,src_addr)&0xffff;
                 else v=nds->dma[cpu][i].latched_transfer = nds9_read16(nds,src_addr)&0xffff;
                 nds->dma[cpu][i].latched_transfer |= nds->dma[cpu][i].latched_transfer<<16;
-                ticks+=nds_compute_access_cycles_dma(nds, src_addr, x!=0? 0:1);
               }else v = nds->dma[cpu][i].latched_transfer>>(((dst_addr)&0x3)*8);
               if(cpu==NDS_ARM7)nds7_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
               else nds9_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              ticks+=nds_compute_access_cycles_dma(nds, dst_addr, x!=0||force_first_write_sequential? 0:1);
             }
           }
-          /*if(mode==0x7){
-            printf("GX FIFO DMA:%d of %d data:0x%08x\n",nds->dma[cpu][i].current_transaction,cnt,nds->dma[cpu][i].latched_transfer);
-          }*/
         }
-      //
+
         if(nds->dma[cpu][i].current_transaction>=cnt){
           if(dst_addr_ctl==0||dst_addr_ctl==3)     dst+=cnt*transfer_bytes;
           else if(dst_addr_ctl==1)dst-=cnt*transfer_bytes;
           if(src_addr_ctl==0)     src+=cnt*transfer_bytes;
           else if(src_addr_ctl==1)src-=cnt*transfer_bytes;
-        //
+
           nds->dma[cpu][i].source_addr=src;
           nds->dma[cpu][i].dest_addr=dst;
           if(irq_enable){
@@ -6324,15 +6315,10 @@ static FORCE_INLINE int nds_tick_dma(nds_t*nds, int last_tick){
         }
       }
       nds->dma[cpu][i].last_enable = enable;
-      if(ticks)break;
+      if(nds->activate_dmas)break;
     }
-    nds->activate_dmas|=ticks!=0;
-
-    if(nds->last_transaction_dma&&ticks==0){
-      nds->last_transaction_dma=false;
-    }
+    nds->last_transaction_dma = nds->activate_dmas;
   }
-  return ticks; 
 }                                              
 static FORCE_INLINE void nds_tick_sio(nds_t* nds){
   //Just a stub for now;
@@ -6695,7 +6681,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
-      if(SB_LIKELY(!nds->dma_processed[0])){
+      if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
         uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
         if(int7_if){
           uint32_t ie = nds7_io_read32(nds,NDS7_IE);
@@ -6729,9 +6715,11 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }      
-    int ticks = nds->mem.slow_bus_cycles;
-    if(!ticks)ticks = 1;
-    nds->mem.slow_bus_cycles = 0; 
+    int ticks = 1;
+    if(nds->mem.slow_bus_cycles){
+      ticks = nds->mem.slow_bus_cycles;
+      nds->mem.slow_bus_cycles = 0; 
+    }
 
     if(SB_LIKELY(!nds->active_if_pipe_stages)){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
