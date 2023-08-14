@@ -294,7 +294,7 @@ typedef struct {
     ImFont* mono_font; 
 
     uint32_t current_click_region_id;
-    uint32_t max_click_region_id; 
+    uint32_t max_click_region_id;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -4349,7 +4349,7 @@ void se_draw_menu_panel(){
   }
   if(se_button("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
 
-#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
+#if !defined(PLATFORM_IOS)
   se_text(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
@@ -4881,6 +4881,17 @@ static void frame(void) {
   static bool last_toggle_fullscreen=false;
   if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
   last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
+
+#ifdef PLATFORM_ANDROID
+  //Handle Android Back Button Navigation
+  static bool last_back_press = false;
+  if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
+      if(gui_state.sidebar_open)gui_state.sidebar_open = false;
+      else if(emu_state.run_mode!=SB_MODE_PAUSE)emu_state.run_mode = SB_MODE_PAUSE;
+      else sapp_quit();
+  }
+  last_back_press= gui_state.button_state[SAPP_KEYCODE_BACK];
 #endif
 
   int width = sapp_width();

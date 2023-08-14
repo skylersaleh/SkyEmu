@@ -16,6 +16,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
@@ -86,14 +87,14 @@ public class EnhancedNativeActivity extends NativeActivity {
         return val;
     }
     public void showKeyboard(){
+        Window win =this.getWindow();
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                win.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
                 invisibleEditText.requestFocus();
-                invisibleEditText.setFocusableInTouchMode(true);
-
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.showSoftInput(invisibleEditText, InputMethodManager.SHOW_FORCED);
+                imm.showSoftInput(invisibleEditText, InputMethodManager.SHOW_IMPLICIT);
             }
         });
     }
@@ -104,8 +105,11 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                win.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
                 InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
-                imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), 0 );
+                imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
+                //win.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             }
         });
     }
@@ -201,6 +205,8 @@ public class EnhancedNativeActivity extends NativeActivity {
         invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
         invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         keyboardEvents = new Vector<Integer>(5);
+        mRootWindow.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
         View mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
         ((FrameLayout)mRootView).addView(invisibleEditText);
 
