@@ -4889,6 +4889,7 @@ static void frame(void) {
   if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
       if(gui_state.sidebar_open)gui_state.sidebar_open = false;
       else if(emu_state.run_mode!=SB_MODE_PAUSE)emu_state.run_mode = SB_MODE_PAUSE;
+      else if(emu_state.rom_loaded)emu_state.run_mode = SB_MODE_RUN;
       else sapp_quit();
   }
   last_back_press= gui_state.button_state[SAPP_KEYCODE_BACK];
