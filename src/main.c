@@ -4144,6 +4144,47 @@ void se_pop_disabled(){
    igPopStyleColor(1);
    igPopItemFlag();
 }
+void se_draw_touch_controls_settings(){
+
+  se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
+  igSeparator();
+  float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
+  float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
+
+  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
+  if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
+    se_draw_emulated_system_screen(true);
+  }
+  igEndChildFrame();
+  igSameLine(0,2);
+
+  if(igBeginChildFrame(2,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
+    se_draw_emulated_system_screen(true);
+  }
+  igEndChildFrame();
+  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
+
+  se_text("Scale");igSameLine(SE_FIELD_INDENT,0);
+  igPushItemWidth(-1);
+  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
+
+  se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
+  igPushItemWidth(-1);
+  se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
+  igPopItemWidth();
+  bool auto_hide = gui_state.settings.auto_hide_touch_controls;
+  se_checkbox("Hide when inactive",&auto_hide);
+  gui_state.settings.auto_hide_touch_controls = auto_hide;
+
+  bool show_turbo = gui_state.settings.touch_controls_show_turbo;
+  se_checkbox("Enable Turbo and Hold Button Modifiers",&show_turbo);
+  gui_state.settings.touch_controls_show_turbo = show_turbo;
+  
+  bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
+  se_checkbox("Avoid NDS Touchscreen",&avoid_touchscreen);
+  gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
+
+}
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   se_text(ICON_FK_FLOPPY_O " Save States");
@@ -4348,7 +4389,9 @@ void se_draw_menu_panel(){
     gui_state.settings.gb_palette[i]=col;
   }
   if(se_button("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
-
+#if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
+  se_draw_touch_controls_settings();
+#endif
 #if !defined(PLATFORM_IOS)
   se_text(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
@@ -4369,44 +4412,10 @@ void se_draw_menu_panel(){
   #ifdef USE_SDL
   se_draw_controller_config(&gui_state);
   #endif
-  se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
-  igSeparator();
-  float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
-  float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
 
-  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
-  if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
-    se_draw_emulated_system_screen(true);
-  }
-  igEndChildFrame();
-  igSameLine(0,2);
-
-  if(igBeginChildFrame(2,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
-    se_draw_emulated_system_screen(true);
-  }
-  igEndChildFrame();
-  igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
-
-  se_text("Scale");igSameLine(SE_FIELD_INDENT,0);
-  igPushItemWidth(-1);
-  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
-
-  se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
-  igPushItemWidth(-1);
-  se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
-  igPopItemWidth();
-  bool auto_hide = gui_state.settings.auto_hide_touch_controls;
-  se_checkbox("Hide when inactive",&auto_hide);
-  gui_state.settings.auto_hide_touch_controls = auto_hide;
-
-  bool show_turbo = gui_state.settings.touch_controls_show_turbo;
-  se_checkbox("Enable Turbo and Hold Button Modifiers",&show_turbo);
-  gui_state.settings.touch_controls_show_turbo = show_turbo;
-  
-  bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
-  se_checkbox("Avoid NDS Touchscreen",&avoid_touchscreen);
-  gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
-
+  #if !defined(PLATFORM_ANDROID) && !defined(PLATFORM_IOS)
+  se_draw_touch_controls_settings();
+  #endif
   se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
   se_text("Language");igSameLine(SE_FIELD_INDENT,0);

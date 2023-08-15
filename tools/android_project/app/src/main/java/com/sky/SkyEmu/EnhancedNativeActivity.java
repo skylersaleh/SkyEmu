@@ -39,6 +39,7 @@ public class EnhancedNativeActivity extends NativeActivity {
     final static String TAG="SkyEmu"; // Any value
     public Rect visibleRect;
     public EditText invisibleEditText;
+    public View mRootView;
     private Vector<Integer> keyboardEvents;
     static {
         System.loadLibrary("SkyEmu");
@@ -88,9 +89,20 @@ public class EnhancedNativeActivity extends NativeActivity {
     }
     public void showKeyboard(){
         Window win =this.getWindow();
+        NativeActivity activity = this;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if(invisibleEditText==null){
+                    FrameLayout.LayoutParams mRparams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+                    invisibleEditText = new EditText(activity);
+                    invisibleEditText.setLayoutParams(mRparams);
+                    invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
+                    invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                    ((FrameLayout)mRootView).addView(invisibleEditText);
+                }
+                invisibleEditText.setFocusable(true);
+                mRootView.setFocusable(true);
                 win.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
                 invisibleEditText.requestFocus();
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -105,11 +117,12 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                win.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                mRootView.setFocusable(false);
+
                 InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
                 imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
-                //win.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+                win.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
             }
         });
     }
@@ -117,6 +130,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if(invisibleEditText==null)return;
                 keyboardEvents.add(-2);
                 int pre = 0;
                 boolean inserted = false;
@@ -199,16 +213,9 @@ public class EnhancedNativeActivity extends NativeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Window mRootWindow = getWindow();
-        FrameLayout.LayoutParams mRparams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        invisibleEditText = new EditText(this);
-        invisibleEditText.setLayoutParams(mRparams);
-        invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
-        invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
+        invisibleEditText=null;
         keyboardEvents = new Vector<Integer>(5);
-        mRootWindow.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-        View mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
-        ((FrameLayout)mRootView).addView(invisibleEditText);
 
         EnhancedNativeActivity activity = this;
         mRootView.getViewTreeObserver().addOnGlobalLayoutListener(
