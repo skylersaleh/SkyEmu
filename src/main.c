@@ -68,6 +68,8 @@
 
 #include "lcd_shaders.h"
 
+#define SE_ANDROID_CONTROLLER_NAME "Default Controller"
+
 #define SE_HAT_MASK (1<<16)
 #define SE_JOY_POS_MASK (1<<17)
 #define SE_JOY_NEG_MASK (1<<18)
@@ -832,6 +834,7 @@ uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, u
   return imdata;
 }
 bool se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
+  if(emu_state.rom_loaded==false)return false;
   uint32_t width=0, height=0;
   uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
   bool success= stbi_write_png(filename, width,height, 4, imdata, 0);
@@ -2502,6 +2505,302 @@ void se_initialize_keybind(se_keybind_state_t * state){
   state->last_bind_activitiy=-1;
 
 }
+#ifdef PLATFORM_ANDROID
+const char* se_android_key_to_name(int key){
+  switch(key){
+    case AKEYCODE_UNKNOWN:                        return "UNKNOWN";
+    case AKEYCODE_SOFT_LEFT:                      return "SOFT_LEFT";
+    case AKEYCODE_SOFT_RIGHT:                     return "SOFT_RIGHT";
+    case AKEYCODE_HOME:                           return "HOME";
+    case AKEYCODE_BACK:                           return "BACK";
+    case AKEYCODE_CALL:                           return "CALL";
+    case AKEYCODE_ENDCALL:                        return "ENDCALL";
+    case AKEYCODE_0:                              return "0";
+    case AKEYCODE_1:                              return "1";
+    case AKEYCODE_2:                              return "2";
+    case AKEYCODE_3:                              return "3";
+    case AKEYCODE_4:                              return "4";
+    case AKEYCODE_5:                              return "5";
+    case AKEYCODE_6:                              return "6";
+    case AKEYCODE_7:                              return "7";
+    case AKEYCODE_8:                              return "8";
+    case AKEYCODE_9:                              return "9";
+    case AKEYCODE_STAR:                           return "STAR";
+    case AKEYCODE_POUND:                          return "POUND";
+    case AKEYCODE_DPAD_UP:                        return "DPAD_UP";
+    case AKEYCODE_DPAD_DOWN:                      return "DPAD_DOWN";
+    case AKEYCODE_DPAD_LEFT:                      return "DPAD_LEFT";
+    case AKEYCODE_DPAD_RIGHT:                     return "DPAD_RIGHT";
+    case AKEYCODE_DPAD_CENTER:                    return "DPAD_CENTER";
+    case AKEYCODE_VOLUME_UP:                      return "VOLUME_UP";
+    case AKEYCODE_VOLUME_DOWN:                    return "VOLUME_DOWN";
+    case AKEYCODE_POWER:                          return "POWER";
+    case AKEYCODE_CAMERA:                         return "CAMERA";
+    case AKEYCODE_CLEAR:                          return "CLEAR";
+    case AKEYCODE_A:                              return "A";
+    case AKEYCODE_B:                              return "B";
+    case AKEYCODE_C:                              return "C";
+    case AKEYCODE_D:                              return "D";
+    case AKEYCODE_E:                              return "E";
+    case AKEYCODE_F:                              return "F";
+    case AKEYCODE_G:                              return "G";
+    case AKEYCODE_H:                              return "H";
+    case AKEYCODE_I:                              return "I";
+    case AKEYCODE_J:                              return "J";
+    case AKEYCODE_K:                              return "K";
+    case AKEYCODE_L:                              return "L";
+    case AKEYCODE_M:                              return "M";
+    case AKEYCODE_N:                              return "N";
+    case AKEYCODE_O:                              return "O";
+    case AKEYCODE_P:                              return "P";
+    case AKEYCODE_Q:                              return "Q";
+    case AKEYCODE_R:                              return "R";
+    case AKEYCODE_S:                              return "S";
+    case AKEYCODE_T:                              return "T";
+    case AKEYCODE_U:                              return "U";
+    case AKEYCODE_V:                              return "V";
+    case AKEYCODE_W:                              return "W";
+    case AKEYCODE_X:                              return "X";
+    case AKEYCODE_Y:                              return "Y";
+    case AKEYCODE_Z:                              return "Z";
+    case AKEYCODE_COMMA:                          return "COMMA";
+    case AKEYCODE_PERIOD:                         return "PERIOD";
+    case AKEYCODE_ALT_LEFT:                       return "ALT_LEFT";
+    case AKEYCODE_ALT_RIGHT:                      return "ALT_RIGHT";
+    case AKEYCODE_SHIFT_LEFT:                     return "SHIFT_LEFT";
+    case AKEYCODE_SHIFT_RIGHT:                    return "SHIFT_RIGHT";
+    case AKEYCODE_TAB:                            return "TAB";
+    case AKEYCODE_SPACE:                          return "SPACE";
+    case AKEYCODE_SYM:                            return "SYM";
+    case AKEYCODE_EXPLORER:                       return "EXPLORER";
+    case AKEYCODE_ENVELOPE:                       return "ENVELOPE";
+    case AKEYCODE_ENTER:                          return "ENTER";
+    case AKEYCODE_DEL:                            return "DEL";
+    case AKEYCODE_GRAVE:                          return "GRAVE";
+    case AKEYCODE_MINUS:                          return "MINUS";
+    case AKEYCODE_EQUALS:                         return "EQUALS";
+    case AKEYCODE_LEFT_BRACKET:                   return "LEFT_BRACKET";
+    case AKEYCODE_RIGHT_BRACKET:                  return "RIGHT_BRACKET";
+    case AKEYCODE_BACKSLASH:                      return "BACKSLASH";
+    case AKEYCODE_SEMICOLON:                      return "SEMICOLON";
+    case AKEYCODE_APOSTROPHE:                     return "APOSTROPHE";
+    case AKEYCODE_SLASH:                          return "SLASH";
+    case AKEYCODE_AT:                             return "AT";
+    case AKEYCODE_NUM:                            return "NUM";
+    case AKEYCODE_HEADSETHOOK:                    return "HEADSETHOOK";
+    case AKEYCODE_FOCUS:                          return "FOCUS";
+    case AKEYCODE_PLUS:                           return "PLUS";
+    case AKEYCODE_MENU:                           return "MENU";
+    case AKEYCODE_NOTIFICATION:                   return "NOTIFICATION";
+    case AKEYCODE_SEARCH:                         return "SEARCH";
+    case AKEYCODE_MEDIA_PLAY_PAUSE:               return "MEDIA_PLAY_PAUSE";
+    case AKEYCODE_MEDIA_STOP:                     return "MEDIA_STOP";
+    case AKEYCODE_MEDIA_NEXT:                     return "MEDIA_NEXT";
+    case AKEYCODE_MEDIA_PREVIOUS:                 return "MEDIA_PREVIOUS";
+    case AKEYCODE_MEDIA_REWIND:                   return "MEDIA_REWIND";
+    case AKEYCODE_MEDIA_FAST_FORWARD:             return "MEDIA_FAST_FORWARD";
+    case AKEYCODE_MUTE:                           return "MUTE";
+    case AKEYCODE_PAGE_UP:                        return "PAGE_UP";
+    case AKEYCODE_PAGE_DOWN:                      return "PAGE_DOWN";
+    case AKEYCODE_PICTSYMBOLS:                    return "PICTSYMBOLS";
+    case AKEYCODE_SWITCH_CHARSET:                 return "SWITCH_CHARSET";
+    case AKEYCODE_BUTTON_A:                       return "BUTTON_A";
+    case AKEYCODE_BUTTON_B:                       return "BUTTON_B";
+    case AKEYCODE_BUTTON_C:                       return "BUTTON_C";
+    case AKEYCODE_BUTTON_X:                       return "BUTTON_X";
+    case AKEYCODE_BUTTON_Y:                       return "BUTTON_Y";
+    case AKEYCODE_BUTTON_Z:                       return "BUTTON_Z";
+    case AKEYCODE_BUTTON_L1:                      return "BUTTON_L1";
+    case AKEYCODE_BUTTON_R1:                      return "BUTTON_R1";
+    case AKEYCODE_BUTTON_L2:                      return "BUTTON_L2";
+    case AKEYCODE_BUTTON_R2:                      return "BUTTON_R2";
+    case AKEYCODE_BUTTON_THUMBL:                  return "BUTTON_THUMBL";
+    case AKEYCODE_BUTTON_THUMBR:                  return "BUTTON_THUMBR";
+    case AKEYCODE_BUTTON_START:                   return "BUTTON_START";
+    case AKEYCODE_BUTTON_SELECT:                  return "BUTTON_SELECT";
+    case AKEYCODE_BUTTON_MODE:                    return "BUTTON_MODE";
+    case AKEYCODE_ESCAPE:                         return "ESCAPE";
+    case AKEYCODE_FORWARD_DEL:                    return "FORWARD_DEL";
+    case AKEYCODE_CTRL_LEFT:                      return "CTRL_LEFT";
+    case AKEYCODE_CTRL_RIGHT:                     return "CTRL_RIGHT";
+    case AKEYCODE_CAPS_LOCK:                      return "CAPS_LOCK";
+    case AKEYCODE_SCROLL_LOCK:                    return "SCROLL_LOCK";
+    case AKEYCODE_META_LEFT:                      return "META_LEFT";
+    case AKEYCODE_META_RIGHT:                     return "META_RIGHT";
+    case AKEYCODE_FUNCTION:                       return "FUNCTION";
+    case AKEYCODE_SYSRQ:                          return "SYSRQ";
+    case AKEYCODE_BREAK:                          return "BREAK";
+    case AKEYCODE_MOVE_HOME:                      return "MOVE_HOME";
+    case AKEYCODE_MOVE_END:                       return "MOVE_END";
+    case AKEYCODE_INSERT:                         return "INSERT";
+    case AKEYCODE_FORWARD:                        return "FORWARD";
+    case AKEYCODE_MEDIA_PLAY:                     return "MEDIA_PLAY";
+    case AKEYCODE_MEDIA_PAUSE:                    return "MEDIA_PAUSE";
+    case AKEYCODE_MEDIA_CLOSE:                    return "MEDIA_CLOSE";
+    case AKEYCODE_MEDIA_EJECT:                    return "MEDIA_EJECT";
+    case AKEYCODE_MEDIA_RECORD:                   return "MEDIA_RECORD";
+    case AKEYCODE_F1:                             return "F1";
+    case AKEYCODE_F2:                             return "F2";
+    case AKEYCODE_F3:                             return "F3";
+    case AKEYCODE_F4:                             return "F4";
+    case AKEYCODE_F5:                             return "F5";
+    case AKEYCODE_F6:                             return "F6";
+    case AKEYCODE_F7:                             return "F7";
+    case AKEYCODE_F8:                             return "F8";
+    case AKEYCODE_F9:                             return "F9";
+    case AKEYCODE_F10:                            return "F10";
+    case AKEYCODE_F11:                            return "F11";
+    case AKEYCODE_F12:                            return "F12";
+    case AKEYCODE_NUM_LOCK:                       return "NUM_LOCK";
+    case AKEYCODE_NUMPAD_0:                       return "NUMPAD_0";
+    case AKEYCODE_NUMPAD_1:                       return "NUMPAD_1";
+    case AKEYCODE_NUMPAD_2:                       return "NUMPAD_2";
+    case AKEYCODE_NUMPAD_3:                       return "NUMPAD_3";
+    case AKEYCODE_NUMPAD_4:                       return "NUMPAD_4";
+    case AKEYCODE_NUMPAD_5:                       return "NUMPAD_5";
+    case AKEYCODE_NUMPAD_6:                       return "NUMPAD_6";
+    case AKEYCODE_NUMPAD_7:                       return "NUMPAD_7";
+    case AKEYCODE_NUMPAD_8:                       return "NUMPAD_8";
+    case AKEYCODE_NUMPAD_9:                       return "NUMPAD_9";
+    case AKEYCODE_NUMPAD_DIVIDE:                  return "NUMPAD_DIVIDE";
+    case AKEYCODE_NUMPAD_MULTIPLY:                return "NUMPAD_MULTIPLY";
+    case AKEYCODE_NUMPAD_SUBTRACT:                return "NUMPAD_SUBTRACT";
+    case AKEYCODE_NUMPAD_ADD:                     return "NUMPAD_ADD";
+    case AKEYCODE_NUMPAD_DOT:                     return "NUMPAD_DOT";
+    case AKEYCODE_NUMPAD_COMMA:                   return "NUMPAD_COMMA";
+    case AKEYCODE_NUMPAD_ENTER:                   return "NUMPAD_ENTER";
+    case AKEYCODE_NUMPAD_EQUALS:                  return "NUMPAD_EQUALS";
+    case AKEYCODE_NUMPAD_LEFT_PAREN:              return "NUMPAD_LEFT_PAREN";
+    case AKEYCODE_NUMPAD_RIGHT_PAREN:             return "NUMPAD_RIGHT_PAREN";
+    case AKEYCODE_VOLUME_MUTE:                    return "VOLUME_MUTE";
+    case AKEYCODE_INFO:                           return "INFO";
+    case AKEYCODE_CHANNEL_UP:                     return "CHANNEL_UP";
+    case AKEYCODE_CHANNEL_DOWN:                   return "CHANNEL_DOWN";
+    case AKEYCODE_ZOOM_IN:                        return "ZOOM_IN";
+    case AKEYCODE_ZOOM_OUT:                       return "ZOOM_OUT";
+    case AKEYCODE_TV:                             return "TV";
+    case AKEYCODE_WINDOW:                         return "WINDOW";
+    case AKEYCODE_GUIDE:                          return "GUIDE";
+    case AKEYCODE_DVR:                            return "DVR";
+    case AKEYCODE_BOOKMARK:                       return "BOOKMARK";
+    case AKEYCODE_CAPTIONS:                       return "CAPTIONS";
+    case AKEYCODE_SETTINGS:                       return "SETTINGS";
+    case AKEYCODE_TV_POWER:                       return "TV_POWER";
+    case AKEYCODE_TV_INPUT:                       return "TV_INPUT";
+    case AKEYCODE_STB_POWER:                      return "STB_POWER";
+    case AKEYCODE_STB_INPUT:                      return "STB_INPUT";
+    case AKEYCODE_AVR_POWER:                      return "AVR_POWER";
+    case AKEYCODE_AVR_INPUT:                      return "AVR_INPUT";
+    case AKEYCODE_PROG_RED:                       return "PROG_RED";
+    case AKEYCODE_PROG_GREEN:                     return "PROG_GREEN";
+    case AKEYCODE_PROG_YELLOW:                    return "PROG_YELLOW";
+    case AKEYCODE_PROG_BLUE:                      return "PROG_BLUE";
+    case AKEYCODE_APP_SWITCH:                     return "APP_SWITCH";
+    case AKEYCODE_BUTTON_1:                       return "BUTTON_1";
+    case AKEYCODE_BUTTON_2:                       return "BUTTON_2";
+    case AKEYCODE_BUTTON_3:                       return "BUTTON_3";
+    case AKEYCODE_BUTTON_4:                       return "BUTTON_4";
+    case AKEYCODE_BUTTON_5:                       return "BUTTON_5";
+    case AKEYCODE_BUTTON_6:                       return "BUTTON_6";
+    case AKEYCODE_BUTTON_7:                       return "BUTTON_7";
+    case AKEYCODE_BUTTON_8:                       return "BUTTON_8";
+    case AKEYCODE_BUTTON_9:                       return "BUTTON_9";
+    case AKEYCODE_BUTTON_10:                      return "BUTTON_10";
+    case AKEYCODE_BUTTON_11:                      return "BUTTON_11";
+    case AKEYCODE_BUTTON_12:                      return "BUTTON_12";
+    case AKEYCODE_BUTTON_13:                      return "BUTTON_13";
+    case AKEYCODE_BUTTON_14:                      return "BUTTON_14";
+    case AKEYCODE_BUTTON_15:                      return "BUTTON_15";
+    case AKEYCODE_BUTTON_16:                      return "BUTTON_16";
+    case AKEYCODE_LANGUAGE_SWITCH:                return "LANGUAGE_SWITCH";
+    case AKEYCODE_MANNER_MODE:                    return "MANNER_MODE";
+    case AKEYCODE_3D_MODE:                        return "3D_MODE";
+    case AKEYCODE_CONTACTS:                       return "CONTACTS";
+    case AKEYCODE_CALENDAR:                       return "CALENDAR";
+    case AKEYCODE_MUSIC:                          return "MUSIC";
+    case AKEYCODE_CALCULATOR:                     return "CALCULATOR";
+    case AKEYCODE_ZENKAKU_HANKAKU:                return "ZENKAKU_HANKAKU";
+    case AKEYCODE_EISU:                           return "EISU";
+    case AKEYCODE_MUHENKAN:                       return "MUHENKAN";
+    case AKEYCODE_HENKAN:                         return "HENKAN";
+    case AKEYCODE_KATAKANA_HIRAGANA:              return "KATAKANA_HIRAGANA";
+    case AKEYCODE_YEN:                            return "YEN";
+    case AKEYCODE_RO:                             return "RO";
+    case AKEYCODE_KANA:                           return "KANA";
+    case AKEYCODE_ASSIST:                         return "ASSIST";
+    case AKEYCODE_BRIGHTNESS_DOWN:                return "BRIGHTNESS_DOWN";
+    case AKEYCODE_BRIGHTNESS_UP:                  return "BRIGHTNESS_UP";
+    case AKEYCODE_MEDIA_AUDIO_TRACK:              return "MEDIA_AUDIO_TRACK";
+    case AKEYCODE_SLEEP:                          return "SLEEP";
+    case AKEYCODE_WAKEUP:                         return "WAKEUP";
+    case AKEYCODE_PAIRING:                        return "PAIRING";
+    case AKEYCODE_MEDIA_TOP_MENU:                 return "MEDIA_TOP_MENU";
+    case AKEYCODE_11:                             return "11";
+    case AKEYCODE_12:                             return "12";
+    case AKEYCODE_LAST_CHANNEL:                   return "LAST_CHANNEL";
+    case AKEYCODE_TV_DATA_SERVICE:                return "TV_DATA_SERVICE";
+    case AKEYCODE_VOICE_ASSIST:                   return "VOICE_ASSIST";
+    case AKEYCODE_TV_RADIO_SERVICE:               return "TV_RADIO_SERVICE";
+    case AKEYCODE_TV_TELETEXT:                    return "TV_TELETEXT";
+    case AKEYCODE_TV_NUMBER_ENTRY:                return "TV_NUMBER_ENTRY";
+    case AKEYCODE_TV_TERRESTRIAL_ANALOG:          return "TV_TERRESTRIAL_ANALOG";
+    case AKEYCODE_TV_TERRESTRIAL_DIGITAL:         return "TV_TERRESTRIAL_DIGITAL";
+    case AKEYCODE_TV_SATELLITE:                   return "TV_SATELLITE";
+    case AKEYCODE_TV_SATELLITE_BS:                return "TV_SATELLITE_BS";
+    case AKEYCODE_TV_SATELLITE_CS:                return "TV_SATELLITE_CS";
+    case AKEYCODE_TV_SATELLITE_SERVICE:           return "TV_SATELLITE_SERVICE";
+    case AKEYCODE_TV_NETWORK:                     return "TV_NETWORK";
+    case AKEYCODE_TV_ANTENNA_CABLE:               return "TV_ANTENNA_CABLE";
+    case AKEYCODE_TV_INPUT_HDMI_1:                return "TV_INPUT_HDMI_1";
+    case AKEYCODE_TV_INPUT_HDMI_2:                return "TV_INPUT_HDMI_2";
+    case AKEYCODE_TV_INPUT_HDMI_3:                return "TV_INPUT_HDMI_3";
+    case AKEYCODE_TV_INPUT_HDMI_4:                return "TV_INPUT_HDMI_4";
+    case AKEYCODE_TV_INPUT_COMPOSITE_1:           return "TV_INPUT_COMPOSITE_1";
+    case AKEYCODE_TV_INPUT_COMPOSITE_2:           return "TV_INPUT_COMPOSITE_2";
+    case AKEYCODE_TV_INPUT_COMPONENT_1:           return "TV_INPUT_COMPONENT_1";
+    case AKEYCODE_TV_INPUT_COMPONENT_2:           return "TV_INPUT_COMPONENT_2";
+    case AKEYCODE_TV_INPUT_VGA_1:                 return "TV_INPUT_VGA_1";
+    case AKEYCODE_TV_AUDIO_DESCRIPTION:           return "TV_AUDIO_DESCRIPTION";
+    case AKEYCODE_TV_AUDIO_DESCRIPTION_MIX_UP:    return "TV_AUDIO_DESCRIPTION_MIX_UP";
+    case AKEYCODE_TV_AUDIO_DESCRIPTION_MIX_DOWN:  return "TV_AUDIO_DESCRIPTION_MIX_DOWN";
+    case AKEYCODE_TV_ZOOM_MODE:                   return "TV_ZOOM_MODE";
+    case AKEYCODE_TV_CONTENTS_MENU:               return "TV_CONTENTS_MENU";
+    case AKEYCODE_TV_MEDIA_CONTEXT_MENU:          return "TV_MEDIA_CONTEXT_MENU";
+    case AKEYCODE_TV_TIMER_PROGRAMMING:           return "TV_TIMER_PROGRAMMING";
+    case AKEYCODE_HELP:                           return "HELP";
+    case AKEYCODE_NAVIGATE_PREVIOUS:              return "NAVIGATE_PREVIOUS";
+    case AKEYCODE_NAVIGATE_NEXT:                  return "NAVIGATE_NEXT";
+    case AKEYCODE_NAVIGATE_IN:                    return "NAVIGATE_IN";
+    case AKEYCODE_NAVIGATE_OUT:                   return "NAVIGATE_OUT";
+    case AKEYCODE_STEM_PRIMARY:                   return "STEM_PRIMARY";
+    case AKEYCODE_STEM_1:                         return "STEM_1";
+    case AKEYCODE_STEM_2:                         return "STEM_2";
+    case AKEYCODE_STEM_3:                         return "STEM_3";
+    case AKEYCODE_DPAD_UP_LEFT:                   return "DPAD_UP_LEFT";
+    case AKEYCODE_DPAD_DOWN_LEFT:                 return "DPAD_DOWN_LEFT";
+    case AKEYCODE_DPAD_UP_RIGHT:                  return "DPAD_UP_RIGHT";
+    case AKEYCODE_DPAD_DOWN_RIGHT:                return "DPAD_DOWN_RIGHT";
+    case AKEYCODE_MEDIA_SKIP_FORWARD:             return "MEDIA_SKIP_FORWARD";
+    case AKEYCODE_MEDIA_SKIP_BACKWARD:            return "MEDIA_SKIP_BACKWARD";
+    case AKEYCODE_MEDIA_STEP_FORWARD:             return "MEDIA_STEP_FORWARD";
+    case AKEYCODE_MEDIA_STEP_BACKWARD:            return "MEDIA_STEP_BACKWARD";
+    case AKEYCODE_SOFT_SLEEP:                     return "SOFT_SLEEP";
+    case AKEYCODE_CUT:                            return "CUT";
+    case AKEYCODE_COPY:                           return "COPY";
+    case AKEYCODE_PASTE:                          return "PASTE";
+    case AKEYCODE_SYSTEM_NAVIGATION_UP:           return "SYSTEM_NAVIGATION_UP";
+    case AKEYCODE_SYSTEM_NAVIGATION_DOWN:         return "SYSTEM_NAVIGATION_DOWN";
+    case AKEYCODE_SYSTEM_NAVIGATION_LEFT:         return "SYSTEM_NAVIGATION_LEFT";
+    case AKEYCODE_SYSTEM_NAVIGATION_RIGHT:        return "SYSTEM_NAVIGATION_RIGHT";
+    case AKEYCODE_ALL_APPS:                       return "ALL_APPS";
+    case AKEYCODE_REFRESH:                        return "REFRESH";
+    case AKEYCODE_THUMBS_UP:                      return "THUMBS_UP";
+    case AKEYCODE_THUMBS_DOWN:                    return "THUMBS_DOWN";
+    case AKEYCODE_PROFILE_SWITCH:                 return "PROFILE_SWITCH";
+  }
+  return NULL;
+}
+#endif
 //Returns true if modifed
 bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
   double rebind_timer = SE_REBIND_TIMER_LENGTH-(se_time()-state->rebind_start_time);
@@ -2530,12 +2829,13 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     if(state->bound_id[k]!=-1){
       switch(keybind_type){
         case SE_BIND_KEYBOARD: button_label=se_keycode_to_string(state->bound_id[k]);break;
-        #ifdef USE_SDL
+        #if defined(USE_SDL) || defined(PLATFORM_ANDROID)
         case SE_BIND_KEY: 
           { 
             int key = state->bound_id[k];
             bool is_hat = key&SE_HAT_MASK;
             bool is_joy = key&(SE_JOY_NEG_MASK|SE_JOY_POS_MASK);
+        #ifdef USE_SDL
             if(is_hat){
               int hat_id = SB_BFE(key,8,8);
               int hat_val = SB_BFE(key,0,8);
@@ -2547,11 +2847,23 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
 
               snprintf(buff, sizeof(buff),se_localize("Hat %d %s"), hat_id, dir);
               button_label=buff;
-            }else if(is_joy){
+            }else
+        #endif
+              if(is_joy){
               int joy_id = SB_BFE(key,0,16);
               const char* dir = (key&SE_JOY_NEG_MASK)? "<-0.3": ">0.3";
               snprintf(buff, sizeof(buff),se_localize("Analog %d %s"),joy_id,dir);
-            }else snprintf(buff, sizeof(buff),se_localize("Key %d"), state->bound_id[k]);button_label=buff;
+            }else {
+        #ifdef PLATFORM_ANDROID
+              const char* android_name = se_android_key_to_name(state->bound_id[k]);
+              if(android_name) {
+                android_name = se_localize_and_cache(android_name);
+                button_label = android_name;
+                break;
+              }
+        #endif
+              snprintf(buff, sizeof(buff),se_localize("Key %d"), state->bound_id[k]);button_label=buff;
+            }
           }
           button_label=buff;
           break;
@@ -3088,7 +3400,19 @@ void se_android_get_language(char* language_buffer, size_t buffer_size){
     (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
 }
-void se_android_set_keyboard_visible(bool visible){
+
+void se_android_send_controller_key(uint32_t bound_id, bool value) {
+  se_controller_state_t *cont = &gui_state.controller;
+  for(int k= 0; k<SE_NUM_KEYBINDS;++k){
+    int key = cont->key.bound_id[k];
+    if(key!=bound_id)continue;
+    cont->key.value[k] = value;
+  }
+}
+void se_android_poll_events(bool visible){
+  se_controller_state_t *cont = &gui_state.controller;
+  cont->key.last_bind_activitiy=-1;
+  cont->analog.last_bind_activitiy=-1;
   static bool last_visible = false;
   if(visible!=last_visible){
     ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
@@ -3114,48 +3438,84 @@ void se_android_set_keyboard_visible(bool visible){
     }
     last_visible = visible;
   }
-  if(visible){
-    float top = 0;
-    float bottom = 0;
-    se_android_get_visible_rect(&top, &bottom);
-    float size = (bottom-top);
-    gui_state.screen_height= (bottom-top)*se_dpi_scale();
+  float top = 0;
+  float bottom = 0;
+  se_android_get_visible_rect(&top, &bottom);
+  float size = (bottom-top);
+  gui_state.screen_height= (bottom-top)*se_dpi_scale();
 
-    ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
-    // Attaches the current thread to the JVM.
-    JavaVM *pJavaVM = activity->vm;
-    JNIEnv *pJNIEnv = activity->env;
+  ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
+  // Attaches the current thread to the JVM.
+  JavaVM *pJavaVM = activity->vm;
+  JNIEnv *pJNIEnv = activity->env;
 
 
-    jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
-    if ( nResult != JNI_ERR ) {
-      // Retrieves NativeActivity.
-      jobject nativeActivity = activity->clazz;
-      jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity);
-      jmethodID getEvent= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getEvent", "()I" );
-      jmethodID pollKeyboard= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "pollKeyboard", "()V" );
-      (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, pollKeyboard );
-      ImGuiIO* io= igGetIO();
+  jint nResult = (*pJavaVM)->AttachCurrentThread(pJavaVM, &pJNIEnv, NULL );
+  if ( nResult != JNI_ERR ) {
+    // Retrieves NativeActivity.
+    jobject nativeActivity = activity->clazz;
+    jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity);
+    jmethodID getEvent= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getEvent", "()I" );
+    jmethodID pollKeyboard= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "pollKeyboard", "()V" );
+    (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, pollKeyboard );
+    ImGuiIO* io= igGetIO();
 
-      io->KeysDown[io->KeyMap[ImGuiKey_Backspace]]=false;
-      io->KeysDown[io->KeyMap[ImGuiKey_LeftArrow]]=false;
-      io->KeysDown[io->KeyMap[ImGuiKey_RightArrow]]=false;
-      io->KeysDown[io->KeyMap[ImGuiKey_Enter]]=false;
-      while (true) {
-        int32_t event = (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, getEvent );
-        if(event==-1)break;
-        if(!(event&0xC0000000))
-            ImGuiIO_AddInputCharacter(igGetIO(),event&0x7fffffff);
-        else if(event&0x40000000){
-            int imgui_key = io->KeyMap[event&0xff];
-            io->KeysDown[imgui_key] = (event&0x80000000)==0;
-            io->KeysDownDuration[imgui_key]=0;
+    io->KeysDown[io->KeyMap[ImGuiKey_Backspace]]=false;
+    io->KeysDown[io->KeyMap[ImGuiKey_LeftArrow]]=false;
+    io->KeysDown[io->KeyMap[ImGuiKey_RightArrow]]=false;
+    io->KeysDown[io->KeyMap[ImGuiKey_Enter]]=false;
+    while (true) {
+      int32_t event = (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, getEvent );
+      if(event==-1)break;
+      if(!(event&0xF0000000))
+          ImGuiIO_AddInputCharacter(igGetIO(),event&0x0fffffff);
+      else if(event&0x40000000){
+          int imgui_key = io->KeyMap[event&0xff];
+          io->KeysDown[imgui_key] = (event&0x80000000)==0;
+          io->KeysDownDuration[imgui_key]=0;
+      }else if(event&0x20000000){
+        //Controller keypad
+        int keycode = SB_BFE(event,0,16);
+        int pressed = SB_BFE(event,16,1);
+        cont->key.last_bind_activitiy = keycode;
+        se_android_send_controller_key(keycode,pressed);
+      }else if(event&0x10000000){
+        //Controller joy axis
+        int16_t value = SB_BFE(event,0,16);
+        float fv = value/32768.;
+        int axis = SB_BFE(event,16,8);
+
+        if(fv<0.2&&fv>-0.2 && (int)axis < sizeof(cont->axis_last_zero_time)/sizeof(cont->axis_last_zero_time[0])){
+          cont->axis_last_zero_time[axis]=se_time();
+        }
+        if((fv>0.3)||(fv<-0.3&&fv>-0.6))cont->analog.last_bind_activitiy = axis;
+        double delta = se_time()-cont->axis_last_zero_time[axis];
+
+        if(fv>0.4&&delta<2)cont->key.last_bind_activitiy = axis|SE_JOY_POS_MASK;
+        if(fv<-0.4&&delta<2)cont->key.last_bind_activitiy = axis|SE_JOY_NEG_MASK;
+        se_android_send_controller_key(axis|SE_JOY_POS_MASK,fv>0.3);
+        se_android_send_controller_key(axis|SE_JOY_NEG_MASK,fv<0.3);
+        for(int a= 0; a<SE_NUM_ANALOGBINDS;++a){
+          int bound_id= cont->analog.bound_id[a];
+          if(axis==bound_id){
+            cont->analog.value[a]= fv;
+            break;
+          }
         }
       }
-      (*pJavaVM)->DetachCurrentThread(pJavaVM);
     }
-
+    (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
+
+  for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]  += cont->key.value[i]>0.5;
+
+  emu_state.joy.inputs[SE_KEY_LEFT]  += cont->analog.value[SE_ANALOG_LEFT_RIGHT]<-0.3;
+  emu_state.joy.inputs[SE_KEY_RIGHT] += cont->analog.value[SE_ANALOG_LEFT_RIGHT]> 0.3;
+  emu_state.joy.inputs[SE_KEY_UP]   += cont->analog.value[SE_ANALOG_UP_DOWN]<-0.3;
+  emu_state.joy.inputs[SE_KEY_DOWN] += cont->analog.value[SE_ANALOG_UP_DOWN]>0.3;
+
+  emu_state.joy.inputs[SE_KEY_L]  += cont->analog.value[SE_ANALOG_L]>0.1;
+  emu_state.joy.inputs[SE_KEY_R]  += cont->analog.value[SE_ANALOG_R]>0.1;
 }
 
 void se_android_request_permissions(){
@@ -3706,6 +4066,7 @@ static void se_poll_sdl(){
   }
 }
 #endif
+
 void se_update_frame() {
   #ifdef ENABLE_HTTP_CONTROL_SERVER
   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
@@ -3982,7 +4343,70 @@ void se_imgui_theme()
         Module.ccall('se_load_settings');
       });
   });
-  #endif
+#endif
+#ifdef PLATFORM_ANDROID
+void se_set_default_controller_binds(se_controller_state_t* cont){
+  if(!cont)return;
+  for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key.bound_id[i]=-1;
+  cont->key.bound_id[SE_KEY_A]= AKEYCODE_BUTTON_A;
+  cont->key.bound_id[SE_KEY_B]= AKEYCODE_BUTTON_B;
+  cont->key.bound_id[SE_KEY_X]= AKEYCODE_BUTTON_X;
+  cont->key.bound_id[SE_KEY_Y]= AKEYCODE_BUTTON_Y;
+  cont->key.bound_id[SE_KEY_L]= AKEYCODE_BUTTON_L1;
+  cont->key.bound_id[SE_KEY_R]= AKEYCODE_BUTTON_R1;
+  cont->key.bound_id[SE_KEY_UP]= AKEYCODE_DPAD_UP;
+  cont->key.bound_id[SE_KEY_DOWN]= AKEYCODE_DPAD_DOWN;
+  cont->key.bound_id[SE_KEY_LEFT]= AKEYCODE_DPAD_LEFT;
+  cont->key.bound_id[SE_KEY_RIGHT]= AKEYCODE_DPAD_RIGHT;
+  cont->key.bound_id[SE_KEY_START]= AKEYCODE_BUTTON_START;
+  cont->key.bound_id[SE_KEY_SELECT]= AKEYCODE_BUTTON_SELECT;
+
+  cont->key.bound_id[SE_KEY_EMU_PAUSE]= AKEYCODE_BUTTON_MODE;
+  cont->key.bound_id[SE_KEY_RESET_GAME]= AKEYCODE_R;
+  cont->key.bound_id[SE_KEY_CAPTURE_STATE(0)]= AKEYCODE_1;
+  cont->key.bound_id[SE_KEY_CAPTURE_STATE(1)]= AKEYCODE_2;
+  cont->key.bound_id[SE_KEY_CAPTURE_STATE(2)]= AKEYCODE_3;
+  cont->key.bound_id[SE_KEY_CAPTURE_STATE(3)]= AKEYCODE_4;
+  cont->key.bound_id[SE_KEY_RESTORE_STATE(0)]= AKEYCODE_F1;
+  cont->key.bound_id[SE_KEY_RESTORE_STATE(1)]= AKEYCODE_F2;
+  cont->key.bound_id[SE_KEY_RESTORE_STATE(2)]= AKEYCODE_F3;
+  cont->key.bound_id[SE_KEY_RESTORE_STATE(3)]= AKEYCODE_F4;
+
+  cont->key.bound_id[SE_KEY_SOLAR_P]= AKEYCODE_PLUS;
+  cont->key.bound_id[SE_KEY_SOLAR_M]= AKEYCODE_MINUS;
+  /*
+  cont->key.bound_id[SE_KEY_EMU_PAUSE] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_GUIDE,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_REWIND] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE1,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_FF_2X] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE2,SE_JOY_POS_MASK);
+  cont->key.bound_id[SE_KEY_EMU_FF_MAX] = se_get_sdl_key_bind(gc,SDL_CONTROLLER_BUTTON_PADDLE3,SE_JOY_POS_MASK);
+  */
+  cont->analog.bound_id[SE_ANALOG_UP_DOWN] = AMOTION_EVENT_AXIS_Y;
+  cont->analog.bound_id[SE_ANALOG_LEFT_RIGHT] = AMOTION_EVENT_AXIS_X;
+  cont->analog.bound_id[SE_ANALOG_L] = AMOTION_EVENT_AXIS_LTRIGGER;
+  cont->analog.bound_id[SE_ANALOG_R] = AMOTION_EVENT_AXIS_RTRIGGER;
+}
+#endif
+//Returns true if loaded successfully
+bool se_load_controller_settings(se_controller_state_t * cont){
+  if(!cont)return false;
+#ifdef USE_SDL
+  if(!cont->sdl_joystick)return false;
+#endif
+#ifdef PLATFORM_ANDROID
+  strncpy(cont->name,SE_ANDROID_CONTROLLER_NAME, sizeof(cont->name) );
+#endif
+  int32_t bind_map[SE_NUM_BINDS_ALLOC*2];
+  char settings_path[SB_FILE_PATH_SIZE];
+  snprintf(settings_path,SB_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont->name);
+  bool load_old_settings = sb_load_file_data_into_buffer(settings_path,(uint8_t*)bind_map,sizeof(bind_map));
+  if(load_old_settings){
+    for(int i=0;i<SE_NUM_BINDS_ALLOC;++i){
+      cont->key.bound_id[i]=bind_map[i];
+      cont->analog.bound_id[i]=bind_map[i+SE_NUM_BINDS_ALLOC];
+    }
+  }
+  return load_old_settings;
+}
 #ifdef USE_SDL
 int se_get_sdl_key_bind(SDL_GameController* gc, int button, int joystick_direction_mask){
   SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
@@ -4008,23 +4432,8 @@ int se_get_sdl_axis_bind(SDL_GameController* gc, int button){
   if(bind.bindType!=SDL_CONTROLLER_BINDTYPE_AXIS)return -1;
   else return bind.value.axis;
 }
-//Returns true if loaded successfully
-bool se_load_controller_settings(se_controller_state_t * cont){
-  if(!cont||!cont->sdl_joystick)return false;
-  int32_t bind_map[SE_NUM_BINDS_ALLOC*2];
-  char settings_path[SB_FILE_PATH_SIZE];
-  snprintf(settings_path,SB_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont->name);
-  bool load_old_settings = sb_load_file_data_into_buffer(settings_path,(uint8_t*)bind_map,sizeof(bind_map));
-  if(load_old_settings){
-    for(int i=0;i<SE_NUM_BINDS_ALLOC;++i){
-      cont->key.bound_id[i]=bind_map[i];
-      cont->analog.bound_id[i]=bind_map[i+SE_NUM_BINDS_ALLOC];
-    }
-  }
-  return load_old_settings;
-}
 void se_set_default_controller_binds(se_controller_state_t* cont){
-  if(!cont ||!cont->sdl_gc)return; 
+  if(!cont ||!cont->sdl_gc)return;
   SDL_GameController * gc = cont->sdl_gc;
   SDL_GameControllerUpdate();
   for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key.bound_id[i]=-1;
@@ -4067,11 +4476,14 @@ void se_set_new_controller(se_controller_state_t* cont, int index){
   se_initialize_keybind(&cont->analog);
   if(!se_load_controller_settings(cont))se_set_default_controller_binds(cont);
 }
+#endif
+
 void se_draw_controller_config(gui_state_t* gui){
   se_text(ICON_FK_GAMEPAD " Controllers");
   igSeparator();
   ImGuiStyle* style = igGetStyle();
   se_controller_state_t *cont = &gui->controller;
+#if USE_SDL
   const char* cont_name = "No Controller";
   if(cont->sdl_joystick){
     cont_name = SDL_JoystickName(cont->sdl_joystick);
@@ -4098,6 +4510,9 @@ void se_draw_controller_config(gui_state_t* gui){
     igEndCombo();
   }
   if(!cont->sdl_joystick)return;
+#else
+  const char* cont_name = SE_ANDROID_CONTROLLER_NAME;
+#endif
   bool modified = se_handle_keybind_settings(SE_BIND_KEY,&(cont->key));
   modified |= se_handle_keybind_settings(SE_BIND_ANALOG,&(cont->analog));
   if(se_button("Reset Default Controller Bindings",(ImVec2){0,0})){
@@ -4115,11 +4530,12 @@ void se_draw_controller_config(gui_state_t* gui){
     sb_save_file_data(settings_path,(uint8_t*)bind_map,sizeof(bind_map));
     se_emscripten_flush_fs();
   }
-
+#ifdef USE_SDL
   if(SDL_JoystickHasRumble(cont->sdl_joystick)){se_text("Rumble Supported");
   }else se_text("Rumble Not Supported");
+#endif
 }
-#endif 
+
 void se_reset_default_gb_palette(){
   uint8_t palette[4*3] = { 0x81,0x8F,0x38,0x64,0x7D,0x43,0x56,0x6D,0x3F,0x31,0x4A,0x2D };
   for(int i=0;i<4;++i){
@@ -4392,7 +4808,7 @@ void se_draw_menu_panel(){
 #if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
   se_draw_touch_controls_settings();
 #endif
-#if !defined(PLATFORM_IOS)
+#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
   se_text(ICON_FK_KEYBOARD_O " Keybinds");
   igSeparator();
   bool value= true; 
@@ -4409,7 +4825,7 @@ void se_draw_menu_panel(){
     se_emscripten_flush_fs();
   }
   #endif
-  #ifdef USE_SDL
+  #if defined( USE_SDL) ||defined(PLATFORM_ANDROID)
   se_draw_controller_config(&gui_state);
   #endif
 
@@ -4929,7 +5345,7 @@ static void frame(void) {
 
 #ifdef PLATFORM_ANDROID
   style->ScrollbarSize=4;
-  se_android_set_keyboard_visible(igGetIO()->WantTextInput);
+  se_android_poll_events(igGetIO()->WantTextInput);
 #endif
 
   se_bring_text_field_into_view();
@@ -5280,8 +5696,10 @@ void se_load_settings(){
       se_set_default_keybind(&gui_state);
     }
   }
-#ifdef USE_SDL
-  se_load_controller_settings(&gui_state.controller);
+#if defined(USE_SDL) || defined(PLATFORM_ANDROID)
+  if(!se_load_controller_settings(&gui_state.controller)){
+    se_set_default_controller_binds(&gui_state.controller);
+  }
 #endif
   {
     char settings_path[SB_FILE_PATH_SIZE];
@@ -5406,7 +5824,6 @@ static void init(void) {
   sg_pop_debug_group();
 #ifdef PLATFORM_ANDROID
   se_android_request_permissions();
-  sapp_android_disable_vsync();
   #endif
 }
 static void cleanup(void) {

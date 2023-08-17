@@ -1,6 +1,10 @@
 package com.sky.SkyEmu;
 
 
+import static android.view.InputDevice.SOURCE_GAMEPAD;
+import static android.view.InputDevice.SOURCE_JOYSTICK;
+import static android.view.KeyEvent.*;
+
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -13,6 +17,10 @@ import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.InputDevice;
+import android.view.InputEvent;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
@@ -29,6 +37,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.Key;
 import java.util.Locale;
 import java.util.Vector;
 
@@ -99,11 +108,17 @@ public class EnhancedNativeActivity extends NativeActivity {
                     invisibleEditText.setLayoutParams(mRparams);
                     invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
                     invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                    // Set an OnKeyListener to intercept key events
+                    invisibleEditText.setOnKeyListener(new View.OnKeyListener() {
+                        @Override
+                        public boolean onKey(View v, int keyCode, KeyEvent event) {
+                            // Consume the key event to prevent it from reaching the EditText
+                            // So, that we don not duplicate the inputs relayed through the C code for onKey.
+                            return true;
+                        }
+                    });
                     ((FrameLayout)mRootView).addView(invisibleEditText);
                 }
-                invisibleEditText.setFocusable(true);
-                mRootView.setFocusable(true);
-                win.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
                 invisibleEditText.requestFocus();
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                 imm.showSoftInput(invisibleEditText, InputMethodManager.SHOW_IMPLICIT);
@@ -117,12 +132,8 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                mRootView.setFocusable(false);
-
-                InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
-                imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
-                win.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                ((FrameLayout)mRootView).removeView(invisibleEditText);
+                invisibleEditText = null;
             }
         });
     }
@@ -131,7 +142,6 @@ public class EnhancedNativeActivity extends NativeActivity {
             @Override
             public void run() {
                 if(invisibleEditText==null)return;
-                keyboardEvents.add(-2);
                 int pre = 0;
                 boolean inserted = false;
                 if(invisibleEditText.getSelectionEnd()!= invisibleEditText.getText().length()-8){
@@ -236,7 +246,22 @@ public class EnhancedNativeActivity extends NativeActivity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-
+        mRootWindow.getDecorView().setOnGenericMotionListener(new View.OnGenericMotionListener() {
+            @Override
+            public boolean onGenericMotion(View view, MotionEvent event) {
+                for(int i=0;i<event.getPointerCount();++i){
+                    for (InputDevice.MotionRange range: event.getDevice().getMotionRanges()) {
+                        int ax = range.getAxis();
+                        float v = event.getAxisValue(ax,i);
+                        int int_val = (int)(v*32767.);
+                        int skyemu_event = 0x10000000|(ax<<16)|(int_val&0xffff);
+                        keyboardEvents.add(skyemu_event);
+                    }
+                }
+                // If the event is not the back button press, let it propagate as usual
+                return false;
+            }
+        });
         // This work only for android 4.4+
         if(currentApiVersion >= Build.VERSION_CODES.KITKAT){
             getWindow().getDecorView().setSystemUiVisibility(flags);
@@ -289,6 +314,38 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         }
         return result;
+    }
+    @Override
+    public boolean onKeyDown(int keycode, KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            return true;
+        }
+        int gamepad_keycode = event.getKeyCode()&0xffff;
+
+        if((event.getSource() & SOURCE_JOYSTICK)!=SOURCE_JOYSTICK){
+            int skyemu_event = gamepad_keycode | 0x20000000;
+            if(event.getAction()==ACTION_DOWN)skyemu_event|=(1<<16);
+            keyboardEvents.add(skyemu_event);
+            if((event.getSource() & SOURCE_GAMEPAD)==SOURCE_GAMEPAD)return true;
+        }
+        // If the event is not the back button press, let it propagate as usual
+        return false;
+    }
+    @Override
+    public boolean onKeyUp(int keycode, KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            return true;
+        }
+        int gamepad_keycode = event.getKeyCode()&0xffff;
+
+        if((event.getSource() & SOURCE_JOYSTICK)!=SOURCE_JOYSTICK){
+            int skyemu_event = gamepad_keycode | 0x20000000;
+            if(event.getAction()==ACTION_DOWN)skyemu_event|=(1<<16);
+            keyboardEvents.add(skyemu_event);
+            if((event.getSource() & SOURCE_GAMEPAD)==SOURCE_GAMEPAD)return true;
+        }
+        // If the event is not the back button press, let it propagate as usual
+        return false;
     }
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
