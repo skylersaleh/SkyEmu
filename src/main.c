@@ -3494,7 +3494,7 @@ void se_android_poll_events(bool visible){
         if(fv>0.4&&delta<2)cont->key.last_bind_activitiy = axis|SE_JOY_POS_MASK;
         if(fv<-0.4&&delta<2)cont->key.last_bind_activitiy = axis|SE_JOY_NEG_MASK;
         se_android_send_controller_key(axis|SE_JOY_POS_MASK,fv>0.3);
-        se_android_send_controller_key(axis|SE_JOY_NEG_MASK,fv<0.3);
+        se_android_send_controller_key(axis|SE_JOY_NEG_MASK,fv<-0.3);
         for(int a= 0; a<SE_NUM_ANALOGBINDS;++a){
           int bound_id= cont->analog.bound_id[a];
           if(axis==bound_id){
