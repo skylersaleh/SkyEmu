@@ -241,6 +241,11 @@ _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_
 #define SE_MAX_BIOS_FILES 8
 #define SE_BIOS_NAME_SIZE 32
 
+#define SE_UI_DESKTOP 0
+#define SE_UI_ANDROID 1 
+#define SE_UI_IOS     2
+#define SE_UI_WEB     3
+
 typedef struct{
   char path[SE_MAX_BIOS_FILES][SB_FILE_PATH_SIZE];
   char name[SE_MAX_BIOS_FILES][SE_BIOS_NAME_SIZE];
@@ -253,6 +258,7 @@ typedef struct {
     int current_image; 
     int screen_width;
     int screen_height;
+    float dpi_override;
     int button_state[SAPP_MAX_KEYCODES];
     struct{
       bool active;
@@ -297,6 +303,8 @@ typedef struct {
 
     uint32_t current_click_region_id;
     uint32_t max_click_region_id;
+    uint32_t ui_type; 
+    bool fake_paths; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -406,6 +414,7 @@ static const char* se_get_pref_path(){
 float se_android_get_display_dpi_scale();
 #endif
 static float se_dpi_scale(){
+  if(gui_state.dpi_override)return gui_state.dpi_override/120.;
   static float dpi_scale = -1.0;
   if(dpi_scale>0.)return dpi_scale;
   dpi_scale = sapp_dpi_scale();
@@ -433,6 +442,18 @@ static void se_cache_glyphs(const char* input_string){
     }
   }
   #endif
+}
+char* se_replace_fake_path(char * new_path){
+  static char fake_path[SB_FILE_PATH_SIZE]; 
+  if(gui_state.fake_paths){
+    char* base, *filename, *ext; 
+    sb_breakup_path(new_path,&base, &filename,&ext);
+    char* new_base = "/fakepath/";
+    if(gui_state.ui_type==SE_UI_ANDROID)new_base = "/storage/emulated/0/Android/data/com.sky.SkyEmu/";
+    snprintf(fake_path,sizeof(fake_path),"%s%s.%s",new_base,filename,ext);
+    new_path = fake_path; 
+  }
+  return new_path;
 }
 static inline const char* se_localize_and_cache(const char* input_str){
   const char * localized_string = se_localize(input_str);
@@ -479,6 +500,7 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
   float button_w = 25; 
   if(!read_only)igPushItemWidth(-button_w);
   else igPushItemWidth(-1);
+  new_path = se_replace_fake_path(new_path);
   bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
@@ -1902,7 +1924,7 @@ static void se_draw_emulated_system_screen(bool preview){
         }
       }else{
         controller_h = height*(1.0-lcd_render_w/scr_w)*1.25;
-        controller_y_pad=(height-controller_h)*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
+        //controller_y_pad=(height-controller_h)*0.5+(1.0-gui_state.settings.touch_controls_scale)*height*0.25;
       }
     }else{
       lcd_render_y = -(height-render_h)*0.9*0.5;
@@ -3901,13 +3923,12 @@ void se_load_rom_overlay(bool visible){
   x+=w_pos.x;
   const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba, .zip)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
-  #if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
+  if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
     prompt2 = "";
-  #endif
-  #ifdef EMSCRIPTEN
-  prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
-  prompt2 = "You can also drag & drop a ROM/save file to load it";
-  #endif
+  }else if (gui_state.ui_type==SE_UI_WEB){
+    prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
+    prompt2 = "You can also drag & drop a ROM/save file to load it";
+  }
   bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
   se_open_file_browser(clicked, x,y,w,h, se_load_rom,valid_rom_file_types,NULL);
   
@@ -3935,7 +3956,7 @@ void se_load_rom_overlay(bool visible){
     bool save_exists = sb_file_exists(save_file_path);
     if(save_exists)reduce_width=85; 
     #endif
-    if(se_selectable_with_box(file_name,info->path,ext_upper,false,reduce_width)){
+    if(se_selectable_with_box(file_name,se_replace_fake_path(info->path),ext_upper,false,reduce_width)){
       se_load_rom(info->path);
     }
     #ifdef EMSCRIPTEN
@@ -4805,33 +4826,32 @@ void se_draw_menu_panel(){
     gui_state.settings.gb_palette[i]=col;
   }
   if(se_button("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
-#if defined(PLATFORM_ANDROID) || defined(PLATFORM_IOS)
-  se_draw_touch_controls_settings();
-#endif
-#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
-  se_text(ICON_FK_KEYBOARD_O " Keybinds");
-  igSeparator();
-  bool value= true; 
-  bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
-  if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
-    se_set_default_keybind(&gui_state);
-    modified=true;
-  }
+  if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
+    se_draw_touch_controls_settings();
+  }else{
+    se_text(ICON_FK_KEYBOARD_O " Keybinds");
+    igSeparator();
+    bool value= true; 
+    bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
+    if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
+      se_set_default_keybind(&gui_state);
+      modified=true;
+    }
 
-  if(modified){
-    char settings_path[SB_FILE_PATH_SIZE];
-    snprintf(settings_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
-    sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
-    se_emscripten_flush_fs();
+    if(modified){
+      char settings_path[SB_FILE_PATH_SIZE];
+      snprintf(settings_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
+      sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
+      se_emscripten_flush_fs();
+    }
   }
-  #endif
   #if defined( USE_SDL) ||defined(PLATFORM_ANDROID)
   se_draw_controller_config(&gui_state);
   #endif
 
-  #if !defined(PLATFORM_ANDROID) && !defined(PLATFORM_IOS)
-  se_draw_touch_controls_settings();
-  #endif
+  if(gui_state.ui_type!=SE_UI_ANDROID&&gui_state.ui_type!=SE_UI_IOS){
+    se_draw_touch_controls_settings();
+  }
   se_text(ICON_FK_TEXT_HEIGHT " GUI");
   igSeparator();
   se_text("Language");igSameLine(SE_FIELD_INDENT,0);
@@ -4857,14 +4877,11 @@ void se_draw_menu_panel(){
   bool always_show_menubar = gui_state.settings.always_show_menubar;
   se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
   gui_state.settings.always_show_menubar = always_show_menubar;
-#if !defined(EMSCRIPTEN) && !defined(PLATFORM_ANDROID) &&!defined(PLATFORM_IOS)
-  bool fullscreen = sapp_is_fullscreen();
-  se_checkbox("Full Screen",&fullscreen);
-  if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
-#endif
 
-#if !defined(EMSCRIPTEN) && !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
-  {
+  if(gui_state.ui_type==SE_UI_DESKTOP){
+    bool fullscreen = sapp_is_fullscreen();
+    se_checkbox("Full Screen",&fullscreen);
+    if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
     se_text(ICON_FK_CODE_FORK " Additional Search Paths");
     igSeparator();
     se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
@@ -4878,7 +4895,6 @@ void se_draw_menu_panel(){
       gui_state.last_saved_paths=gui_state.paths;
     }
   }
-#endif
   se_text(ICON_FK_WRENCH " Advanced");
   igSeparator();
   se_text("Solar Sensor");igSameLine(SE_FIELD_INDENT,0);
@@ -5003,6 +5019,35 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
       if(strcmp(params[0],"pause")==0){
         if(atoi(params[1]))emu_state.run_mode=SB_MODE_PAUSE;
       };
+      params+=2;
+    }
+    str_result=emu_state.rom_loaded?"ok":"Failed to load ROM";
+  }else if(strcmp(cmd,"/setting")==0){
+    while(*params){
+      if(strcmp(params[0],"ui_type")==0){
+        if(strcmp(params[1],"DESKTOP")==0)gui_state.ui_type = SE_UI_DESKTOP; 
+        if(strcmp(params[1],"ANDROID")==0)gui_state.ui_type = SE_UI_ANDROID;  
+        if(strcmp(params[1],"IOS")==0)gui_state.ui_type = SE_UI_IOS;     
+        if(strcmp(params[1],"WEB")==0)gui_state.ui_type = SE_UI_WEB;
+      }else if(strcmp(params[0],"menu")==0)gui_state.sidebar_open=atoi(params[1]);
+      else if(strcmp(params[0],"dpi")==0)gui_state.dpi_override=atof(params[1]);
+      else if(strcmp(params[0],"touch_controls_scale")==0)gui_state.settings.touch_controls_scale=atof(params[1]);
+      else if(strcmp(params[0],"language")==0)gui_state.settings.language=se_convert_locale_to_enum(params[1]);
+      else if(strcmp(params[0],"shader")==0)gui_state.settings.screen_shader=atof(params[1]);
+      else if(strcmp(params[0],"load_slot")==0)se_restore_state_slot(atoi(params[1]));
+      else if(strcmp(params[0],"capture_slot")==0)se_capture_state_slot(atoi(params[1]));
+      else if(strcmp(params[0],"edit_cheat_index")==0)gui_state.editing_cheat_index = atoi(params[1]);
+      else if(strcmp(params[0],"debug_tools")==0)gui_state.settings.draw_debug_menu = atoi(params[1]);
+      else if(strcmp(params[0],"fake_paths")==0)gui_state.fake_paths = atoi(params[1]);
+      else if(strcmp(params[0],"theme")==0)gui_state.settings.theme = atoi(params[1]);
+      else if(strcmp(params[0],"menu_bar")==0){
+        if(atoi(params[1])){
+          gui_state.settings.always_show_menubar=true;
+        }else{
+          gui_state.settings.always_show_menubar=false;
+          gui_state.menubar_hide_timer = 0; 
+        }
+      }
       params+=2;
     }
     str_result=emu_state.rom_loaded?"ok":"Failed to load ROM";
@@ -5338,15 +5383,16 @@ static void frame(void) {
   style->DisplaySafeAreaPadding.x = style->DisplaySafeAreaPadding.y =0;
 #ifdef PLATFORM_IOS
   se_ios_get_safe_ui_padding(&top_padding,NULL,&left_padding,&right_padding);
-  style->ScrollbarSize=4;
   style->DisplaySafeAreaPadding.x = left_padding;
   style->DisplaySafeAreaPadding.y = top_padding;
 #endif
 
 #ifdef PLATFORM_ANDROID
-  style->ScrollbarSize=4;
   se_android_poll_events(igGetIO()->WantTextInput);
 #endif
+  if(gui_state.ui_type==SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS){
+      style->ScrollbarSize=4;
+  }
 
   se_bring_text_field_into_view();
 
@@ -5369,10 +5415,11 @@ static void frame(void) {
     int orig_x = igGetCursorPosX();
     int v = (int)(gui_state.settings.volume*100);
     float volume_width = SE_VOLUME_SLIDER_WIDTH+5;
-#if defined(PLATFORM_IOS) || defined(PLATFORM_ANDROID)
-    gui_state.settings.volume=1.;
-    volume_width = 0; 
-#endif
+    
+    if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
+      gui_state.settings.volume=1.;
+      volume_width = 0; 
+    }
 
     
     int num_toggles = 5;
@@ -5382,18 +5429,17 @@ static void frame(void) {
     if((width)/se_dpi_scale()-toggle_x-(sel_width+1)*num_toggles<volume_width)toggle_x=(width)/se_dpi_scale()-(sel_width+1)*num_toggles-volume_width;
     if(toggle_x<orig_x)toggle_x=orig_x;
 
-#if !defined(PLATFORM_IOS) && !defined(PLATFORM_ANDROID)
-    int vol_x = width/se_dpi_scale()-volume_width;
-    if(vol_x<toggle_x+(sel_width+1)*num_toggles)vol_x=toggle_x+(sel_width+1)*num_toggles;
-    igSetCursorPosX(vol_x);
-    igPushItemWidth(-0.01);
-    igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
-    se_tooltip("Adjust volume");
-    gui_state.settings.volume=v*0.01;
-    igPopItemWidth();
-    igSetCursorPosX(orig_x);
-#endif
-    
+    if(gui_state.ui_type!=SE_UI_ANDROID&&gui_state.ui_type!=SE_UI_IOS){
+      int vol_x = width/se_dpi_scale()-volume_width;
+      if(vol_x<toggle_x+(sel_width+1)*num_toggles)vol_x=toggle_x+(sel_width+1)*num_toggles;
+      igSetCursorPosX(vol_x);
+      igPushItemWidth(-0.01);
+      igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
+      se_tooltip("Adjust volume");
+      gui_state.settings.volume=v*0.01;
+      igPopItemWidth();
+      igSetCursorPosX(orig_x);
+    }    
 
     float toggle_width = sel_width*num_toggles;
 
@@ -5564,6 +5610,13 @@ static void frame(void) {
 
   simgui_render();
   sg_end_pass();
+  static float old_dpi= 0;
+  if(old_dpi!=se_dpi_scale()){
+    simgui_shutdown();
+    simgui_setup(&(simgui_desc_t){ .dpi_scale= se_dpi_scale()});
+    old_dpi =se_dpi_scale();
+    gui_state.update_font_atlas=true;
+  }
   if(gui_state.update_font_atlas){
     gui_state.update_font_atlas=false;
     ImFontAtlas* atlas = igGetIO()->Fonts;    
@@ -5768,6 +5821,15 @@ static void init(void) {
     printf("Failed to init SDL: %s\n",SDL_GetError());
   }
 #endif
+  gui_state.ui_type=SE_UI_DESKTOP;
+  #if defined(PLATFORM_ANDROID)
+  gui_state.ui_type = SE_UI_ANDROID;
+  #elif defined(PLATFORM_IOS)
+  gui_state.ui_type = SE_UI_IOS;
+  #elif defined(PLATFORM_WEB)
+  gui_state.ui_type = SE_UI_WEB;
+  #endif
+
   se_initialize_keybind(&gui_state.key);
   se_init();
   sg_setup(&(sg_desc){
