@@ -1238,13 +1238,13 @@ static FORCE_INLINE void gba_store8_debug(gba_t*gba, unsigned baddr, uint32_t da
   int offset = SB_BFE(baddr,0,2);
   ((uint8_t*)val)[offset]=data; 
 } 
-static FORCE_INLINE void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xffff]=data;}
-static FORCE_INLINE void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xffff))=data;}
-static FORCE_INLINE void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data){*(uint32_t*)(gba->mem.io+(baddr&0xffff))=data;}
+static FORCE_INLINE void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xfff]=data;}
+static FORCE_INLINE void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xfff))=data;}
+static FORCE_INLINE void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data){*(uint32_t*)(gba->mem.io+(baddr&0xfff))=data;}
 
-static FORCE_INLINE uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.io[baddr&0xffff];}
-static FORCE_INLINE uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xffff));}
-static FORCE_INLINE uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xffff));}
+static FORCE_INLINE uint8_t  gba_io_read8(gba_t*gba, unsigned baddr) {return gba->mem.io[baddr&0xfff];}
+static FORCE_INLINE uint16_t gba_io_read16(gba_t*gba, unsigned baddr){return *(uint16_t*)(gba->mem.io+(baddr&0xfff));}
+static FORCE_INLINE uint32_t gba_io_read32(gba_t*gba, unsigned baddr){return *(uint32_t*)(gba->mem.io+(baddr&0xfff));}
 static FORCE_INLINE void gba_recompute_waitstate_table(gba_t* gba,uint16_t waitcnt){
   // TODO: Make the waitstate for the ROM configureable 
   const int wait_state_table[16*4]={
@@ -1409,7 +1409,7 @@ static FORCE_INLINE void arm7_write16(void* user_data, uint32_t address, uint16_
 }
 static FORCE_INLINE void arm7_write8(void* user_data, uint32_t address, uint8_t data)  {
   gba_compute_access_cycles((gba_t*)user_data,address,1); 
-  if((address&0xfffffC00)==0x04000000){
+  if((address&0xfffff000)==0x04000000){
     if(gba_process_mmio_write((gba_t*)user_data,address,data,1))return; 
   }
   gba_store8((gba_t*)user_data,address,data);
@@ -1541,7 +1541,7 @@ static void gba_recompute_mmio_mask_table(gba_t* gba){
     else if(dword_address==0x4000078)data_mask &= 0xff00;
     else if(dword_address==0x400007C)data_mask &= 0x40FF;
     else if(dword_address==0x4000080)data_mask &= 0x770FFF77;
-    else if(dword_address==0x4000084)data_mask &= 0x0080;
+    else if(dword_address==0x4000084)data_mask &= 0x008F;
     else if(dword_address==0x4000088||dword_address==0x4000134||dword_address==0x4000140||dword_address==0x4000158||dword_address==0x4000204||dword_address==0x4000208)data_mask = 0x0000ffff;
     else if(dword_address==0x40000B8||dword_address==0x40000C4||dword_address==0x40000D0)data_mask&=0xf7e00000;
     else if(dword_address==0x40000DC)data_mask&=0xFFE00000; 
