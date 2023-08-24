@@ -617,6 +617,7 @@ mmio_reg_t gba_io_reg_desc[]={
 #define GBA_REQ_1B    0x01
 #define GBA_REQ_2B    0x02
 #define GBA_REQ_4B    0x04
+#define GBA_REQ_DEBUG 0x20
 #define GBA_REQ_READ  0x40
 #define GBA_REQ_WRITE 0x80
 
@@ -652,6 +653,7 @@ typedef struct {
   // Lookup tables to accelerate MMIO masking / Open bus behavior
   uint32_t mmio_data_mask_lookup[256];
   uint8_t  mmio_reg_valid_lookup[256];
+  uint8_t mmio_debug_access_buffer[16*1024];
 } gba_mem_t;
 
 typedef struct {
@@ -880,6 +882,26 @@ static bool gba_load_best_effort_state(gba_t* gba,uint8_t *save_state_data, uint
   return true; 
 }
 
+static FORCE_INLINE sb_debug_mmio_access_t gba_debug_mmio_access(gba_t*gba, unsigned baddr, int trigger_breakpoint){
+  baddr&=0xffff;
+  baddr/=4;
+
+  if(trigger_breakpoint!=-1){
+    gba->mem.mmio_debug_access_buffer[baddr]&=0x7f;
+    if(trigger_breakpoint!=0)gba->mem.mmio_debug_access_buffer[baddr]|=0x80;
+  }
+  uint8_t flag = gba->mem.mmio_debug_access_buffer[baddr];
+
+  sb_debug_mmio_access_t access; 
+  access.read_since_reset = flag&0x1;
+  access.read_in_tick = flag&0x2;
+
+  access.write_since_reset = flag&0x10;
+  access.write_in_tick = flag&0x20;
+  access.trigger_breakpoint = flag&0x80;
+  return access; 
+}
+
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
 static FORCE_INLINE void gba_tick_timers(gba_t* gba);
 static void gba_compute_timers(gba_t* gba); 
@@ -897,7 +919,12 @@ static FORCE_INLINE uint8_t gba_read8(gba_t*gba, unsigned baddr){
   uint32_t* val = gba_dword_lookup(gba,baddr,GBA_REQ_READ|GBA_REQ_1B);
   int offset = SB_BFE(baddr,0,2);
   return ((uint8_t*)val)[offset];
-}            
+}        
+static FORCE_INLINE uint8_t gba_read8_debug(gba_t*gba, unsigned baddr){
+  uint32_t* val = gba_dword_lookup(gba,baddr,GBA_REQ_READ|GBA_REQ_1B|GBA_REQ_DEBUG);
+  int offset = SB_BFE(baddr,0,2);
+  return ((uint8_t*)val)[offset];
+}         
 static FORCE_INLINE void gba_process_flash_state_machine(gba_t* gba, unsigned baddr, uint8_t data){
   #define FLASH_DEFAULT 0x0
   #define FLASH_RECV_AA 0x1
@@ -1197,6 +1224,20 @@ static FORCE_INLINE void gba_store8(gba_t*gba, unsigned baddr, uint32_t data){
   int offset = SB_BFE(baddr,0,2);
   ((uint8_t*)val)[offset]=data; 
 } 
+static FORCE_INLINE void gba_store8_debug(gba_t*gba, unsigned baddr, uint32_t data){
+  if(baddr>=0x05000000){
+    // 8 bit stores to palette mirror across 8 bit halves
+    if((baddr&0xff000000)==0x5000000){gba_store16(gba,baddr&~1,(data&0xff)*0x0101); return; }
+    if(((baddr&0xff000000)==0x06000000)&&((baddr&0x1ffff)<=0x0013FFF)){gba_store16(gba,baddr&~1,(data&0xff)*0x0101);return;}
+    //Mask is 0xfe to catch the sram mirror at 0x0f and 0x0e
+    if((baddr&0xfe000000)==0xE000000){ gba_process_backup_write(gba,baddr,data); return; }
+    // Remaining 8 bit ops are not supported on VRAM or ROM
+    return; 
+  }
+  uint32_t *val = gba_dword_lookup(gba,baddr,GBA_REQ_WRITE|GBA_REQ_1B|GBA_REQ_DEBUG);
+  int offset = SB_BFE(baddr,0,2);
+  ((uint8_t*)val)[offset]=data; 
+} 
 static FORCE_INLINE void gba_io_store8(gba_t*gba, unsigned baddr, uint8_t data){gba->mem.io[baddr&0xffff]=data;}
 static FORCE_INLINE void gba_io_store16(gba_t*gba, unsigned baddr, uint16_t data){*(uint16_t*)(gba->mem.io+(baddr&0xffff))=data;}
 static FORCE_INLINE void gba_io_store32(gba_t*gba, unsigned baddr, uint32_t data){*(uint32_t*)(gba->mem.io+(baddr&0xffff))=data;}
@@ -1403,6 +1444,10 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
             ret = &gba->mem.mmio_word;
           }
         }else ret = (uint32_t*)(gba->mem.io+(addr&0x3fc));
+        if(!(req_type&GBA_REQ_DEBUG)){
+          gba->mem.mmio_debug_access_buffer[(addr&0xffff)/4]|=(req_type&GBA_REQ_WRITE)?0x70:0xf;
+          if(gba->mem.mmio_debug_access_buffer[(addr&0xffff)/4]&0x80)gba->cpu.trigger_breakpoint =true;
+        }
       }
       break;
     case 0x5: 
@@ -3707,6 +3752,11 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->cpu.write16 = arm7_write16;
   gba->cpu.write32 = arm7_write32;
   gba->cpu.user_data=gba;
+
+  uint64_t* d = (uint64_t*)gba->mem.mmio_debug_access_buffer;
+  for(int i=0;i<sizeof(gba->mem.mmio_debug_access_buffer)/8;++i){
+    d[i]&=0x9191919191919191ULL;
+  }
 
   gba_tick_keypad(&emu->joy,gba);
   gba->ppu.has_hit_vblank=false;

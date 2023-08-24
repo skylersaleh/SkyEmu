@@ -489,6 +489,18 @@ static int se_slider_float(const char* label,float* v,float v_min,float v_max,co
 static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags){
   return igInputInt(se_localize_and_cache(label),v,step,step_fast,flags);
 }
+static bool se_input_uint32(const char* label,uint32_t* v,int step,int step_fast,ImGuiInputTextFlags flags){
+  int val = *v; 
+  bool ret = se_input_int(label,&val,step,step_fast,flags);
+  *v = val;
+  return ret;
+}
+static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,ImGuiInputTextFlags flags){
+  int val = *v; 
+  bool ret = se_input_int(label,&val,step,step_fast,flags);
+  *v = val;
+  return ret;
+}
 static bool se_button(const char* label, ImVec2 size){
   return igButton(se_localize_and_cache(label),size);
 }
@@ -1265,6 +1277,40 @@ void se_draw_emu_stats(){
   igPopItemWidth();
 
 }
+
+void se_psg_debugger(){
+
+  // NOTE: GB and GBA framesequencer should each contain the same struct data
+  sb_frame_sequencer_t* seq = emu_state.system == SYSTEM_GB ? &core.gb.audio.sequencer : (sb_frame_sequencer_t*)&core.gba.audio.sequencer;
+
+  for(int i=0;i<4;++i){
+    se_text("Channel %d",i+1);
+    igSeparator();
+    se_checkbox("Active", &seq->active[i]);
+    se_checkbox("Powered", &seq->powered[i]);
+    se_text("Channel t: %f",seq->chan_t[i]);
+    se_checkbox("Use Length", &seq->use_length[i]);
+    se_input_int32("Length", &seq->length[i],1,10,ImGuiInputTextFlags_None);
+    se_input_uint32("Volume", &seq->volume[i],1,10,ImGuiInputTextFlags_None);
+    se_input_uint32("Frequency", &seq->frequency[i],1,10,ImGuiInputTextFlags_None);
+    
+    if(i==0){
+      se_checkbox("Sweep Enable", &seq->sweep_enable);
+    se_input_int32("Sweep Dir.", &seq->sweep_direction,1,10,ImGuiInputTextFlags_None);
+      se_input_uint32("Sweep Timer", &seq->sweep_timer,1,10,ImGuiInputTextFlags_None);
+      se_input_uint32("Sweep Period", &seq->sweep_period,1,10,ImGuiInputTextFlags_None);
+      se_input_uint32("Sweep Shift", &seq->sweep_shift,1,10,ImGuiInputTextFlags_None);
+    }
+    se_input_int32("Env Dir.", &seq->env_direction[i],1,10,ImGuiInputTextFlags_None);
+    se_input_uint32("Env Period", &seq->env_period[i],1,10,ImGuiInputTextFlags_None);
+    se_input_uint32("Env Timer", &seq->env_period_timer[i],1,10,ImGuiInputTextFlags_None);
+    se_checkbox("Env Overflowed", &seq->env_overflow[i]);
+
+    if(i==3){
+      se_text("LFSR Value: %04x",seq->lfsr4);
+    }
+  }
+}
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
   if(se_button("Step Instruction",(ImVec2){0,0})){
@@ -2008,16 +2054,11 @@ static void se_draw_emulated_system_screen(bool preview){
   }
   if(!gui_state.block_touchscreen||preview)sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad,preview);
 }
-static uint8_t gba_byte_read(uint64_t address){return gba_read8(&core.gba,address);}
-static uint16_t gba_halfword_read(uint64_t address){return gba_read16(&core.gba,address);}
-static uint32_t gba_word_read(uint64_t address){return gba_read32(&core.gba,address);}
-static void gba_byte_write(uint64_t address, uint8_t data){gba_store8(&core.gba,address,data);}
-static void gba_halfword_write(uint64_t address, uint16_t data){gba_store16(&core.gba,address,data);}
-static void gba_word_write(uint64_t address, uint32_t data){gba_store32(&core.gba,address,data);}
+static uint8_t gba_byte_read(uint64_t address){return gba_read8_debug(&core.gba,address);}
+static void gba_byte_write(uint64_t address, uint8_t data){gba_store8_debug(&core.gba,address,data);}
+
 static uint8_t gb_byte_read(uint64_t address){return sb_read8(&core.gb,address);}
-static uint16_t gb_halfword_read(uint64_t address){return sb_read16(&core.gb,address);}
 static void gb_byte_write(uint64_t address, uint8_t data){sb_store8(&core.gb,address,data);}
-static void gb_halfword_write(uint64_t address, uint16_t data){sb_store16(&core.gb,address,data);}
 
 static uint8_t nds9_byte_read(uint64_t address){return nds9_debug_read8(&core.nds,address);}
 static void nds9_byte_write(uint64_t address, uint8_t data){nds9_debug_write8(&core.nds,address,data);}
@@ -2035,9 +2076,10 @@ typedef struct{
   bool visible;
 }se_debug_tool_desc_t; 
 
+sb_debug_mmio_access_t gba_mmio_access_type(uint64_t address,int trigger_breakpoint){return gba_debug_mmio_access(&core.gba,address,trigger_breakpoint);}
 void gba_memory_debugger(){se_draw_mem_debug_state("GBA MEM", &gui_state, &gba_byte_read, &gba_byte_write); }
 void gba_cpu_debugger(){se_draw_arm_state("CPU",&core.gba.cpu,&gba_byte_read);}
-void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write,NULL);}
+void gba_mmio_debugger(){se_draw_io_state("GBA MMIO", gba_io_reg_desc,sizeof(gba_io_reg_desc)/sizeof(mmio_reg_t), &gba_byte_read, &gba_byte_write,&gba_mmio_access_type);}
 
 void gb_mmio_debugger(){se_draw_io_state("GB MMIO", gb_io_reg_desc,sizeof(gb_io_reg_desc)/sizeof(mmio_reg_t), &gb_byte_read, &gb_byte_write,NULL);}
 void gb_memory_debugger(){se_draw_mem_debug_state("GB MEM", &gui_state, &gb_byte_read, &gb_byte_write);}
@@ -2067,12 +2109,14 @@ se_debug_tool_desc_t gba_debug_tools[]={
   {ICON_FK_TELEVISION, ICON_FK_TELEVISION " CPU", gba_cpu_debugger},
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gba_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gba_memory_debugger},
+  {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
   {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gb_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gb_memory_debugger},
+  {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
   {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
