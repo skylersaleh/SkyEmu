@@ -696,7 +696,6 @@ typedef struct{
   int fast_forward_ticks;
   float ghosting_strength;
   uint32_t mosaic_y_counter;
-  uint32_t mosaic_y_latch;
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1926,7 +1925,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     // Partial fix to https://github.com/skylersaleh/SkyEmu/issues/316
     if(++gba->ppu.mosaic_y_counter>=mos_y||sprite_lcd_y ==0){
       gba->ppu.mosaic_y_counter=0;
-      gba->ppu.mosaic_y_latch=sprite_lcd_y;
     }
     //Render sprites over scanline when it completes
     uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
@@ -2003,9 +2001,9 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
               int mos_y = SB_BFE(mos_reg,12,4)+1;
               sx = ((x/mos_x)*mos_x-x_coord);
               if(sx<0)sx=0;
-              sy = ((int)gba->ppu.mosaic_y_latch)-(int)y_coord;
+              sy = (sprite_lcd_y-y_coord)&0xff;
+              sy -= gba->ppu.mosaic_y_counter;
               if(sy<0){sy =0;} 
-              sy &=0xff;
             }
             if(rot_scale){
               uint32_t param_base = rotscale_param*0x20; 
