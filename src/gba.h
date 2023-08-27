@@ -1818,13 +1818,17 @@ static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render
   return 3-((gba->ppu.scan_clock)%4);
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
-  gba->ppu.scan_clock+=1;
-  gba->ppu.fast_forward_ticks--;
-  if(gba->ppu.scan_clock%4)return;
-  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render);
+  if(SB_LIKELY(gba->ppu.fast_forward_ticks>0)){
+    gba->ppu.fast_forward_ticks--;
+    return; 
+  }
+
   if(gba->ppu.scan_clock>=280896)gba->ppu.scan_clock-=280896;
   int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
+  gba->ppu.scan_clock++;
+  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render)+1;
+  gba->ppu.scan_clock+=gba->ppu.fast_forward_ticks;
   if(lcd_x==0||lcd_x==GBA_LCD_HBLANK_START||lcd_x==GBA_LCD_HBLANK_END){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
@@ -3803,7 +3807,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
       }
       gba->rtc.total_clocks_ticked+=fast_forward_ticks;
       gba->deferred_timer_ticks+=fast_forward_ticks;
-      gba->ppu.scan_clock+=fast_forward_ticks;
       gba->ppu.fast_forward_ticks-=fast_forward_ticks;
       ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
       delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
