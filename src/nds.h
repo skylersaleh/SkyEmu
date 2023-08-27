@@ -2068,7 +2068,7 @@ typedef struct{
 
 #define NDS_MATRIX_PROJ 0
 #define NDS_MATRIX_MV 1
-#define NDS_MATRIX_TBD 2 //<- TODO: Future Sky problem
+#define NDS_MATRIX_DIR 2 //<- TODO: Future Sky problem
 #define NDS_MATRIX_TEX 3
 
 #define NDS_MAX_VERTS 8192
@@ -2091,17 +2091,26 @@ typedef struct{
   float proj_matrix[16];
   float tex_matrix[16];
   float mv_matrix[16];
-  float normal_matrix[16];
+  float direction_matrix[16];
 
   float proj_matrix_stack[16*2];
   float tex_matrix_stack[16*2];
   float mv_matrix_stack[16*32];
-  float normal_matrix_stack[16*32];
+  float direction_matrix_stack[16*32];
   uint8_t curr_color[4];
   uint8_t curr_ambient_color[3];
   uint8_t curr_diffuse_color[3];
+  uint8_t curr_specular_color[3];
+  uint8_t curr_emission_color[3];
+  uint8_t shininess_table[128];
+  bool use_shininess_table;
+
+  float light_vector[4*4];
+  uint8_t light_color[4*3];
+
   int16_t curr_tex_coord[2];
   int16_t last_vertex_pos[3];
+  float transformed_normal[4];
   int matrix_mode; 
   int mv_matrix_stack_ptr;
   int proj_matrix_stack_ptr;
@@ -3798,7 +3807,7 @@ static void nds_deselect_spi(nds_t *nds){
 static float * nds_gpu_get_active_matrix(nds_t*nds){
   switch(nds->gpu.matrix_mode){
     case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix;
-    case NDS_MATRIX_TBD:case NDS_MATRIX_MV: return nds->gpu.mv_matrix;
+    case NDS_MATRIX_DIR:case NDS_MATRIX_MV: return nds->gpu.mv_matrix;
     case NDS_MATRIX_TEX: return nds->gpu.tex_matrix;
     default:
       printf("GPU: Unknown matrix type:%d\n",nds->gpu.matrix_mode);
@@ -4229,7 +4238,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
         output_col[3]=col_v[3];
       }else if(polygon_mode==2){
-        int toon_highlight_entry = round(col_v[0]*255/8.); 
+        int toon_highlight_entry = floor(col_v[0]*255/8.); 
         //printf("toon entry: %d\n",toon_highlight_entry);
         uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
         col_v[0]= SB_BFE(color,0,5)/31.;
@@ -4368,6 +4377,9 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
     case 1:{
       float tex_p2[4]={uv[0],uv[1],1./16.,1./16.};
       nds_mult_matrix_vector(uv,nds->gpu.tex_matrix,tex_p2,4);
+    }break;
+    case 2:{
+      SE_RPT4 uv[r]=nds->gpu.transformed_normal[r]; 
     }break;
     default:
       //printf("Unknown Tex Coord XForm mode:%d\n",coord_xform_mode);
@@ -4538,6 +4550,41 @@ static float nds_point_plane_distance(float * point, float * plane){
   SE_RPT3 dist+=point[r]*plane[r];
   return dist; 
 }
+static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t nzi){
+  float normal_object[4] = {nxi/32768.,nyi/32768.,nzi/32768.,0.};
+  nds_gpu_t* gpu = &nds->gpu;
+  float *normal= gpu->transformed_normal;
+  nds_mult_matrix_vector(normal,gpu->direction_matrix,normal_object,4);
+
+  float color[3];
+  SE_RPT3 color[r]=gpu->curr_emission_color[r]/255.;
+  for(int i=0;i<4;++i){
+    bool enabled = SB_BFE(gpu->poly_attr,i,1);
+    if(!enabled)continue;
+    float diffuse = 0, specular = 0;
+    SE_RPT3 diffuse-=normal[r]*gpu->light_vector[i*4+r];
+    float half_vector[4];
+    //LOS_Vector = (0,0,-1)
+    //half_vector = (light_vector+LOS_vector)*0.5;
+    SE_RPT4 half_vector[r]=gpu->light_vector[i*4+r]*0.5;
+    half_vector[2] -= 0.5; 
+    SE_RPT3 specular-=normal[r]*half_vector[r];
+    diffuse = fmax(0,diffuse);
+    specular= fmax(0,specular); 
+    specular*=specular; 
+    if(gpu->use_shininess_table){
+      int entry = specular*127;
+      if(entry>127)entry = 127;
+      else if(entry<0)entry = 0; 
+      specular = gpu->shininess_table[entry]/255.;
+    }
+
+    SE_RPT3 color[r]+=((float)gpu->curr_diffuse_color[r])*(float)gpu->light_color[i*3+r]*diffuse/(255.*255.);
+    SE_RPT3 color[r]+=(float)gpu->curr_specular_color[r]*(float)gpu->light_color[i*3+r]*specular/(255.*255.);
+    SE_RPT3 color[r]+=(float)gpu->curr_ambient_color[r]*(float)gpu->light_color[i*3+r]/(255.*255.);
+  }
+  SE_RPT3 gpu->curr_color[r]= fmax(0.0,fmin(255.0,color[r]*255));
+}
 static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
@@ -4599,9 +4646,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
     case 0x11:/*MTX_PUSH*/ 
       {
         switch (gpu->matrix_mode){
-          case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+          case NDS_MATRIX_MV:
+          case NDS_MATRIX_DIR:
             if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
             for(int i=0;i<16;++i){gpu->mv_matrix_stack[gpu->mv_matrix_stack_ptr*16+i]=gpu->mv_matrix[i];}
+            for(int i=0;i<16;++i){gpu->direction_matrix_stack[gpu->mv_matrix_stack_ptr*16+i]=gpu->direction_matrix[i];}
             gpu->mv_matrix_stack_ptr++;
             break;
           case NDS_MATRIX_TEX:
@@ -4622,13 +4671,15 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       int32_t pop_cnt = SB_BFE(p[0],0,6);
       if (pop_cnt & 32) pop_cnt -= 64;
       switch (gpu->matrix_mode){
-        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+        case NDS_MATRIX_MV:
+        case NDS_MATRIX_DIR:
           gpu->mv_matrix_stack_ptr-=pop_cnt;
           if(gpu->mv_matrix_stack_ptr<0){
             gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=0;
           }
           if(gpu->mv_matrix_stack_ptr>31){gpu->matrix_stack_error=true;gpu->mv_matrix_stack_ptr=31;}
           for(int i=0;i<16;++i){gpu->mv_matrix[i]=gpu->mv_matrix_stack[gpu->mv_matrix_stack_ptr*16+i];}
+          for(int i=0;i<16;++i){gpu->direction_matrix[i]=gpu->direction_matrix_stack[gpu->mv_matrix_stack_ptr*16+i];}
           break;
         case NDS_MATRIX_TEX:
           gpu->tex_matrix_stack_ptr--;
@@ -4651,8 +4702,10 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       float * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
       switch (gpu->matrix_mode){
-        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+        case NDS_MATRIX_MV:
+        case NDS_MATRIX_DIR:
           for(int i=0;i<16;++i)gpu->mv_matrix_stack[new_stack+i]=m[i];
+          for(int i=0;i<16;++i)gpu->direction_matrix_stack[new_stack+i]=gpu->direction_matrix[i];
           break;
         case NDS_MATRIX_TEX:
           for(int i=0;i<16;++i)gpu->tex_matrix_stack[i]=m[i];
@@ -4667,8 +4720,10 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       float * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
       switch (gpu->matrix_mode){
-        case NDS_MATRIX_MV:case NDS_MATRIX_TBD:
+        case NDS_MATRIX_MV:
+        case NDS_MATRIX_DIR:
           for(int i=0;i<16;++i)m[i]=gpu->mv_matrix_stack[new_stack+i];
+          for(int i=0;i<16;++i)gpu->direction_matrix[i]=gpu->direction_matrix_stack[new_stack+i];
           break;
         case NDS_MATRIX_TEX:
           for(int i=0;i<16;++i)m[i]=gpu->tex_matrix_stack[i];
@@ -4681,9 +4736,13 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
     }
     case 0x15: /*MTX_IDENTITY - Load Unit Matrix to Current Matrix (W)*/
       nds_identity_matrix(nds_gpu_get_active_matrix(nds));
+      if(gpu->matrix_mode==NDS_MATRIX_DIR)nds_identity_matrix(gpu->direction_matrix);
       break;
     case 0x16: /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
       for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i]*fixed_to_float;
+      if(gpu->matrix_mode==NDS_MATRIX_DIR){
+        for(int i=0;i<16;++i) gpu->direction_matrix[i]=p[i]*fixed_to_float;
+      }
       break;
     case 0x17:{ /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
       float m2[16]={
@@ -4694,6 +4753,9 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       };
       float*m = nds_gpu_get_active_matrix(nds);
       for(int i=0;i<16;++i)m[i]=m2[i];
+      if(gpu->matrix_mode==NDS_MATRIX_DIR){
+        for(int i=0;i<16;++i) gpu->direction_matrix[i]=m2[i];
+      }
       break;
     }
     case 0x18:{ /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
@@ -4703,8 +4765,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
         p[8]*fixed_to_float, p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,
         p[12]*fixed_to_float, p[13]*fixed_to_float, p[14]*fixed_to_float,p[15]*fixed_to_float
       };
-      if(nds->gpu.matrix_mode==NDS_MATRIX_TBD)gpu->cmd_busy_cycles+=30;
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      if(gpu->matrix_mode==NDS_MATRIX_DIR){
+        nds_mult_matrix4(gpu->direction_matrix,m);
+        gpu->cmd_busy_cycles+=30;
+      }
       break;
     }
     case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
@@ -4714,8 +4779,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
         p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float,0,
         p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
       };
-      if(nds->gpu.matrix_mode==NDS_MATRIX_TBD)gpu->cmd_busy_cycles+=30;
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      if(gpu->matrix_mode==NDS_MATRIX_DIR){
+        nds_mult_matrix4(gpu->direction_matrix,m);
+        gpu->cmd_busy_cycles+=30;
+      }
       break;
     }
     
@@ -4726,17 +4794,26 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
         p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0,
         0,0,0,1.,
       };
-      if(nds->gpu.matrix_mode==NDS_MATRIX_TBD)gpu->cmd_busy_cycles+=30;
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
+      if(gpu->matrix_mode==NDS_MATRIX_DIR){
+        nds_mult_matrix4(gpu->direction_matrix,m);
+        gpu->cmd_busy_cycles+=30;
+      }
       break;
     }
-    case 0x1c: 
-      if(nds->gpu.matrix_mode==NDS_MATRIX_TBD)gpu->cmd_busy_cycles+=30;
+    case 0x1c: /*MTX_TRAN*/
+      if(nds->gpu.matrix_mode==NDS_MATRIX_DIR){
+        gpu->cmd_busy_cycles+=30;
+        nds_translate_matrix(gpu->direction_matrix,p[0]*fixed_to_float,
+                                                   p[1]*fixed_to_float,
+                                                   p[2]*fixed_to_float); 
+      }
       nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
                                                                     p[1]*fixed_to_float,
                                                                     p[2]*fixed_to_float);break; /*MTX_TRAN*/
+      
     case 0x1b: 
-      if(nds->gpu.matrix_mode==NDS_MATRIX_TBD)gpu->cmd_busy_cycles+=30;
+      if(nds->gpu.matrix_mode==NDS_MATRIX_DIR)gpu->cmd_busy_cycles+=30;
       nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
                                                                 p[1]*fixed_to_float,
                                                                 p[2]*fixed_to_float);break; /*MTX_SCALE*/
@@ -4745,6 +4822,12 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       nds->gpu.curr_color[1]=SB_BFE(p[0],5,5)<<3;
       nds->gpu.curr_color[2]=SB_BFE(p[0],10,5)<<3;          
       nds->gpu.curr_color[3]=255;
+      break;
+    case 0x21: 
+      nds_vertex_lighting(nds,  (int16_t)(SB_BFE(p[0],0,10)<<6u),
+                                (int16_t)(SB_BFE(p[0],10,10)<<6u),
+                                (int16_t)(SB_BFE(p[0],20,10)<<6u)
+                         );
       break;
     case 0x22:/*TEXCOORD*/
       nds->gpu.curr_tex_coord[0] = SB_BFE(p[0],0,16);
@@ -4784,16 +4867,44 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
         nds->gpu.curr_diffuse_color[1] = SB_BFE(p[0],5,5)<<3;
         nds->gpu.curr_diffuse_color[2] = SB_BFE(p[0],10,5)<<3;
         bool set_vertex_color = SB_BFE(p[0],15,1);
-        if(set_vertex_color||true)SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_diffuse_color[r];
+        if(set_vertex_color)SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_diffuse_color[r];
         nds->gpu.curr_ambient_color[0] = SB_BFE(p[0],16,5)<<3;
         nds->gpu.curr_ambient_color[1] = SB_BFE(p[0],21,5)<<3;
         nds->gpu.curr_ambient_color[2] = SB_BFE(p[0],26,5)<<3;
-
-        if(true){
-          SE_RPT3 nds->gpu.curr_color[r]=nds->gpu.curr_color[r]<nds->gpu.curr_ambient_color[r]?nds->gpu.curr_ambient_color[r]:nds->gpu.curr_color[r];
-        }
-
       }break;
+    case 0x31: /*SPE_EMI - MaterialColor1 - Specular Ref. & Emission (W)*/
+      {
+        nds->gpu.curr_specular_color[0] = SB_BFE(p[0],0,5)<<3;
+        nds->gpu.curr_specular_color[1] = SB_BFE(p[0],5,5)<<3;
+        nds->gpu.curr_specular_color[2] = SB_BFE(p[0],10,5)<<3;
+        nds->gpu.use_shininess_table    = SB_BFE(p[0],15,1);
+        nds->gpu.curr_emission_color[0] = SB_BFE(p[0],16,5)<<3;
+        nds->gpu.curr_emission_color[1] = SB_BFE(p[0],21,5)<<3;
+        nds->gpu.curr_emission_color[2] = SB_BFE(p[0],26,5)<<3;
+      }break;
+    case 0x32:{ /*LIGHT_VECTOR - Set Light Color (W)*/
+        int16_t lvi[3];
+        SE_RPT3 lvi[r]=SB_BFE(p[0],10*r,10)<<6;
+        float lv[4]={0};
+        SE_RPT3 lv[r] = lvi[r]/32768.;
+        int light = SB_BFE(p[0],30,2);
+        nds_mult_matrix_vector(nds->gpu.light_vector+light*4,gpu->direction_matrix,lv,4);
+      } break;
+    case 0x33:{ /*LIGHT_COLOR - Set Light Color (W)*/
+        int light = SB_BFE(p[0],30,2);
+        nds->gpu.light_color[light*3+0]= SB_BFE(p[0],0,5)<<3u;
+        nds->gpu.light_color[light*3+1]= SB_BFE(p[0],5,5)<<3u;
+        nds->gpu.light_color[light*3+2]= SB_BFE(p[0],10,5)<<3u;
+      } break;
+    case 0x34:{
+      for(int i=0;i<32;++i){
+        nds->gpu.shininess_table[i*4+0]=SB_BFE(p[i],0,8);
+        nds->gpu.shininess_table[i*4+1]=SB_BFE(p[i],8,8);
+        nds->gpu.shininess_table[i*4+2]=SB_BFE(p[i],16,8);
+        nds->gpu.shininess_table[i*4+3]=SB_BFE(p[i],24,8);
+      }
+      break;
+    }
     case 0x2A:nds->gpu.tex_image_param = p[0];break; /*TEXIMAGE_PARAM  - Set Texture Parameters*/
     case 0x2B:nds->gpu.tex_plt_base = p[0];   break; /*PLTT_BASE - Set Texture Palette Base Address (W)*/
 
@@ -4849,7 +4960,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       nds->gpu.box_test_result=box_position!=1;
       nds->gpu.test_busy -= 3;
     }break;
-    case 0x21: case 0x31: case 0x32: case 0x33: case 0x34: case 0x38: case 0x3c: break;
+    case 0x38: case 0x3c: break;
     case 0x71: 
         nds->gpu.test_busy -= 1;
     case 0x72:
