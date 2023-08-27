@@ -695,6 +695,8 @@ typedef struct{
   uint16_t dispcnt_pipeline[3];
   int fast_forward_ticks;
   float ghosting_strength;
+  uint32_t mosaic_y_counter;
+  uint32_t mosaic_y_latch;
 }gba_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -1644,13 +1646,9 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   }else if(address_u32==GBA_BG2X||address_u32==GBA_BG3X){
     int aff_bg = (address_u32-GBA_BG2X)/0x10;
     gba->ppu.aff[aff_bg].wrote_bgx= true;
-    int lcd_y = (gba->ppu.scan_clock)/1232;
-    int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   }else if(address_u32==GBA_BG2Y||address_u32==GBA_BG3Y){
     int aff_bg = (address_u32-GBA_BG2Y)/0x10;
     gba->ppu.aff[aff_bg].wrote_bgy = true;
-    int lcd_y = (gba->ppu.scan_clock)/1232;
-    int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
     gba->activate_dmas=true;
@@ -1922,8 +1920,15 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   if(forced_blank)return;
   bool visible = lcd_x<240 && lcd_y<160;
   //Render sprites over scanline when it completes
-  if((lcd_y<159 || lcd_y ==227) && lcd_x == 240){
+  if((lcd_y<159 || lcd_y ==227) && lcd_x == GBA_LCD_HBLANK_START){
     int sprite_lcd_y = (lcd_y+1)%228;
+    uint16_t mos_reg = gba_io_read16(gba,GBA_MOSAIC);
+    int mos_y = SB_BFE(mos_reg,12,4)+1;
+    // Partial fix to https://github.com/skylersaleh/SkyEmu/issues/316
+    if(++gba->ppu.mosaic_y_counter>=mos_y||sprite_lcd_y ==0){
+      gba->ppu.mosaic_y_counter=0;
+      gba->ppu.mosaic_y_latch=sprite_lcd_y;
+    }
     //Render sprites over scanline when it completes
     uint8_t default_window_control =0x3f;//bitfield [0-3:bg0-bg3 enable 4:obj enable, 5: special effect enable]
     bool winout_enable = SB_BFE(dispcnt,13,3)!=0;
@@ -1998,7 +2003,10 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
               int mos_x = SB_BFE(mos_reg,8,4)+1;
               int mos_y = SB_BFE(mos_reg,12,4)+1;
               sx = ((x/mos_x)*mos_x-x_coord);
-              sy = (((sprite_lcd_y/mos_y)*mos_y-y_coord)&0xff);
+              if(sx<0)sx=0;
+              sy = ((int)gba->ppu.mosaic_y_latch)-(int)y_coord;
+              if(sy<0){sy =0;} 
+              sy &=0xff;
             }
             if(rot_scale){
               uint32_t param_base = rotscale_param*0x20; 
