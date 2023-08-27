@@ -1917,7 +1917,6 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   int bg_mode = SB_BFE(dispcnt,0,3);
   int obj_vram_map_2d = !SB_BFE(dispcnt,6,1);
   int forced_blank = SB_BFE(dispcnt,7,1);
-  if(forced_blank)return;
   bool visible = lcd_x<240 && lcd_y<160;
   //Render sprites over scanline when it completes
   if((lcd_y<159 || lcd_y ==227) && lcd_x == GBA_LCD_HBLANK_START){
@@ -2316,6 +2315,10 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
           b = b-(b)*evy;         
           break; 
       }
+    }
+    if(forced_blank){
+      r=g=b=255;
+      if(gba->stop_mode)r=g=b=0;
     }
 
     int backdrop_type = 5;
@@ -3818,7 +3821,9 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
     }
     if(SB_UNLIKELY(gba->ppu.has_hit_vblank||gba->stop_mode))break;
   } 
-  emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1);        
+  emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1); 
+  //LCD turns off in stop mode
+  if(gba->stop_mode)memset(scratch->framebuffer,0,sizeof(scratch->framebuffer));       
 }
 
 #endif
