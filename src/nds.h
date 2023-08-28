@@ -2661,18 +2661,30 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         uint32_t * cache = code?icache:dcache;
         uint32_t hash =    code? 8*1024/4/32- 1: 4*1024/4/32-1;
         uint32_t key = addr/32;
+        if((transaction_type&NDS_MEM_WRITE)){
+          if((addr/16)&1)key|=0x10000000;
+          else key|=0x20000000;
+        }
         uint32_t cache_addr = (key&hash);
         uint32_t shift_val = key; 
+        uint32_t evict_key = cache[cache_addr*4+3]>>28;
         for(int i=0;i<4;++i){
           uint32_t t = cache[cache_addr*4+i];
           cache[cache_addr*4+i] = shift_val;
           shift_val = t; 
-          if(key==shift_val){found=true;break;}
+          if(((key^shift_val)&0x0fffffff)==0){
+            cache[cache_addr*4+0]|=shift_val&0xf0000000;
+            found=true;
+            break;
+          }
         }
-        
-        if(!found){
-          if(code)nds->mem.slow_bus_cycles+=21;
-          else nds->mem.slow_bus_cycles+=23;
+        if(!(transaction_type&NDS_MEM_WRITE)){
+          if(!found){
+            int seq_words = 4; 
+            if(evict_key>2)seq_words=8;
+            if(code)nds->mem.slow_bus_cycles+=8;
+            else nds->mem.slow_bus_cycles+=8+seq_words;
+          }
         }
       }*/
       addr&=4*1024*1024-1;
