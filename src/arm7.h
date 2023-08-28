@@ -71,7 +71,7 @@ typedef struct {
   uint32_t debug_swi_ring_offset;
   uint32_t prefetch_pc;
   uint32_t step_instructions;//Instructions to step before triggering a breakpoint
-  uint32_t prefetch_opcode[3]; 
+  uint32_t prefetch_opcode[5]; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
   uint32_t registers[37];
@@ -792,11 +792,15 @@ static void arm9_exec_instruction(arm7_t* cpu){
       cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
       cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
       cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+      cpu->prefetch_opcode[3]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+6,true);
+      cpu->prefetch_opcode[4]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+8,true);
     }else{
       cpu->registers[PC]&=~3;
       cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC],false);
       cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
       cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+      cpu->prefetch_opcode[3]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+12,true);
+      cpu->prefetch_opcode[4]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+16,true);
     }
     cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
   }
@@ -809,6 +813,8 @@ static void arm9_exec_instruction(arm7_t* cpu){
   uint32_t opcode = cpu->prefetch_opcode[0];
   cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
   cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
+  cpu->prefetch_opcode[2] = cpu->prefetch_opcode[3];
+  cpu->prefetch_opcode[3] = cpu->prefetch_opcode[4];
   if(thumb==false){
     cpu->registers[PC] += 4;
     cpu->prefetch_pc = cpu->registers[PC];
@@ -817,14 +823,14 @@ static void arm9_exec_instruction(arm7_t* cpu){
       arm9_lookup_table[key](cpu,opcode);
     }
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[4] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+16,cpu->next_fetch_sequential);
   }else{
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     arm9t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[4]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }
   if(SB_UNLIKELY(cpu->step_instructions)){
     --cpu->step_instructions;
