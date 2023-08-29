@@ -5459,7 +5459,6 @@ static FORCE_INLINE int nds_ppu_compute_max_fast_forward(nds_t *nds){
   return (NDS_CLOCKS_PER_DOT-1)-((nds->ppu[0].scan_clock)%NDS_CLOCKS_PER_DOT);
 }
 static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
-  nds->ppu[0].scan_clock+=1;
   if(SB_LIKELY(nds->ppu_fast_forward_ticks-->0))return;
   //if(SB_LIKELY(nds->ppu[0].scan_clock%NDS_CLOCKS_PER_DOT))return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
@@ -5468,7 +5467,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
   int lcd_y = (nds->ppu[0].scan_clock)/clocks_per_line;
   int lcd_x = ((nds->ppu[0].scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
-  nds->ppu[1].scan_clock=nds->ppu[0].scan_clock;
+  nds->ppu[0].scan_clock+=nds->ppu_fast_forward_ticks+1;
   for(int ppu_id=0;ppu_id<2;++ppu_id){
     nds_ppu_t * ppu = nds->ppu+ppu_id;
     uint32_t dispcapcnt = nds9_io_read32(nds,NDS_DISPCAPCNT);
@@ -6882,11 +6881,12 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
       int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
-      if(SB_UNLIKELY(nds->active_if_pipe_stages))fast_forward_ticks=0;
       if(SB_LIKELY(fast_forward_ticks)){
         if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks)&&!gx_fifo_full)fast_forward_ticks=ticks;
-        nds->ppu[0].scan_clock+=fast_forward_ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
+        if(SB_UNLIKELY(nds->active_if_pipe_stages)){
+          for(int i=0;i<fast_forward_ticks;++i)nds_tick_interrupts(nds);
+        }
         if(nds->gpu.cmd_busy_cycles){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
         }
