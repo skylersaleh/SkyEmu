@@ -786,7 +786,7 @@ static void arm9_exec_instruction(arm7_t* cpu){
     return;
   }
   bool thumb = arm7_get_thumb_bit(cpu);
-  if(cpu->prefetch_pc!=cpu->registers[PC]){
+  if(SB_UNLIKELY(cpu->prefetch_pc!=cpu->registers[PC])){
     if(thumb){
       cpu->registers[PC]&=~1;
       cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
@@ -804,7 +804,7 @@ static void arm9_exec_instruction(arm7_t* cpu){
     }
     cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
   }
-  if(cpu->log_cmp_file){
+  if(SB_UNLIKELY(cpu->log_cmp_file)){
     arm_check_log_file(cpu);
     thumb = arm7_get_thumb_bit(cpu);
   }
@@ -823,14 +823,14 @@ static void arm9_exec_instruction(arm7_t* cpu){
       arm9_lookup_table[key](cpu,opcode);
     }
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[4] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+16,cpu->next_fetch_sequential);
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[4] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+16,cpu->next_fetch_sequential);
   }else{
     cpu->registers[PC] += 2;
     cpu->prefetch_pc = cpu->registers[PC];
     uint32_t key = ((opcode>>8)&0xff);
     arm9t_lookup_table[key](cpu,opcode);
     //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[4]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[4]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
   }
   if(SB_UNLIKELY(cpu->step_instructions)){
     --cpu->step_instructions;

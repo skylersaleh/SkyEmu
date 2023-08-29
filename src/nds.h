@@ -2211,8 +2211,8 @@ typedef struct{
   bool dma_processed[2];
   bool display_flip;
   nds_timer_t timers[2][4];
-  uint32_t timer_ticks_before_event;
-  uint32_t deferred_timer_ticks;
+  uint32_t next_timer_clock;
+  uint64_t last_timer_clock;
   bool prev_key_interrupt;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
   // This array acts as a FIFO to keep track of that. 
@@ -2743,13 +2743,13 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
 static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
   uint32_t *ret = &nds->mem.openbus_word;
   if(addr>=nds->mem.dtcm_start_address&&addr<nds->mem.dtcm_end_address){
-    if(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+    if(SB_LIKELY(nds->mem.dtcm_enable&&(!nds->mem.dtcm_load_mode||(transaction_type&NDS_MEM_WRITE)))){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.data_tcm,(addr-nds->mem.dtcm_start_address)&(16*1024-1),data,transaction_type);
       return *ret; 
     }
   }
   if(addr>=nds->mem.itcm_start_address&&addr<nds->mem.itcm_end_address){
-    if(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE))){
+    if(SB_LIKELY(nds->mem.itcm_enable&&(!nds->mem.itcm_load_mode||(transaction_type&NDS_MEM_WRITE)))){
       nds->mem.openbus_word = nds_apply_mem_op(nds->mem.code_tcm,(addr-nds->mem.itcm_start_address)&(32*1024-1),data,transaction_type);
       return *ret; 
     }
@@ -3040,7 +3040,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   //nds_store32(nds,GBA_DISPCNT,0xe92d0000);
   nds9_write16(nds,0x04000088,512);
   nds->activate_dmas=false;
-  nds->deferred_timer_ticks=0;
+  nds->last_timer_clock= 0; 
   if(nds->mem.card_data)memcpy(&nds->card,nds->mem.card_data,sizeof(nds->card));
   bool load_nds7= se_load_bios_file("NDS7 BIOS", nds->save_file_path, "nds7.bin", scratch->nds7_bios,sizeof(scratch->nds7_bios));
   if(!load_nds7)memcpy(scratch->nds7_bios,drastic_bios_arm7_bin,sizeof(drastic_bios_arm7_bin));
@@ -6494,13 +6494,12 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
   }
 }
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
-  nds->deferred_timer_ticks+=1;
-  if(nds->deferred_timer_ticks>=nds->timer_ticks_before_event)nds_compute_timers(nds); 
+  if(nds->current_clock>=nds->next_timer_clock)nds_compute_timers(nds); 
 }
 static void nds_compute_timers(nds_t* nds){
 
-  int ticks = nds->deferred_timer_ticks; 
-  nds->deferred_timer_ticks=0;
+  int ticks = nds->current_clock-nds->last_timer_clock; 
+  nds->last_timer_clock=nds->current_clock;
   int timer_ticks_before_event = 32768; 
   for(int cpu=0;cpu<2;++cpu){
     int last_timer_overflow = 0; 
@@ -6572,7 +6571,7 @@ static void nds_compute_timers(nds_t* nds){
       timer->last_enable = enable;
     }
   }
-  nds->timer_ticks_before_event=timer_ticks_before_event;
+  nds->next_timer_clock=nds->current_clock+timer_ticks_before_event;
 }
 static FORCE_INLINE float nds_compute_vol_env_slope(int length_of_step,int dir){
   float step_time = length_of_step/64.0;
@@ -6878,15 +6877,14 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       ticks = nds->mem.slow_bus_cycles;
       nds->mem.slow_bus_cycles = 0; 
     }
-
-    if(SB_LIKELY(!nds->active_if_pipe_stages)){
+    while(ticks){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
-      int timer_fast_forward = nds->timer_ticks_before_event-nds->deferred_timer_ticks;
+      int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
-      if(fast_forward_ticks){
-        if(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks)fast_forward_ticks=ticks;
-        nds->deferred_timer_ticks+=fast_forward_ticks;
+      if(SB_UNLIKELY(nds->active_if_pipe_stages))fast_forward_ticks=0;
+      if(SB_LIKELY(fast_forward_ticks)){
+        if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks)&&!gx_fifo_full)fast_forward_ticks=ticks;
         nds->ppu[0].scan_clock+=fast_forward_ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(nds->gpu.cmd_busy_cycles){
@@ -6894,22 +6892,20 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         }
         nds_tick_gx(nds);
         nds->current_clock+=fast_forward_ticks;
-        ticks =ticks<fast_forward_ticks?0:ticks-fast_forward_ticks;
+        ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
       }
-      double delta_t = ((double)ticks+fast_forward_ticks)/(33513982);
-      nds_tick_audio(nds, emu,delta_t,ticks+fast_forward_ticks);
-    }else{
-      double delta_t = ((double)ticks)/(33513982);
-      nds_tick_audio(nds,emu,delta_t,ticks);
+      int audio_ticks = fast_forward_ticks+(ticks!=0);
+      double delta_t = ((double)audio_ticks)/(33513982);
+      nds_tick_audio(nds, emu,delta_t,audio_ticks);
+      if(SB_UNLIKELY(ticks)){
+        nds->current_clock+=1;
+        nds_tick_interrupts(nds);
+        nds_tick_timers(nds);
+        nds_tick_ppu(nds,emu->render_frame);
+        nds_tick_gx(nds);
+        ticks-=1;
+      }
     }
-    //nds_tick_sio(nds);
-    for(int t = 0;t<ticks;++t){
-      nds_tick_interrupts(nds);
-      nds_tick_timers(nds);
-      nds_tick_ppu(nds,emu->render_frame);
-      nds_tick_gx(nds);
-    }
-    nds->current_clock+=ticks;
   }
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
