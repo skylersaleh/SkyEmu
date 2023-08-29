@@ -2062,6 +2062,7 @@ typedef struct{
     uint32_t sample;
     int32_t adpcm_sample;
     int32_t adpcm_index;
+    uint32_t lfsr;
   }channel[16];
 
 }nds_audio_t; 
@@ -6664,6 +6665,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
       if(!enable){
         audio->channel[c].sample=0;
+        audio->channel[c].lfsr = 0x7FFF;
 
         audio->channel[c].timer = tmr;
         emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef;
@@ -6701,7 +6703,13 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
           case 2: v= ((int16_t)audio->channel[c].adpcm_sample) / 32768.0;break;
           case 3:
           if(c>=8&&c<=13)v= (audio->channel[c].sample<SB_BFE(cnt,24,3))*2.-1.;//Todo: add antialiasing
-          //TODO: Add white noise
+          else if(c==14||c==15){ //PSG Noise
+            if(audio->channel[c].lfsr&1){
+              v = -1.;
+              audio->channel[c].lfsr^=0x6000<<1;
+            }else v= 1;
+            audio->channel[c].lfsr>>=1;
+          }
           break; 
         }
         uint32_t vol_mul = SB_BFE(cnt,0,7);
