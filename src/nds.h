@@ -2652,7 +2652,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&(NDS_MEM_ARM9))||(transaction_type&NDS_MEM_WRITE))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
+      if(!(transaction_type&(NDS_MEM_ARM9))||(transaction_type&(NDS_MEM_WRITE)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       /*else{
         bool found = false; 
         bool code = (transaction_type&NDS_MEM_CODE);
@@ -6858,9 +6858,11 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
           if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
           else{
+            nds->arm9.i_cycles=0;
             arm9_exec_instruction(&nds->arm9);
             if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
-            else arm9_exec_instruction(&nds->arm9);
+            else if(!nds->arm9.i_cycles)arm9_exec_instruction(&nds->arm9);
+            nds->mem.slow_bus_cycles+=nds->arm9.i_cycles/2;
           }
         }
       }
