@@ -1482,6 +1482,149 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   }
 
 }
+void gb_tile_map_debugger(){
+  sb_gb_t *gb = &core.gb;
+  static uint8_t tmp_image[512*512*3];
+
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;
+  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;
+  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
+
+  ImVec2 win;
+  igGetWindowPos(&win);
+
+  // Draw Tilemaps
+  for(int tile_map = 0;tile_map<2;++tile_map){
+    int image_height = 32*(8+2);
+    int image_width =  32*(8+2);
+    float scale = igGetWindowContentRegionWidth()/image_width; 
+
+    int wx = sb_read8_direct(gb, SB_IO_LCD_WX)-7;
+    int wy = sb_read8_direct(gb, SB_IO_LCD_WY);
+    int sx = sb_read8_direct(gb, SB_IO_LCD_SX);
+    int sy = sb_read8_direct(gb, SB_IO_LCD_SY);
+
+    int box_x1 = tile_map ==0 ? sx : wx;
+    int box_x2 = box_x1+(SB_LCD_W-1);
+    int box_y1 = tile_map ==0 ? sy : wy;
+    int box_y2 = box_y1+(SB_LCD_H-1);
+    int tile_map_base = tile_map==0? bg_tile_map_base:win_tile_map_base;
+    se_text("%s Tile Map",tile_map == 0  ? "Background" : "Window");
+    igSeparator();
+    int x = igGetCursorPosX()+win.x-igGetScrollX();
+    int y = igGetCursorPosY()+win.y-igGetScrollY();
+    int w = image_width*scale;
+    int h = image_height*scale;
+    int scanline = tile_map==0 ? gb->lcd.curr_scanline +sy : gb->lcd.curr_window_scanline;
+    for(int yt = 0; yt<32;++yt)
+      for(int xt = 0; xt<32;++xt)
+        for(int py = 0;py<8;++py)
+          for(int px = 0;px<8;++px){
+            int x = xt*8+px;
+            int y = yt*8+py;
+            int color_id = sb_lookup_tile(gb,x,y,tile_map_base,bg_win_tile_data_mode);
+            int p = (xt*10+(px)+1)+(yt*10+py+1)*image_width;
+            int r=0,g=0,b=0;
+            sb_lookup_palette_color(gb,color_id,&r,&g,&b);
+            if(((x==(box_x1%256)||x==(box_x2%256)) && (((y-box_y1)&0xff)>=0 && ((box_y2-y)&0xff) <=box_y2-box_y1))||
+               ((y==(box_y1%256)||y==(box_y2%256)) && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
+               r=255; g=b=0;
+            }
+            if(y == (scanline&0xff) &&(((x-box_x1)&0xff)>=0 && (((x-box_x1)&0xff)>=0 && ((box_x2-x)&0xff) <=box_x2-box_x1))){
+              b = 255;  r=g=0;
+            }
+            tmp_image[p*3+0]=r;
+            tmp_image[p*3+1]=g;
+            tmp_image[p*3+2]=b;
+          }
+
+    se_draw_image(tmp_image,image_width,image_height, x*se_dpi_scale(), y*se_dpi_scale(), w*se_dpi_scale(),h*se_dpi_scale(), false);
+    igDummy((ImVec2){w,h});
+    
+    const char * name = tile_map == 0  ? "Background" : "Window";
+    ImVec2 mouse_pos = {gui_state.mouse_pos[0]/se_dpi_scale(),gui_state.mouse_pos[1]/se_dpi_scale()};
+    mouse_pos.x-=x;
+    mouse_pos.y-=y;
+    if(mouse_pos.x<w && mouse_pos.y <h &&
+      mouse_pos.x>=0 && mouse_pos.y>=0){
+      int tx = (mouse_pos.x -1)/w*32;
+      int ty = (mouse_pos.y -1)/h*32;
+      int t = tx+ty*32;
+      int tile_data0 = sb_read_vram(gb, tile_map_base+t,0);
+      int tile_data1 = sb_read_vram(gb, tile_map_base+t,1);
+      se_text("Tile (%d, %d) Index=0x%02x Attr=0x%02x)",tx,ty,tile_data0,tile_data1);
+    }else se_text("No tile hovered");
+  }
+}
+void gb_tile_data_debugger(){
+  sb_gb_t *gb= &core.gb;
+  static uint8_t tmp_image[512*512*3];
+  ImVec2 win;
+  igGetWindowPos(&win);
+
+  uint8_t ctrl = sb_read8_direct(gb, SB_IO_LCD_CTRL);
+  int bg_tile_map_base      = SB_BFE(ctrl,3,1)==1 ? 0x9c00 : 0x9800;
+  int bg_win_tile_data_mode = SB_BFE(ctrl,4,1)==1;
+  int win_tile_map_base      = SB_BFE(ctrl,6,1)==1 ? 0x9c00 : 0x9800;
+
+  // Draw tile data arrays
+  for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
+    se_text("Tile Data Bank %d\n",tile_data_bank);
+    igSeparator();
+    int tiles_per_row = 16;
+    int image_height = 384/tiles_per_row*(8+2);
+    int image_width =  tiles_per_row*(8+2);
+    float scale = igGetWindowContentRegionWidth()/image_width; 
+    int x = igGetCursorPosX()+win.x-igGetScrollX();
+    int y = igGetCursorPosY()+win.y-igGetScrollY();
+    int w = image_width*scale;
+    int h = image_height*scale;
+
+    ImVec2 mouse_pos = {gui_state.mouse_pos[0]/se_dpi_scale(),gui_state.mouse_pos[1]/se_dpi_scale()};
+    mouse_pos.x-=x;
+    mouse_pos.y-=y;
+
+    int tile_data_base = 0x8000;
+    for(int t=0;t<384;++t){
+      int xt = (t%tiles_per_row)*10;
+      int yt = (t/tiles_per_row)*10;
+
+      for(int py = 0;py<8;++py)
+        for(int px = 0;px<8;++px){
+          int d = tile_data_base+py*2+ t*16;
+          uint8_t data1 = sb_read_vram(gb,d,tile_data_bank);
+          uint8_t data2 = sb_read_vram(gb,d+1,tile_data_bank);
+          uint8_t value = SB_BFE(data1,px,1)+SB_BFE(data2,px,1)*2;
+          uint8_t color = value*80;
+          int p = (xt+(7-px)+1)+(yt+py+1)*image_width;
+          tmp_image[p*3+0]=color;
+          tmp_image[p*3+1]=color;
+          tmp_image[p*3+2]=color;
+        }
+    }
+    se_draw_image(tmp_image,image_width,image_height, x*se_dpi_scale(), y*se_dpi_scale(), w*se_dpi_scale(),h*se_dpi_scale(), false);
+    igDummy((ImVec2){w,h});
+
+    if(mouse_pos.x<w && mouse_pos.y <h &&
+      mouse_pos.x>=0 && mouse_pos.y>=0){
+      int px = (mouse_pos.x -1)/w*image_width;
+      int py = (mouse_pos.y -1)/h*image_height;
+
+      int tx = px/8;
+      int ty = py/8;
+      px%=8;
+      py%=8;
+      int t = tx+ty*32;
+      int d = tile_data_base+py*2+ t*16;
+      uint8_t data1 = sb_read_vram(gb,d,tile_data_bank);
+      uint8_t data2 = sb_read_vram(gb,d+1,tile_data_bank);
+      uint8_t value = SB_BFE(data1,px,1)+SB_BFE(data2,px,1)*2;
+      se_text("Tile 0x%02x tx:%d ty:%d color:%d",t&0xff,px,py,value);
+    }else se_text("No tile hovered");
+  }
+}
+
 void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write, emu_mmio_access_type access_type){
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
@@ -2117,6 +2260,8 @@ se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gb_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gb_memory_debugger},
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
+  {ICON_FK_DELICIOUS, ICON_FK_DELICIOUS " Tile Map",gb_tile_map_debugger},
+  {ICON_FK_TH, ICON_FK_TH " Tile Data",gb_tile_data_debugger},
   {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
   {NULL,NULL,NULL}
 };
