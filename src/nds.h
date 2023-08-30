@@ -2062,6 +2062,8 @@ typedef struct{
     uint32_t sample;
     int32_t adpcm_sample;
     int32_t adpcm_index;
+    int32_t adpcm_sample_latch;
+    int32_t adpcm_index_latch;
     uint32_t lfsr;
   }channel[16];
 
@@ -6666,7 +6668,6 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       if(!enable){
         audio->channel[c].sample=0;
         audio->channel[c].lfsr = 0x7FFF;
-
         audio->channel[c].timer = tmr;
         emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef;
         continue;
@@ -6676,26 +6677,12 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       uint16_t len = nds7_io_read32(nds,NDS7_SOUND0_LEN+c*16);
       uint32_t tot_samps = len*4;
       switch(format){
-        case 0: tot_samps = len*4; pnt*=4;break;
-        case 1: tot_samps = len*2;break;
-        case 2: tot_samps = 8*(len-1); pnt*=8;break;
+        case 0: tot_samps = (len+pnt)*4; pnt*=4;break;
+        case 1: tot_samps = (len+pnt)*2; pnt*=2;break;
+        case 2: tot_samps = 8*(len+pnt-1); pnt=(pnt-1)*8;break;
         case 3: tot_samps = 8;  break;
       }
-      if(audio->channel[c].sample>=tot_samps){
-        int repeat_mode = SB_BFE(cnt,27,2);
-        switch(repeat_mode){
-          case 0: audio->channel[c].sample=0;enable=false; break; //Manual
-          case 1: audio->channel[c].sample=pnt;break; //Infinite
-          case 2: audio->channel[c].sample=0;enable=false; break; //One Shot
-          case 3: audio->channel[c].sample=0;enable=false; break; //Reserved
-        }
-        if(format==3){enable=true;audio->channel[c].sample=0;}
-      }
-      if(!enable){
-        cnt&=~(1u<<31);
-        nds7_io_store32(nds,NDS7_SOUND0_CNT+c*16,cnt);
-
-      }else{
+      if(enable){
         float v = 0; 
         switch(format){
           case 0: v= ((int8_t)nds7_read8(nds,sad+audio->channel[c].sample))/128.;break;
@@ -6725,8 +6712,32 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
       while(audio->channel[c].timer>0x1ffff){
         audio->channel[c].timer-=0x20000;
         audio->channel[c].timer+=tmr;
+        if(audio->channel[c].sample+1>=tot_samps){
+          int repeat_mode = SB_BFE(cnt,27,2);
+          switch(repeat_mode){
+            case 0: audio->channel[c].sample=0; enable=false;break; //Manual (TODO: Does this repeat?)
+            case 1: 
+              audio->channel[c].sample=pnt;
+              if(format==2){//ADPCM
+                audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample_latch;
+                audio->channel[c].adpcm_index = audio->channel[c].adpcm_index_latch;
+              }
+              break; //Infinite
+            case 2: audio->channel[c].sample=0;enable=false; break; //One Shot
+            case 3: audio->channel[c].sample=0;enable=false; break; //Reserved
+          }
+          if(format==3){enable=true;audio->channel[c].sample=0;}
+          if(!enable){
+            cnt&=~(1u<<31);
+            nds7_io_store32(nds,NDS7_SOUND0_CNT+c*16,cnt);
+          }
+        }
         if(format==2){
-           static const int16_t adpcm_table[89] ={
+            if(audio->channel[c].sample==pnt){
+              audio->channel[c].adpcm_index_latch=audio->channel[c].adpcm_index;
+              audio->channel[c].adpcm_sample_latch=audio->channel[c].adpcm_sample;
+            }
+            static const int16_t adpcm_table[89] ={
               0x0007, 0x0008, 0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x000E, 
               0x0010, 0x0011, 0x0013, 0x0015, 0x0017, 0x0019, 0x001C, 0x001F, 
               0x0022, 0x0025, 0x0029, 0x002D, 0x0032, 0x0037, 0x003C, 0x0042,
@@ -6905,8 +6916,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
       }
       int audio_ticks = fast_forward_ticks+(ticks!=0);
-      double delta_t = ((double)audio_ticks)/(33513982);
-      nds_tick_audio(nds, emu,delta_t,audio_ticks);
+      for(int i=0;i<audio_ticks;++i){
+        double delta_t = ((double)1)/(33513982);
+        nds_tick_audio(nds, emu,delta_t,1);
+      }
       if(SB_UNLIKELY(ticks)){
         nds->current_clock+=1;
         nds_tick_interrupts(nds);
