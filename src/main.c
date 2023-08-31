@@ -1437,6 +1437,112 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   if(clear_step_data)arm->debug_swi_ring_offset=0;
 
 }
+
+void gb_cpu_debugger(){
+  sb_gb_t* gb = &core.gb;
+  sb_gb_cpu_t *cpu_state = &gb->cpu;
+  if(se_button("Step Instruction",(ImVec2){0,0})){
+    emu_state.step_instructions=1;
+    emu_state.run_mode= SB_MODE_STEP;
+  }
+  igSameLine(0,4);
+  if(se_button("Step Frame",(ImVec2){0,0})){
+    emu_state.step_frames=1;
+    emu_state.run_mode=SB_MODE_STEP;
+  }
+  
+
+  const char *register_names_16b[] = {"AF", "BC", "DE", "HL", "SP", "PC", NULL};
+
+  int register_values_16b[] = {cpu_state->af, cpu_state->bc, cpu_state->de,
+                               cpu_state->hl, cpu_state->sp, cpu_state->pc};
+
+  const char *register_names_8b[] = {"A", "F", "B", "C", "D",
+                                     "E", "H", "L", NULL};
+
+  int register_values_8b[] = {
+      SB_U16_HI(cpu_state->af), SB_U16_LO(cpu_state->af),
+      SB_U16_HI(cpu_state->bc), SB_U16_LO(cpu_state->bc),
+      SB_U16_HI(cpu_state->de), SB_U16_LO(cpu_state->de),
+      SB_U16_HI(cpu_state->hl), SB_U16_LO(cpu_state->hl),
+  };
+
+  const char *flag_names[] = {"Z", "N", "H", "C","Inter. En.", "Prefix", "Wait Inter",  NULL};
+
+  bool flag_values[] = {
+      SB_BFE(cpu_state->af, SB_Z_BIT, 1), // Z
+      SB_BFE(cpu_state->af, SB_N_BIT, 1), // N
+      SB_BFE(cpu_state->af, SB_H_BIT, 1), // H
+      SB_BFE(cpu_state->af, SB_C_BIT, 1), // C
+      cpu_state->interrupt_enable,
+      cpu_state->prefix_op,
+      cpu_state->wait_for_interrupt
+  };
+  int w= igGetWindowWidth();
+  int r = 0; 
+  se_text(ICON_FK_SERVER " 16b Registers");
+  igSeparator();
+  while(register_names_16b[r]){
+    int value = register_values_16b[r];
+    if(r%2){
+      igSetNextItemWidth(-50);
+      igSameLine(w*0.5,0);
+    }else igSetNextItemWidth((w-100)*0.5);
+    se_input_int(register_names_16b[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal);
+    ++r;
+  }
+  r = 0; 
+  se_text(ICON_FK_SERVER " 8b Registers");
+  igSeparator();
+  while(register_names_8b[r]){
+    int value = register_values_8b[r];
+    if(r%2){
+      igSetNextItemWidth(-50);
+      igSameLine(w*0.5,0);
+    }else igSetNextItemWidth((w-100)*0.5);
+    se_input_int(register_names_8b[r],&value, 0,0,ImGuiInputTextFlags_CharsHexadecimal);
+    ++r;
+  }
+  r = 0; 
+  se_text(ICON_FK_SERVER " Flag Registers");
+  igSeparator();
+  while(flag_names[r]){
+    bool value = flag_values[r];
+    if(r%2){
+      igSetNextItemWidth(-50);
+      igSameLine(w*0.5,0);
+    }else igSetNextItemWidth((w-100)*0.5);
+    se_checkbox(flag_names[r],&value);
+    ++r;
+  }
+  se_text(ICON_FK_SERVER " Instructions");
+  igSeparator();
+ 
+  for (int i = -6; i < 5; ++i) {
+      char instr_str[80];
+      int pc_render = i + cpu_state->pc;
+      int opcode = sb_read8(gb, pc_render);
+      if(pc_render==cpu_state->pc){
+        igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
+        se_text("PC " ICON_FK_ARROW_RIGHT);
+        igSameLine(40,0);
+        snprintf(instr_str,80,"0x%04x:", pc_render);
+        instr_str[79]=0;
+        se_text(instr_str);
+        igSameLine(130,0);
+        se_text(sb_decode_table[opcode].opcode_name);
+        igPopStyleColor(1);
+      }else{
+        snprintf(instr_str,80,"0x%04x:", (int)pc_render);
+        instr_str[79]=0;
+        se_text("");
+        igSameLine(40,0);
+        se_text(instr_str);
+        igSameLine(130,0);
+        se_text(sb_decode_table[opcode].opcode_name);
+      }
+    }  
+}
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
   se_text(ICON_FK_EXCHANGE " Read/Write Memory Address");
   igSeparator();
@@ -2257,6 +2363,7 @@ se_debug_tool_desc_t gba_debug_tools[]={
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t gb_debug_tools[]={
+  {ICON_FK_TELEVISION, ICON_FK_TELEVISION " CPU", gb_cpu_debugger},
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gb_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gb_memory_debugger},
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
