@@ -23,6 +23,8 @@
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
 #include "localization.h"
+#include "retro_achievements.h"
+#include "rcheevos/include/rc_client.h"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -4394,6 +4396,7 @@ void se_update_frame() {
   #endif
   se_update_key_turbo(&emu_state);
   se_update_solar_sensor(&emu_state);
+  ra_poll_requests();
 
   if(emu_state.run_mode == SB_MODE_RESET){
     se_reset_core();
@@ -5238,6 +5241,18 @@ static void se_init_audio(){
     .packet_frames=1024
   });
  se_reset_audio_ring();
+}
+static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
+  // TODO: show cool "logged in" banner or something
+  const rc_client_user_t* user = rc_client_get_user_info(client);
+  printf("logged in as %s (score: %d)\n", user->display_name, user->score);
+}
+static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  // TODO: handle reading from consoles
+  return 0;
+}
+static void se_init_retro_achievements(){
+  ra_initialize_client(se_ra_read_memory_callback);
 }
 
 // For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.
@@ -6139,6 +6154,7 @@ static void init(void) {
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
+  se_init_retro_achievements();
   sg_push_debug_group("LCD Shader Init");
 
   gui_state.lcd_prog = sg_make_shader(lcdprog_shader_desc(sg_query_backend()));
@@ -6185,6 +6201,7 @@ static void init(void) {
   #endif
 }
 static void cleanup(void) {
+  ra_shutdown_client();
   simgui_shutdown();
   se_free_all_images();
   sg_shutdown();
