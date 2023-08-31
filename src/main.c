@@ -7,6 +7,7 @@
 **/
 
 #include <stdbool.h>
+#include <assert.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
@@ -17,6 +18,11 @@
 #ifdef ENABLE_HTTP_CONTROL_SERVER
 #include "http_control_server.h"
 #endif 
+
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "retro_achievements.h"
+#include "rc_consoles.h"
+#endif
 
 #include "gba.h"
 #include "nds.h"
@@ -137,7 +143,6 @@ const static char* se_analog_bind_names[]={
 //a users settings.
 #define SE_NUM_BINDS_ALLOC 64
 
-#define GUI_MAX_IMAGES_PER_FRAME 16
 #define SE_NUM_RECENT_PATHS 32
 #define SE_FONT_CACHE_PAGE_SIZE 16
 #define SE_MAX_UNICODE_CODE_POINT 0xffff
@@ -363,11 +368,14 @@ typedef struct{
   uint8_t palettes[5*4];
   se_theme_region_t regions[SE_TOTAL_REGIONS];
 }se_custom_theme_t;
+typedef struct se_deferred_image_free_t{
+  sg_image image; 
+  struct se_deferred_image_free_t * next; 
+}se_deferred_image_free_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
-    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
-    int current_image; 
+    se_deferred_image_free_t * image_free_list;
     int screen_width;
     int screen_height;
     float dpi_override;
@@ -503,6 +511,34 @@ typedef struct{
   cloud_user_info_t user_info;
 } se_cloud_state_t;
 static void se_sync_cloud_save_states();
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+typedef struct se_ra_tracker_node{
+  struct rc_client_leaderboard_tracker_t tracker;
+  struct se_ra_tracker_node* next; 
+}se_ra_tracker_node_t;
+typedef struct se_ra_challenge_indicator_node{
+  uint32_t id;
+  sg_image image;
+  struct se_ra_challenge_indicator_node* next;
+} se_ra_challenge_indicator_node_t;
+typedef struct{
+  int x, y;
+}se_ra_atlas_offset_t;
+typedef struct{
+  char username[256];
+  char password[256];
+  sg_image image;
+  se_ra_atlas_offset_t** achievement_images;
+  // TODO: make widgets that use these lists and progress indicator
+  se_ra_tracker_node_t* tracker_list;
+  se_ra_challenge_indicator_node_t* challenge_indicator_list;
+  sg_image progress_indicator_image;
+  bool progress_indicator_shown;
+  char measured_progress[24];
+  sg_image atlas; // for achievement images
+  bool pending_login;
+}se_ra_info_t;
+#endif
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -529,6 +565,10 @@ static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
+double se_time();
+void se_push_disabled();
+void se_pop_disabled();
+
 const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -598,13 +638,15 @@ static inline bool se_checkbox(const char* label, bool * v){
 static void se_text(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextV(se_localize_and_cache(label),args);
+  igTextWrappedV(se_localize_and_cache(label),args);
   va_end(args);
 }
 static void se_text_disabled(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextDisabledV(se_localize_and_cache(label),args);
+  se_push_disabled();
+  igTextWrappedV(se_localize_and_cache(label),args);
+  se_pop_disabled();
   va_end(args);
 }
 static bool se_combo_str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items){
@@ -1019,6 +1061,9 @@ se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 se_cheat_t cheats[SE_NUM_CHEATS];
 se_cloud_state_t cloud_state;
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+se_ra_info_t ra_info;
+#endif
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -1336,6 +1381,20 @@ double se_fps_counter(int tick){
   }
   return 1.0/fps; 
 }
+static void se_ra_keep_alive(){
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  static uint64_t last_time=0;
+  if(last_time==0)last_time=stm_now();
+  if(emu_state.run_mode==SB_MODE_PAUSE){
+    if(stm_sec(stm_diff(stm_now(),last_time))>1.0){
+      last_time = stm_now();
+      // Needs to be called once every few seconds if the emulator is paused
+      // to keep the session alive or retrying failed unlocks
+      rc_client_idle(ra_get_client());
+    }
+  }
+#endif
+}
 
 static void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
@@ -1497,17 +1556,24 @@ bool se_key_is_pressed(int keycode){
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
-  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
-    gui_state.current_image++;
-    return gui_state.image_stack + gui_state.current_image-1; 
-  }
-  return NULL;
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  gui_state.image_free_list = tmp_image;
+  return &tmp_image->image;
+}
+static void se_free_image_deferred(sg_image image){
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  tmp_image->image=image;
+  gui_state.image_free_list = tmp_image;
 }
 static void se_free_all_images(){
-  for(int i=0;i<gui_state.current_image;++i){
-    sg_destroy_image(gui_state.image_stack[i]);
+  while(gui_state.image_free_list){
+    se_deferred_image_free_t * tmp = gui_state.image_free_list;
+    sg_destroy_image(tmp->image);
+    gui_state.image_free_list=tmp->next;
+    free(tmp);
   }
-  gui_state.current_image=0;
 }
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
@@ -1651,6 +1717,386 @@ void se_draw_emu_stats(){
   igPopItemWidth();
 
 }
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  if(emu_state.system==SYSTEM_GB){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=sb_read8(&core.gb,address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_GBA){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=gba_read8(&core.gba,address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_NDS){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=nds9_read8(&core.nds,address+i);
+    }
+    return num_bytes;
+  }
+  return 0;
+}
+static void se_ra_game_cleanup(){
+  if(ra_info.image.id != SG_INVALID_ID){
+    sg_destroy_image((sg_image){ra_info.image.id});
+    ra_info.image.id = SG_INVALID_ID;
+  }
+  rc_client_achievement_list_t* list = ra_get_achievements();
+  if (list){
+    for (int i = 0; i < list->num_buckets; i++)
+    {
+      if(ra_info.achievement_images[i] != NULL)
+      {
+        free(ra_info.achievement_images[i]);
+      }
+    }
+    free(ra_info.achievement_images);
+    ra_info.achievement_images = NULL;
+  }
+  {
+    se_ra_tracker_node_t* next = ra_info.tracker_list;
+    while(next){
+      se_ra_tracker_node_t* tmp = next;
+      next = next->next;
+      free(tmp);
+    }
+    ra_info.tracker_list = NULL;
+  }
+  {
+    se_ra_challenge_indicator_node_t* next = ra_info.challenge_indicator_list;
+    while(next){
+      se_ra_challenge_indicator_node_t* tmp = next;
+      next = next->next;
+      free(tmp);
+    }
+    ra_info.challenge_indicator_list = NULL;
+  }
+}
+static void se_ra_load_game_callback(int result, const char* error_message, rc_client_t* client, void* userdata){
+  if (result != RC_OK){
+    // TODO: notification error message?
+    printf("[rcheevos]: failed to load game: %s\n", error_message);
+    return;
+  }
+
+  char url[512];
+  const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
+  if (rc_client_game_get_image_url(game, url, sizeof(url)) == RC_OK){
+    ra_get_image(url, &ra_info.image);
+  }
+
+  mutex_lock(ra_get_mutex());
+  ra_invalidate_achievements();
+  rc_client_achievement_list_t* list = ra_get_achievements();
+  ra_info.achievement_images = (se_ra_atlas_offset_t**)malloc(sizeof(se_ra_atlas_offset_t*)*list->num_buckets);
+  for (int i = 0; i < list->num_buckets; i++)
+  {
+    uint32_t num_achievements=list->buckets[i].num_achievements;
+    ra_info.achievement_images[i] = (se_ra_atlas_offset_t*)malloc(sizeof(se_ra_atlas_offset_t)*num_achievements);
+    memset(ra_info.achievement_images[i], 0, sizeof(se_ra_atlas_offset_t)*num_achievements);
+    for (int j = 0; j < num_achievements; j++)
+    {
+      char url[512];
+      const rc_client_achievement_t* achievement = list->buckets[i].achievements[j];
+      if(rc_client_achievement_get_image_url(achievement, achievement->state, url, sizeof(url)) == RC_OK){
+        ra_get_image(url, &ra_info.achievement_images[i][j]);
+      }
+      printf("[rcheevos]: Achievement %s, ", achievement->title);
+      if (achievement->id == RC_CLIENT_ACHIEVEMENT_BUCKET_UNSUPPORTED)
+        printf("unsupported\n");
+      else if (achievement->unlocked)
+        printf("unlocked\n");
+      else if (achievement->measured_percent)
+        printf("progress: %f%%\n", achievement->measured_percent);
+      else
+        printf("locked\n");
+    }
+  }
+  mutex_unlock(ra_get_mutex());
+}
+static void se_ra_load_game(){
+  if(!emu_state.rom_loaded)return;
+  switch(emu_state.system){
+    case SYSTEM_GB:
+      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_GAMEBOY,se_ra_load_game_callback);
+      break;
+    case SYSTEM_GBA:
+      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_GAMEBOY_ADVANCE,se_ra_load_game_callback);
+      break;
+    case SYSTEM_NDS:
+      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_NINTENDO_DS,se_ra_load_game_callback);
+      break;
+  }
+}
+static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
+  // TODO: show cool "logged in" banner or something
+  const rc_client_user_t* user = rc_client_get_user_info(client);
+  if(user){
+    printf("[rcheevos]: logged in as %s (score: %d)\n", user->display_name, user->score);
+    memset(ra_info.password,0,sizeof(ra_info.password));
+
+    char buffer[sizeof(ra_info.username)+sizeof(ra_info.password)+2];
+    memset(buffer,0,sizeof(buffer));
+    snprintf(buffer,sizeof(buffer),"%s\n%s\n",ra_info.username,user->token);
+
+    char login_info_path[SB_FILE_PATH_SIZE];
+    snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_token.txt",se_get_pref_path());
+    sb_save_file_data(login_info_path,(uint8_t*)buffer,sizeof(buffer));
+    se_ra_load_game();
+  }
+  ra_info.pending_login = false;
+}
+static void se_ra_leaderboard_tracker_show(const rc_client_leaderboard_tracker_t* tracker)
+{
+  se_ra_tracker_node_t* new_tracker = (se_ra_tracker_node_t*)malloc(sizeof(se_ra_tracker_node_t));
+  new_tracker->next = ra_info.tracker_list;
+  new_tracker->tracker.id = tracker->id;
+  memcpy(new_tracker->tracker.display, tracker->display, sizeof(new_tracker->tracker.display));
+  ra_info.tracker_list = new_tracker;
+}
+static void se_ra_leaderboard_tracker_update(const rc_client_leaderboard_tracker_t* tracker)
+{
+  se_ra_tracker_node_t* next = ra_info.tracker_list;
+  while(next){
+    if(next->tracker.id == tracker->id){
+      memcpy(next->tracker.display, tracker->display, sizeof(next->tracker.display));
+      break;
+    }
+    next = next->next;
+  }
+}
+static void se_ra_leaderboard_tracker_hide(const rc_client_leaderboard_tracker_t* tracker)
+{
+  // "hide" seems to be a misleading name here, the wiki says the tracker is no
+  // longer needed and calls a pseudo function "destroy_tracker", so we destroy it
+  se_ra_tracker_node_t* prev = NULL;
+  se_ra_tracker_node_t* next = ra_info.tracker_list;
+  while(next){
+    if(next->tracker.id == tracker->id){
+      if(prev){
+        prev->next = next->next;
+      }else{
+        ra_info.tracker_list = next->next;
+      }
+      free(next);
+      break;
+    }
+    prev = next;
+    next = next->next;
+  }
+}
+static void se_ra_game_mastered()
+{
+  rc_client_t* client = ra_get_client();
+  char message[128];
+  char submessage[128];
+  const rc_client_game_t* game = rc_client_get_game_info(client);
+
+  // The popup should say "Completed" or "Mastered" depending on whether or not hardcore is enabled.
+  snprintf(message, sizeof(message), "%s %s",
+    rc_client_get_hardcore_enabled(client) ? "Mastered" : "Completed",game->title);
+  
+  // TODO: also display the time played
+  snprintf(submessage, sizeof(submessage), "%s",
+    rc_client_get_user_info(client)->display_name);
+  
+  // TODO: display a popup with the message and submessage and the game icon instead of just printing it
+  // also perhaps play a sound effect
+  printf("[rcheevos]: %s %s\n", message, submessage);
+}
+// TODO: display a popup on these instead
+static void se_ra_leaderboard_attempt_started(const rc_client_leaderboard_t* leaderboard)
+{
+  printf("[rcheevos]: Leaderboard attempt started: %s - %s", leaderboard->title, leaderboard->description);
+}
+static void se_ra_leaderboard_attempt_failed(const rc_client_leaderboard_t* leaderboard)
+{
+  printf("[rcheevos]: Leaderboard attempt failed: %s", leaderboard->title);
+}
+static void se_ra_leaderboard_attempt_submitted(const rc_client_leaderboard_t* leaderboard)
+{
+  printf("[rcheevos]: Submitted %s for leaderboard attempt: %s", leaderboard->tracker_value, leaderboard->title);
+}
+static void se_ra_challenge_indicator_show(const rc_client_achievement_t* achievement)
+{
+  se_ra_challenge_indicator_node_t* next = ra_info.challenge_indicator_list;
+  while(next){
+    if(next->id == achievement->id){
+      // It shouldn't be the case that "show" is called twice for the same achievement
+      // but let's be safe and check anyway
+      return;
+    }
+    next = next->next;
+  }
+
+  se_ra_challenge_indicator_node_t* new_indicator = (se_ra_challenge_indicator_node_t*)malloc(sizeof(se_ra_challenge_indicator_node_t));
+  new_indicator->next = ra_info.challenge_indicator_list;
+  new_indicator->id = achievement->id;
+  ra_info.challenge_indicator_list = new_indicator;
+
+  char url[128];
+  if (rc_client_achievement_get_image_url(achievement, RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED, url, sizeof(url)) == RC_OK)
+  {
+    ra_get_image(url, &new_indicator->image);
+  }
+}
+static void se_ra_challenge_indicator_hide(const rc_client_achievement_t* achievement)
+{
+  // Again "hide" seems to destroy the indicator
+  se_ra_challenge_indicator_node_t* prev = NULL;
+  se_ra_challenge_indicator_node_t* next = ra_info.challenge_indicator_list;
+  while(next){
+    if(next->id == achievement->id){
+      if(prev){
+        prev->next = next->next;
+      }else{
+        ra_info.challenge_indicator_list = next->next;
+      }
+      // free(next); // TODO: crashing because threads are not finished!
+      break;
+    }
+    prev = next;
+    next = next->next;
+  }
+}
+static void se_ra_progress_indicator_update(const rc_client_achievement_t* achievement)
+{
+  if(!ra_info.progress_indicator_shown){
+    printf("[rcheevos]Progress indicator update while it's hidden, this shouldn't happen\n");
+  }
+
+  char url[128];
+
+  if (rc_client_achievement_get_image_url(achievement, RC_CLIENT_ACHIEVEMENT_STATE_ACTIVE, url, sizeof(url)) == RC_OK)
+  {
+    ra_get_image(url, &ra_info.progress_indicator_image);
+  }
+
+  strncpy(ra_info.measured_progress, achievement->measured_progress, sizeof(ra_info.measured_progress));
+}
+static void se_ra_progress_indicator_show(const rc_client_achievement_t* achievement)
+{
+  ra_info.progress_indicator_shown = true;
+  se_ra_progress_indicator_update(achievement);
+}
+static void se_ra_progress_indicator_hide(const rc_client_achievement_t* achievement)
+{
+  // Contrary to other widgets, only one progress indicator can be shown at a time
+  // and can actually be hidden instead of destroyed
+  ra_info.progress_indicator_shown = false;
+}
+static void se_ra_event_handler(const rc_client_event_t* event, rc_client_t* client){
+  switch (event->type)
+  {
+    case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
+      printf("[rcheevos]: Achievement unlocked: %s\n", event->achievement->title);
+      ra_invalidate_achievements(); // TODO: what about "almost there" achievements
+      // TODO: notification?
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
+      se_ra_leaderboard_attempt_started(event->leaderboard);
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_FAILED:
+      se_ra_leaderboard_attempt_failed(event->leaderboard);
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_SUBMITTED:
+      se_ra_leaderboard_attempt_submitted(event->leaderboard);
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_UPDATE:
+      se_ra_leaderboard_tracker_update(event->leaderboard_tracker);
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_SHOW:
+      se_ra_leaderboard_tracker_show(event->leaderboard_tracker);
+      break;
+    case RC_CLIENT_EVENT_LEADERBOARD_TRACKER_HIDE:
+      se_ra_leaderboard_tracker_hide(event->leaderboard_tracker);
+      break;
+    case RC_CLIENT_EVENT_ACHIEVEMENT_CHALLENGE_INDICATOR_SHOW:
+      se_ra_challenge_indicator_show(event->achievement);
+      break;
+    case RC_CLIENT_EVENT_ACHIEVEMENT_CHALLENGE_INDICATOR_HIDE:
+      se_ra_challenge_indicator_hide(event->achievement);
+      break;
+    case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_SHOW:
+      se_ra_progress_indicator_show(event->achievement);
+      break;
+    case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_UPDATE:
+      se_ra_progress_indicator_update(event->achievement);
+      break;
+    case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_HIDE:
+      se_ra_progress_indicator_hide(event->achievement);
+      break;
+    case RC_CLIENT_EVENT_GAME_COMPLETED:
+      se_ra_game_mastered();
+      break;
+    case RC_CLIENT_EVENT_RESET:
+      emu_state.run_mode = SB_MODE_RESET;
+      break;
+    case RC_CLIENT_EVENT_SERVER_ERROR:
+      printf("[rcheevos]: Server error: %s %s\n", event->server_error->api, event->server_error->error_message);
+      break;
+    default:
+      printf("Unhandled event %d\n", event->type);
+      break;
+  }
+}
+static void se_ra_initialize() {
+  memset(&ra_info, 0, sizeof(ra_info));
+  ra_initialize_client(se_ra_read_memory_callback);
+  rc_client_set_event_handler(ra_get_client(),se_ra_event_handler);
+
+  // Check if we have a token saved
+  char login_info_path[SB_FILE_PATH_SIZE];
+  snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_token.txt",se_get_pref_path());
+  if (sb_file_exists(login_info_path)){
+    size_t size;
+    uint8_t *text = sb_load_file_data(login_info_path,&size);
+    if (text){
+      int i = 0; 
+      for(i=0;i<size;++i){
+        if(i<sizeof(ra_info.username)-1 && text[i]!='\n')ra_info.username[i]=text[i];
+        else break;
+      }
+      ra_info.username[i++]=0;
+      char token[256];
+      int i2=0;
+      for(i2=0;i+i2<size;++i2){
+        if(i2<sizeof(token)-1&&text[i+i2]!='\n')token[i2]=text[i+i2];
+        else break;
+      }
+      token[i2]=0;
+      ra_info.pending_login = true;
+      rc_client_begin_login_with_token(ra_info.client, ra_info.username, token, se_ra_login_callback, NULL);
+      free(text);
+    }
+  }
+
+  // Create the texture
+  sg_image_desc desc={
+    .type=              SG_IMAGETYPE_2D,
+    .render_target=     false,
+    .width=             atlas_pixel_stride,
+    .height=            atlas_pixel_stride,
+    .num_slices=        1,
+    .num_mipmaps=       1,
+    .usage=             SG_USAGE_STREAM,
+    .pixel_format=      SG_PIXELFORMAT_RGBA8,
+    .sample_count=      1,
+    .min_filter=        SG_FILTER_LINEAR,
+    .mag_filter=        SG_FILTER_LINEAR,
+    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+    .border_color=      SG_BORDERCOLOR_TRANSPARENT_BLACK,
+    .max_anisotropy=    1,
+    .min_lod=           0.0f,
+    .max_lod=           1e9f,
+  };
+  
+  ra_info.atlas = sg_make_image(&desc);
+}
+#endif
 
 void se_psg_debugger(){
 
@@ -2173,6 +2619,9 @@ void se_load_rom_from_emu_state(sb_emu_state_t*emu){
   }
 }
 void se_load_rom(const char *filename){
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  se_ra_game_cleanup();
+#endif
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
   se_reset_cheats();
@@ -2310,7 +2759,10 @@ void se_load_rom(const char *filename){
   }
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
-  return; 
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  rc_client_reset(ra_get_client());
+  se_ra_load_game();
+  #endif
 }
 static void se_reset_core(){
   if(emu_state.rom_loaded==false)return; 
@@ -2450,6 +2902,9 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba, &scratch.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  rc_client_do_frame(ra_get_client());
+#endif
   se_run_all_ar_cheats();
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
@@ -4198,6 +4653,49 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
 #endif
   return clicked; 
 }
+
+void se_boxed_image_dual_label(const char * first_label, const char* second_label, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1){
+  ImVec2 win_min,win_sz,win_max;
+  win_min.x=0;
+  win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
+  igGetWindowSize(&win_sz);
+  win_min.y+=igGetScrollY();
+  win_max.x = win_min.x+win_sz.x; 
+  win_max.y = win_min.y+win_sz.y;
+
+  int item_height = 50; 
+  int padding = 4; 
+
+  float disp_y_min = igGetCursorPosY();
+  float disp_y_max = disp_y_min+item_height+padding*2;
+  //Early out if not visible (helps for long lists)
+  if(disp_y_max<win_min.y||disp_y_min>win_max.y){
+    igSetCursorPosY(disp_y_max);
+    return;
+  }
+  int box_h = item_height-padding*2;
+  int box_w = box_h;
+  igPushIDStr(second_label);
+  ImVec2 curr_pos; 
+  igGetCursorPos(&curr_pos);
+  ImVec2 next_pos=curr_pos;
+  next_pos.y+=box_h+padding*2;
+  curr_pos.y+=padding; 
+  igSetCursorPos(curr_pos);
+
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(curr_pos.y-padding);
+  se_text(first_label);
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(igGetCursorPosY()-5);
+  se_text_disabled(second_label);
+  igSetCursorPos(curr_pos);
+  if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+  else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
+  igDummy((ImVec2){1,1});
+  igSetCursorPos(next_pos);
+  igPopID();
+}
 #ifdef SE_PLATFORM_ANDROID
 #include <android/log.h>
 
@@ -5837,6 +6335,68 @@ void se_draw_menu_panel(){
       }
     }
   }
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  se_section(ICON_FK_TROPHY " Retro Achievements");
+  const rc_client_user_t* user = rc_client_get_user_info(ra_get_client());
+  if(!user){
+    igPushIDStr("RetroAchievementsLogin");
+    bool pending_login = ra_info.pending_login;
+    se_text("Username");
+    igSameLine(win_w-150,0);
+    if(pending_login)se_push_disabled();
+    igInputText("##Username",ra_info.username,sizeof(ra_info.username),ImGuiInputTextFlags_None,NULL,NULL);
+    if(pending_login)se_pop_disabled();
+    se_text("Password");
+    igSameLine(win_w-150,0);
+    if(pending_login)se_push_disabled();
+    igInputText("##Password",ra_info.password,sizeof(ra_info.password),ImGuiInputTextFlags_Password,NULL,NULL);
+    if(se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0,0})){
+      ra_info.pending_login = true;
+      rc_client_begin_login_with_password(ra_info.client, ra_info.username, ra_info.password, se_ra_login_callback, NULL);
+    }
+    if(pending_login)se_pop_disabled();
+    igPopID();
+  }else {
+    const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
+    ImVec2 pos;
+    sg_image image;
+    const char* play_string = "No Game Loaded";
+    char line1[256];
+    char line2[256];
+    snprintf(line1,256,se_localize_and_cache("Logged in as %s"),user->display_name);
+    if(game){
+      image.id=ra_info.image.id;
+      snprintf(line2,256,se_localize_and_cache("Playing: %s"),game->title);
+    }else snprintf(line2,256,"%s",se_localize_and_cache("No Game Loaded"));
+    se_boxed_image_dual_label(line1,line2, ICON_FK_TROPHY, image, 0, (ImVec2){0,0}, (ImVec2){1,1});
+    if(se_button(ICON_FK_SIGN_OUT " Logout", (ImVec2){0,0})){
+      char login_info_path[SB_FILE_PATH_SIZE];
+      snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_token.txt",se_get_pref_path());
+      remove(login_info_path);
+      rc_client_logout(ra_get_client());
+    }
+    mutex_lock(ra_get_mutex());
+    rc_client_achievement_list_t* list = ra_get_achievements();
+    if (list){
+      for (int i = 0; i < list->num_buckets; i++){
+        se_text(ICON_FK_LOCK " %s",list->buckets[i].label);
+        for (int j = 0; j < list->buckets[i].num_achievements; j++){
+          sg_image image;
+          ImVec2 uv0, uv1;
+          if(ra_info.achievement_images && ra_info.achievement_images[i]){
+            image = ra_info.atlas;
+            ImVec2* tile = &ra_info.achievement_images[i][j];
+            uv0 = (ImVec2){ tile->x / atlas_pixel_stride, tile->y / atlas_pixel_stride };
+            uv1 = (ImVec2){ (tile->x + atlas_tile_size) / atlas_pixel_stride, (tile->y + atlas_tile_size) / atlas_pixel_stride };
+          }
+          se_boxed_image_dual_label(list->buckets[i].achievements[j]->title,
+                                   list->buckets[i].achievements[j]->description, ICON_FK_SPINNER, image, 0, uv0, uv1);
+        }
+      }
+    }
+    mutex_unlock(ra_get_mutex());
+  }
+  #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
@@ -6524,6 +7084,12 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
+  static bool last_toggle_fullscreen=false;
+  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
+  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
+  se_ra_keep_alive();
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -6804,6 +7370,10 @@ static void frame(void) {
     }
     screen_x = left_padding;
     screen_width-=(left_padding+right_padding)*se_dpi_scale();
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+    ra_update_atlas();
+    ra_run_pending_callbacks();
+#endif
     if(gui_state.sidebar_open){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
@@ -7584,6 +8154,9 @@ static void init(void) {
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  se_ra_initialize();
+  #endif
   sg_push_debug_group("LCD Shader Init");
 
   gui_state.lcd_prog = sg_make_shader(lcdprog_shader_desc(sg_query_backend()));
