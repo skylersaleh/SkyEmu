@@ -377,6 +377,12 @@ typedef struct{
   uint32_t system; //SYSTEM_UNKNOWN=0 ,SYSTEM_GB=1, SYSTEM_GBA=2, SYSTEM_NDS 3
   uint8_t padding[20];//Zero padding
 }se_emu_id;
+typedef struct{
+  char display_name[256];
+  char username[256];
+  char password[256];
+  bool is_logged_in;
+}se_ra_login_info_t;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -751,6 +757,7 @@ se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 se_cheat_t cheats[SE_NUM_CHEATS];
+se_ra_login_info_t login_info;
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -4921,6 +4928,24 @@ void se_draw_touch_controls_settings(){
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
 
 }
+static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
+  // TODO: show cool "logged in" banner or something
+  const rc_client_user_t* user = rc_client_get_user_info(client);
+  if(user){
+    printf("[rcheevos]: logged in as %s (score: %d)\n", user->display_name, user->score);
+    login_info.is_logged_in=true;
+    memset(login_info.password,0,sizeof(login_info.password));
+    strncpy(login_info.display_name,user->display_name,sizeof(login_info.display_name));
+
+    char buffer[sizeof(login_info.username)+sizeof(login_info.password)+2];
+    memset(buffer,0,sizeof(buffer));
+    snprintf(buffer,sizeof(buffer),"%s\n%s",login_info.username,user->token);
+
+    char login_info_path[SB_FILE_PATH_SIZE];
+    snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
+    sb_save_file_data(login_info_path,(uint8_t*)buffer,sizeof(buffer));
+  }
+}
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   se_text(ICON_FK_FLOPPY_O " Save States");
@@ -5044,6 +5069,26 @@ void se_draw_menu_panel(){
         strcpy(cheat->name,"Untitled Code");
         memset(cheat->buffer,0,sizeof(cheat->buffer));
       }
+    }
+  }
+  se_text(ICON_FK_TROPHY " Retro Achievements");
+  igSeparator();
+  if(!login_info.is_logged_in){
+    se_text("Username");
+    igSameLine(win_w-150,0);
+    igInputText("##Username",login_info.username,sizeof(login_info.username),ImGuiInputTextFlags_None,NULL,NULL);
+    se_text("Password");
+    igSameLine(win_w-150,0);
+    igInputText("##Password",login_info.password,sizeof(login_info.password),ImGuiInputTextFlags_Password,NULL,NULL);
+    if(se_button("Login", (ImVec2){0,0})){
+      ra_login_credentials(login_info.username,login_info.password, se_ra_login_callback);
+    }
+  }else {
+    se_text("Logged in as %s",login_info.display_name);
+    igSameLine(win_w-40,0);
+    if(se_button("Logout", (ImVec2){0,0})){
+      login_info.is_logged_in = false;
+      ra_logout();
     }
   }
   {
@@ -5242,17 +5287,40 @@ static void se_init_audio(){
   });
  se_reset_audio_ring();
 }
-static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
-  // TODO: show cool "logged in" banner or something
-  const rc_client_user_t* user = rc_client_get_user_info(client);
-  printf("logged in as %s (score: %d)\n", user->display_name, user->score);
-}
 static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
   // TODO: handle reading from consoles
   return 0;
 }
 static void se_init_retro_achievements(){
+  memset(login_info.username, 0, sizeof(login_info.username));
+  memset(login_info.password, 0, sizeof(login_info.password));
+  login_info.is_logged_in = false;
   ra_initialize_client(se_ra_read_memory_callback);
+
+  // Check if we have a token saved
+  char login_info_path[SB_FILE_PATH_SIZE];
+  snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
+  if (sb_file_exists(login_info_path)){
+    char text[sizeof(login_info.username) + sizeof(login_info.password) + 2];
+    memset(text, 0, sizeof(text));
+    if (sb_load_file_data_into_buffer(login_info_path, text, sizeof(text))){
+      int username_length = strchr(text, '\n') - text;
+      if(username_length>256){
+        printf("Saved RetroAchievements username too long\n");
+        return;
+      }
+      memcpy(login_info.username, text, username_length);
+      int password_length = strchr(text + username_length + 1, '\0') - (text + username_length + 1);
+      char token[256];
+      memset(token, 0, sizeof(token));
+      if(password_length>256){
+        printf("Saved RetroAchievements token too long\n");
+        return;
+      }
+      memcpy(token, text + username_length + 1, password_length);
+      ra_login_token(login_info.username, token, se_ra_login_callback);
+    }
+  }
 }
 
 // For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.

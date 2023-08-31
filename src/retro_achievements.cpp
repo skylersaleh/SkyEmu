@@ -44,6 +44,7 @@ static void server_callback(const rc_api_request_t* request,
   }
 
   std::unique_ptr<AsyncRequest> async_request(new AsyncRequest);
+  async_request->client.reset(new httplib::Client(host));
 
   // Copy it as the request is destroyed as soon as we return
   std::string content_type = request->content_type;
@@ -59,7 +60,6 @@ static void server_callback(const rc_api_request_t* request,
     async_request->result_future = std::async(std::launch::async, gf, async_request->client.get(), get_params);
   }
 
-  async_request->client.reset(new httplib::Client(host));
   async_request->callback = callback;
   async_request->callback_data = callback_data;
   async_requests.push_back(std::move(async_request));
@@ -140,4 +140,9 @@ void ra_poll_requests()
 void ra_login_token(const char* username, const char* token, rc_client_callback_t login_callback)
 {
   rc_client_begin_login_with_token(ra_client, username, token, login_callback, NULL);
+}
+
+void ra_logout()
+{
+  rc_client_logout(ra_client);
 }

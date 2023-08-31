@@ -16,4 +16,5 @@ void ra_login_credentials(const char* username, const char* password, rc_client_
 void ra_login_token(const char* username, const char* token, rc_client_callback_t login_callback);
 void ra_poll_requests();
 void ra_shutdown_client();
+void ra_logout();
 #endif
