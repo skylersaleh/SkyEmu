@@ -4081,7 +4081,7 @@ void se_convert_cheat_code(char * text_code, int cheat_index){
     memcpy(hex,code_buffer_truncated+i*8,8);
     for(int h=0;h<8;++h)if(hex[h]==0)hex[h]='0';
     hex[8]='\0';
-    cheat->buffer[i]=strtol(hex,NULL,16);
+    cheat->buffer[i]=strtoul(hex,NULL,16);
   }
 
 }
