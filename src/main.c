@@ -6,6 +6,7 @@
  *
 **/
 
+#include "rc_client.h"
 #include <stdbool.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
@@ -17,6 +18,10 @@
 #ifdef ENABLE_HTTP_CONTROL_SERVER
 #include "http_control_server.h"
 #endif 
+
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "retro_achievements.h"
+#endif
 
 #include "gba.h"
 #include "nds.h"
@@ -192,8 +197,8 @@ typedef struct{
   uint32_t http_control_server_enable;
   uint32_t avoid_overlaping_touchscreen;
   float custom_font_scale;
-  uint32_t hardcore_mode; 
-  uint32_t padding[228];
+  ra_config_t ra_config;
+  uint32_t padding[227];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -363,11 +368,14 @@ typedef struct{
   uint8_t palettes[5*4];
   se_theme_region_t regions[SE_TOTAL_REGIONS];
 }se_custom_theme_t;
+typedef struct se_deferred_image_free_t{
+  sg_image image; 
+  struct se_deferred_image_free_t * next; 
+}se_deferred_image_free_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
-    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
-    int current_image; 
+    se_deferred_image_free_t * image_free_list;
     int screen_width;
     int screen_height;
     float dpi_override;
@@ -513,7 +521,7 @@ void se_reset_save_states();
 void se_reset_cheats();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
-static void se_emscripten_flush_fs();
+void se_emscripten_flush_fs();
 static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
@@ -529,6 +537,10 @@ static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
+double se_time();
+void se_push_disabled();
+void se_pop_disabled();
+
 const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -587,7 +599,7 @@ char* se_replace_fake_path(char * new_path){
   }
   return new_path;
 }
-static inline const char* se_localize_and_cache(const char* input_str){
+const char* se_localize_and_cache(const char* input_str){
   const char * localized_string = se_localize(input_str);
   se_cache_glyphs(localized_string);
   return localized_string;
@@ -595,16 +607,18 @@ static inline const char* se_localize_and_cache(const char* input_str){
 static inline bool se_checkbox(const char* label, bool * v){
   return igCheckbox(se_localize_and_cache(label),v);
 }
-static void se_text(const char* label,...){
+void se_text(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextV(se_localize_and_cache(label),args);
+  igTextWrappedV(se_localize_and_cache(label),args);
   va_end(args);
 }
 static void se_text_disabled(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextDisabledV(se_localize_and_cache(label),args);
+  se_push_disabled();
+  igTextWrappedV(se_localize_and_cache(label),args);
+  se_pop_disabled();
   va_end(args);
 }
 static bool se_combo_str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items){
@@ -749,7 +763,7 @@ bool se_slider_int_themed(const char* label, int* v, float v_min, float v_max, c
   return ret;
 }
 
-static bool se_button(const char* label, ImVec2 size){
+bool se_button(const char* label, ImVec2 size){
   return se_button_themed(SE_REGION_BLANK,se_localize_and_cache(label),size,true);
 }
 static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
@@ -1019,6 +1033,9 @@ se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 se_cheat_t cheats[SE_NUM_CHEATS];
 se_cloud_state_t cloud_state;
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+ra_config_t ra_config;
+#endif
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -1337,7 +1354,7 @@ double se_fps_counter(int tick){
   return 1.0/fps; 
 }
 
-static void se_emscripten_flush_fs(){
+void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
     EM_ASM( FS.syncfs(function (err) {}););
 #endif
@@ -1497,17 +1514,24 @@ bool se_key_is_pressed(int keycode){
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
-  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
-    gui_state.current_image++;
-    return gui_state.image_stack + gui_state.current_image-1; 
-  }
-  return NULL;
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  gui_state.image_free_list = tmp_image;
+  return &tmp_image->image;
+}
+static void se_free_image_deferred(sg_image image){
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  tmp_image->image=image;
+  gui_state.image_free_list = tmp_image;
 }
 static void se_free_all_images(){
-  for(int i=0;i<gui_state.current_image;++i){
-    sg_destroy_image(gui_state.image_stack[i]);
+  while(gui_state.image_free_list){
+    se_deferred_image_free_t * tmp = gui_state.image_free_list;
+    sg_destroy_image(tmp->image);
+    gui_state.image_free_list=tmp->next;
+    free(tmp);
   }
-  gui_state.current_image=0;
 }
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
@@ -1651,7 +1675,32 @@ void se_draw_emu_stats(){
   igPopItemWidth();
 
 }
-
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  if(emu_state.system==SYSTEM_GB){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=sb_read8(&core.gb,address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_GBA){
+    for(uint32_t i=0;i<num_bytes;++i){
+      // RetroAchievements treats address 0x03000000 as address 0
+      buffer[i]=gba_read8(&core.gba,0x03000000+address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_NDS){
+    for(uint32_t i=0;i<num_bytes;++i){
+      // RetroAchievements treats address 0x02000000 as address 0
+      buffer[i]=nds9_read8(&core.nds,0x02000000+address+i);
+    }
+    return num_bytes;
+  }
+  return 0;
+}
+ra_config_t* se_get_ra_config(){
+  return &gui_state.settings.ra_config;
+}
+#endif
 void se_psg_debugger(){
 
   // NOTE: GB and GBA framesequencer should each contain the same struct data
@@ -2315,7 +2364,9 @@ void se_load_rom(const char *filename){
   }
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
-  return; 
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_load_game();
+  #endif
 }
 static void se_reset_core(){
   if(emu_state.rom_loaded==false)return; 
@@ -2455,6 +2506,9 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba, &scratch.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_frame();
+#endif
   se_run_all_ar_cheats();
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
@@ -2737,7 +2791,7 @@ se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
   {ICON_FK_DELICIOUS, ICON_FK_DELICIOUS " Tile Map",gb_tile_map_debugger},
   {ICON_FK_TH, ICON_FK_TH " Tile Data",gb_tile_data_debugger},
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true}, // TODO: why does emerald unlock an achievement on boot
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t nds_debug_tools[]={
@@ -2749,7 +2803,7 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
   {ICON_FK_INFO_CIRCLE, ICON_FK_INFO_CIRCLE " NDS IO",nds_io_debugger},
 
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true}, // TODO: probably should not allow hardcore. ig Pokemon Black unlocks 6 achievements on boot
   {NULL,NULL,NULL}
 };
 static se_debug_tool_desc_t* se_get_debug_description(){
@@ -2782,7 +2836,7 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
   se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
 }
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
-  if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.hardcore_mode)return; 
+  if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.ra_config.hardcore_mode)return; 
   *core=save_state->state;
   emu_state.render_frame = true;
   se_emulate_single_frame();
@@ -2850,6 +2904,9 @@ static void se_drive_ready_callback(cloud_drive_t* drive){
   }else{
     printf("Something went wrong during cloud login\n");
   }
+}
+ImFont* se_get_mono_font(){
+  return gui_state.mono_font;
 }
 void se_login_cloud(){
   cloud_drive_create(se_drive_ready_callback);
@@ -3031,7 +3088,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
       igBegin(se_localize_and_cache(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-      if(gui_state.settings.hardcore_mode && desc->allow_hardcore == false){
+      if(gui_state.settings.ra_config.hardcore_mode && desc->allow_hardcore == false){
         se_text("Disabled in Hardcore Mode");
       }else desc->function();
   
@@ -4203,6 +4260,49 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
 #endif
   return clicked; 
 }
+
+void se_boxed_image_dual_label(const char * first_label, const char* second_label, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1){
+  ImVec2 win_min,win_sz,win_max;
+  win_min.x=0;
+  win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
+  igGetWindowSize(&win_sz);
+  win_min.y+=igGetScrollY();
+  win_max.x = win_min.x+win_sz.x; 
+  win_max.y = win_min.y+win_sz.y;
+
+  int item_height = 50; 
+  int padding = 4; 
+
+  float disp_y_min = igGetCursorPosY();
+  float disp_y_max = disp_y_min+item_height+padding*2;
+  //Early out if not visible (helps for long lists)
+  if(disp_y_max<win_min.y||disp_y_min>win_max.y){
+    igSetCursorPosY(disp_y_max);
+    return;
+  }
+  int box_h = item_height-padding*2;
+  int box_w = box_h;
+  igPushIDStr(second_label);
+  ImVec2 curr_pos; 
+  igGetCursorPos(&curr_pos);
+  ImVec2 next_pos=curr_pos;
+  next_pos.y+=box_h+padding*2;
+  curr_pos.y+=padding; 
+  igSetCursorPos(curr_pos);
+
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(curr_pos.y-padding);
+  se_text(first_label);
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(igGetCursorPosY()-5);
+  se_text_disabled(second_label);
+  igSetCursorPos(curr_pos);
+  if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+  else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
+  igDummy((ImVec2){1,1});
+  igSetCursorPos(next_pos);
+  igPopID();
+}
 #ifdef SE_PLATFORM_ANDROID
 #include <android/log.h>
 
@@ -4810,8 +4910,8 @@ void se_load_rom_overlay(bool visible){
   w_size.y/=se_dpi_scale();
   igSetNextWindowSize((ImVec2){w_size.x,w_size.y},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
-  igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),gui_state.settings.hardcore_mode?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igSetNextWindowBgAlpha(gui_state.settings.ra_config.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
+  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),gui_state.settings.ra_config.hardcore_mode?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   int x, y, w,  h;
@@ -5709,7 +5809,7 @@ void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   int win_w = igGetWindowContentRegionWidth();
   se_section(ICON_FK_FLOPPY_O " Save States");
-  if(gui_state.settings.hardcore_mode)se_text("Disabled in Hardcore Mode");
+  if(gui_state.settings.ra_config.hardcore_mode)se_text("Disabled in Hardcore Mode");
   else{
     if (cloud_state.drive){
       if (igBeginTabBar("Saves",ImGuiTabBarFlags_None)){
@@ -5780,7 +5880,7 @@ void se_draw_menu_panel(){
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_section(ICON_FK_KEY " Action Replay Codes");
-    if(gui_state.settings.hardcore_mode) se_text("Disabled in Hardcore Mode");
+    if(gui_state.settings.ra_config.hardcore_mode) se_text("Disabled in Hardcore Mode");
     else{
       int free_cheat_index = -1; 
       for(int i=0;i<SE_NUM_CHEATS;i++){
@@ -5842,6 +5942,10 @@ void se_draw_menu_panel(){
       }
     }
   }
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  se_section(ICON_FK_TROPHY " Retro Achievements");
+  retro_achievements_draw_panel(win_w);
+  #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
@@ -6068,10 +6172,9 @@ void se_draw_menu_panel(){
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
-  bool hardcore_mode = gui_state.settings.hardcore_mode;
-  se_checkbox("Hardcore Mode",&hardcore_mode);
-  if(gui_state.settings.hardcore_mode!=hardcore_mode){
-    gui_state.settings.hardcore_mode = hardcore_mode;
+  bool hardcore_mode = gui_state.settings.ra_config.hardcore_mode;
+  if(gui_state.settings.ra_config.hardcore_mode!=hardcore_mode){
+    gui_state.settings.ra_config.hardcore_mode = hardcore_mode;
     se_reset_core();
   }
 
@@ -6529,6 +6632,12 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
+  static bool last_toggle_fullscreen=false;
+  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
+  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
+  retro_achievements_keep_alive();
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -6720,7 +6829,7 @@ static void frame(void) {
 
     if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
-      bool hardcore_disabled = gui_state.settings.hardcore_mode&& i<first_hardcore_toggle;
+      bool hardcore_disabled = gui_state.settings.ra_config.hardcore_mode&& i<first_hardcore_toggle;
       if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
@@ -6760,7 +6869,7 @@ static void frame(void) {
       } 
     }
 
-    if(gui_state.settings.hardcore_mode){
+    if(gui_state.settings.ra_config.hardcore_mode){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP){
         emu_state.run_mode= SB_MODE_RUN;
         emu_state.step_frames=1;
@@ -6768,7 +6877,7 @@ static void frame(void) {
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
-    if(gui_state.settings.hardcore_mode){
+    if(gui_state.settings.ra_config.hardcore_mode){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
@@ -6844,6 +6953,22 @@ static void frame(void) {
     se_update_frame();
 
     se_draw_emulated_system_screen(false);
+
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_update_atlases();
+
+    float left = screen_x;
+    float top = menu_height;
+    float right = screen_x+screen_width/se_dpi_scale();
+    float bottom = height/se_dpi_scale();
+    float padding = 30;
+
+    retro_achievements_draw_notifications(left+padding,top+padding);
+    retro_achievements_draw_progress_indicator(right-padding,top+padding);
+    retro_achievements_draw_leaderboard_trackers(left+padding,bottom-padding);
+    retro_achievements_draw_challenge_indicators(right-padding,bottom-padding);
+#endif
+
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
       if(gui_state.touch_points[i].active)gui_state.last_touch_time = se_time();
     }
@@ -7067,7 +7192,11 @@ void se_load_settings(){
     }
     if(gui_state.settings.settings_file_version<3){
       gui_state.settings.settings_file_version = 3;
-      gui_state.settings.hardcore_mode=0;
+      gui_state.settings.ra_config.hardcore_mode=0;
+      gui_state.settings.ra_config.draw_challenge_indicators=1;
+      gui_state.settings.ra_config.draw_progress_indicators=1;
+      gui_state.settings.ra_config.draw_leaderboard_trackers=1;
+      gui_state.settings.ra_config.draw_notifications=1;
     }
     if(gui_state.settings.custom_font_scale<0.5)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.custom_font_scale>2.0)gui_state.settings.custom_font_scale=1.0;
@@ -7086,6 +7215,9 @@ void se_load_settings(){
       cloud_drive_create(se_drive_ready_callback);
     }
   }
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_initialize(&emu_state);
+#endif
 }
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){
   *hybrid_nds = false; 
@@ -7551,7 +7683,7 @@ static void se_init(){
     gui_state.settings.http_control_server_enable=true;
     http_server_mode=true;
     // HTTP Server mode only has frame stepping which is not allowed in hardcore mode.
-    gui_state.settings.hardcore_mode = false; 
+    gui_state.settings.ra_config.hardcore_mode = false; 
   } 
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
@@ -7637,6 +7769,9 @@ static void init(void) {
 static void cleanup(void) {
   simgui_shutdown();
   se_free_all_images();
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_shutdown();
+#endif
   sg_shutdown();
   saudio_shutdown();
 #ifdef USE_SDL
