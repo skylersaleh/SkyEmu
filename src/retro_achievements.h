@@ -17,4 +17,8 @@ void ra_login_token(const char* username, const char* token, rc_client_callback_
 void ra_poll_requests();
 void ra_shutdown_client();
 void ra_logout();
+void ra_load_game(const uint8_t* rom, size_t rom_size, int console_id, rc_client_callback_t callback);
+int ra_get_game_id();
+void ra_get_game_title(char* buffer, size_t buffer_size);
+void ra_get_game_image(uint8_t** buffer, size_t* buffer_size);
 #endif
