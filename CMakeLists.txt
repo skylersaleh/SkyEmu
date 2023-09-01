@@ -108,6 +108,7 @@ endif()
 
 if(NOT EMSCRIPTEN)
   set(ENABLE_HTTP_CONTROL_SERVER 1)
+  set(ENABLE_RETRO_ACHIEVEMENTS 1)
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
@@ -271,8 +272,9 @@ if(USE_SDL)
     include_directories(${SDL2_INCLUDE_DIRS})
 endif()
 
-set(USE_RETRO_ACHIEVEMENTS 1)
-if(USE_RETRO_ACHIEVEMENTS)
+if(ENABLE_RETRO_ACHIEVEMENTS)
+  add_definitions(-DENABLE_RETRO_ACHIEVEMENTS=1)
+  add_definitions(-DRC_DISABLE_LUA)
   set(RCHEEVOS_SRC src/rcheevos/src/rapi/rc_api_common.c
     src/rcheevos/src/rapi/rc_api_editor.c
     src/rcheevos/src/rapi/rc_api_info.c
@@ -301,7 +303,6 @@ if(USE_RETRO_ACHIEVEMENTS)
   )
   set(SKYEMU_SRC ${SKYEMU_SRC} ${RCHEEVOS_SRC} src/retro_achievements.cpp)
   include_directories(src/rcheevos/include)
-  add_definitions(-DRC_DISABLE_LUA)
 endif()
 
 if(IOS)

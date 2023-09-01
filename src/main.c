@@ -17,6 +17,10 @@
 #include "http_control_server.h"
 #endif 
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "rcheevos/include/rc_client.h"
+#endif
+
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
@@ -24,7 +28,6 @@
 #include "miniz.h"
 #include "localization.h"
 #include "retro_achievements.h"
-#include "rcheevos/include/rc_client.h"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -4928,6 +4931,11 @@ void se_draw_touch_controls_settings(){
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
 
 }
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  // TODO: handle reading from consoles
+  return 0;
+}
 static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
   // TODO: show cool "logged in" banner or something
   const rc_client_user_t* user = rc_client_get_user_info(client);
@@ -4946,6 +4954,38 @@ static void se_ra_login_callback(int result, const char* error_message, rc_clien
     sb_save_file_data(login_info_path,(uint8_t*)buffer,sizeof(buffer));
   }
 }
+static void se_init_retro_achievements(){
+  memset(login_info.username, 0, sizeof(login_info.username));
+  memset(login_info.password, 0, sizeof(login_info.password));
+  login_info.is_logged_in = false;
+  ra_initialize_client(se_ra_read_memory_callback);
+
+  // Check if we have a token saved
+  char login_info_path[SB_FILE_PATH_SIZE];
+  snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
+  if (sb_file_exists(login_info_path)){
+    char text[sizeof(login_info.username) + sizeof(login_info.password) + 2];
+    memset(text, 0, sizeof(text));
+    if (sb_load_file_data_into_buffer(login_info_path, text, sizeof(text))){
+      int username_length = strchr(text, '\n') - text;
+      if(username_length>256){
+        printf("Saved RetroAchievements username too long\n");
+        return;
+      }
+      memcpy(login_info.username, text, username_length);
+      int password_length = strchr(text + username_length + 1, '\0') - (text + username_length + 1);
+      char token[256];
+      memset(token, 0, sizeof(token));
+      if(password_length>256){
+        printf("Saved RetroAchievements token too long\n");
+        return;
+      }
+      memcpy(token, text + username_length + 1, password_length);
+      ra_login_token(login_info.username, token, se_ra_login_callback);
+    }
+  }
+}
+#endif
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   se_text(ICON_FK_FLOPPY_O " Save States");
@@ -5071,6 +5111,7 @@ void se_draw_menu_panel(){
       }
     }
   }
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
   se_text(ICON_FK_TROPHY " Retro Achievements");
   igSeparator();
   if(!login_info.is_logged_in){
@@ -5091,6 +5132,7 @@ void se_draw_menu_panel(){
       ra_logout();
     }
   }
+  #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
@@ -5286,41 +5328,6 @@ static void se_init_audio(){
     .packet_frames=1024
   });
  se_reset_audio_ring();
-}
-static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
-  // TODO: handle reading from consoles
-  return 0;
-}
-static void se_init_retro_achievements(){
-  memset(login_info.username, 0, sizeof(login_info.username));
-  memset(login_info.password, 0, sizeof(login_info.password));
-  login_info.is_logged_in = false;
-  ra_initialize_client(se_ra_read_memory_callback);
-
-  // Check if we have a token saved
-  char login_info_path[SB_FILE_PATH_SIZE];
-  snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
-  if (sb_file_exists(login_info_path)){
-    char text[sizeof(login_info.username) + sizeof(login_info.password) + 2];
-    memset(text, 0, sizeof(text));
-    if (sb_load_file_data_into_buffer(login_info_path, text, sizeof(text))){
-      int username_length = strchr(text, '\n') - text;
-      if(username_length>256){
-        printf("Saved RetroAchievements username too long\n");
-        return;
-      }
-      memcpy(login_info.username, text, username_length);
-      int password_length = strchr(text + username_length + 1, '\0') - (text + username_length + 1);
-      char token[256];
-      memset(token, 0, sizeof(token));
-      if(password_length>256){
-        printf("Saved RetroAchievements token too long\n");
-        return;
-      }
-      memcpy(token, text + username_length + 1, password_length);
-      ra_login_token(login_info.username, token, se_ra_login_callback);
-    }
-  }
 }
 
 // For the main menu bar, which cannot be moved, we honor g.Style.DisplaySafeAreaPadding to ensure text can be visible on a TV set.
@@ -6222,7 +6229,9 @@ static void init(void) {
   };
   gui_state.last_touch_time=-10000;
   se_init_audio();
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
   se_init_retro_achievements();
+  #endif
   sg_push_debug_group("LCD Shader Init");
 
   gui_state.lcd_prog = sg_make_shader(lcdprog_shader_desc(sg_query_backend()));
