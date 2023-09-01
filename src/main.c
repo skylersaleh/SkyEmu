@@ -388,7 +388,7 @@ typedef struct{
   bool is_logged_in;
   int game_id;
   char game_title[256];
-  uint8_t* image_data;
+  sg_image image;
 }se_ra_info_t;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
@@ -1322,10 +1322,14 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     printf("[rcheevos]: failed to load game: %s\n", error_message);
     return;
   }
-  
-  if(ra_info.image_data){
-    free(ra_info.image_data);
-    ra_info.image_data = NULL;
+
+  if(ra_info.game_id != ra_get_game_id()){
+    return;
+  }
+
+  if(ra_info.image.id != SG_INVALID_ID){
+    sg_destroy_image(ra_info.image);
+    ra_info.image.id = SG_INVALID_ID;
   }
 
   uint8_t* png_data = NULL;
@@ -1333,7 +1337,34 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
   int width = 96, height = 96;
   ra_get_game_image(&png_data, &png_size);
   if(png_data){
-    ra_info.image_data = stbi_load_from_memory(png_data, png_size, &width, &height, NULL, 4);
+    sg_image_data im_data={0};
+    uint8_t* pixel_data = stbi_load_from_memory(png_data, png_size, &width, &height, NULL, 4);
+    if(pixel_data){
+      im_data.subimage[0][0].ptr = pixel_data;
+      im_data.subimage[0][0].size = width*height*4;
+      sg_image_desc desc={
+        .type=              SG_IMAGETYPE_2D,
+        .render_target=     false,
+        .width=             96,
+        .height=            96,
+        .num_slices=        1,
+        .num_mipmaps=       1,
+        .usage=             SG_USAGE_IMMUTABLE,
+        .pixel_format=      SG_PIXELFORMAT_RGBA8,
+        .sample_count=      1,
+        .min_filter=        SG_FILTER_NEAREST,
+        .mag_filter=        SG_FILTER_NEAREST,
+        .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+        .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+        .max_anisotropy=    1,
+        .min_lod=           0.0f,
+        .max_lod=           1e9f,
+        .data=              im_data
+      };
+      ra_info.image = sg_make_image(&desc);
+    }
     free(png_data);
   }else{
     printf("[rcheevos]: could not load game image\n");
@@ -1347,7 +1378,7 @@ static void se_init_retro_achievements(){
   memset(ra_info.password, 0, sizeof(ra_info.password));
   ra_info.is_logged_in = false;
   ra_info.game_id = 0;
-  ra_info.image_data = NULL;
+  ra_info.image.id = SG_INVALID_ID;
   ra_initialize_client(se_ra_read_memory_callback);
 
   // Check if we have a token saved
@@ -4502,7 +4533,6 @@ void se_update_frame() {
   #endif
   se_update_key_turbo(&emu_state);
   se_update_solar_sensor(&emu_state);
-  ra_poll_requests();
 
   if(emu_state.run_mode == SB_MODE_RESET){
     se_reset_core();
@@ -5167,8 +5197,11 @@ void se_draw_menu_panel(){
     }
   }else {
     if(ra_info.game_id!=0){
-      if(ra_info.image_data!=NULL){
-        // se_draw_image_button(ra_info.image_data,96,96,0,0,96,96,true);
+      if(ra_info.image.id!=SG_INVALID_ID){
+        igImageButton((ImTextureID)(intptr_t)ra_info.image.id,(ImVec2){32,32},(ImVec2){0,0},(ImVec2){1,1},0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+        igSameLine(0,10);
+        se_text("%s",ra_info.game_title);
+        igSeparator();
       }
     }
     se_text("Logged in as %s",ra_info.display_name);
@@ -5773,6 +5806,9 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
 #endif 
 
 static void frame(void) {
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  ra_poll_requests();
+#endif
   se_reset_html_click_regions();
   sb_poll_controller_input(&emu_state.joy);
 #ifdef USE_SDL
