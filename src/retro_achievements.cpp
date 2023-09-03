@@ -207,3 +207,8 @@ void ra_get_game_image(uint8_t** buffer, size_t* buffer_size)
     printf("[rcheevos]: http request failed: %s\n", to_string(result.error()).c_str());
   }
 }
+
+rc_client_t* ra_get_client()
+{
+  return ra_client;
+}

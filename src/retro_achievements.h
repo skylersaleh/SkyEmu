@@ -21,4 +21,5 @@ void ra_load_game(const uint8_t* rom, size_t rom_size, int console_id, rc_client
 int ra_get_game_id();
 void ra_get_game_title(char* buffer, size_t buffer_size);
 void ra_get_game_image(uint8_t** buffer, size_t* buffer_size);
+rc_client_t* ra_get_client();
 #endif

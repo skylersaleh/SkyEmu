@@ -389,6 +389,7 @@ typedef struct{
   int game_id;
   char game_title[256];
   sg_image image;
+  rc_client_achievement_list_t* achievement_list;
 }se_ra_info_t;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
@@ -1338,7 +1339,7 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     return;
   }
 
-  if(ra_info.game_id != ra_get_game_id()){
+  if(ra_info.game_id == ra_get_game_id()){
     return;
   }
 
@@ -1387,6 +1388,33 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
 
   ra_info.game_id = ra_get_game_id();
   ra_get_game_title(ra_info.game_title, sizeof(ra_info.game_title));
+
+  if (ra_info.achievement_list){
+    rc_client_destroy_achievement_list(ra_info.achievement_list);
+    ra_info.achievement_list = NULL;
+  }
+
+  ra_info.achievement_list = rc_client_create_achievement_list(ra_get_client(),
+      RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
+      RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
+  for (int i = 0; i < ra_info.achievement_list->num_buckets; i++)
+  {
+    printf("[rcheevos]: Achievement bucket %s\n", ra_info.achievement_list->buckets[i].label);
+    for (int j = 0; j < ra_info.achievement_list->buckets[i].num_achievements; j++)
+    {
+      // TODO: get achievement banner using rc_client_achievement_get_image_url
+      const rc_client_achievement_t* achievement = ra_info.achievement_list->buckets[i].achievements[j];
+      printf("[rcheevos]: Achievement %s, ", achievement->title);
+      if (achievement->id == RC_CLIENT_ACHIEVEMENT_BUCKET_UNSUPPORTED)
+        printf("unsupported\n");
+      else if (achievement->unlocked)
+        printf("unlocked\n");
+      else if (achievement->measured_percent)
+        printf("progress: %f%%\n", achievement->measured_percent);
+      else
+        printf("locked\n");
+    }
+  }
 }
 static void se_init_retro_achievements(){
   memset(ra_info.username, 0, sizeof(ra_info.username));
@@ -1394,6 +1422,7 @@ static void se_init_retro_achievements(){
   ra_info.is_logged_in = false;
   ra_info.game_id = 0;
   ra_info.image.id = SG_INVALID_ID;
+  ra_info.achievement_list = NULL;
   ra_initialize_client(se_ra_read_memory_callback);
 
   // Check if we have a token saved
