@@ -1295,7 +1295,22 @@ void se_draw_emu_stats(){
 }
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
-  // TODO: handle reading from consoles
+  if(emu_state.system==SYSTEM_GB){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=sb_read8(&core.gb,address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_GBA){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=gba_read8(&core.gba,address+i);
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_NDS){
+    for(uint32_t i=0;i<num_bytes;++i){
+      buffer[i]=nds9_read8(&core.nds,address+i);
+    }
+    return num_bytes;
+  }
   return 0;
 }
 static void se_ra_login_callback(int result, const char* error_message, rc_client_t* client, void* userdata) {
