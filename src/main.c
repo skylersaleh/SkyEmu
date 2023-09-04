@@ -2151,6 +2151,9 @@ void se_load_rom(const char *filename){
   return; 
 }
 static void se_reset_core(){
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  rc_client_reset(ra_get_client());
+  #endif
   se_load_rom(gui_state.recently_loaded_games[0].path);
 }
 static bool se_write_save_to_disk(const char* path){
