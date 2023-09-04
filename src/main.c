@@ -1416,6 +1416,17 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     }
   }
 }
+static void se_ra_event_handler(const rc_client_event_t* event, rc_client_t* client){
+  switch (event->type)
+  {
+    case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
+      printf("[rcheevos]: Achievement unlocked: %s\n", event->achievement->title);
+      break;
+    default:
+      printf("Unhandled event %d\n", event->type);
+      break;
+  }
+}
 static void se_init_retro_achievements(){
   memset(ra_info.username, 0, sizeof(ra_info.username));
   memset(ra_info.password, 0, sizeof(ra_info.password));
@@ -1424,6 +1435,7 @@ static void se_init_retro_achievements(){
   ra_info.image.id = SG_INVALID_ID;
   ra_info.achievement_list = NULL;
   ra_initialize_client(se_ra_read_memory_callback);
+  rc_client_set_event_handler(ra_get_client(),se_ra_event_handler);
 
   // Check if we have a token saved
   char login_info_path[SB_FILE_PATH_SIZE];
@@ -5852,6 +5864,7 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
 static void frame(void) {
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   ra_poll_requests();
+  rc_client_do_frame(ra_get_client());
 #endif
   se_reset_html_click_regions();
   sb_poll_controller_input(&emu_state.joy);
