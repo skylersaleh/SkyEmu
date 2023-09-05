@@ -1332,6 +1332,37 @@ static void se_ra_login_callback(int result, const char* error_message, rc_clien
     sb_save_file_data(login_info_path,(uint8_t*)buffer,sizeof(buffer));
   }
 }
+static void se_ra_load_game_image_callback(const uint8_t* pixel_data, size_t image_size, int width, int height, void* user_data){
+  sg_image_data im_data={0};
+  if(pixel_data){
+    im_data.subimage[0][0].ptr = pixel_data;
+    im_data.subimage[0][0].size = width*height*4;
+    sg_image_desc desc={
+      .type=              SG_IMAGETYPE_2D,
+      .render_target=     false,
+      .width=             width,
+      .height=            height,
+      .num_slices=        1,
+      .num_mipmaps=       1,
+      .usage=             SG_USAGE_IMMUTABLE,
+      .pixel_format=      SG_PIXELFORMAT_RGBA8,
+      .sample_count=      1,
+      .min_filter=        SG_FILTER_NEAREST,
+      .mag_filter=        SG_FILTER_NEAREST,
+      .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+      .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+      .max_anisotropy=    1,
+      .min_lod=           0.0f,
+      .max_lod=           1e9f,
+      .data=              im_data
+    };
+    ra_info.image = sg_make_image(&desc);
+  }else{
+    printf("[rcheevos]: failed to load game image\n");
+  }
+}
 static void se_ra_load_game_callback(int result, const char* error_message, rc_client_t* client, void* userdata){
   if (result != RC_OK){
     // TODO: notification error message?
@@ -1348,46 +1379,17 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     ra_info.image.id = SG_INVALID_ID;
   }
 
-  uint8_t* png_data = NULL;
-  size_t png_size = 0;
-  int width = 96, height = 96;
-  ra_get_game_image(&png_data, &png_size);
-  if(png_data){
-    sg_image_data im_data={0};
-    uint8_t* pixel_data = stbi_load_from_memory(png_data, png_size, &width, &height, NULL, 4);
-    if(pixel_data){
-      im_data.subimage[0][0].ptr = pixel_data;
-      im_data.subimage[0][0].size = width*height*4;
-      sg_image_desc desc={
-        .type=              SG_IMAGETYPE_2D,
-        .render_target=     false,
-        .width=             96,
-        .height=            96,
-        .num_slices=        1,
-        .num_mipmaps=       1,
-        .usage=             SG_USAGE_IMMUTABLE,
-        .pixel_format=      SG_PIXELFORMAT_RGBA8,
-        .sample_count=      1,
-        .min_filter=        SG_FILTER_NEAREST,
-        .mag_filter=        SG_FILTER_NEAREST,
-        .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-        .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-        .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
-        .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
-        .max_anisotropy=    1,
-        .min_lod=           0.0f,
-        .max_lod=           1e9f,
-        .data=              im_data
-      };
-      ra_info.image = sg_make_image(&desc);
-    }
-    free(png_data);
-  }else{
-    printf("[rcheevos]: could not load game image\n");
-  }
-
   ra_info.game_id = ra_get_game_id();
   ra_get_game_title(ra_info.game_title, sizeof(ra_info.game_title));
+
+  char url[512];
+  const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
+  if (rc_client_game_get_image_url(game, url, sizeof(url)) != RC_OK)
+  {
+    printf("[rcheevos]: could not get game image URL\n");
+    return;
+  }
+  ra_get_image(url, se_ra_load_game_image_callback, NULL);
 
   if (ra_info.achievement_list){
     rc_client_destroy_achievement_list(ra_info.achievement_list);

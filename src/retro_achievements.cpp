@@ -7,8 +7,20 @@ extern "C" {
 #include <future>
 #include <memory>
 #include <regex>
+#include <unordered_map>
+#include <vector>
+#define STBI_ONLY_PNG
+#include "stb_image.h"
 
 rc_client_t* ra_client = NULL;
+
+struct Image
+{
+  int width = 0, height = 0;
+  std::vector<uint8_t> pixel_data;
+};
+
+std::unordered_map<std::string, Image> image_cache;
 
 // httplib doesn't have a way to make async requests, so we need to do it ourselves
 struct AsyncRequest
@@ -17,6 +29,13 @@ struct AsyncRequest
   std::future<httplib::Result> result_future;
   rc_client_server_callback_t callback;
   void* callback_data;
+};
+
+struct ImageCallbackData
+{
+  get_image_callback_t callback;
+  void* userdata;
+  std::string url;
 };
 
 std::vector<AsyncRequest*> async_requests;
@@ -174,38 +193,55 @@ void ra_get_game_title(char* buffer, size_t buffer_size)
   strncpy(buffer, game->title, buffer_size);
 }
 
-void ra_get_game_image(uint8_t** buffer, size_t* buffer_size)
+static void ra_get_image_callback(const rc_api_server_response_t* server_response, void* callback_data)
 {
-  *buffer = nullptr;
-  *buffer_size = 0;
+  ImageCallbackData* data = (ImageCallbackData*)callback_data;
 
-  std::array<char, 128> url;
-  const rc_client_game_t* game = rc_client_get_game_info(ra_client);
-  if (rc_client_game_get_image_url(game, url.data(), url.size()) != RC_OK)
+  if(server_response->http_status_code == 200)
   {
-    printf("[rcheevos]: could not get game image URL\n");
-    return;
-  }
-
-  auto pair = split_url(url.data());
-  std::string host = pair.first;
-  std::string query = pair.second;
-
-  httplib::Client client(host);
-  httplib::Result result = client.Get(query);
-
-  if(result.error() == httplib::Error::Success)
-  {
-    std::string image_data = result->body;
-    uint8_t* image = (uint8_t*)malloc(image_data.length());
-    memcpy(image, image_data.data(), image_data.length());
-    *buffer = image;
-    *buffer_size = image_data.length();
+    auto& image = image_cache[data->url];
+    uint8_t* pixel_data = stbi_load_from_memory((const uint8_t*)server_response->body, server_response->body_length, &image.width, &image.height, NULL, 4);
+    image.pixel_data.resize(image.width * image.height * 4);
+    memcpy(image.pixel_data.data(), pixel_data, image.pixel_data.size());
+    data->callback(image.pixel_data.data(), image.pixel_data.size(), image.width, image.height, data->userdata);
+    stbi_image_free(pixel_data);
   }
   else
   {
-    printf("[rcheevos]: http request failed: %s\n", to_string(result.error()).c_str());
+    printf("[rcheevos]: failed to get image: %s\n", data->url.c_str());
   }
+
+  delete data;
+}
+
+void ra_get_image(const char* url, get_image_callback_t callback, void* userdata)
+{
+  auto pair = split_url(url);
+  std::string host = pair.first;
+  std::string query = pair.second;
+
+  ImageCallbackData* image_callback_data = new ImageCallbackData;
+  image_callback_data->callback = callback;
+  image_callback_data->userdata = userdata;
+  image_callback_data->url = url;
+
+  if (image_cache.find(url) != image_cache.end())
+  {
+    auto& image = image_cache[url];
+    image_callback_data->callback(image.pixel_data.data(), image.pixel_data.size(), image.width, image.height, image_callback_data->userdata);
+    delete image_callback_data;
+    return;
+  }
+
+  AsyncRequest* async_request = new AsyncRequest;
+  async_request->client.reset(new httplib::Client(host));
+
+  httplib::Result (httplib::Client::*gf)(const std::string&) = &httplib::Client::Get;
+  async_request->result_future = std::async(std::launch::async, gf, async_request->client.get(), query);
+
+  async_request->callback = ra_get_image_callback;
+  async_request->callback_data = image_callback_data;
+  async_requests.push_back(async_request);
 }
 
 rc_client_t* ra_get_client()
