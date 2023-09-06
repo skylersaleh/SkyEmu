@@ -390,6 +390,7 @@ typedef struct{
   char game_title[256];
   sg_image image;
   rc_client_achievement_list_t* achievement_list;
+  sg_image** achievement_images;
 }se_ra_info_t;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
@@ -1333,8 +1334,8 @@ static void se_ra_login_callback(int result, const char* error_message, rc_clien
   }
 }
 static void se_ra_load_game_image_callback(const uint8_t* pixel_data, size_t image_size, int width, int height, void* user_data){
-  sg_image_data im_data={0};
   if(pixel_data){
+    sg_image_data im_data={0};
     im_data.subimage[0][0].ptr = pixel_data;
     im_data.subimage[0][0].size = width*height*4;
     sg_image_desc desc={
@@ -1359,6 +1360,38 @@ static void se_ra_load_game_image_callback(const uint8_t* pixel_data, size_t ima
       .data=              im_data
     };
     ra_info.image = sg_make_image(&desc);
+  }else{
+    printf("[rcheevos]: failed to load game image\n");
+  }
+}
+static void se_ra_load_achievement_image_callback(const uint8_t* pixel_data, size_t image_size, int width, int height, void* user_data){
+  sg_image* achievement_image=(sg_image*)user_data;
+  if(pixel_data){
+    sg_image_data im_data={0};
+    im_data.subimage[0][0].ptr = pixel_data;
+    im_data.subimage[0][0].size = width*height*4;
+    sg_image_desc desc={
+      .type=              SG_IMAGETYPE_2D,
+      .render_target=     false,
+      .width=             width,
+      .height=            height,
+      .num_slices=        1,
+      .num_mipmaps=       1,
+      .usage=             SG_USAGE_IMMUTABLE,
+      .pixel_format=      SG_PIXELFORMAT_RGBA8,
+      .sample_count=      1,
+      .min_filter=        SG_FILTER_NEAREST,
+      .mag_filter=        SG_FILTER_NEAREST,
+      .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+      .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+      .max_anisotropy=    1,
+      .min_lod=           0.0f,
+      .max_lod=           1e9f,
+      .data=              im_data
+    };
+    *achievement_image = sg_make_image(&desc);
   }else{
     printf("[rcheevos]: failed to load game image\n");
   }
@@ -1394,18 +1427,38 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
   if (ra_info.achievement_list){
     rc_client_destroy_achievement_list(ra_info.achievement_list);
     ra_info.achievement_list = NULL;
+
+    for (int i = 0; i < ra_info.achievement_list->num_buckets; i++)
+    {
+      if(ra_info.achievement_images[i] != NULL)
+      {
+        for (int j = 0; j < ra_info.achievement_list->buckets[i].num_achievements; j++)
+        {
+          if(ra_info.achievement_images[i][j].id != SG_INVALID_ID)
+            sg_destroy_image(ra_info.achievement_images[i][j]);
+        }
+        free(ra_info.achievement_images[i]);
+      }
+    }
+    if(ra_info.achievement_images)
+      free(ra_info.achievement_images);
   }
 
   ra_info.achievement_list = rc_client_create_achievement_list(ra_get_client(),
       RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
       RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
+  ra_info.achievement_images = (sg_image**)malloc(sizeof(sg_image*)*ra_info.achievement_list->num_buckets);
   for (int i = 0; i < ra_info.achievement_list->num_buckets; i++)
   {
-    printf("[rcheevos]: Achievement bucket %s\n", ra_info.achievement_list->buckets[i].label);
-    for (int j = 0; j < ra_info.achievement_list->buckets[i].num_achievements; j++)
+    uint32_t num_achievements=ra_info.achievement_list->buckets[i].num_achievements;
+    ra_info.achievement_images[i] = (sg_image*)malloc(sizeof(sg_image)*num_achievements);
+    for (int j = 0; j < num_achievements; j++)
     {
-      // TODO: get achievement banner using rc_client_achievement_get_image_url
+      char url[512];
       const rc_client_achievement_t* achievement = ra_info.achievement_list->buckets[i].achievements[j];
+      if(rc_client_achievement_get_image_url(achievement, achievement->state, url, sizeof(url)) == RC_OK){
+        ra_get_image(url, se_ra_load_achievement_image_callback, &ra_info.achievement_images[i][j]);
+      }
       printf("[rcheevos]: Achievement %s, ", achievement->title);
       if (achievement->id == RC_CLIENT_ACHIEVEMENT_BUCKET_UNSUPPORTED)
         printf("unsupported\n");
@@ -1436,6 +1489,7 @@ static void se_init_retro_achievements(){
   ra_info.game_id = 0;
   ra_info.image.id = SG_INVALID_ID;
   ra_info.achievement_list = NULL;
+  ra_info.achievement_images = NULL;
   ra_initialize_client(se_ra_read_memory_callback);
   rc_client_set_event_handler(ra_get_client(),se_ra_event_handler);
 
@@ -5273,6 +5327,17 @@ void se_draw_menu_panel(){
       snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
       remove(login_info_path);
       ra_logout();
+    }
+    igSeparator();
+    if (ra_info.achievement_list){
+      for (int i = 0; i < ra_info.achievement_list->num_buckets; i++){
+        for (int j = 0; j < ra_info.achievement_list->buckets[i].num_achievements; j++){
+          if(ra_info.achievement_images && ra_info.achievement_images[i] && ra_info.achievement_images[i][j].id!=SG_INVALID_ID){
+            igImageButton((ImTextureID)(intptr_t)ra_info.achievement_images[i][j].id,(ImVec2){32,32},(ImVec2){0,0},(ImVec2){1,1},0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+            se_text("%s",ra_info.achievement_list->buckets[i].achievements[j]->title);
+          }
+        }
+      }
     }
   }
   #endif
