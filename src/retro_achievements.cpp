@@ -38,7 +38,9 @@ struct ImageCallbackData
   std::string url;
 };
 
-std::vector<AsyncRequest*> async_requests;
+std::vector<AsyncRequest> async_requests;
+std::vector<AsyncRequest> async_requests_to_be_added;
+std::recursive_mutex async_requests_mutex;
 
 std::pair<std::string, std::string> split_url(const std::string& url)
 {
@@ -63,6 +65,7 @@ std::pair<std::string, std::string> split_url(const std::string& url)
 static void server_callback(const rc_api_request_t* request,
     rc_client_server_callback_t callback, void* callback_data, rc_client_t* client)
 {
+  std::unique_lock<std::recursive_mutex> lock(async_requests_mutex);
   // RetroAchievements may not allow hardcore unlocks if we don't properly identify ourselves.
   const char* user_agent = "SkyEmu/4.0";
 
@@ -71,8 +74,8 @@ static void server_callback(const rc_api_request_t* request,
   std::string host = pair.first;
   std::string query = pair.second;
 
-  AsyncRequest* async_request = new AsyncRequest;
-  async_request->client.reset(new httplib::Client(host));
+  AsyncRequest async_request;
+  async_request.client.reset(new httplib::Client(host));
 
   // Copy it as the request is destroyed as soon as we return
   std::string content_type = request->content_type;
@@ -80,16 +83,16 @@ static void server_callback(const rc_api_request_t* request,
   if(request->post_data)
   {
     httplib::Result (httplib::Client::*gf)(const std::string&, const std::string&, const std::string&) = &httplib::Client::Post;
-    async_request->result_future = std::async(std::launch::async, gf, async_request->client.get(), query, post_data, content_type);
+    async_request.result_future = std::async(std::launch::async, gf, async_request.client.get(), query, post_data, content_type);
   }
   else
   {
     httplib::Result (httplib::Client::*gf)(const std::string&) = &httplib::Client::Get;
-    async_request->result_future = std::async(std::launch::async, gf, async_request->client.get(), query);
+    async_request.result_future = std::async(std::launch::async, gf, async_request.client.get(), query);
   }
-  async_request->callback = callback;
-  async_request->callback_data = callback_data;
-  async_requests.push_back(async_request);
+  async_request.callback = callback;
+  async_request.callback_data = callback_data;
+  async_requests_to_be_added.push_back(std::move(async_request));
 }
 
 static void log_message(const char* message, const rc_client_t* client)
@@ -135,34 +138,37 @@ void ra_login_credentials(const char* username, const char* password, rc_client_
 
 void ra_poll_requests()
 {
+  std::unique_lock<std::recursive_mutex> lock(async_requests_mutex);
   // Check if any of our asynchronous requests have finished, and if so, call the callback
   auto it = async_requests.begin();
   while(it != async_requests.end())
   {
-    AsyncRequest* request = *it;
-    if (request->result_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-    {
-      httplib::Result result = request->result_future.get();
+    AsyncRequest& request = *it;
+    if (!request.result_future.valid()) {
       it = async_requests.erase(it);
+      continue;
+    }
+    if (request.result_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+      httplib::Result result = request.result_future.get();
       if(result.error() == httplib::Error::Success)
       {
         rc_api_server_response_t response;
         response.body = result->body.c_str();
         response.body_length = result->body.length();
         response.http_status_code = result->status;
-        request->callback(&response, request->callback_data);
+        request.callback(&response, request.callback_data);
       }
       else
       {
         printf("[rcheevos]: http request failed: %s\n", to_string(result.error()).c_str());
       }
-      delete request;
     }
-    else
-    {
-      ++it;
-    }
+    ++it;
   }
+
+  // Add any new requests at the end as to not invalidate the iterator
+  async_requests.insert(async_requests.end(), std::make_move_iterator(async_requests_to_be_added.begin()), std::make_move_iterator(async_requests_to_be_added.end()));
 }
 
 void ra_login_token(const char* username, const char* token, rc_client_callback_t login_callback)
@@ -216,6 +222,7 @@ static void ra_get_image_callback(const rc_api_server_response_t* server_respons
 
 void ra_get_image(const char* url, get_image_callback_t callback, void* userdata)
 {
+  std::unique_lock<std::recursive_mutex> lock(async_requests_mutex);
   auto pair = split_url(url);
   std::string host = pair.first;
   std::string query = pair.second;
@@ -233,15 +240,15 @@ void ra_get_image(const char* url, get_image_callback_t callback, void* userdata
     return;
   }
 
-  AsyncRequest* async_request = new AsyncRequest;
-  async_request->client.reset(new httplib::Client(host));
+  AsyncRequest async_request;
+  async_request.client.reset(new httplib::Client(host));
 
   httplib::Result (httplib::Client::*gf)(const std::string&) = &httplib::Client::Get;
-  async_request->result_future = std::async(std::launch::async, gf, async_request->client.get(), query);
+  async_request.result_future = std::async(std::launch::async, gf, async_request.client.get(), query);
 
-  async_request->callback = ra_get_image_callback;
-  async_request->callback_data = image_callback_data;
-  async_requests.push_back(async_request);
+  async_request.callback = ra_get_image_callback;
+  async_request.callback_data = image_callback_data;
+  async_requests_to_be_added.push_back(std::move(async_request));
 }
 
 rc_client_t* ra_get_client()
