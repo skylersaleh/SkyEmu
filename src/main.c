@@ -5269,6 +5269,9 @@ void se_draw_menu_panel(){
     igSameLine(win_w-40,0);
     if(se_button("Logout", (ImVec2){0,0})){
       ra_info.is_logged_in = false;
+      char login_info_path[SB_FILE_PATH_SIZE];
+      snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_login_info.txt",se_get_pref_path());
+      remove(login_info_path);
       ra_logout();
     }
   }
