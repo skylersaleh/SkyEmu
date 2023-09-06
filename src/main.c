@@ -1924,7 +1924,7 @@ void se_load_rom(const char *filename){
     printf("ERROR: Unknown ROM type: %s\n", filename);
     emu_state.run_mode= SB_MODE_PAUSE;
   }else{
-    emu_state.run_mode= SB_MODE_RESET;
+    emu_state.run_mode= SB_MODE_RUN;
     se_game_info_t * recent_games=gui_state.recently_loaded_games;
     //Create a copy in case file name comes from one of these slots that will be modified. 
     char temp_filename[SB_FILE_PATH_SIZE];
