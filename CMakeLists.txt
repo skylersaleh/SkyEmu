@@ -253,7 +253,9 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c)
+add_compile_options(-fsanitize=address)
+add_link_options(-fsanitize=address)
+set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c src/recursive_mutex.cpp)
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)

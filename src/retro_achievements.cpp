@@ -173,7 +173,12 @@ void ra_poll_requests()
 
 void ra_login_token(const char* username, const char* token, rc_client_callback_t login_callback)
 {
-  rc_client_begin_login_with_token(ra_client, username, token, login_callback, NULL);
+  std::string username_str = username;
+  std::string token_str = token;
+  std::thread login_thread([=](){
+    rc_client_begin_login_with_token(ra_client, username_str.c_str(), token_str.c_str(), login_callback, NULL);
+  });
+  login_thread.detach();
 }
 
 void ra_logout()
@@ -183,8 +188,11 @@ void ra_logout()
 
 void ra_load_game(const uint8_t *rom, size_t rom_size, int console_id, rc_client_callback_t callback)
 {
-  rc_client_begin_identify_and_load_game(ra_client, console_id, 
-      NULL, rom, rom_size, callback, NULL);
+  std::thread load_thread([=](){
+    rc_client_begin_identify_and_load_game(ra_client, console_id, 
+        NULL, rom, rom_size, callback, NULL);
+  });
+  load_thread.detach();
 }
 
 int ra_get_game_id()

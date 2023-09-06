@@ -18,6 +18,7 @@
 #endif 
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "retro_achievements.h"
 #include "rcheevos/include/rc_client.h"
 #include "rcheevos/include/rc_consoles.h"
 #endif
@@ -28,7 +29,7 @@
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
 #include "localization.h"
-#include "retro_achievements.h"
+#include "recursive_mutex.h"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -391,6 +392,7 @@ typedef struct{
   sg_image image;
   rc_client_achievement_list_t* achievement_list;
   sg_image** achievement_images;
+  recursive_mutex_t mutex;
 }se_ra_info_t;
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
@@ -1334,6 +1336,7 @@ static void se_ra_login_callback(int result, const char* error_message, rc_clien
   }
 }
 static void se_ra_load_game_image_callback(const uint8_t* pixel_data, size_t image_size, int width, int height, void* user_data){
+  lock_mutex(ra_info.mutex);
   if(pixel_data){
     sg_image_data im_data={0};
     im_data.subimage[0][0].ptr = pixel_data;
@@ -1363,8 +1366,10 @@ static void se_ra_load_game_image_callback(const uint8_t* pixel_data, size_t ima
   }else{
     printf("[rcheevos]: failed to load game image\n");
   }
+  unlock_mutex(ra_info.mutex);
 }
 static void se_ra_load_achievement_image_callback(const uint8_t* pixel_data, size_t image_size, int width, int height, void* user_data){
+  lock_mutex(ra_info.mutex);
   sg_image* achievement_image=(sg_image*)user_data;
   if(pixel_data){
     sg_image_data im_data={0};
@@ -1395,6 +1400,7 @@ static void se_ra_load_achievement_image_callback(const uint8_t* pixel_data, siz
   }else{
     printf("[rcheevos]: failed to load game image\n");
   }
+  unlock_mutex(ra_info.mutex);
 }
 static void se_ra_load_game_callback(int result, const char* error_message, rc_client_t* client, void* userdata){
   if (result != RC_OK){
@@ -1407,27 +1413,21 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     return;
   }
 
+  lock_mutex(ra_info.mutex);
   if(ra_info.image.id != SG_INVALID_ID){
     sg_destroy_image(ra_info.image);
     ra_info.image.id = SG_INVALID_ID;
   }
-
   ra_info.game_id = ra_get_game_id();
   ra_get_game_title(ra_info.game_title, sizeof(ra_info.game_title));
 
   char url[512];
   const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
-  if (rc_client_game_get_image_url(game, url, sizeof(url)) != RC_OK)
-  {
-    printf("[rcheevos]: could not get game image URL\n");
-    return;
+  if (rc_client_game_get_image_url(game, url, sizeof(url)) == RC_OK){
+    ra_get_image(url, se_ra_load_game_image_callback, NULL);
   }
-  ra_get_image(url, se_ra_load_game_image_callback, NULL);
 
   if (ra_info.achievement_list){
-    rc_client_destroy_achievement_list(ra_info.achievement_list);
-    ra_info.achievement_list = NULL;
-
     for (int i = 0; i < ra_info.achievement_list->num_buckets; i++)
     {
       if(ra_info.achievement_images[i] != NULL)
@@ -1440,8 +1440,10 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
         free(ra_info.achievement_images[i]);
       }
     }
-    if(ra_info.achievement_images)
-      free(ra_info.achievement_images);
+    free(ra_info.achievement_images);
+
+    rc_client_destroy_achievement_list(ra_info.achievement_list);
+    ra_info.achievement_list = NULL;
   }
 
   ra_info.achievement_list = rc_client_create_achievement_list(ra_get_client(),
@@ -1452,6 +1454,7 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
   {
     uint32_t num_achievements=ra_info.achievement_list->buckets[i].num_achievements;
     ra_info.achievement_images[i] = (sg_image*)malloc(sizeof(sg_image)*num_achievements);
+    memset(ra_info.achievement_images[i], 0, sizeof(sg_image)*num_achievements);
     for (int j = 0; j < num_achievements; j++)
     {
       char url[512];
@@ -1470,6 +1473,7 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
         printf("locked\n");
     }
   }
+  unlock_mutex(ra_info.mutex);
 }
 static void se_ra_event_handler(const rc_client_event_t* event, rc_client_t* client){
   switch (event->type)
@@ -1490,6 +1494,7 @@ static void se_init_retro_achievements(){
   ra_info.image.id = SG_INVALID_ID;
   ra_info.achievement_list = NULL;
   ra_info.achievement_images = NULL;
+  ra_info.mutex = create_mutex();
   ra_initialize_client(se_ra_read_memory_callback);
   rc_client_set_event_handler(ra_get_client(),se_ra_event_handler);
 
@@ -1501,19 +1506,10 @@ static void se_init_retro_achievements(){
     memset(text, 0, sizeof(text));
     if (sb_load_file_data_into_buffer(login_info_path, text, sizeof(text))){
       int username_length = strchr(text, '\n') - text;
-      if(username_length>256){
-        printf("Saved RetroAchievements username too long\n");
-        return;
-      }
-      memcpy(ra_info.username, text, username_length);
+      strncpy(ra_info.username, text, username_length);
       int password_length = strchr(text + username_length + 1, '\0') - (text + username_length + 1);
       char token[256];
-      memset(token, 0, sizeof(token));
-      if(password_length>256){
-        printf("Saved RetroAchievements token too long\n");
-        return;
-      }
-      memcpy(token, text + username_length + 1, password_length);
+      strncpy(token, text + username_length + 1, password_length);
       ra_login_token(ra_info.username, token, se_ra_login_callback);
     }
   }
@@ -5334,7 +5330,7 @@ void se_draw_menu_panel(){
         for (int j = 0; j < ra_info.achievement_list->buckets[i].num_achievements; j++){
           if(ra_info.achievement_images && ra_info.achievement_images[i] && ra_info.achievement_images[i][j].id!=SG_INVALID_ID){
             igImageButton((ImTextureID)(intptr_t)ra_info.achievement_images[i][j].id,(ImVec2){32,32},(ImVec2){0,0},(ImVec2){1,1},0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
-            se_text("%s",ra_info.achievement_list->buckets[i].achievements[j]->title);
+            // se_text("%s",ra_info.achievement_list->buckets[i].achievements[j]->title);
           }
         }
       }
@@ -5938,6 +5934,7 @@ static void frame(void) {
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   ra_poll_requests();
   rc_client_do_frame(ra_get_client());
+  lock_mutex(ra_info.mutex);
 #endif
   se_reset_html_click_regions();
   sb_poll_controller_input(&emu_state.joy);
@@ -6336,6 +6333,9 @@ static void frame(void) {
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
   }
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  unlock_mutex(ra_info.mutex);
+  #endif
 }
 void se_load_settings(){
   se_load_recent_games_list();
