@@ -238,6 +238,7 @@ static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
     if(size==EOF){size = 0; free(data);} 
     if(file_size)*file_size = size;
     printf("Loaded file %s file_size %zu\n",path,*file_size);
+    fclose(f);
     return data;
   }else{
     printf("Failed to open file %s\n",path);
