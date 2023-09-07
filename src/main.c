@@ -382,6 +382,7 @@ typedef struct{
   uint32_t system; //SYSTEM_UNKNOWN=0 ,SYSTEM_GB=1, SYSTEM_GBA=2, SYSTEM_NDS 3
   uint8_t padding[20];//Zero padding
 }se_emu_id;
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
 typedef struct{
   char display_name[256];
   char username[256];
@@ -394,6 +395,7 @@ typedef struct{
   sg_image** achievement_images;
   recursive_mutex_t mutex;
 }se_ra_info_t;
+#endif
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -768,7 +770,9 @@ se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 se_cheat_t cheats[SE_NUM_CHEATS];
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
 se_ra_info_t ra_info;
+#endif
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -6490,7 +6494,6 @@ static void init(void) {
   #endif
 }
 static void cleanup(void) {
-  ra_shutdown_client();
   simgui_shutdown();
   se_free_all_images();
   sg_shutdown();

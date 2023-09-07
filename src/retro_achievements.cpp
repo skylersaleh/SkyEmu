@@ -188,11 +188,8 @@ void ra_logout()
 
 void ra_load_game(const uint8_t *rom, size_t rom_size, int console_id, rc_client_callback_t callback)
 {
-  std::thread load_thread([=](){
-    rc_client_begin_identify_and_load_game(ra_client, console_id, 
-        NULL, rom, rom_size, callback, NULL);
-  });
-  load_thread.detach();
+  rc_client_begin_identify_and_load_game(ra_client, console_id, 
+      NULL, rom, rom_size, callback, NULL);
 }
 
 int ra_get_game_id()
