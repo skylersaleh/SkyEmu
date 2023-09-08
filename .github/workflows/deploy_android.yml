@@ -12,7 +12,7 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: '8'
-      - uses: sparkfabrik/android-build-action@v1.4.0
+      - uses: sparkfabrik/android-build-action@v1.5.0
         with:
           project-path: tools/android_project
           output-path: SkyEmu.apk
