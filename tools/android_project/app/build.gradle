@@ -17,8 +17,8 @@ android {
         applicationId = 'com.sky.SkyEmu'
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 3
-        versionName "v3"
+        versionCode 32
+        versionName "v3.2"
         setProperty("archivesBaseName", applicationId + "-v" + versionCode)
         externalNativeBuild {
             cmake {
