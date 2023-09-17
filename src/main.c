@@ -3429,7 +3429,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
   }
   
-
+  float themed_scale = 1.1;
   int line_w0 = 1;
   int line_w1 = 3; 
   float button_r = size_scalar*0.0815;
@@ -3552,7 +3552,11 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     float * pos = key_pos[i];
 
     if(!se_draw_theme_region_tint(SE_REGION_KEY_A+i*2+(pressed?1:0),
-                             pos[0]-button_r,pos[1]-button_r,button_r*2,button_r*2,col)){
+                             pos[0]-button_r*themed_scale,
+                             pos[1]-button_r*themed_scale,
+                             button_r*2*themed_scale,
+                             button_r*2*themed_scale,
+                             col)){
       if(pressed)  ImDrawList_AddCircleFilled(dl,(ImVec2){pos[0],pos[1]},button_r,sel_color,128);
       ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,line_color2,128,line_w1);
       ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,col,128,line_w0);
@@ -3562,7 +3566,11 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   int dpad_code = up ? 0: down? 6: 3; 
   dpad_code += left? 0: right? 2: 1; 
 
-  bool draw_dpad = !se_draw_theme_region_tint(SE_REGION_DPAD_UL+dpad_code,dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz1,dpad_sz1*2,dpad_sz1*2,line_color);
+  bool draw_dpad = !se_draw_theme_region_tint(SE_REGION_DPAD_UL+dpad_code,dpad_pos[0]-dpad_sz1*themed_scale,
+                                              dpad_pos[1]-dpad_sz1*themed_scale,
+                                              dpad_sz1*2*themed_scale,
+                                              dpad_sz1*2*themed_scale,
+                                              line_color);
   if(draw_dpad){
     ImVec2 dpad_points[12]={
       //Up
@@ -5560,6 +5568,7 @@ bool se_begin_menu_bar(){
   }
   igSetCursorPosY(0);
   igSetCursorPosX(style->DisplaySafeAreaPadding.x);
+  se_draw_theme_region(SE_REGION_MENUBAR,0,y_off,menu_bar_size.x,menu_bar_size.y);
   return true; //-V1020
 }
 
