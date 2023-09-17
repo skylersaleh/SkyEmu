@@ -5430,7 +5430,10 @@ void se_draw_menu_panel(){
     const char *types[]={"*.png",NULL};
     load|=se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
-    if(load)se_load_theme_from_file(gui_state.paths.theme);
+    if(load){
+      if(se_load_theme_from_file(gui_state.paths.theme))
+        se_save_search_paths();
+    }
   
     se_custom_theme_t * theme = &gui_state.theme;
     float w = igGetWindowContentRegionWidth();
