@@ -1176,6 +1176,7 @@ void se_save_search_paths(){
   char settings_path[SB_FILE_PATH_SIZE];
   snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
   sb_save_file_data(settings_path,(uint8_t*)&gui_state.paths,sizeof(gui_state.paths));
+  se_emscripten_flush_fs();
 }
 void se_reset_bios_info(){
   memset(&gui_state.bios_info,0,sizeof(se_bios_info_t));
@@ -5438,23 +5439,27 @@ void se_draw_menu_panel(){
     se_custom_theme_t * theme = &gui_state.theme;
     float w = igGetWindowContentRegionWidth();
     float h = w*theme->regions[SE_REGION_NAME].h/theme->regions[SE_REGION_NAME].w;
-    
-    se_text("Custom Theme Name");
     ImVec2 p,v;
-    igGetCursorPos(&p);
-    igGetWindowPos(&v);
-    p.x+=v.x-igGetScrollX();
-    p.y+=v.y-igGetScrollY();
 
-    se_draw_theme_region(SE_REGION_NAME, p.x,p.y,w,h);
-    igDummy((ImVec2){0,h});
-    se_text("Custom Theme Author");
-    igGetCursorPos(&p);
-    igGetWindowPos(&v);
-    p.x+=v.x-igGetScrollX();
-    p.y+=v.y-igGetScrollY();
-    se_draw_theme_region(SE_REGION_AUTHOR, p.x,p.y,w,h);
-    igDummy((ImVec2){0,h});
+    if(theme->regions[SE_REGION_NAME].active){
+      se_text("Custom Theme Name");
+      igGetCursorPos(&p);
+      igGetWindowPos(&v);
+      p.x+=v.x-igGetScrollX();
+      p.y+=v.y-igGetScrollY();
+
+      se_draw_theme_region(SE_REGION_NAME, p.x,p.y,w,h);
+      igDummy((ImVec2){0,h});
+    }
+    if(theme->regions[SE_REGION_AUTHOR].active){
+      se_text("Custom Theme Author");
+      igGetCursorPos(&p);
+      igGetWindowPos(&v);
+      p.x+=v.x-igGetScrollX();
+      p.y+=v.y-igGetScrollY();
+      se_draw_theme_region(SE_REGION_AUTHOR, p.x,p.y,w,h);
+      igDummy((ImVec2){0,h});
+    }
   }
 
   gui_state.settings.theme = theme;
