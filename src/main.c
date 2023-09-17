@@ -6335,6 +6335,7 @@ static void frame(void) {
 void se_load_settings(){
   se_load_recent_games_list();
   se_load_search_paths();
+  
   {
     char keybind_path[SB_FILE_PATH_SIZE];
     snprintf(keybind_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
@@ -6385,6 +6386,7 @@ void se_load_settings(){
     if(!(gui_state.settings.touch_controls_opacity>=0&&gui_state.settings.touch_controls_opacity<1.0))gui_state.settings.touch_controls_opacity=0.5;
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
     gui_state.last_saved_settings=gui_state.settings;
+    if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
   }
 }
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint){
@@ -6598,7 +6600,6 @@ static void se_init(){
   stm_setup();
   se_load_settings();
   se_reset_cheats();
-  if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
