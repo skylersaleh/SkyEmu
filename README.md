@@ -31,11 +31,11 @@ SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS 
 
 ## Download / Usage
 
-Native builds can be downloaded at: https://github.com/skylersaleh/SkyEmu/releases
+Native builds can be downloaded at: [https://github.com/skylersaleh/SkyEmu/releases](https://github.com/skylersaleh/SkyEmu/releases)
 
 The latest version of the emulator can also be played without installing at the following address as a progressive web app:
 
-https://web.skyemu.app/
+[https://web.skyemu.app/](https://web.skyemu.app/)
 
 On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen. 
 
