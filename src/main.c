@@ -597,13 +597,19 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
   *v = val;
   return ret;
 }
-static bool se_button(const char* label, ImVec2 size){
-  return igButton(se_localize_and_cache(label),size);
-}
 static bool se_button_themed(int region, const char* label, ImVec2 size, bool always_draw_label){
-  ImVec2 pos;
+  label=se_localize_and_cache(label);
+  const ImVec2 label_size;
+  igCalcTextSize(&label_size,label, NULL, true,-1.0);
+  ImGuiStyle * style = igGetStyle();
+
+  igCalcItemSize(&size, size, label_size.x + style->FramePadding.x * 2.0f, label_size.y + style->FramePadding.y * 2.0f);
+
+  ImVec2 pos,v;
   igGetCursorPos(&pos);
-  ImGuiStyle *style = igGetStyle();
+  igGetWindowPos(&v);
+  pos.x+=v.x-igGetScrollX();
+  pos.y+=v.y-igGetScrollY();
   ImGuiStyle restore_style = *style;
   if(gui_state.settings.theme==SE_THEME_CUSTOM && gui_state.theme.regions[region].active){
     for(int i=0;i<ImGuiCol_COUNT;++i)style->Colors[i].w = 0.;
@@ -617,10 +623,13 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
   if(hover) alpha=0.75;
   uint32_t tint = 0x00ffffff|((uint32_t)(alpha*255)<<24u); 
   se_draw_theme_region_tint(region, pos.x,pos.y,size.x,size.y,tint);
-  bool button_result = igButton(se_localize_and_cache(label),size);
+  bool button_result = igButton(label,size);
 
   *style = restore_style; 
   return button_result;
+}
+static bool se_button(const char* label, ImVec2 size){
+  return se_button_themed(SE_REGION_BLANK,se_localize_and_cache(label),size,true);
 }
 static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
@@ -3535,8 +3544,8 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     bool pressed = SB_BFE(button_press,i,1);
     float * pos = key_pos[i];
 
-    if(!se_draw_theme_region(SE_REGION_KEY_A+i*2+(pressed?1:0),
-                             pos[0]-button_r,pos[1]-button_r,button_r*2,button_r*2)){
+    if(!se_draw_theme_region_tint(SE_REGION_KEY_A+i*2+(pressed?1:0),
+                             pos[0]-button_r,pos[1]-button_r,button_r*2,button_r*2,col)){
       if(pressed)  ImDrawList_AddCircleFilled(dl,(ImVec2){pos[0],pos[1]},button_r,sel_color,128);
       ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,line_color2,128,line_w1);
       ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,col,128,line_w0);
@@ -3546,7 +3555,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   int dpad_code = up ? 0: down? 6: 3; 
   dpad_code += left? 0: right? 2: 1; 
 
-  bool draw_dpad = !se_draw_theme_region(SE_REGION_DPAD_UL+dpad_code,dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz1,dpad_sz1*2,dpad_sz1*2);
+  bool draw_dpad = !se_draw_theme_region_tint(SE_REGION_DPAD_UL+dpad_code,dpad_pos[0]-dpad_sz1,dpad_pos[1]-dpad_sz1,dpad_sz1*2,dpad_sz1*2,line_color);
   if(draw_dpad){
     ImVec2 dpad_points[12]={
       //Up
@@ -3610,7 +3619,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
     if(b==hold_button&&(pressed || gui_state.touch_controls.hold_toggle))col=hold_color;
     if(SB_BFE(gui_state.touch_controls.hold_toggle,b+6,1))col = hold_color;
     if(SB_BFE(gui_state.touch_controls.turbo_toggle,b+6,1))col = turbo_color;
-    if(!se_draw_theme_region(region,x_min,button_y,x_max-x_min,button_h)){
+    if(!se_draw_theme_region_tint(region,x_min,button_y,x_max-x_min,button_h,col)){
       if(pressed){
         ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
       }
@@ -3639,7 +3648,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
 
       if(SB_BFE(gui_state.touch_controls.hold_toggle,b+4,1))col = hold_color;
       if(SB_BFE(gui_state.touch_controls.turbo_toggle,b+4,1))col = turbo_color;
-      if(!se_draw_theme_region(region,x_min,button_y,x_max-x_min,button_h)){
+      if(!se_draw_theme_region_tint(region,x_min,button_y,x_max-x_min,button_h,col)){
         if(pressed)ImDrawList_AddRectFilled(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},sel_color,0,ImDrawCornerFlags_None);  
         ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
         ImDrawList_AddRect(dl,(ImVec2){x_min,button_y},(ImVec2){x_max,button_y+button_h},col,0,ImDrawCornerFlags_None,line_w0);  
@@ -5416,6 +5425,27 @@ void se_draw_menu_panel(){
     load|=se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
     if(load)se_load_theme_from_file(gui_state.paths.theme);
+  
+    se_custom_theme_t * theme = &gui_state.theme;
+    float w = igGetWindowContentRegionWidth();
+    float h = w*theme->regions[SE_REGION_NAME].h/theme->regions[SE_REGION_NAME].w;
+    
+    se_text("Custom Theme Name");
+    ImVec2 p,v;
+    igGetCursorPos(&p);
+    igGetWindowPos(&v);
+    p.x+=v.x-igGetScrollX();
+    p.y+=v.y-igGetScrollY();
+
+    se_draw_theme_region(SE_REGION_NAME, p.x,p.y,w,h);
+    igDummy((ImVec2){0,h});
+    se_text("Custom Theme Author");
+    igGetCursorPos(&p);
+    igGetWindowPos(&v);
+    p.x+=v.x-igGetScrollX();
+    p.y+=v.y-igGetScrollY();
+    se_draw_theme_region(SE_REGION_AUTHOR, p.x,p.y,w,h);
+    igDummy((ImVec2){0,h});
   }
 
   gui_state.settings.theme = theme;
