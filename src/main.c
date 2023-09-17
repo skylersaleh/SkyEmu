@@ -233,7 +233,8 @@ typedef struct{
   char save[SB_FILE_PATH_SIZE];
   char bios[SB_FILE_PATH_SIZE];
   char cheat_codes[SB_FILE_PATH_SIZE];
-  char padding[5][SB_FILE_PATH_SIZE];
+  char theme[SB_FILE_PATH_SIZE];
+  char padding[4][SB_FILE_PATH_SIZE];
 }se_search_paths_t;
 
 _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
@@ -251,6 +252,94 @@ typedef struct{
   char name[SE_MAX_BIOS_FILES][SE_BIOS_NAME_SIZE];
   bool success[SE_MAX_BIOS_FILES];
 }se_bios_info_t;
+
+#define SE_MAX_CONTROL_POINTS 32
+#define SE_REGION_NAME                 0
+#define SE_REGION_AUTHOR               1
+#define SE_REGION_BEZEL_PORTRAIT       2
+#define SE_REGION_BEZEL_LANDSCAPE      3
+#define SE_REGION_KEY_L                4
+#define SE_REGION_KEY_L_PRESSED        5
+#define SE_REGION_KEY_R                6
+#define SE_REGION_KEY_R_PRESSED        7
+#define SE_REGION_KEY_START            8
+#define SE_REGION_KEY_START_PRESSED    9
+#define SE_REGION_KEY_SELECT           10
+#define SE_REGION_KEY_SELECT_PRESSED   11
+#define SE_REGION_KEY_A                12
+#define SE_REGION_KEY_A_PRESSED        13
+#define SE_REGION_KEY_B                14
+#define SE_REGION_KEY_B_PRESSED        15
+#define SE_REGION_KEY_X                16
+#define SE_REGION_KEY_X_PRESSED        17
+#define SE_REGION_KEY_Y                18
+#define SE_REGION_KEY_Y_PRESSED        19
+#define SE_REGION_KEY_TURBO            20
+#define SE_REGION_KEY_TURBO_PRESSED    21
+#define SE_REGION_KEY_HOLD             22
+#define SE_REGION_KEY_HOLD_PRESSED     23
+#define SE_REGION_KEY_BLANK            24
+#define SE_REGION_KEY_BLANK_PRESSED    25
+#define SE_REGION_DPAD_UL              26
+#define SE_REGION_DPAD_UP              27
+#define SE_REGION_DPAD_UR              28
+#define SE_REGION_DPAD_LEFT            29
+#define SE_REGION_DPAD_CENTER          30
+#define SE_REGION_DPAD_RIGHT           31
+#define SE_REGION_DPAD_DL              32
+#define SE_REGION_DPAD_DOWN            33
+#define SE_REGION_DPAD_DR              34
+#define SE_REGION_MENU                 35
+#define SE_REGION_MENU_HOVER           36
+#define SE_REGION_MENU_ACTIVE          37
+#define SE_REGION_MAX_REWIND           38
+#define SE_REGION_MAX_REWIND_HOVER     39
+#define SE_REGION_MAX_REWIND_ACTIVE    40
+#define SE_REGION_REWIND               41
+#define SE_REGION_REWIND_HOVER         42
+#define SE_REGION_REWIND_ACTIVE        43
+#define SE_REGION_PLAY                 44
+#define SE_REGION_PLAY_HOVER           45
+#define SE_REGION_PLAY_ACTIVE          46
+#define SE_REGION_PAUSE                47
+#define SE_REGION_PAUSE_HOVER          48
+#define SE_REGION_PAUSE_ACTIVE         49
+#define SE_REGION_FF                   50
+#define SE_REGION_FF_HOVER             51
+#define SE_REGION_FF_ACTIVE            52
+#define SE_REGION_MAX_FF               53
+#define SE_REGION_MAX_FF_HOVER         54
+#define SE_REGION_MAX_FF_ACTIVE        55
+#define SE_REGION_BLANK                56
+#define SE_REGION_BLANK_HOVER          57
+#define SE_REGION_BLANK_ACTIVE         58
+#define SE_REGION_VOL_EMPTY            59
+#define SE_REGION_VOL_EMPTY_ACTIVE     60
+#define SE_REGION_VOL_FULL             61
+#define SE_REGION_VOL_FULL_ACTIVE      62
+#define SE_REGION_VOL_KNOB             63
+#define SE_REGION_VOL_KNOB_ACTIVE      64
+#define SE_REGION_MENUBAR              65
+#define SE_TOTAL_REGIONS               66
+
+typedef struct{
+  uint16_t t;
+  uint8_t mode;
+}se_stretch_control_t;
+
+typedef struct{
+  int x,y;
+  int w,h;
+  bool active;
+  se_stretch_control_t control_points[SE_MAX_CONTROL_POINTS];
+}se_theme_region_t;
+
+typedef struct{
+  sg_image image;
+  uint32_t version_code; 
+  uint8_t palettes[5*4];
+  se_theme_region_t regions[SE_TOTAL_REGIONS];
+}se_custom_theme_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -305,6 +394,8 @@ typedef struct {
     uint32_t max_click_region_id;
     uint32_t ui_type; 
     bool fake_paths; 
+    char loaded_theme_path[SB_FILE_PATH_SIZE];
+    se_custom_theme_t theme; 
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -321,6 +412,7 @@ typedef struct {
 #define SE_THEME_DARK 0
 #define SE_THEME_LIGHT 1
 #define SE_THEME_BLACK 2
+#define SE_THEME_CUSTOM 3
 
 #define SE_MENU_BAR_HEIGHT 24
 #define SE_MENU_BAR_BUTTON_WIDTH 30
@@ -396,6 +488,7 @@ void se_load_cheats(const char * filename);
 void se_save_cheats(const char* filename);
 void se_convert_cheat_code(char * text_code, int cheat_index);
 static void se_reset_core();
+static bool se_load_theme_from_file(const char * filename);
 
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
@@ -528,6 +621,36 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
       max.x+=style->FramePadding.y;
       max.y+=style->FramePadding.y;
       static const char *types[]={"$DIR$",NULL};
+      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, NULL,types,new_path);
+    }
+  }
+
+  igPopID();
+  return b; 
+}
+static bool se_input_file(const char* label, char* new_path, const char**types, ImGuiInputTextFlags flags){
+  int win_w = igGetWindowWidth();
+  se_text(label);igSameLine(SE_FIELD_INDENT,0);
+  igPushIDStr(label);
+  bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
+  float button_w = 25; 
+  if(!read_only)igPushItemWidth(-button_w);
+  else igPushItemWidth(-1);
+  new_path = se_replace_fake_path(new_path);
+  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
+  igPopItemWidth();
+  if(!read_only){
+    igSameLine(0,1);
+    bool clicked = false; 
+    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
+    
+    if(igIsItemVisible()){
+      ImVec2 min, max;
+      igGetItemRectMin(&min);
+      igGetItemRectMax(&max);
+      ImGuiStyle *style = igGetStyle();
+      max.x+=style->FramePadding.y;
+      max.y+=style->FramePadding.y;
       se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, NULL,types,new_path);
     }
   }
@@ -4541,6 +4664,81 @@ void se_imgui_theme()
   colors[ImGuiCol_NavWindowingHighlight]  = (ImVec4){1.00f, 0.00f, 0.00f, 0.70f};
   colors[ImGuiCol_NavWindowingDimBg]      = (ImVec4){1.00f, 0.00f, 0.00f, 0.20f};
   colors[ImGuiCol_ModalWindowDimBg]       = (ImVec4){1.00f, 0.00f, 0.00f, 0.35f};
+
+  if(gui_state.settings.theme == SE_THEME_CUSTOM){
+    uint8_t *palette = gui_state.theme.palettes;
+    //Base color
+    if(palette[0*4+3]){
+      float r = palette[0*4+0]/255.;
+      float g = palette[0*4+1]/255.;
+      float b = palette[0*4+2]/255.;
+      float a = palette[0*4+3]/255.;
+      colors[ImGuiCol_WindowBg]               = (ImVec4){r, g, b, a};
+      colors[ImGuiCol_ChildBg]                = (ImVec4){r, g, b, a};
+      colors[ImGuiCol_PopupBg]                = (ImVec4){r, g, b, a};
+      colors[ImGuiCol_MenuBarBg]              = (ImVec4){r, g, b, a};
+    }
+    //Text Color
+    if(palette[1*4+3]){
+      float r = palette[1*4+0]/255.;
+      float g = palette[1*4+1]/255.;
+      float b = palette[1*4+2]/255.;
+      float a = palette[1*4+3]/255.;
+      colors[ImGuiCol_PlotLinesHovered]   =
+      colors[ImGuiCol_PlotHistogramHovered]   =
+      colors[ImGuiCol_Text]                   = (ImVec4){r,g,b,a};
+      colors[ImGuiCol_TextDisabled]           = (ImVec4){r,g,b,a*0.4f};
+      colors[ImGuiCol_ScrollbarGrabHovered]           = (ImVec4){r,g,b,a*0.6f};
+      colors[ImGuiCol_SliderGrabActive] = colors[ImGuiCol_ScrollbarGrabActive]           = (ImVec4){r,g,b,a*0.8f};
+    }
+    //Second Color
+    if(palette[2*4+3]){
+      float r = palette[2*4+0]/255.;
+      float g = palette[2*4+1]/255.;
+      float b = palette[2*4+2]/255.;
+      float a = palette[2*4+3]/255.;
+      colors[ImGuiCol_FrameBg]                = (ImVec4){r,g,b,a*0.5};
+      colors[ImGuiCol_ScrollbarBg]            = (ImVec4){r,g,b,a};
+      colors[ImGuiCol_Button] = (ImVec4){r, g, b, a};
+      colors[ImGuiCol_ButtonHovered]          = (ImVec4){r,g,b, a*0.54f};
+      colors[ImGuiCol_ButtonActive]           = (ImVec4){r*2,g*2,b*2, a*1.00f};
+    }
+    //Tab/Header
+    if(palette[3*4+3]){
+      float r = palette[3*4+0]/255.;
+      float g = palette[3*4+1]/255.;
+      float b = palette[3*4+2]/255.;
+      float a = palette[3*4+3]/255.;
+      colors[ImGuiCol_TitleBg]                = 
+      colors[ImGuiCol_TitleBgActive]          = 
+      colors[ImGuiCol_TitleBgCollapsed]       = 
+      colors[ImGuiCol_TableHeaderBg]          =
+      colors[ImGuiCol_TableBorderStrong]      = (ImVec4){r,g,b,a};
+
+      colors[ImGuiCol_SliderGrab] = colors[ImGuiCol_ScrollbarGrab]           = (ImVec4){r,g,b,a};
+
+      colors[ImGuiCol_FrameBgHovered]         = (ImVec4){r,g,b,a*0.75};
+      colors[ImGuiCol_FrameBgActive]          = (ImVec4){r,g,b,a};
+
+      colors[ImGuiCol_Tab]                    = 
+      colors[ImGuiCol_Header]                 = (ImVec4){r,g,b,a*0.5};
+      colors[ImGuiCol_TabHovered]             = 
+      colors[ImGuiCol_HeaderHovered]          = (ImVec4){r,g,b,a*0.75};
+      colors[ImGuiCol_TabActive]              = 
+      colors[ImGuiCol_HeaderActive]           = (ImVec4){r,g,b,a};
+
+    }
+    //Accent color (checkmark, bar/line graph)
+    if(palette[4*4+3]){
+      float r = palette[4*4+0]/255.;
+      float g = palette[4*4+1]/255.;
+      float b = palette[4*4+2]/255.;
+      float a = palette[4*4+3]/255.;
+      colors[ImGuiCol_PlotLines]              = 
+      colors[ImGuiCol_PlotHistogram]          =
+      colors[ImGuiCol_CheckMark]              = (ImVec4){r,g,b,a};
+    }
+  }
   
   if(gui_state.settings.theme == SE_THEME_LIGHT){
     int invert_list[]={
@@ -5167,8 +5365,15 @@ void se_draw_menu_panel(){
   int theme = gui_state.settings.theme; 
   se_text("Theme");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
-  se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0",0);
+  bool load = se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0Custom\0",0);
   igPopItemWidth();
+  if(gui_state.settings.theme==SE_THEME_CUSTOM){
+    const char *types[]={"*.png",NULL};
+    load|=se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
+    load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
+    if(load)se_load_theme_from_file(gui_state.paths.theme);
+  }
+
   gui_state.settings.theme = theme;
   bool always_show_menubar = gui_state.settings.always_show_menubar;
   se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
@@ -6090,11 +6295,176 @@ void se_load_settings(){
     gui_state.last_saved_settings=gui_state.settings;
   }
 }
+static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
+  if(!im){return false; }
+
+  uint32_t version_code = (uint32_t)im[(75+32*im_w)*4+3];
+  version_code |= (uint32_t)im[(75+32*im_w)*4+2]<<(8*1);
+  version_code |= (uint32_t)im[(75+32*im_w)*4+1]<<(8*2);
+  version_code |= (uint32_t)im[(75+32*im_w)*4+0]<<(8*3);
+  if(version_code!= 0x6f8a91ff){
+    printf("Error Loading Theme: Unknown Version Code %08x\n",version_code);
+    return false;
+  }
+  se_custom_theme_t* theme = &gui_state.theme;
+
+  // Name and author
+  for(int i=0;i<2;++i){
+    se_theme_region_t * region = &theme->regions[SE_REGION_NAME+i];
+    region->x = 51;
+    region->y = 94+i*(154-94);
+    region->w = 900;
+    region->h = 146-94;
+    region->active=true;
+  }
+  // Palettes
+  for(int i=0;i<5;++i){
+    int im_x = i*70 + 1420;
+    int im_y = 177; 
+    theme->palettes[i*4+0]= im[(im_x+im_y*im_w)*4+0];
+    theme->palettes[i*4+1]= im[(im_x+im_y*im_w)*4+1];
+    theme->palettes[i*4+2]= im[(im_x+im_y*im_w)*4+2];
+    theme->palettes[i*4+3]= im[(im_x+im_y*im_w)*4+3];
+  }
+
+  //Menu Buttons
+  for(int x=0;x<8;++x){
+    for(int y=0;y<3;++y){
+      se_theme_region_t * region = &theme->regions[SE_REGION_MENU+y+x*3];
+      region->x=2220+x*(2450-2220);
+      region->y=82+y*(262-82);
+      region->w=2440-2220;
+      region->h=252-82;
+      region->active=true;
+    }
+  }
+
+  //Volume Bar
+  for(int x=0;x<2;++x){
+    for(int y=0;y<2;++y){
+      se_theme_region_t * region = &theme->regions[SE_REGION_VOL_EMPTY+y+x*2];
+      region->x=4057+x*(4567-4057);
+      region->y=82+y*(262-82);
+      region->w=4557-4057;
+      region->h=252-82;
+      region->active=true;
+    }
+  }
+
+  //Volume Knob
+  for(int y=0;y<2;++y){
+    se_theme_region_t * region = &theme->regions[SE_REGION_VOL_KNOB+y];
+    region->x=5077;
+    region->y=82+y*(262-82);
+    region->w=5237-5077;
+    region->h=252-82;
+    region->active=true;
+  }
+
+  //Menu background
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_MENUBAR];
+    region->x=4057;
+    region->y=442;
+    region->w=5237-region->x;
+    region->h=612-region->y;
+    region->active=true;
+  }
+
+  //Bezel Portrait
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_BEZEL_PORTRAIT];
+    region->x=15;
+    region->y=250;
+    region->w=2160;
+    region->h=3840;
+    region->active=true;
+  }
+  //Bezel Landscape
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_BEZEL_LANDSCAPE];
+    region->x=15;
+    region->y=4158;
+    region->w=3840;
+    region->h=2160;
+    region->active=true;
+  }
+
+  for(int key = 0; key<7;++key){
+    se_theme_region_t * key_up = &theme->regions[key*2+SE_REGION_KEY_A];
+    se_theme_region_t * key_down = &theme->regions[key*2+SE_REGION_KEY_A_PRESSED];
+    key_up->x = 4194;
+    key_up->y = 3764+(4284-3764)*key;
+    key_up->w = 500;
+    key_up->h = 500;
+    key_down->x = 4704;
+    key_down->y = key_up->y;
+    key_down->w = key_up->w;
+    key_down->h = key_up->h;
+    key_up->active=true;
+    key_down->active=true;
+  }
+  for(int dpad = 0; dpad<9;++dpad){
+    se_theme_region_t * dpad_region = &theme->regions[dpad+SE_REGION_DPAD_UL];
+    int x = dpad%3;
+    int y = dpad/3;
+  
+    dpad_region->x = 2209 + (3219-2209)*x;
+    dpad_region->y = 704+ (1714-704)*y;
+    dpad_region->w = 1000;
+    dpad_region->h = 1000;
+    dpad_region->active=true;
+  }
+
+  sg_image_data im_data={0};
+ 
+  im_data.subimage[0][0].ptr = im;
+  im_data.subimage[0][0].size = im_w*im_h*4; 
+  sg_image_desc desc={
+    .type=              SG_IMAGETYPE_2D,
+    .render_target=     false,
+    .width=             im_w,
+    .height=            im_h,
+    .num_slices=        1,
+    .num_mipmaps=       1,
+    .usage=             SG_USAGE_IMMUTABLE,
+    .pixel_format=      SG_PIXELFORMAT_RGBA8,
+    .sample_count=      1,
+    .min_filter=        SG_FILTER_LINEAR,
+    .mag_filter=        SG_FILTER_LINEAR,
+    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+    .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+    .max_anisotropy=    1,
+    .min_lod=           0.0f,
+    .max_lod=           1e9f,
+    .data=              im,
+  };
+  gui_state.theme.image=  sg_make_image(&desc);
+  return true;
+}
+static bool se_load_theme_from_file(const char * filename){
+  int im_w, im_h, im_c; 
+  strncpy(gui_state.loaded_theme_path,filename,SB_FILE_PATH_SIZE);
+  uint8_t *imdata = stbi_load(filename, &im_w, &im_h, &im_c, 4);
+  if(!imdata){
+    printf("Failed to open theme image %s\n",filename);
+    return false;
+  }
+  bool ret = se_load_theme_from_image(imdata, im_w, im_h);
+  stbi_image_free(imdata);
+  if(ret){
+    printf("Successfully loaded theme: %s\n",filename);
+  }
+  return ret; 
+}
 static void se_init(){
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
   stm_setup();
   se_load_settings();
   se_reset_cheats();
+  if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
