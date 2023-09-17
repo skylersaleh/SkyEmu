@@ -3414,12 +3414,20 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   if(opacity<=0){opacity=0;}
   opacity*=gui_state.settings.touch_controls_opacity;
 
-
-  line_color|=(int)(opacity*0x8f)<<24;
-  line_color2|=(int)(opacity*0x8f)<<24;
-  sel_color|=(int)(opacity*0x8f)<<24;
-  hold_color|=(uint32_t)(0xffu)<<24;
-  turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
+  if(gui_state.settings.theme==SE_THEME_CUSTOM){
+    line_color|=(int)(opacity*0xff)<<24;
+    line_color2|=(int)(opacity*0xff)<<24;
+    sel_color|=(int)(opacity*0xff)<<24;
+    hold_color|=(uint32_t)(0xffu)<<24;
+    turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
+  }else{
+    line_color|=(int)(opacity*0x8f)<<24;
+    line_color2|=(int)(opacity*0x8f)<<24;
+    sel_color|=(int)(opacity*0x8f)<<24;
+    hold_color|=(uint32_t)(0xffu)<<24;
+    turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
+  }
+  
 
   int line_w0 = 1;
   int line_w1 = 3; 
