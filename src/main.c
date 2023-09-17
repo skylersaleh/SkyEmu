@@ -493,6 +493,7 @@ static void se_reset_core();
 static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
+static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -599,7 +600,7 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
 }
 static bool se_button_themed(int region, const char* label, ImVec2 size, bool always_draw_label){
   label=se_localize_and_cache(label);
-  const ImVec2 label_size;
+  ImVec2 label_size;
   igCalcTextSize(&label_size,label, NULL, true,-1.0);
   ImGuiStyle * style = igGetStyle();
 
@@ -628,6 +629,67 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
   *style = restore_style; 
   return button_result;
 }
+bool se_slider_float_themed(const char* label, float* p_data, float p_min, float p_max, const char* format){
+  if(igGetCurrentWindow()->SkipItems)return false;
+
+  label = se_localize_and_cache(label);
+  format = se_localize_and_cache(format);
+  const float w = igCalcItemWidth();
+
+  ImVec2 label_size;
+  igCalcTextSize(&label_size,label, NULL, true,-1);
+  ImVec2 pos,v;
+  igGetCursorPos(&pos);
+  igGetWindowPos(&v);
+  pos.x+=v.x-igGetScrollX();
+  pos.y+=v.y-igGetScrollY();
+  ImGuiStyle * style = igGetStyle();
+  ImGuiStyle restore_style = *style;
+
+  ImVec2 frame_size ={w, label_size.y + style->FramePadding.y * 2.0f};
+  float bar_growth =0.0;
+  ImVec2 orig_pos = pos;
+  ImVec2 orig_size= frame_size;
+  pos.x-=frame_size.x*bar_growth;
+  pos.y-=frame_size.y*bar_growth;
+  frame_size.x+=frame_size.x*bar_growth;
+  frame_size.y+=frame_size.y*bar_growth;
+
+  if(gui_state.settings.theme==SE_THEME_CUSTOM && gui_state.theme.regions[SE_REGION_VOL_EMPTY].active){
+    for(int i=0;i<ImGuiCol_COUNT;++i)style->Colors[i].w = 0.;
+    style->Colors[ImGuiCol_Text] = restore_style.Colors[ImGuiCol_Text];
+    style->Colors[ImGuiCol_TextDisabled] = restore_style.Colors[ImGuiCol_TextDisabled];
+  }
+  bool hover = igIsMouseHoveringRect((ImVec2){pos.x,pos.y},(ImVec2){pos.x+frame_size.x,pos.y+frame_size.y},true);
+  float alpha = 1.0;
+  if(hover) alpha=0.75;
+  uint32_t tint = 0x00ffffff|((uint32_t)(alpha*255)<<24u); 
+  se_draw_theme_region_tint(SE_REGION_VOL_EMPTY, pos.x,pos.y,frame_size.x,frame_size.y,tint);
+  float bar_value = (*p_data-p_min)/(p_max-p_min);
+  if(bar_value<0.0)bar_value=0;
+  if(bar_value>1.0)bar_value=1.0;
+  float grab_padding = 2.0;
+  float knob_size =style->GrabMinSize+grab_padding*2.0; 
+  float knob_x = orig_pos.x+ bar_value*(orig_size.x-knob_size)+knob_size*0.5;
+  bar_value=(knob_x-pos.x)/frame_size.x;
+  se_draw_theme_region_tint_partial(SE_REGION_VOL_FULL, pos.x,pos.y,frame_size.x,frame_size.y,bar_value,1.0,tint);
+  float render_knob_size = 20.0; 
+  se_draw_theme_region_tint(SE_REGION_VOL_KNOB, knob_x-render_knob_size*0.5,pos.y,render_knob_size,frame_size.y,tint);
+
+  bool button_result = igSliderFloat(label,p_data,p_min,p_max,format,ImGuiSliderFlags_AlwaysClamp);
+
+  *style = restore_style; 
+  return button_result;
+
+}
+
+bool se_slider_int_themed(const char* label, int* v, float v_min, float v_max, const char* format){
+  float vf = *v;
+  bool ret = se_slider_float_themed(label, &vf, v_min, v_max, format);
+  *v = vf;
+  return ret;
+}
+
 static bool se_button(const char* label, ImVec2 size){
   return se_button_themed(SE_REGION_BLANK,se_localize_and_cache(label),size,true);
 }
@@ -6011,7 +6073,7 @@ static void frame(void) {
     
 
     int orig_x = igGetCursorPosX();
-    int v = (int)(gui_state.settings.volume*100);
+    int v = (gui_state.settings.volume*100);
     float volume_width = SE_VOLUME_SLIDER_WIDTH+5;
     
     if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
@@ -6032,7 +6094,7 @@ static void frame(void) {
       if(vol_x<toggle_x+(sel_width+1)*num_toggles)vol_x=toggle_x+(sel_width+1)*num_toggles;
       igSetCursorPosX(vol_x);
       igPushItemWidth(-0.01);
-      igSliderInt("",&v,0,100,"%d%% "ICON_FK_VOLUME_UP,ImGuiSliderFlags_AlwaysClamp);
+      se_slider_int_themed("",&v,0,100,"%2.f%% "ICON_FK_VOLUME_UP);
       se_tooltip("Adjust volume");
       gui_state.settings.volume=v*0.01;
       igPopItemWidth();
@@ -6398,19 +6460,22 @@ void se_load_settings(){
     if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
   }
 }
-static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint){
+static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint){
   if(gui_state.settings.theme!=SE_THEME_CUSTOM)return false;
   se_theme_region_t* r = &gui_state.theme.regions[region];
   if(!r->active)return false; 
   if(gui_state.theme.image.id==SG_INVALID_ID)return false;
   ImVec2 pmin = {x,y};
-  ImVec2 pmax = {x+w,y+h};
+  ImVec2 pmax = {x+w*w_ratio,y+h*h_ratio};
   float tex_w = gui_state.theme.im_w;
   float tex_h = gui_state.theme.im_h;
   ImVec2 uv0 = {(r->x+1)/tex_w, (r->y+1)/tex_h};
-  ImVec2 uv1 = {(r->x+r->w-1)/tex_w, (r->y+r->h-1)/tex_h};
+  ImVec2 uv1 = {(r->x+(r->w-1)*w_ratio)/tex_w, (r->y+(r->h-1)*h_ratio)/tex_h};
   ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image.id,pmin,pmax,uv0,uv1,tint);
   return true;
+}
+static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint){
+  return se_draw_theme_region_tint_partial(region, x, y, w, h, 1.0, 1.0, tint);
 }
 static bool se_draw_theme_region(int region, float x, float y, float w, float h){
   return se_draw_theme_region_tint(region,x,y,w,h,0xffffffff);
