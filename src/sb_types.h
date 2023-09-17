@@ -201,7 +201,6 @@ static inline bool sb_path_has_file_ext(const char * path, const char * ext){
 static bool sb_file_exists(const char * path){
   FILE * f = fopen(path,"r");
   if(f){fclose(f);return true;}
-  printf("%s does not exist\n",path);
   return false; 
 }
 static bool sb_load_file_data_into_buffer(const char* path, void* buffer, size_t buffer_size){

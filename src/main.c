@@ -4160,7 +4160,9 @@ static void se_file_picker_click_region(int x, int y, int w, int h, void (*accep
       return string_on_heap;
     },gui_state.current_click_region_id,x*delta_dpi_scale,y*delta_dpi_scale,w*delta_dpi_scale,h*delta_dpi_scale);
 
-    if(new_path[0])se_file_browser_accept(new_path[0]);
+    if(new_path&&new_path[0]){
+      se_file_browser_accept(new_path);
+    }
     free(new_path);
   #endif 
   ++gui_state.current_click_region_id;
