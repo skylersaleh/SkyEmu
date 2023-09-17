@@ -3416,7 +3416,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
   int button_x_off = button_padding+win_x;
   int button_w = dpad_sz1*2+dpad_pos[0]-dpad_sz1-button_padding;
   int button_y = win_y+win_h-button_h-button_padding;
-  typedef struct{const char* button_name; float x; float width; int theme_region}button_row_t;
+  typedef struct{const char* button_name; float x; float width; int theme_region;}button_row_t;
   button_row_t bottom_row[]={
     {"Select" , button_x_off,button_w*0.67-button_padding, SE_REGION_KEY_SELECT},
     {"Hold"  , button_x_off+button_w*0.67,button_w*0.33,SE_REGION_KEY_HOLD},
