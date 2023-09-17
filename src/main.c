@@ -492,6 +492,7 @@ void se_convert_cheat_code(char * text_code, int cheat_index);
 static void se_reset_core();
 static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
+static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -598,6 +599,28 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
 }
 static bool se_button(const char* label, ImVec2 size){
   return igButton(se_localize_and_cache(label),size);
+}
+static bool se_button_themed(int region, const char* label, ImVec2 size, bool always_draw_label){
+  ImVec2 pos;
+  igGetCursorPos(&pos);
+  ImGuiStyle *style = igGetStyle();
+  ImGuiStyle restore_style = *style;
+  if(gui_state.settings.theme==SE_THEME_CUSTOM && gui_state.theme.regions[region].active){
+    for(int i=0;i<ImGuiCol_COUNT;++i)style->Colors[i].w = 0.;
+    if(always_draw_label){
+      style->Colors[ImGuiCol_Text] = restore_style.Colors[ImGuiCol_Text];
+      style->Colors[ImGuiCol_TextDisabled] = restore_style.Colors[ImGuiCol_TextDisabled];
+    }
+  }
+  bool hover = igIsMouseHoveringRect((ImVec2){pos.x,pos.y},(ImVec2){pos.x+size.x,pos.y+size.y},true);
+  float alpha = 1.0;
+  if(hover) alpha=0.75;
+  uint32_t tint = 0x00ffffff|((uint32_t)(alpha*255)<<24u); 
+  se_draw_theme_region_tint(region, pos.x,pos.y,size.x,size.y,tint);
+  bool button_result = igButton(se_localize_and_cache(label),size);
+
+  *style = restore_style; 
+  return button_result;
 }
 static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
@@ -2639,10 +2662,10 @@ static void se_draw_debug_menu(){
       igPushIDInt(id++);
       if(desc->visible){
         igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-        if(se_button(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+        if(se_button_themed(SE_REGION_BLANK_ACTIVE,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){desc->visible=!desc->visible;}
         igPopStyleColor(1);
       }else{
-        if(se_button(desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){desc->visible=!desc->visible;}
+        if(se_button_themed(SE_REGION_BLANK,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){desc->visible=!desc->visible;}
       }
       igSameLine(0,1);
       char tmp_str[256];
@@ -4137,7 +4160,7 @@ static void se_file_picker_click_region(int x, int y, int w, int h, void (*accep
       return string_on_heap;
     },gui_state.current_click_region_id,x*delta_dpi_scale,y*delta_dpi_scale,w*delta_dpi_scale,h*delta_dpi_scale);
 
-    if(new_path[0]&&accept_func)accept_func(new_path);
+    if(new_path[0])se_file_browser_accept(new_path[0]);
     free(new_path);
   #endif 
   ++gui_state.current_click_region_id;
@@ -5921,10 +5944,10 @@ static void frame(void) {
     float menu_bar_y = igGetCursorPosY();
     if(gui_state.sidebar_open){
       igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(se_button(ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(se_button_themed(SE_REGION_MENU+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){gui_state.sidebar_open=!gui_state.sidebar_open;}
       igPopStyleColor(1);
     }else{
-      if(se_button(ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,0})){gui_state.sidebar_open=!gui_state.sidebar_open;}
+      if(se_button_themed(SE_REGION_MENU,ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){gui_state.sidebar_open=!gui_state.sidebar_open;}
     }
     igSameLine(0,1);
     se_tooltip("Show/Hide Menu Panel");
@@ -5985,6 +6008,7 @@ static void frame(void) {
 
     if(emu_state.run_mode==SB_MODE_PAUSE)gui_state.menubar_hide_timer=se_time();
     const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
+    int toggle_regions[]={SE_REGION_MAX_REWIND, SE_REGION_REWIND, SE_REGION_PAUSE, SE_REGION_FF,SE_REGION_MAX_FF};
     const char* toggle_tooltips[]={
       "Rewind at 8x speed",
       "Rewind at 4x speed",
@@ -5992,7 +6016,10 @@ static void frame(void) {
       "Run at 2x Speed",
       "Run at the fastest speed possible",
     };
-    if(emu_state.run_mode==SB_MODE_PAUSE)toggle_labels[2]=ICON_FK_PLAY;
+    if(emu_state.run_mode==SB_MODE_PAUSE){
+      toggle_labels[2]=ICON_FK_PLAY;
+      toggle_regions[2]=SE_REGION_PLAY;
+    }
     int next_toggle_id = -1; 
 
     if(emu_state.run_mode!=SB_MODE_PAUSE){
@@ -6015,7 +6042,7 @@ static void frame(void) {
     for(int i=0;i<num_toggles;++i){
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(se_button(toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT}))next_toggle_id = i;
+      if(se_button_themed(toggle_regions[i]+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT},false))next_toggle_id = i;
       igSameLine(0,1);
       se_tooltip(toggle_tooltips[i]);
       
@@ -6314,7 +6341,7 @@ void se_load_settings(){
     gui_state.last_saved_settings=gui_state.settings;
   }
 }
-static bool se_draw_theme_region(int region, float x, float y, float w, float h){
+static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint){
   if(gui_state.settings.theme!=SE_THEME_CUSTOM)return false;
   se_theme_region_t* r = &gui_state.theme.regions[region];
   if(!r->active)return false; 
@@ -6325,9 +6352,13 @@ static bool se_draw_theme_region(int region, float x, float y, float w, float h)
   float tex_h = gui_state.theme.im_h;
   ImVec2 uv0 = {(r->x+1)/tex_w, (r->y+1)/tex_h};
   ImVec2 uv1 = {(r->x+r->w-1)/tex_w, (r->y+r->h-1)/tex_h};
-  ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image.id,pmin,pmax,uv0,uv1,0xffffffff);
+  ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image.id,pmin,pmax,uv0,uv1,tint);
   return true;
 }
+static bool se_draw_theme_region(int region, float x, float y, float w, float h){
+  return se_draw_theme_region_tint(region,x,y,w,h,0xffffffff);
+}
+
 static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
   if(!im){return false; }
 
