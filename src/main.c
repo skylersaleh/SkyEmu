@@ -2862,8 +2862,6 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
 
   const int fb_width = (int) (io->DisplaySize.x * dpi_scale);
   const int fb_height = (int) (io->DisplaySize.y * dpi_scale);
-  sg_apply_viewport(0, 0, fb_width, fb_height, true);
-  sg_apply_scissor_rect(0, 0, fb_width, fb_height, true);
 
   sg_apply_pipeline(gui_state.lcd_pipeline);
   se_lcd_info_t lcd_info=se_get_lcd_info();

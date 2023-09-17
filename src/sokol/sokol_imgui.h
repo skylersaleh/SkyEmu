@@ -2021,6 +2021,11 @@ SOKOL_API_IMPL void simgui_render(void) {
         for (int cmd_index = 0; cmd_index < num_cmds; cmd_index++) {
             ImDrawCmd* pcmd = &cl->CmdBuffer.Data[cmd_index];
             if (pcmd->UserCallback) {
+                const int scissor_x = (int) (pcmd->ClipRect.x * dpi_scale);
+                const int scissor_y = (int) (pcmd->ClipRect.y * dpi_scale);
+                const int scissor_w = (int) ((pcmd->ClipRect.z - pcmd->ClipRect.x) * dpi_scale);
+                const int scissor_h = (int) ((pcmd->ClipRect.w - pcmd->ClipRect.y) * dpi_scale);
+                sg_apply_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h, true);
                 pcmd->UserCallback(cl, pcmd);
                 // need to re-apply all state after calling a user callback
                 sg_apply_viewport(0, 0, fb_width, fb_height, true);
