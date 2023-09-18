@@ -2330,9 +2330,16 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
 
     int p = (lcd_x+lcd_y*240)*4;
     float screen_blend_factor = 0.3*gba->ppu.ghosting_strength;
+    uint16_t green_swap = gba_io_read16(gba,GBA_GREENSWP);
     gba->framebuffer[p+0] = r*8*(1.0-screen_blend_factor)+gba->framebuffer[p+0]*screen_blend_factor;
-    gba->framebuffer[p+1] = g*8*(1.0-screen_blend_factor)+gba->framebuffer[p+1]*screen_blend_factor;
     gba->framebuffer[p+2] = b*8*(1.0-screen_blend_factor)+gba->framebuffer[p+2]*screen_blend_factor;  
+
+    if(green_swap&1){
+      if(p&4) gba->framebuffer[p+1-4] = g*8*(1.0-screen_blend_factor)+gba->framebuffer[p+1-4]*screen_blend_factor;
+      else gba->framebuffer[p+1+4] = g*8*(1.0-screen_blend_factor)+gba->framebuffer[p+1+4]*screen_blend_factor;
+    }else{
+      gba->framebuffer[p+1] = g*8*(1.0-screen_blend_factor)+gba->framebuffer[p+1]*screen_blend_factor;
+    }
   }
 }
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba){
