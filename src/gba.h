@@ -1462,9 +1462,9 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
         if(addr&0x08000){
           uint16_t dispcnt = gba_io_read16(gba, GBA_DISPCNT);
           int bg_mode = SB_BFE(dispcnt,0,3);
-          //Don't allow writes to mirrored VRAM in bitmap mode. 
+          //Don't allow writes to mirrored VRAM in bitmap mode. See also vram-mirror.gba
           //Needed for Acrobat Kid. Still requires testing to verify correct behavior
-          if(bg_mode>2)ret = &gba->mem.openbus_word;
+          if(bg_mode>2&&!(addr&0x04000)){ret = &gba->mem.openbus_word;*ret=0;}
         }
       }else ret = (uint32_t*)(gba->mem.vram+(addr&0x1fffc));
       gba->mem.openbus_word=*ret;
