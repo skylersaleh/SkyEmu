@@ -3789,36 +3789,39 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
     if(!ticks&&gba->residual_dma_ticks){ticks=gba->residual_dma_ticks;gba->residual_dma_ticks=0;}
     if(!ticks){
-      uint16_t int_if = gba_io_read16(gba,GBA_IF);
       gba->cpu.i_cycles=0;
       gba->mem.requests=0;
-      if(SB_UNLIKELY(int_if)){
-        int_if &= gba_io_read16(gba,GBA_IE);
-        uint32_t ime = gba_io_read32(gba,GBA_IME);
-        int_if *= SB_BFE(ime,0,1);
-        arm7_process_interrupts(&gba->cpu, int_if);
+      if(!gba->cpu.phased_op_id){
+        uint16_t int_if = gba_io_read16(gba,GBA_IF);
+        if(SB_UNLIKELY(int_if)){
+          int_if &= gba_io_read16(gba,GBA_IE);
+          uint32_t ime = gba_io_read32(gba,GBA_IME);
+          int_if *= SB_BFE(ime,0,1);
+          arm7_process_interrupts(&gba->cpu, int_if);
+        }
+        if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       arm7_exec_instruction(&gba->cpu);
       gba->last_cpu_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
-      if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
     }
     gba_tick_sio(gba);
-    double delta_t = ((double)ticks)/(16*1024*1024);
-    if(SB_LIKELY(gba->active_if_pipe_stages==0)){
-      int ppu_fast_forward = gba->ppu.fast_forward_ticks;
-      int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
-      int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
-      if(fast_forward_ticks>ticks){
-        if(gba->cpu.wait_for_interrupt)ticks=fast_forward_ticks;
-        else fast_forward_ticks=ticks;
-      }
-      gba->rtc.total_clocks_ticked+=fast_forward_ticks;
-      gba->deferred_timer_ticks+=fast_forward_ticks;
-      gba->ppu.fast_forward_ticks-=fast_forward_ticks;
-      ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
-      delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
-      gba_tick_audio(gba, emu,delta_t,ticks+fast_forward_ticks);
-    }else gba_tick_audio(gba, emu,delta_t,ticks);
+    int ppu_fast_forward = gba->ppu.fast_forward_ticks;
+    int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
+    int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+    if(fast_forward_ticks>ticks){
+      if(gba->cpu.wait_for_interrupt)ticks=fast_forward_ticks;
+      else fast_forward_ticks=ticks;
+    }
+    if(SB_UNLIKELY(gba->active_if_pipe_stages)){
+      for(int i=0;i<fast_forward_ticks;++i)gba_tick_interrupts(gba);
+    }
+    gba->rtc.total_clocks_ticked+=fast_forward_ticks;
+    gba->deferred_timer_ticks+=fast_forward_ticks;
+    gba->ppu.fast_forward_ticks-=fast_forward_ticks;
+    ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
+    double delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
+    gba_tick_audio(gba, emu,delta_t,ticks+fast_forward_ticks);
+  
     bool last_activate_dmas =gba->activate_dmas;
     gba->rtc.total_clocks_ticked+=ticks;
     for(int t = 0;t<ticks;++t){
