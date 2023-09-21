@@ -264,8 +264,7 @@ static void sb_free_file_data(uint8_t* data){
 }
 static const char* sb_parent_path(const char* path){
   static char tmp_path[SB_FILE_PATH_SIZE];
-  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
-  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
+  snprintf(tmp_path, SB_FILE_PATH_SIZE, "%s", path);
   size_t sz = strlen(tmp_path);
   while(sz>1){
     char c = tmp_path[sz-1];
@@ -280,7 +279,7 @@ static const char* sb_parent_path(const char* path){
       bool is_slash = c=='\\'||c=='/';
       if(found_dir&&!is_slash)break;
       if(is_slash)found_dir = true;
-      tmp_path[sz]='\0';
+      if(sz>0)tmp_path[sz]='\0';
     }
   }
   return tmp_path;
