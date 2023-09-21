@@ -4342,6 +4342,7 @@ void se_convert_cheat_code(char * text_code, int cheat_index){
 bool se_process_file_browser(){
   
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED)return false; 
+  if(gui_state.file_browser.current_path[0]=='\0')strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
 
   ImVec2 w_pos={0,0};
   ImVec2 w_size={gui_state.screen_width,gui_state.screen_height};
@@ -4396,10 +4397,7 @@ bool se_process_file_browser(){
       file_browse->has_cache=false;
     }
     if(tinydir_open(&file_browse->cached_dir, gui_state.file_browser.current_path)==-1){
-      strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
-      if(tinydir_open(&file_browse->cached_dir, gui_state.file_browser.current_path)==-1){
-        printf("Error opening %s\n",gui_state.file_browser.current_path);
-      }
+      printf("Error opening %s\n",gui_state.file_browser.current_path);
     }else{
       int max_files = 4096;
       file_browse->cached_files= (tinydir_file*)malloc(sizeof(tinydir_file)*max_files);
