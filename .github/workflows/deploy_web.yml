@@ -27,6 +27,7 @@ jobs:
           force: false
           clean: false
       - name: Post PR Comment
+        continue-on-error: true
         if: github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v1
         with:
