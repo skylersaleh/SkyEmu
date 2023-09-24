@@ -498,6 +498,7 @@ static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state
 static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
 void se_open_file_browser(bool clicked, float x, float y, float w, float h, void (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
+void se_file_browser_accept(const char * path);
 void se_run_all_ar_cheats();
 void se_load_cheats(const char * filename);
 void se_save_cheats(const char* filename);
@@ -556,7 +557,7 @@ static void se_cache_glyphs(const char* input_string){
 char* se_replace_fake_path(char * new_path){
   static char fake_path[SB_FILE_PATH_SIZE]; 
   if(gui_state.fake_paths){
-    char* base, *filename, *ext; 
+    const char* base, *filename, *ext; 
     sb_breakup_path(new_path,&base, &filename,&ext);
     char* new_base = "/fakepath/";
     if(gui_state.ui_type==SE_UI_ANDROID)new_base = "/storage/emulated/0/Android/data/com.sky.SkyEmu/";
@@ -713,12 +714,20 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
   float button_w = 25; 
-  if(!read_only)igPushItemWidth(-button_w);
+  bool has_path = strlen(new_path);
+  if(!read_only)igPushItemWidth(has_path?-button_w*2 : -button_w);
   else igPushItemWidth(-1);
+
   new_path = se_replace_fake_path(new_path);
   bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
+    if(has_path){
+      igSameLine(0,1);
+      if(se_button("" ICON_FK_TIMES,(ImVec2){button_w-2,0})){
+        strncpy(new_path,"",SB_FILE_PATH_SIZE);
+      }
+    }
     igSameLine(0,1);
     bool clicked = false; 
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
@@ -738,18 +747,27 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
   igPopID();
   return b; 
 }
-static bool se_input_file(const char* label, char* new_path, const char**types, ImGuiInputTextFlags flags){
+static bool se_input_file_callback(const char* label, char* new_path, const char**types,void (*file_open_fn)(const char*), ImGuiInputTextFlags flags){
   int win_w = igGetWindowWidth();
   se_text(label);igSameLine(SE_FIELD_INDENT,0);
   igPushIDStr(label);
   bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
   float button_w = 25; 
-  if(!read_only)igPushItemWidth(-button_w);
+  bool has_path = strlen(new_path);
+  if(!read_only)igPushItemWidth(has_path?-button_w*2 : -button_w);
   else igPushItemWidth(-1);
   new_path = se_replace_fake_path(new_path);
   bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
+    if(has_path){
+      igSameLine(0,1);
+      if(se_button("" ICON_FK_TIMES,(ImVec2){button_w-2,0})){
+        gui_state.file_browser.output_path=new_path;
+        gui_state.file_browser.file_open_fn=file_open_fn;
+        se_file_browser_accept("");
+      }
+    }
     igSameLine(0,1);
     bool clicked = false; 
     if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
@@ -761,12 +779,15 @@ static bool se_input_file(const char* label, char* new_path, const char**types, 
       ImGuiStyle *style = igGetStyle();
       max.x+=style->FramePadding.y;
       max.y+=style->FramePadding.y;
-      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, NULL,types,new_path);
+      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, file_open_fn,types,new_path);
     }
   }
 
   igPopID();
   return b; 
+}
+static bool se_input_file(const char* label, char* new_path, const char**types, ImGuiInputTextFlags flags){
+  return se_input_file_callback(label,new_path,types,NULL,flags);
 }
 void se_mkdir(char *path) {
     char *sep = strrchr(path, '/');
@@ -815,39 +836,10 @@ void se_bios_file_open_fn(const char* dir){
   //Make use of the fact that the accept function is called before the output path is updated.
   char * se_bios_file_open_tmp_path = gui_state.file_browser.output_path;
   if(strncmp(dir,se_bios_file_open_tmp_path,SB_FILE_PATH_SIZE)!=0){
-    if(sb_file_exists(se_bios_file_open_tmp_path))remove(se_bios_file_open_tmp_path);
-    se_copy_file(dir,se_bios_file_open_tmp_path);
+    if(sb_file_exists(se_bios_file_open_tmp_path)||strncmp(dir,"",SB_FILE_PATH_SIZE)==0)remove(se_bios_file_open_tmp_path);
+    if(strncmp(dir,"",SB_FILE_PATH_SIZE)!=0)se_copy_file(dir,se_bios_file_open_tmp_path);
   }
-  se_reset_core();
-}
-static bool se_input_bios_file(const char* label, char* new_path, ImGuiInputTextFlags flags){
-  int win_w = igGetWindowWidth();
-  se_text(label);igSameLine(SE_FIELD_INDENT,0);
-  igPushIDStr(label);
-  bool read_only = (flags&ImGuiInputTextFlags_ReadOnly)!=0;
-  float button_w = 25; 
-  if(!read_only)igPushItemWidth(-button_w);
-  else igPushItemWidth(-1);
-  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
-  igPopItemWidth();
-  if(!read_only){
-    igSameLine(0,1);
-    bool clicked = false; 
-    if(se_button("" ICON_FK_FOLDER_OPEN,(ImVec2){button_w-2,0}))clicked = true;
-    
-    if(igIsItemVisible()){
-      ImVec2 min, max;
-      igGetItemRectMin(&min);
-      igGetItemRectMax(&max);
-      ImGuiStyle *style = igGetStyle();
-      max.x+=style->FramePadding.y;
-      max.y+=style->FramePadding.y;
-      static const char *types[]={NULL};
-      se_open_file_browser(clicked, min.x, min.y, max.x-min.x, max.y-min.y, se_bios_file_open_fn,types,new_path);
-    }
-  }
-  igPopID();
-  return b; 
+  emu_state.run_mode=SB_MODE_RESET;
 }
 
 const char* se_keycode_to_string(int keycode){
@@ -5408,7 +5400,8 @@ void se_draw_menu_panel(){
           igPopStyleColor(1);
           igSameLine(0,2);
           igSetNextItemWidth(win_w-55);
-          se_input_bios_file(info->name[i],info->path[i],ImGuiInputTextFlags_None);
+          const char* bios_types[]={NULL};
+          se_input_file_callback(info->name[i],info->path[i],bios_types,se_bios_file_open_fn,ImGuiInputTextFlags_None);
         }
       }
       if(missing_bios){
