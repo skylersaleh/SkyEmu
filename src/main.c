@@ -187,7 +187,8 @@ typedef struct{
   uint32_t http_control_server_port; 
   uint32_t http_control_server_enable;
   uint32_t avoid_overlaping_touchscreen;
-  uint32_t padding[230];
+  float custom_font_scale;
+  uint32_t padding[229];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -234,7 +235,8 @@ typedef struct{
   char bios[SB_FILE_PATH_SIZE];
   char cheat_codes[SB_FILE_PATH_SIZE];
   char theme[SB_FILE_PATH_SIZE];
-  char padding[4][SB_FILE_PATH_SIZE];
+  char custom_font[SB_FILE_PATH_SIZE];
+  char padding[3][SB_FILE_PATH_SIZE];
 }se_search_paths_t;
 
 _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
@@ -407,6 +409,7 @@ typedef struct {
     uint32_t ui_type; 
     bool fake_paths; 
     char loaded_theme_path[SB_FILE_PATH_SIZE];
+    char loaded_custom_font_path[SB_FILE_PATH_SIZE];
     se_custom_theme_t theme; 
 } gui_state_t;
 
@@ -5514,12 +5517,27 @@ void se_draw_menu_panel(){
   igPopItemWidth();
   if(gui_state.settings.theme==SE_THEME_CUSTOM){
     const char *types[]={"*.png",NULL};
-    load|=se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
+    load|= se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
     if(load){
       if(se_load_theme_from_file(gui_state.paths.theme))
         se_save_search_paths();
     }
+    load=false; 
+    const char *font_types[]={"*.ttf",NULL};
+
+    load|= se_input_file("Custom Font", gui_state.paths.custom_font,font_types,ImGuiInputTextFlags_None);
+    load|= strncmp(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE)!=0;
+    if(load){
+      gui_state.update_font_atlas=true;
+      strncpy(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE);
+    }
+
+    float old_scale = gui_state.settings.custom_font_scale;
+    se_slider_float("##FontScale",&gui_state.settings.custom_font_scale,0.5,1.5,"Font Scale: %0.2fx");
+    if(old_scale!=gui_state.settings.custom_font_scale)gui_state.update_font_atlas=true;
+    
+
   
     se_custom_theme_t * theme = &gui_state.theme;
     float w = igGetWindowContentRegionWidth();
@@ -6299,19 +6317,36 @@ static void frame(void) {
   if(gui_state.update_font_atlas){
     gui_state.update_font_atlas=false;
     ImFontAtlas* atlas = igGetIO()->Fonts;    
-    uint64_t karla_compressed_size; 
-    const uint8_t* karla_compressed_data = se_get_resource(SE_KARLA,&karla_compressed_size);
+
+    ImFont *font = NULL;
+    float font_scale=1.0;
+   
+    if(gui_state.settings.theme==SE_THEME_CUSTOM){
+      size_t size =0; 
+      font_scale = gui_state.settings.custom_font_scale;
+      uint8_t* data = sb_load_file_data(gui_state.paths.custom_font,&size);
+      if(data){
+        font =ImFontAtlas_AddFontFromMemoryTTF(
+        atlas,data,size,13*se_dpi_scale()*font_scale,NULL,NULL);
+      }
+    }
+    
+    if(!font){
+      uint64_t karla_compressed_size; 
+      const uint8_t* karla_compressed_data = se_get_resource(SE_KARLA,&karla_compressed_size);
+      font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
+        atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale()*font_scale,NULL,NULL);
+    }
+    
     uint64_t forkawesome_compressed_size; 
     const uint8_t* forkawesome_compressed_data = se_get_resource(SE_FORKAWESOME,&forkawesome_compressed_size);
-    ImFont* font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
-      atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
-    
+
     static const ImWchar icons_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Will not be copied by AddFont* so keep in scope.
     ImFontConfig* config=ImFontConfig_ImFontConfig();
     config->MergeMode = true;
     config->GlyphMinAdvanceX = 13.0f;
     ImFont* font2 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,
-      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale(),config,icons_ranges);
+      forkawesome_compressed_data,forkawesome_compressed_size,13*se_dpi_scale()*font_scale,config,icons_ranges);
     ImFontConfig_destroy(config);
     igGetIO()->FontDefault=font2;
   
@@ -6333,13 +6368,13 @@ static void frame(void) {
           index++;
         }
       }
-      ImFont* font3 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,notosans_cjksc_compressed_data,notosans_cjksc_compressed_size,14*se_dpi_scale(),config3,ranges);
+      ImFont* font3 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,notosans_cjksc_compressed_data,notosans_cjksc_compressed_size,14*se_dpi_scale()*font_scale,config3,ranges);
       uint64_t noto_armenian_size;
       const uint8_t *noto_armenian = se_get_resource(SE_NOTO_ARMENIAN,&noto_armenian_size);
-      ImFont* font4 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_armenian,noto_armenian_size,14*se_dpi_scale(),config3,ranges);
+      ImFont* font4 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_armenian,noto_armenian_size,14*se_dpi_scale()*font_scale,config3,ranges);
       uint64_t noto_sans_size=0;
       const uint8_t *noto_sans = se_get_resource(SE_NOTO_SANS,&noto_sans_size);
-      ImFont* font5 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_sans,noto_sans_size,14*se_dpi_scale(),config3,ranges);
+      ImFont* font5 =ImFontAtlas_AddFontFromMemoryCompressedTTF(atlas,noto_sans,noto_sans_size,14*se_dpi_scale()*font_scale,config3,ranges);
       ImFontConfig_destroy(config3);
       igGetIO()->FontDefault=font3;
     #endif
@@ -6348,7 +6383,7 @@ static void frame(void) {
       uint64_t karla_compressed_size; 
       const uint8_t* karla_compressed_data = se_get_resource(SE_SV_BASIC_MANUAL,&karla_compressed_size);
       gui_state.mono_font =ImFontAtlas_AddFontFromMemoryCompressedTTF(
-        atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale(),NULL,NULL);
+        atlas,karla_compressed_data,karla_compressed_size,13*se_dpi_scale()*font_scale,NULL,NULL);
     }
     
 
@@ -6468,6 +6503,8 @@ void se_load_settings(){
       gui_state.settings.http_control_server_port=8080;
       gui_state.settings.avoid_overlaping_touchscreen = true;
     }
+    if(gui_state.settings.custom_font_scale<0.5)gui_state.settings.custom_font_scale=1.0;
+    if(gui_state.settings.custom_font_scale>2.0)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(gui_state.settings.touch_controls_opacity<0||gui_state.settings.touch_controls_opacity>1.0)gui_state.settings.touch_controls_opacity=0.5;
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
