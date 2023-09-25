@@ -31,7 +31,11 @@ SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS 
 
 ## Download / Usage
 
-Native builds can be downloaded at: [https://github.com/skylersaleh/SkyEmu/releases](https://github.com/skylersaleh/SkyEmu/releases)
+Stable builds for all platforms can be downloaded for free at: [https://github.com/skylersaleh/SkyEmu/releases](https://github.com/skylersaleh/SkyEmu/releases)
+
+Android builds are also available on the Google Play and Amazon App Store (as donationware): 
+ - [Google Play Store](https://play.google.com/store/apps/details?id=com.sky.SkyEmu)
+ - [Amazon App Store](https://www.amazon.com/SkyEmu-GBC-GBA-NDS-Emulator/dp/B0CGHK8QP5/)
 
 The latest version of the emulator can also be played without installing at the following address as a progressive web app:
 
