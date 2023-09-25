@@ -3629,9 +3629,16 @@ void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int con
                              button_r*2*themed_scale,
                              button_r*2*themed_scale,
                              col)){
-      if(pressed)  ImDrawList_AddCircleFilled(dl,(ImVec2){pos[0],pos[1]},button_r,sel_color,128);
-      ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,line_color2,128,line_w1);
-      ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,col,128,line_w0);
+      if(!se_draw_theme_region_tint(SE_REGION_KEY_BLANK+(pressed?1:0),
+                             pos[0]-button_r*themed_scale,
+                             pos[1]-button_r*themed_scale,
+                             button_r*2*themed_scale,
+                             button_r*2*themed_scale,
+                             col)){
+        if(pressed)  ImDrawList_AddCircleFilled(dl,(ImVec2){pos[0],pos[1]},button_r,sel_color,128);
+        ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,line_color2,128,line_w1);
+        ImDrawList_AddCircle(dl,(ImVec2){pos[0],pos[1]},button_r,col,128,line_w0);
+      }
     }
   }
 
