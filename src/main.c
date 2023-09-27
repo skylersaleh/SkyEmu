@@ -4340,9 +4340,10 @@ void se_convert_cheat_code(char * text_code, int cheat_index){
 }
 
 bool se_process_file_browser(){
+  const char *home_dir = sb_get_home_path();
   
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED)return false; 
-  if(gui_state.file_browser.current_path[0]=='\0')strncpy(gui_state.file_browser.current_path,sb_get_home_path(),SB_FILE_PATH_SIZE);
+  if(gui_state.file_browser.current_path[0]=='\0')strncpy(gui_state.file_browser.current_path,home_dir,SB_FILE_PATH_SIZE);
 
   ImVec2 w_pos={0,0};
   ImVec2 w_size={gui_state.screen_width,gui_state.screen_height};
@@ -4371,6 +4372,11 @@ bool se_process_file_browser(){
       se_file_browser_accept(gui_state.file_browser.current_path);
     }
   }
+
+  if(se_selectable_with_box("Go to home directory",home_dir,ICON_FK_HOME,false,0)){
+    strncpy(gui_state.file_browser.current_path, home_dir, SB_FILE_PATH_SIZE);
+  }
+
   const char* parent_dir = sb_parent_path(gui_state.file_browser.current_path);
   if(se_selectable_with_box("Go to parent directory",parent_dir,ICON_FK_ARROW_UP,false,0)){
     strncpy(gui_state.file_browser.current_path, parent_dir, SB_FILE_PATH_SIZE);
