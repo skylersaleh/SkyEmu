@@ -225,7 +225,7 @@ Hot key is released.
 
 # /status command
 
-Returns info about the current state of the emulator and the state of the HTTP Control Server Inputs that are being fed into the emulator. 
+Returns a json file filled with info about the current state of the emulator and the state of the HTTP Control Server Inputs that are being fed into the emulator. 
 
 **Example**
 
@@ -234,48 +234,56 @@ Returns info about the current state of the emulator and the state of the HTTP C
 **Result:**
 
 ```
-SkyEmu (737bc7722193891cd6aa375f0a6fcdb183476356)
-MODE: PAUSE
-ROM Loaded: true
-ROM Path: /Users/skylersaleh/Documents/roms/gba/Pokemon - Emerald Version (U).gba
-Save Path: /Users/skylersaleh/Documents/roms/gba/Pokemon - Emerald Version (U).sav
-Inputs: 
-- A: 1.000000
-- B: 0.000000
-- X: 0.000000
-- Y: 0.000000
-- Up: 1.000000
-- Down: 0.000000
-- Left: 0.000000
-- Right: 0.000000
-- L: 0.000000
-- R: 0.000000
-- Start: 0.000000
-- Select: 0.000000
-- Fold Screen (NDS): 0.000000
-- Tap Screen (NDS): 0.000000
-- Emulator ïŒ/ï‹: 0.000000
-- Emulator ïŠ: 0.000000
-- Emulator ïŽ: 0.000000
-- Emulator ï: 0.000000
-- Capture State 0: 1.000000
-- Restore State 0: 0.000000
-- Capture State 1: 0.000000
-- Restore State 1: 0.000000
-- Capture State 2: 0.000000
-- Restore State 2: 0.000000
-- Capture State 3: 0.000000
-- Restore State 3: 0.000000
-- Reset Game: 0.000000
-- Turbo A: 0.000000
-- Turbo B: 0.000000
-- Turbo X: 0.000000
-- Turbo Y: 0.000000
-- Turbo L: 0.000000
-- Turbo R: 0.000000
-- Solar Sensor+: 0.000000
-- Solar Sensor-: 0.000000
-- Toggle Full Screen: 0.000000
+{
+  "emulator": "SkyEmu (6af0053049aa689a79ae653a949ed70e517ce2e1)",
+  "run-mode": "RUN",
+  "rom-loaded" : true,
+  "rom-path": "/Users/skylersaleh/Documents/roms/gba/varooom-3d.gba",
+  "save-path": "/Users/skylersaleh/Documents/roms/gba/varooom-3d.sav",
+  "rewind-info" : {
+    "entries-used" : 953,
+    "capacity" : 1048576,
+    "percent_full" : 0.1
+  },
+  "inputs": {
+    "A": 0.000000,
+    "B": 0.000000,
+    "X": 0.000000,
+    "Y": 0.000000,
+    "Up": 0.000000,
+    "Down": 0.000000,
+    "Left": 0.000000,
+    "Right": 0.000000,
+    "L": 0.000000,
+    "R": 0.000000,
+    "Start": 0.000000,
+    "Select": 0.000000,
+    "Fold Screen (NDS)": 0.000000,
+    "Tap Screen (NDS)": 0.000000,
+    "Emulator /": 0.000000,
+    "Emulator ": 0.000000,
+    "Emulator ": 0.000000,
+    "Emulator ": 0.000000,
+    "Capture State 0": 0.000000,
+    "Restore State 0": 0.000000,
+    "Capture State 1": 0.000000,
+    "Restore State 1": 0.000000,
+    "Capture State 2": 0.000000,
+    "Restore State 2": 0.000000,
+    "Capture State 3": 0.000000,
+    "Restore State 3": 0.000000,
+    "Reset Game": 0.000000,
+    "Turbo A": 0.000000,
+    "Turbo B": 0.000000,
+    "Turbo X": 0.000000,
+    "Turbo Y": 0.000000,
+    "Turbo L": 0.000000,
+    "Turbo R": 0.000000,
+    "Solar Sensor+": 0.000000,
+    "Solar Sensor-": 0.000000,
+    "Toggle Full Screen": 0.000000
+  }
+}
 ```
 
 # /save command

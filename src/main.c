@@ -5895,30 +5895,44 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
     }
     str_result = "ok";
   }else if(strcmp(cmd,"/status")==0){
-    *mime_type = "text/plain";
+    *mime_type = "application/json";
     char buffer[4096]={0};
     int off = 0;
-    off+=snprintf(buffer+off,sizeof(buffer)-off,"SkyEmu (%s)\n",GIT_COMMIT_HASH);
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"{\n");
+
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"emulator\": \"SkyEmu (%s)\",\n",GIT_COMMIT_HASH);
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"run-mode\": ");
     switch(emu_state.run_mode){
-      case SB_MODE_PAUSE: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: PAUSE\n");break;
-      case SB_MODE_RUN: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: RUN\n");break;
-      case SB_MODE_STEP: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: STEP\n");break;
-      case SB_MODE_RESET: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: RESET\n");break;
-      case SB_MODE_REWIND: off+=snprintf(buffer+off,sizeof(buffer)-off,"MODE: REWIND\n");break;
+      case SB_MODE_PAUSE: off+=snprintf(buffer+off,sizeof(buffer)-off,"\"PAUSE\",\n");break;
+      case SB_MODE_RUN: off+=snprintf(buffer+off,sizeof(buffer)-off,"\"RUN\",\n");break;
+      case SB_MODE_STEP: off+=snprintf(buffer+off,sizeof(buffer)-off,"\"STEP\",\n");break;
+      case SB_MODE_RESET: off+=snprintf(buffer+off,sizeof(buffer)-off,"\"RESET\",\n");break;
+      case SB_MODE_REWIND: off+=snprintf(buffer+off,sizeof(buffer)-off,"\"REWIND\",\n");break;
     }
-    off+=snprintf(buffer+off,sizeof(buffer)-off,"ROM Loaded: %s\n",emu_state.rom_loaded?"true":"false");
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"rom-loaded\" : %s,\n",emu_state.rom_loaded?"true":"false");
     if(emu_state.rom_loaded){
-      off+=snprintf(buffer+off,sizeof(buffer)-off,"ROM Path: %s\n",emu_state.rom_path);
-      off+=snprintf(buffer+off,sizeof(buffer)-off,"Save Path: %s\n",emu_state.save_file_path);
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"rom-path\": \"%s\",\n",emu_state.rom_path);
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"save-path\": \"%s\",\n",emu_state.save_file_path);
     }
-    off+=snprintf(buffer+off,sizeof(buffer)-off,"Inputs: \n");
-    
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"rewind-info\" : {\n");
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"    \"entries-used\" : %d,\n",rewind_buffer.size);
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"    \"capacity\" : %d,\n",SE_REWIND_BUFFER_SIZE);
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"    \"percent_full\" : %0.1f\n",(float)(rewind_buffer.size)/SE_REWIND_BUFFER_SIZE*100.);
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  },\n");
+
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  \"inputs\": {\n");
     for(int i=0; i<SE_NUM_KEYBINDS;++i){
-      off+=snprintf(buffer+off,sizeof(buffer)-off,"- %s: %f\n",se_keybind_names[i],gui_state.hcs_joypad.inputs[i]);
+      off+=snprintf(buffer+off,sizeof(buffer)-off,"    \"%s\": %f",se_keybind_names[i],gui_state.hcs_joypad.inputs[i]);
+      if(i+1==SE_NUM_KEYBINDS)off+=snprintf(buffer+off,sizeof(buffer)-off,"\n");
+      else off+=snprintf(buffer+off,sizeof(buffer)-off,",\n");
     }
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"  }\n");
+
+    off+=snprintf(buffer+off,sizeof(buffer)-off,"}");
+
     str_result = buffer;
     const char* result=strdup(str_result);
-    *result_size=strlen(result)+1;
+    *result_size=strlen(result);
     return (uint8_t*)result;
   }else if(strcmp(cmd,"/save")==0){
     bool okay=false;; 
