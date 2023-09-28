@@ -96,7 +96,7 @@ extern "C" {
 #define _tinydir_lstat lstat
 #define _tinydir_stat stat
 #else
-#define _tinidyr_lstat stat
+#define _tinydir_lstat stat
 #define _tinydir_stat stat
 #endif
 #endif
