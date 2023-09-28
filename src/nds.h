@@ -3458,11 +3458,11 @@ static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
   #define SERIAL_CLK_LOW 1
   #define SERIAL_CLK_HIGH 2  
 
-  #define RTC_RECV_CMD -1
-  #define RTC_RESET     0
-  #define RTC_STATUS    1
-  #define RTC_DATE_TIME 2    
-  #define RTC_TIME      3
+  #define NDS_RTC_RECV_CMD -1
+  #define NDS_RTC_RESET     0
+  #define NDS_RTC_STATUS    1
+  #define NDS_RTC_DATE_TIME 2
+  #define NDS_RTC_TIME      3
 
   nds_rtc_t * rtc = &(nds->rtc);
 
@@ -3472,7 +3472,7 @@ static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
   if(cs==0){
     rtc->serial_state=SERIAL_INIT;
     rtc->serial_bits_clocked=0;
-    rtc->state = RTC_RECV_CMD;
+    rtc->state = NDS_RTC_RECV_CMD;
   }
 
   if(cs!=0){
@@ -3498,17 +3498,17 @@ static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
       int  cmd = SB_BFE(rtc->state,1,3);
       bool read = SB_BFE(rtc->state,0,1);
       switch(cmd){
-        case RTC_RECV_CMD:break;
-        case RTC_STATUS:{
+        case NDS_RTC_RECV_CMD:break;
+        case NDS_RTC_STATUS:{
           if(rtc->serial_bits_clocked==8) rtc->output_register = rtc->status_register;
           if(rtc->serial_bits_clocked==16){
             if(!read)rtc->status_register=SB_BFE(rtc->input_register,0,8);
-            rtc->state= RTC_RECV_CMD;
+            rtc->state= NDS_RTC_RECV_CMD;
             rtc->serial_bits_clocked=0;
           }
           break;
         }
-        case RTC_DATE_TIME:{
+        case NDS_RTC_DATE_TIME:{
           if(rtc->serial_bits_clocked==8) rtc->output_register =
             ((uint64_t)(rtc->year&0xff)       <<(0*8))|
             ((uint64_t)(rtc->month&0xff)      <<(1*8))|
@@ -3527,13 +3527,13 @@ static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
               rtc->minute = SB_BFE(rtc->input_register,1*8,8);
               rtc->second = SB_BFE(rtc->input_register,0*8,8);
             }
-            rtc->state= RTC_RECV_CMD;
+            rtc->state= NDS_RTC_RECV_CMD;
             rtc->serial_bits_clocked=0;
           }
           break;
         }
-        case RTC_TIME:{
-          if(rtc->serial_bits_clocked==8) rtc->output_register = 
+        case NDS_RTC_TIME:{
+          if(rtc->serial_bits_clocked==8) rtc->output_register =
             ((uint64_t)(rtc->hour&0xff)<<(0*8))|
             ((uint64_t)(rtc->minute&0xff)<<(1*8))|
             ((uint64_t)(rtc->second&0xff)<<(2*8));
@@ -3543,7 +3543,7 @@ static FORCE_INLINE void nds_process_rtc_state_machine(nds_t* nds){
               rtc->minute = SB_BFE(rtc->input_register,1*8,8);
               rtc->second = SB_BFE(rtc->input_register,2*8,8);
             }
-            rtc->state= RTC_RECV_CMD;
+            rtc->state= NDS_RTC_RECV_CMD;
             rtc->serial_bits_clocked=0;
           }
           break;

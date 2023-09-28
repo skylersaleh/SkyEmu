@@ -1019,14 +1019,14 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
   #define SERIAL_CLK_LOW 1
   #define SERIAL_CLK_HIGH 2  
 
-  #define RTC_RESET     0
-  #define RTC_UNUSED    1
-  #define RTC_DATE_TIME 2
-  #define RTC_FORCE_IRQ 3    
-  #define RTC_STATUS    4
-  #define RTC_UNUSED2   5
-  #define RTC_TIME      6
-  #define RTC_UNUSED3   7
+  #define GBA_RTC_RESET     0
+  #define GBA_RTC_UNUSED    1
+  #define GBA_RTC_DATE_TIME 2
+  #define GBA_RTC_FORCE_IRQ 3
+  #define GBA_RTC_STATUS    4
+  #define GBA_RTC_UNUSED2   5
+  #define GBA_RTC_TIME      6
+  #define GBA_RTC_UNUSED3   7
 
   gba->rtc.status_register &= ~((1<<7));
   gba->rtc.status_register |= 0x40;
@@ -1080,7 +1080,7 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
       int  cmd = SB_BFE(gba->rtc.state,4,3);
       bool read = SB_BFE(gba->rtc.state,7,1);
       switch(cmd){
-        case RTC_STATUS:{
+        case GBA_RTC_STATUS:{
           if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register = gba->rtc.status_register;
           if(gba->rtc.serial_bits_clocked==16){
             if(!read){
@@ -1090,7 +1090,7 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
           }
           break;
         }
-        case RTC_DATE_TIME:{
+        case GBA_RTC_DATE_TIME:{
           if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register =
             (((uint64_t)(year&0xff)       )<<(0*8ull))|
             (((uint64_t)(month&0xff)      )<<(1*8ull))|
@@ -1113,8 +1113,8 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
           }
           break;
         }
-        case RTC_TIME:{
-          if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register = 
+        case GBA_RTC_TIME:{
+          if(gba->rtc.serial_bits_clocked==8) gba->rtc.output_register =
             ((uint64_t)(hour&0xff)<<(0*8))|
             ((uint64_t)(minute&0xff)<<(1*8))|
             ((uint64_t)(second&0xff)<<(2*8));
@@ -1129,9 +1129,9 @@ static FORCE_INLINE void gba_process_rtc_state_machine(gba_t* gba){
           break;
         }
         default:
-        case RTC_UNUSED: case RTC_UNUSED2: case RTC_UNUSED3: case RTC_FORCE_IRQ: 
+        case GBA_RTC_UNUSED: case GBA_RTC_UNUSED2: case GBA_RTC_UNUSED3: case GBA_RTC_FORCE_IRQ:
           printf("Error: Unknown RTC Command %d\n",cmd);
-        case RTC_RESET: 
+        case GBA_RTC_RESET:
           if(gba->rtc.serial_bits_clocked==8){
             gba->rtc.serial_bits_clocked=0;
           }
