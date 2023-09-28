@@ -89,12 +89,15 @@ extern "C" {
 #ifndef _MSC_VER
 #ifdef __MINGW32__
 #define _tinydir_lstat _tstat
+#define _tinydir_stat _tstat
 #elif defined _BSD_SOURCE || defined _DEFAULT_SOURCE || defined BSD || \
 	(defined _XOPEN_SOURCE && _XOPEN_SOURCE >= 500) || (defined _POSIX_C_SOURCE && _POSIX_C_SOURCE >= 200112L) || \
 	(defined __APPLE__ && defined __MACH__)
 #define _tinydir_lstat lstat
+#define _tinydir_stat stat
 #else
 #define _tinidyr_lstat stat
+#define _tinydir_stat stat
 #endif
 #endif
 
@@ -214,6 +217,7 @@ typedef struct tinydir_file
 	_tinydir_char_t *extension;
 	int is_dir;
 	int is_reg;
+	int is_link;
 
 #ifndef _MSC_VER
 #ifdef __MINGW32__
@@ -561,6 +565,20 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 	if (_tinydir_lstat(file->path, &file->_s) == -1)
 		return -1;
 #endif
+
+	file->is_link =
+#ifdef _MSC_VER
+		!!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+		S_ISLNK(file->_s.st_mode);
+#endif
+	if (file->is_link) { // stat the linked file
+#ifndef _MSC_VER
+	if (_tinydir_stat(file->path, &file->_s) == -1)
+        	return -1;
+#endif
+    }
+
 	_tinydir_get_ext(file);
 
 	file->is_dir =
@@ -723,6 +741,7 @@ int tinydir_file_open(tinydir_file *file, const _tinydir_char_t *path)
 		memset(file, 0, sizeof * file);
 		file->is_dir = 1;
 		file->is_reg = 0;
+		file->is_link = 0;
 		_tinydir_strcpy(file->path, dir_name);
 		file->extension = file->path + _tinydir_strlen(file->path);
 		return 0;

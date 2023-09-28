@@ -4486,7 +4486,7 @@ bool se_process_file_browser(){
     file_browse->has_cache=true;
   }
   for(int f = 0;f<file_browse->num_cached_files;++f) {
-    const char *ext = ICON_FK_FOLDER_OPEN;
+    const char *ext = file_browse->cached_files[f].is_link ? ICON_FK_FOLDER_OPEN_O:ICON_FK_FOLDER_OPEN;
     if (!file_browse->cached_files[f].is_dir) {
       const char* base, *file;
       sb_breakup_path(file_browse->cached_files[f].path, &base, &file, &ext);
