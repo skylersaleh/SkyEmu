@@ -516,6 +516,8 @@ _TINYDIR_FUNC
 int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 {
 	const _tinydir_char_t *filename;
+    int filenameLen;
+
 	if (dir == NULL || file == NULL)
 	{
 		errno = EINVAL;
@@ -536,15 +538,15 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 #else
 		dir->_e->d_name;
 #endif
-	if (_tinydir_strlen(dir->path) +
-		_tinydir_strlen(filename) + 1 + _TINYDIR_PATH_EXTRA >=
-		_TINYDIR_PATH_MAX)
+    filenameLen = _tinydir_strlen(filename);
+
+	if (_tinydir_strlen(dir->path) + filenameLen + 1 + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX)
 	{
 		/* the path for the file will be too long */
 		errno = ENAMETOOLONG;
 		return -1;
 	}
-	if (_tinydir_strlen(filename) >= _TINYDIR_FILENAME_MAX)
+	if (filenameLen >= _TINYDIR_FILENAME_MAX)
 	{
 		errno = ENAMETOOLONG;
 		return -1;
