@@ -520,7 +520,7 @@ _TINYDIR_FUNC
 int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 {
 	const _tinydir_char_t *filename;
-    int filenameLen;
+	int filenameLen;
 
 	if (dir == NULL || file == NULL)
 	{
@@ -542,7 +542,7 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 #else
 		dir->_e->d_name;
 #endif
-    filenameLen = _tinydir_strlen(filename);
+	filenameLen = _tinydir_strlen(filename);
 
 	if (_tinydir_strlen(dir->path) + filenameLen + 1 + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX)
 	{
