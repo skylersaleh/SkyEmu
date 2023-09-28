@@ -86,6 +86,18 @@ extern "C" {
 # define _tinydir_strncmp strncmp
 #endif
 
+#ifndef _MSC_VER
+#ifdef __MINGW32__
+#define _tinydir_lstat _tstat
+#elif defined _BSD_SOURCE || defined _DEFAULT_SOURCE || defined BSD || \
+	(defined _XOPEN_SOURCE && _XOPEN_SOURCE >= 500) || (defined _POSIX_C_SOURCE && _POSIX_C_SOURCE >= 200112L) || \
+	(defined __APPLE__ && defined __MACH__)
+#define _tinydir_lstat lstat
+#else
+#define _tinidyr_lstat stat
+#endif
+#endif
+
 #if (defined _MSC_VER || defined __MINGW32__)
 # include <windows.h>
 # define _TINYDIR_PATH_MAX MAX_PATH
@@ -544,21 +556,8 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 	_tinydir_strcpy(file->name, filename);
 	_tinydir_strcat(file->path, filename);
 #ifndef _MSC_VER
-#ifdef __MINGW32__
-	if (_tstat(
-#elif (defined _BSD_SOURCE) || (defined _DEFAULT_SOURCE)	\
-	|| ((defined _XOPEN_SOURCE) && (_XOPEN_SOURCE >= 500))	\
-	|| ((defined _POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200112L)) \
-	|| ((defined __APPLE__) && (defined __MACH__)) \
-	|| (defined BSD)
-	if (lstat(
-#else
-	if (stat(
-#endif
-		file->path, &file->_s) == -1)
-	{
+	if (_tinydir_lstat(file->path, &file->_s) == -1)
 		return -1;
-	}
 #endif
 	_tinydir_get_ext(file);
 
