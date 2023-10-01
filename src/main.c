@@ -410,7 +410,8 @@ typedef struct {
     bool fake_paths; 
     char loaded_theme_path[SB_FILE_PATH_SIZE];
     char loaded_custom_font_path[SB_FILE_PATH_SIZE];
-    se_custom_theme_t theme; 
+    se_custom_theme_t theme;
+    bool ran_from_launcher;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -6106,7 +6107,7 @@ static void frame(void) {
   if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
       if(gui_state.sidebar_open)gui_state.sidebar_open = false;
       else if(emu_state.run_mode!=SB_MODE_PAUSE)emu_state.run_mode = SB_MODE_PAUSE;
-      else if(emu_state.rom_loaded)emu_state.run_mode = SB_MODE_RUN;
+      else if(emu_state.rom_loaded &&!gui_state.ran_from_launcher)emu_state.run_mode = SB_MODE_RUN;
       else sapp_quit();
   }
   last_back_press= gui_state.button_state[SAPP_KEYCODE_BACK];
@@ -7210,6 +7211,12 @@ static void headless_mode(){
 }
 
 #ifdef PLATFORM_ANDROID
+void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1rom(JNIEnv *env, jobject thiz, jstring filePath) {
+    const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
+    gui_state.ran_from_launcher=true;
+    se_load_rom(nativeFilePath);
+    (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
+}
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1file(JNIEnv *env, jobject thiz, jstring filePath) {
   const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
   se_file_browser_accept(nativeFilePath);

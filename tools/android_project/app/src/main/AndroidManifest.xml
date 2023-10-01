@@ -12,6 +12,16 @@
       android:supportsRtl="true"
       tools:targetApi="33"
       android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+    <!-- Declare your content provider -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.provider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/provider_paths"/>
+    </provider>
     <activity
         android:name="com.sky.SkyEmu.EnhancedNativeActivity"
         android:exported="true"
@@ -23,6 +33,70 @@
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.OPENABLE" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:mimeType="*/*" />
+        <data android:scheme="file" />
+        <data android:host="*" />
+        <data android:pathPattern=".*\\.gba" />
+        <data android:pathPattern=".*\\..*\\.gba" />
+        <data android:pathPattern=".*\\..*\\..*\\.gba" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gba" />
+        <data android:pathPattern=".*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\.gb" />
+        <data android:pathPattern=".*\\..*\\.gb" />
+        <data android:pathPattern=".*\\..*\\..*\\.gb" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gb" />
+
+        <data android:pathPattern=".*\\.nds" />
+        <data android:pathPattern=".*\\..*\\.nds" />
+        <data android:pathPattern=".*\\..*\\..*\\.nds" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.nds" />
+
+        <data android:pathPattern=".*\\.zip" />
+        <data android:pathPattern=".*\\..*\\.zip" />
+        <data android:pathPattern=".*\\..*\\..*\\.zip" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.zip" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.OPENABLE" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:mimeType="*/*" />
+        <data android:host="*" />
+        <data android:scheme="content" />
+        <data android:pathPattern=".*\\.gba" />
+        <data android:pathPattern=".*\\..*\\.gba" />
+        <data android:pathPattern=".*\\..*\\..*\\.gba" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gba" />
+        <data android:pathPattern=".*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gbc" />
+        <data android:pathPattern=".*\\.gb" />
+        <data android:pathPattern=".*\\..*\\.gb" />
+        <data android:pathPattern=".*\\..*\\..*\\.gb" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.gb" />
+
+        <data android:pathPattern=".*\\.nds" />
+        <data android:pathPattern=".*\\..*\\.nds" />
+        <data android:pathPattern=".*\\..*\\..*\\.nds" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.nds" />
+
+        <data android:pathPattern=".*\\.zip" />
+        <data android:pathPattern=".*\\..*\\.zip" />
+        <data android:pathPattern=".*\\..*\\..*\\.zip" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.zip" />
+      </intent-filter>
+
+
 
       <meta-data
           android:name="android.app.lib_name"
