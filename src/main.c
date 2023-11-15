@@ -1341,6 +1341,19 @@ void se_load_recent_games_list(){
   fclose(f);
 }
 
+static void se_clear_game_from_recents(int index) {
+  gui_state_t* gui = &gui_state;
+  strcpy(gui->recently_loaded_games[index].path, "");
+  for(int i=index+1;i<SE_NUM_RECENT_PATHS;++i){
+    strcpy(gui->recently_loaded_games[i-1].path, gui->recently_loaded_games[i].path);
+    if (i == SE_NUM_RECENT_PATHS-1) {
+      strcpy(gui->recently_loaded_games[i].path, "");
+      break;
+    }
+  }
+  se_save_recent_games_list();
+}
+
 bool se_key_is_pressed(int keycode){
   if(keycode>SAPP_MAX_KEYCODES||keycode==-1)return false;
   // Don't let keyboard input reach emulator when ImGUI is capturing it. 
@@ -4562,13 +4575,14 @@ void se_load_rom_overlay(bool visible){
     char ext_upper[8]={0};
     for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
     int reduce_width = 0; 
+    int cross_width = 44;
     #ifdef EMSCRIPTEN
     char save_file_path[SB_FILE_PATH_SIZE];
     snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
     bool save_exists = sb_file_exists(save_file_path);
     if(save_exists)reduce_width=85; 
     #endif
-    if(se_selectable_with_box(file_name,se_replace_fake_path(info->path),ext_upper,false,reduce_width)){
+    if(se_selectable_with_box(file_name,se_replace_fake_path(info->path),ext_upper,false,reduce_width+cross_width)){
       se_load_rom(info->path);
     }
     #ifdef EMSCRIPTEN
@@ -4577,6 +4591,8 @@ void se_load_rom_overlay(bool visible){
       if(se_button(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
     }
     #endif 
+    igSameLine(0, 4);
+    if(se_button(ICON_FK_TIMES, (ImVec2){cross_width-4,40}))se_clear_game_from_recents(i);
     igSeparator();
     num_entries++;
     igPopID();
