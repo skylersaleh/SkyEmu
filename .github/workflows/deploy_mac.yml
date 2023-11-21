@@ -15,7 +15,7 @@ jobs:
         run: |
           cd build
           brew install graphicsmagick imagemagick
-          npm install --global create-dmg
+          npm install --global create-dmg@6.0.0
           create-dmg --dmg-title=SkyEmu 'bin/SkyEmu.app' || true
           ls 
           mv SkyEmu*.dmg "SkyEmu.dmg"
