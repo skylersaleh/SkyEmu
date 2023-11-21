@@ -2,13 +2,13 @@ name: Build FreeBSD
 on: [push,pull_request]
 jobs:
   build-and-deploy:
-    runs-on: macos-12
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1
       - name: Configure & Build 🔧
         id: test
-        uses: vmactions/freebsd-vm@v0
+        uses: vmactions/freebsd-vm@v1
         with:
           envs: 'MYTOKEN MYTOKEN2'
           usesh: true
