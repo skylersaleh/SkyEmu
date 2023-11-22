@@ -2,7 +2,7 @@ name: Build macOS
 on: [push,pull_request]
 jobs:
   build-and-deploy:
-    runs-on: macos-12
+    runs-on: macos-latest
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1 
@@ -15,6 +15,7 @@ jobs:
         run: |
           cd build
           brew install graphicsmagick imagemagick
+          pip install setuptools
           npm install --global create-dmg
           create-dmg --dmg-title=SkyEmu 'bin/SkyEmu.app' || true
           ls 
