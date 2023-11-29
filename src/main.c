@@ -4593,6 +4593,7 @@ void se_load_rom_overlay(bool visible){
     #endif 
     igSameLine(0, 4);
     if(se_button(ICON_FK_TIMES, (ImVec2){cross_width-4,40}))se_clear_game_from_recents(i);
+    se_tooltip("Remove from recently played");
     igSeparator();
     num_entries++;
     igPopID();
