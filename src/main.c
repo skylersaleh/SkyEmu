@@ -4196,6 +4196,35 @@ void se_download_emscripten_file(const char * path){
     document.body.removeChild(a);
   }, name, data, data_size);
 }
+void se_download_emscripten_save_states()
+{
+  int i=0;
+  mz_zip_error zip_error;
+  char archive_filename[SB_FILE_PATH_SIZE];
+  const char* base, *file_name, *ext;
+  sb_breakup_path(emu_state.rom_path,&base,&file_name,&ext);
+  snprintf(archive_filename,SB_FILE_PATH_SIZE,"%s.save_states.zip",file_name,ext);
+  while(true)
+  {
+    char save_state_path[SB_FILE_PATH_SIZE];
+    char save_state_name[SB_FILE_PATH_SIZE];
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
+    snprintf(save_state_name,SB_FILE_PATH_SIZE,"slot%d.state.png",i);
+    if(!sb_file_exists(save_state_path))break;
+    size_t data_size;
+    uint8_t* data = sb_load_file_data(save_state_path,&data_size);
+    mz_bool status = mz_zip_add_mem_to_archive_file_in_place_v2(archive_filename,save_state_name,data,data_size,NULL,0,MZ_BEST_COMPRESSION,&zip_error);
+    free(data);
+    if (!status)
+    {
+      printf("mz_zip_add_mem_to_archive_file_in_place_v2 failed: %s\n",mz_zip_get_error_string(zip_error));
+      break;
+    }
+    i++;
+  }
+  se_download_emscripten_file(archive_filename);
+  remove(archive_filename);
+}
 #endif 
 
 void se_bring_text_field_into_view(){
@@ -5316,8 +5345,10 @@ void se_draw_menu_panel(){
 
   int win_w = igGetWindowContentRegionWidth();
   ImDrawList*dl= igGetWindowDrawList();
+  bool has_save_states=false;
   if(!emu_state.rom_loaded)se_push_disabled();
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    has_save_states|=save_states[i].valid;
     int slot_x = 0;
     int slot_y = i;
     int slot_w = (win_w-style->FramePadding.x)*0.5;
@@ -5370,6 +5401,11 @@ void se_draw_menu_panel(){
     }
     igEndChildFrame();
   }
+  #ifdef EMSCRIPTEN
+  if(!has_save_states)se_push_disabled();
+  if(se_button(ICON_FK_DOWNLOAD " Export Save States",(ImVec2){win_w,0})) { se_download_emscripten_save_states(); }
+  if(!has_save_states)se_pop_disabled();
+  #endif 
   if(!emu_state.rom_loaded)se_pop_disabled();
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
