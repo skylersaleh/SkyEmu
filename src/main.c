@@ -6,6 +6,7 @@
  *
 **/
 
+#include <stdbool.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
@@ -28,6 +29,8 @@
 #include <emscripten.h>
 #endif
 
+#include "cloud.h"
+#include "mutex.h"
 #include "res.h"
 #include "sokol_app.h"
 #include "sokol_audio.h"
@@ -38,7 +41,6 @@
 #include "cimgui.h"
 #include "sokol_imgui.h"
 #include "IconsForkAwesome.h"
-#define STBI_ONLY_PNG
 #include "stb_image.h"
 #include "stb_image_write.h"
 
@@ -50,16 +52,16 @@
 #define USE_BUILT_IN_FILEBROWSER
 #include "tinydir.h"
 
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   #include <android/log.h>
 #endif
-#ifdef PLATFORM_IOS
+#ifdef SE_PLATFORM_IOS
 #include "ios_support.h"
 #endif
 #ifdef USE_SDL
 #include "SDL.h"
 #endif 
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 #include <android/native_activity.h>
 #endif
 #ifdef UNICODE_GUI
@@ -492,6 +494,19 @@ typedef struct{
   uint32_t system; //SYSTEM_UNKNOWN=0 ,SYSTEM_GB=1, SYSTEM_GBA=2, SYSTEM_NDS 3
   uint8_t padding[20];//Zero padding
 }se_emu_id;
+typedef struct{
+  cloud_drive_t* drive;
+  bool awaiting_login;
+  bool awaiting_login_swap;
+  char username[128];
+  sg_image profile_picture;
+  se_save_state_t save_states[SE_NUM_SAVE_STATES];
+  mutex_t save_states_mutex[SE_NUM_SAVE_STATES];
+  bool save_states_busy[SE_NUM_SAVE_STATES];
+  bool save_states_busy_swap[SE_NUM_SAVE_STATES];
+  cloud_user_info_t user_info;
+} se_cloud_state_t;
+static void se_sync_cloud_save_states();
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
 void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, bool has_alpha);
@@ -518,20 +533,20 @@ static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
-static const char* se_get_pref_path(){
+const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
 #elif defined(USE_SDL)
   static const char* cached_pref_path=NULL;
   if(cached_pref_path==NULL)cached_pref_path=SDL_GetPrefPath("Sky","SkyEmu");
   return cached_pref_path;
-#elif defined(PLATFORM_ANDROID)
+#elif defined(SE_PLATFORM_ANDROID)
   ANativeActivity* activity =(ANativeActivity*)sapp_android_get_native_activity();
   if(activity->internalDataPath)return activity->internalDataPath;
 #endif
   return "";
 }
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 float se_android_get_display_dpi_scale();
 #endif
 static float se_dpi_scale(){
@@ -541,7 +556,7 @@ static float se_dpi_scale(){
   dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
   dpi_scale*=1.10;
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   dpi_scale = se_android_get_display_dpi_scale();
 #endif
   return dpi_scale;
@@ -986,6 +1001,7 @@ se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
 se_cheat_t cheats[SE_NUM_CHEATS];
+se_cloud_state_t cloud_state;
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
@@ -1050,9 +1066,77 @@ void se_reset_rewind_buffer(se_core_rewind_buffer_t* rewind){
   rewind->index = rewind->size = 0; 
   rewind->first_push = false;
 }
+// Detection based on code by Freak, modified by Sky to add WebAsm, and RISC-V
+const char *se_get_host_arch() { 
+    #if defined(__x86_64__) || defined(_M_X64)
+    return "x86_64";
+    #elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
+    return "x86_32";
+    #elif defined(__ARM_ARCH_2__)
+    return "ARM2";
+    #elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
+    return "ARM3";
+    #elif defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
+    return "ARM4T";
+    #elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
+    return "ARM5"
+    #elif defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_)
+    return "ARM6T2";
+    #elif defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || defined(__ARM_ARCH_6ZK__)
+    return "ARM6";
+    #elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "ARM7";
+    #elif defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "ARM7A";
+    #elif defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "ARM7R";
+    #elif defined(__ARM_ARCH_7M__)
+    return "ARM7M";
+    #elif defined(__ARM_ARCH_7S__)
+    return "ARM7S";
+    #elif defined(__aarch64__) || defined(_M_ARM64)
+    return "ARM64";
+    #elif defined(mips) || defined(__mips__) || defined(__mips)
+    return "MIPS";
+    #elif defined(__sh__)
+    return "SUPERH";
+    #elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__PPC__) || defined(_ARCH_PPC)
+    return "POWERPC";
+    #elif defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)
+    return "POWERPC64";
+    #elif defined(__sparc__) || defined(__sparc)
+    return "SPARC";
+    #elif defined(__m68k__)
+    return "M68K";
+    #elif defined(__EMSCRIPTEN__)
+    return "WebAsm";
+    #elif defined(__riscv) || defined(__riscv32) || defined(__riscv__) || defined(_riscv)
+    #else
+    return "Unknown Arch";
+    #endif
+}
+const char *se_get_host_platform() { 
+  #if defined(SE_PLATFORM_WINDOWS)
+    return "Windows";
+  #elif defined(SE_PLATFORM_LINUX)
+    return "Linux";
+  #elif defined(SE_PLATFORM_FREEBSD)
+    return "FreeBSD";
+  #elif defined(SE_PLATFORM_MACOS)
+    return "macOS";
+  #elif defined(SE_PLATFORM_IOS)
+    return "iOS";
+  #elif defined(SE_PLATFORM_ANDROID)
+    return "Android";
+  #elif defined(__EMSCRIPTEN__)
+    return "Web";
+  #endif
+  return "Unknown Platform";
+}
+
 se_emu_id se_get_emu_id(){
   se_emu_id emu_id={0};
-  strncpy(emu_id.name,"SkyEmu",sizeof(emu_id.name));
+  snprintf(emu_id.name,sizeof(emu_id.name),"SkyEmu (%s,%s)",se_get_host_platform(),se_get_host_arch());
   strncpy(emu_id.build,GIT_COMMIT_HASH,sizeof(emu_id.build));
   return emu_id;
 }
@@ -1131,12 +1215,7 @@ bool se_bess_state_restore(uint8_t*state_data, size_t data_size, const se_emu_id
   }
   return valid; 
 }
-bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
-  save_state->valid = false;
-  int im_w, im_h, im_c; 
-  uint8_t *imdata = stbi_load(filename, &im_w, &im_h, &im_c, 4);
-  if(!imdata)return false; 
-
+bool se_load_state_common(se_save_state_t* save_state, const char* filename, uint8_t* imdata, int im_w, int im_h){
   uint8_t *data = malloc(im_w*im_h);
   size_t data_size = im_w*im_h;
   for(int i=0;i<data_size;++i){
@@ -1184,12 +1263,28 @@ bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
     }else if(se_bess_state_restore(data, data_size,comp_id, save_state)){
       save_state->valid = 2;
     }
-    
-    if(save_state->valid)printf("Loaded save state:%s\n",filename);
-    else printf("Failed to load state from file:%s\n",filename);
   }
   free(data);
   return save_state->valid;
+}
+bool se_load_state_from_mem(se_save_state_t* save_state, void* data, size_t data_size){
+  save_state->valid = false;
+  int im_w, im_h, im_c;
+  uint8_t *imdata = stbi_load_from_memory(data, data_size, &im_w, &im_h, &im_c, 4);
+  if(!imdata)return false;
+
+  return se_load_state_common(save_state, NULL, imdata, im_w, im_h);
+}
+bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
+  save_state->valid = false;
+  int im_w, im_h, im_c; 
+  uint8_t *imdata = stbi_load(filename, &im_w, &im_h, &im_c, 4);
+  if(!imdata)return false; 
+
+  bool ret = se_load_state_common(save_state, filename, imdata, im_w, im_h);
+  if(save_state->valid)printf("Loaded save state:%s\n",filename);
+  else printf("Failed to load state from file:%s\n",filename);
+  return ret;
 }
 double se_time(){
   static uint64_t base_time=0;
@@ -1532,6 +1627,7 @@ void se_draw_emu_stats(){
 
   se_text(ICON_FK_INFO_CIRCLE " Build Info");
   igSeparator();
+  se_text("%s (%s)", se_get_host_platform(),se_get_host_arch());
   se_text("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
   se_text("Commit Hash:");
   igPushItemWidth(-1);
@@ -2216,6 +2312,8 @@ void se_load_rom(const char *filename){
       se_load_state_from_disk(save_states+i,save_state_path);
     }
   }
+  emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
+  se_sync_cloud_save_states();
   return; 
 }
 static void se_reset_core(){
@@ -2688,6 +2786,124 @@ void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
   emu_state.render_frame = true;
   se_emulate_single_frame();
 }
+void se_state_download_callback(void* userdata, void* data, size_t size){
+  size_t slot = (size_t)userdata;
+  se_save_state_t* save_state = cloud_state.save_states+slot;
+  if (data == NULL) {
+    printf("Failed to download save state\n");
+    cloud_state.save_states_busy_swap[slot] = false;
+    return;
+  }
+
+  mutex_lock(cloud_state.save_states_mutex[slot]);
+  se_load_state_from_mem(save_state, data, size);
+  cloud_state.save_states_busy_swap[slot] = false;
+  mutex_unlock(cloud_state.save_states_mutex[slot]);
+}
+void se_capture_cloud_callback(void* userdata, void* data){
+  free(data);
+  size_t slot = (size_t)userdata;
+  mutex_lock(cloud_state.save_states_mutex[slot]);
+  cloud_state.save_states[slot].valid = true;
+  cloud_state.save_states_busy_swap[slot] = false;
+  mutex_unlock(cloud_state.save_states_mutex[slot]);
+}
+void se_write_png_cloud(void* context, void* data, int size){
+  char file[SB_FILE_PATH_SIZE];
+  size_t slot = (size_t)context;
+  snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%zu.state.png",emu_state.game_checksum,slot);
+  // data is freed after this function returns, so we need to copy it
+  void* data_copy = malloc(size);
+  memcpy(data_copy,data,size);
+  cloud_drive_upload(cloud_state.drive, file, "save_states", "image/png", data_copy, (size_t)size, se_capture_cloud_callback, (void*)slot);
+}
+void se_capture_state_slot_cloud(size_t slot){
+  if(emu_state.rom_loaded==false)return;
+  se_save_state_t* save_state = cloud_state.save_states+slot;
+  se_capture_state(&core, save_state);
+  save_state->valid = false;
+  cloud_state.save_states_busy_swap[slot] = true;
+  uint32_t width=0, height=0;
+  uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
+  int len;
+  stbi_write_png_to_func(se_write_png_cloud, (void*)slot, width, height, 4, imdata, 0);
+  free(imdata);
+}
+void se_restore_state_slot_cloud(size_t slot){
+  se_restore_state(&core, cloud_state.save_states+slot);
+}
+static void se_drive_ready_callback(cloud_drive_t* drive){
+  cloud_state.drive = drive;
+  if(drive){
+    cloud_state.awaiting_login_swap = false;
+    cloud_state.user_info = cloud_drive_get_user_info(drive);
+
+    // If there's a game, check if there's any save states to download
+    if(emu_state.rom_loaded){
+      se_sync_cloud_save_states();
+    }
+  }else{
+    printf("Something went wrong during cloud login\n");
+    cloud_state.awaiting_login_swap = false;
+  }
+}
+void se_login_cloud(){
+  cloud_state.awaiting_login_swap = true;
+  cloud_drive_create(se_drive_ready_callback);
+}
+static void se_sync_cloud_save_states(){
+  if(cloud_state.drive == NULL) return;
+  printf("Syncing cloud saves...\n");
+  for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
+    memset(cloud_state.save_states[i].screenshot, 0, sizeof(cloud_state.save_states[i].screenshot));
+    char file[SB_FILE_PATH_SIZE];
+    snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%d.state.png",emu_state.game_checksum,(int)i);
+    cloud_state.save_states_busy_swap[i] = true;
+    cloud_drive_download(cloud_state.drive, file, se_state_download_callback, (void*)i);
+  }
+}
+void se_drive_login(bool clicked, int x, int y, int w, int h){
+#ifdef EMSCRIPTEN
+  float delta_dpi_scale = se_dpi_scale()/sapp_dpi_scale();
+  static bool button_created = false;
+  if(!button_created){
+    button_created = true;
+    EM_ASM({
+        var input = document.createElement('input');
+        input.id = 'driveLogin';
+        input.value = '';
+        input.type = 'button';
+        document.body.appendChild(input);
+        input.onmousemove = input.onmouseover =  function(e) {
+          const mouseMoveEvent = new MouseEvent('mousemove', {
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY
+          });
+          document.getElementById('canvas').dispatchEvent(mouseMoveEvent);
+        };
+        input.onclick = function(e) {
+          Module.ccall('se_login_cloud');
+        };
+    });
+  }
+  if(cloud_state.awaiting_login) return;
+  EM_ASM_INT({
+    var input = document.getElementById('driveLogin');
+    input.style.left = $0 +'px';
+    input.style.top = $1 +'px';
+    input.style.width = $2 +'px';
+    input.style.height = $3 +'px';
+    input.style.visibility = 'visible';
+    input.style.position = 'absolute';
+    input.style.opacity = 0;
+  }, x*delta_dpi_scale, y*delta_dpi_scale, w*delta_dpi_scale, h*delta_dpi_scale);
+#else
+  if (clicked)
+    se_login_cloud();
+#endif
+}
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
 }
@@ -2812,7 +3028,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       }else desc->function();
   
       float bottom_padding =0;
-      #ifdef PLATFORM_IOS
+      #ifdef SE_PLATFORM_IOS
       se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
       #endif
       igDummy((ImVec2){0,bottom_padding});
@@ -3093,7 +3309,7 @@ void se_initialize_keybind(se_keybind_state_t * state){
   state->last_bind_activitiy=-1;
 
 }
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 const char* se_android_key_to_name(int key){
   switch(key){
     case AKEYCODE_UNKNOWN:                        return "UNKNOWN";
@@ -3417,7 +3633,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     if(state->bound_id[k]!=-1){
       switch(keybind_type){
         case SE_BIND_KEYBOARD: button_label=se_keycode_to_string(state->bound_id[k]);break;
-        #if defined(USE_SDL) || defined(PLATFORM_ANDROID)
+        #if defined(USE_SDL) || defined(SE_PLATFORM_ANDROID)
         case SE_BIND_KEY: 
           { 
             int key = state->bound_id[k];
@@ -3442,7 +3658,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
               const char* dir = (key&SE_JOY_NEG_MASK)? "<-0.3": ">0.3";
               snprintf(buff, sizeof(buff),se_localize("Analog %d %s"),joy_id,dir);
             }else {
-        #ifdef PLATFORM_ANDROID
+        #ifdef SE_PLATFORM_ANDROID
               const char* android_name = se_android_key_to_name(state->bound_id[k]);
               if(android_name) {
                 android_name = se_localize_and_cache(android_name);
@@ -3976,7 +4192,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
 #endif
   return clicked; 
 }
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 #include <android/log.h>
 
 #define TAG "SkyEmu"
@@ -4057,7 +4273,7 @@ void se_android_get_language(char* language_buffer, size_t buffer_size){
     // Retrieves NativeActivity.
     jobject nativeActivity = activity->clazz;
     jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity );
-    jmethodID getLanguageMethod= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getLanguage", "()Ljava/lang/String;" );
+    jmethodID getLanguageMethod= (*pJNIEnv)->GetStaticMethodID(pJNIEnv, ClassNativeActivity, "getLanguage", "()Ljava/lang/String;" );
     if(getLanguageMethod) {
         jstring joStringPropVal = (jstring) (*pJNIEnv)->CallStaticObjectMethod(pJNIEnv,ClassNativeActivity,getLanguageMethod);
         const jchar *jcVal = (*pJNIEnv)->GetStringUTFChars(pJNIEnv, joStringPropVal, JNI_FALSE);
@@ -4126,7 +4342,7 @@ void se_android_poll_events(bool visible){
     jclass ClassNativeActivity = (*pJNIEnv)->GetObjectClass(pJNIEnv, nativeActivity);
     jmethodID getEvent= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "getEvent", "()I" );
     jmethodID pollKeyboard= (*pJNIEnv)->GetMethodID(pJNIEnv, ClassNativeActivity, "pollKeyboard", "()V" );
-    (*pJNIEnv)->CallIntMethod(pJNIEnv, nativeActivity, pollKeyboard );
+    (*pJNIEnv)->CallVoidMethod(pJNIEnv, nativeActivity, pollKeyboard );
     ImGuiIO* io= igGetIO();
 
     io->KeysDown[io->KeyMap[ImGuiKey_Backspace]]=false;
@@ -4365,6 +4581,15 @@ static void se_reset_html_click_regions(){
     gui_state.current_click_region_id++;
   }
   gui_state.current_click_region_id=0;
+
+#if defined(EMSCRIPTEN)
+  EM_ASM({
+    var input = document.getElementById('driveLogin');
+    if (typeof(input) != 'undefined' && input != null) {
+      input.style.visibility= "hidden";
+    }
+  },gui_state.current_click_region_id);
+#endif
 }
 //Opens a file picker when clicked is true or a user clicks in the click region defined by x,y,w,h in ImGUI coordinates
 //File pickers only open for the click region on web platforms due to web security precautions. On Desktop/Native platforms
@@ -4405,11 +4630,11 @@ void se_open_file_browser(bool clicked, float x, float y, float w, float h, void
         se_file_browser_accept(outPath);
     }
   #endif
-  #ifdef PLATFORM_IOS
+  #ifdef SE_PLATFORM_IOS
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
     se_ios_open_file_picker(num_file_types,file_types);
   #endif
-  #ifdef PLATFORM_ANDROID
+  #ifdef SE_PLATFORM_ANDROID
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
     se_android_open_file_picker();
   #endif
@@ -5133,7 +5358,7 @@ void se_imgui_theme()
       });
   });
 #endif
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 void se_set_default_controller_binds(se_controller_state_t* cont){
   if(!cont)return;
   for(int i=0;i<SE_NUM_KEYBINDS;++i)cont->key.bound_id[i]=-1;
@@ -5181,7 +5406,7 @@ bool se_load_controller_settings(se_controller_state_t * cont){
 #ifdef USE_SDL
   if(!cont->sdl_joystick)return false;
 #endif
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   strncpy(cont->name,SE_ANDROID_CONTROLLER_NAME, sizeof(cont->name) );
 #endif
   int32_t bind_map[SE_NUM_BINDS_ALLOC*2];
@@ -5390,71 +5615,151 @@ void se_draw_touch_controls_settings(){
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
 
 }
-void se_draw_menu_panel(){
+void se_draw_save_states(bool cloud){
   ImGuiStyle *style = igGetStyle();
   int win_w = igGetWindowContentRegionWidth();
   ImDrawList*dl= igGetWindowDrawList();
+  if(!emu_state.rom_loaded)se_push_disabled();
+  for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
+    mutex_lock(cloud_state.save_states_mutex[i]);
+    se_save_state_t* states = cloud?cloud_state.save_states:save_states;
+    int slot_x = 0;
+    int slot_y = i;
+    int slot_w = (win_w-style->FramePadding.x)*0.5;
+    int slot_h = 64; 
+    if(i%2)igSameLine(0,style->FramePadding.x);
 
+    igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
+    ImVec2 screen_p;
+    igGetCursorScreenPos(&screen_p);
+    int screen_x = screen_p.x;
+    int screen_y = screen_p.y;
+    int screen_w = 64;
+    int screen_h = 64+style->FramePadding.y*2; 
+    int button_w = 55; 
+    se_text(se_localize_and_cache("Save Slot %d"),i);
+    cloud_state.save_states_busy[i] = cloud_state.save_states_busy_swap[i];
+    if(cloud&&cloud_state.save_states_busy[i])se_push_disabled();
+    char capture_text[32];
+    snprintf(capture_text,32,"%s%s",cloud?ICON_FK_CLOUD_UPLOAD" ":"",se_localize_and_cache("Capture"));
+    if(se_button(capture_text,(ImVec2){button_w,0})){
+      if (cloud) {
+        se_capture_state_slot_cloud(i);
+      } else {
+        se_capture_state_slot(i);
+      }
+    }
+    if(!states[i].valid)se_push_disabled();
+    char restore_text[32];
+    snprintf(restore_text,32,"%s%s",cloud?ICON_FK_CLOUD_DOWNLOAD" ":"",se_localize_and_cache("Restore"));
+    if(se_button(restore_text,(ImVec2){button_w,0})){
+      if (cloud) {
+        se_restore_state_slot_cloud(i);
+      } else {
+        se_restore_state_slot(i);
+      }
+    }
+    if(!states[i].valid)se_pop_disabled();
+    if(cloud&&cloud_state.save_states_busy[i])se_pop_disabled();
+    if(states[i].valid){
+      float w_scale = 1.0;
+      float h_scale = 1.0;
+      if(states[i].screenshot_width>states[i].screenshot_height){
+        h_scale = (float)states[i].screenshot_height/(float)states[i].screenshot_width;
+      }else{
+        w_scale = (float)states[i].screenshot_width/(float)states[i].screenshot_height;
+      }
+      screen_w*=w_scale;
+      screen_h*=h_scale;
+      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+   
+      se_draw_image(states[i].screenshot,states[i].screenshot_width,states[i].screenshot_height,
+                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
+      if(!cloud&&states[i].valid==2){
+        igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
+        se_button(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
+        se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
+      }
+    }else{
+      screen_h*=0.85;
+      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+      ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+      ImVec2 anchor;
+      igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
+      if(cloud&&cloud_state.save_states_busy[i]){
+        se_text(ICON_FK_SPINNER);
+      } else
+      se_text(ICON_FK_BAN);
+    }
+    igEndChildFrame();
+    mutex_unlock(cloud_state.save_states_mutex[i]);
+  }
+  if(!emu_state.rom_loaded)se_pop_disabled();
+}
+void se_draw_menu_panel(){
+  ImGuiStyle *style = igGetStyle();
+  int win_w = igGetWindowContentRegionWidth();
   se_text(ICON_FK_FLOPPY_O " Save States");
   igSeparator();
-
   if(gui_state.settings.hardcore_mode)se_text("Disabled in Hardcore Mode");
   else{
-    if(!emu_state.rom_loaded)se_push_disabled();
-    for(int i=0;i<SE_NUM_SAVE_STATES;++i){
-      int slot_x = 0;
-      int slot_y = i;
-      int slot_w = (win_w-style->FramePadding.x)*0.5;
-      int slot_h = 64; 
-      if(i%2)igSameLine(0,style->FramePadding.x);
-
-      igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
-      ImVec2 screen_p;
-      igGetCursorScreenPos(&screen_p);
-      int screen_x = screen_p.x;
-      int screen_y = screen_p.y;
-      int screen_w = 64;
-      int screen_h = 64+style->FramePadding.y*2; 
-      int button_w = 55; 
-      se_text(se_localize_and_cache("Save Slot %d"),i);
-      if(se_button(se_localize_and_cache("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
-      if(!save_states[i].valid)se_push_disabled();
-      if(se_button(se_localize_and_cache("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
-      if(!save_states[i].valid)se_pop_disabled();
-
-      if(save_states[i].valid){
-        float w_scale = 1.0;
-        float h_scale = 1.0;
-        if(save_states[i].screenshot_width>save_states[i].screenshot_height){
-          h_scale = (float)save_states[i].screenshot_height/(float)save_states[i].screenshot_width;
-        }else{
-          w_scale = (float)save_states[i].screenshot_width/(float)save_states[i].screenshot_height;
+    if (cloud_state.drive){
+      if (igBeginTabBar("Saves",ImGuiTabBarFlags_None)){
+        if (igBeginTabItem("Local",NULL,ImGuiTabItemFlags_None)){
+          se_draw_save_states(false);
+          igEndTabItem();
         }
-        screen_w*=w_scale;
-        screen_h*=h_scale;
-        screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
-        screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
-    
-        se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
-                      screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
-        if(save_states[i].valid==2){
-          igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
-          se_button(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
-          se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
+        if (igBeginTabItem("Cloud",NULL,ImGuiTabItemFlags_None)){
+          se_draw_save_states(true);
+          igEndTabItem();
         }
-      }else{
-        screen_h*=0.85;
-        screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
-        screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
-        ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
-        ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
-        ImVec2 anchor;
-        igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
-        se_text(ICON_FK_BAN);
+        igEndTabBar();
       }
-      igEndChildFrame();
+    }else{
+      se_draw_save_states(false);
     }
-    if(!emu_state.rom_loaded)se_pop_disabled();
+  }
+  se_text(ICON_FK_CLOUD " Google Drive");
+  igSeparator();
+  if (!cloud_state.drive){
+    if (cloud_state.awaiting_login) se_push_disabled();
+    bool clicked = false;
+    if (se_button(ICON_FK_SIGN_IN " Login",(ImVec2){0,0})){clicked=true;}
+    if (cloud_state.awaiting_login) se_pop_disabled();
+    if(igIsItemVisible()){
+      ImVec2 min, max;
+      igGetItemRectMin(&min);
+      igGetItemRectMax(&max);
+      ImGuiStyle *style = igGetStyle();
+      max.x+=style->FramePadding.x;
+      max.y+=style->FramePadding.y;
+      se_drive_login(clicked, min.x, min.y, max.x-min.x, max.y-min.y);
+    }
+    cloud_state.awaiting_login = cloud_state.awaiting_login_swap;
+  } else {
+    igBeginChildFrame(5000, (ImVec2){64,64},ImGuiWindowFlags_None);
+    ImVec2 screen_p;
+    igGetCursorScreenPos(&screen_p);
+    int screen_x = screen_p.x;
+    int screen_y = screen_p.y;
+    if (cloud_state.user_info.avatar){
+      void* avatar = cloud_state.user_info.avatar;
+      int avatar_w = cloud_state.user_info.avatar_width;
+      int avatar_h = cloud_state.user_info.avatar_height;
+      se_draw_image(avatar,avatar_w,avatar_h,screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),64*se_dpi_scale(),64*se_dpi_scale(), true);
+    }
+    igEndChildFrame();
+    char logged_in[256];
+    snprintf(logged_in,256,se_localize_and_cache("Logged in as %s"),cloud_state.user_info.name);
+    se_text(logged_in);
+    if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
+      cloud_drive_logout(cloud_state.drive);
+      cloud_drive_destroy(cloud_state.drive);
+      cloud_state.drive = NULL;
+    }
   }
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
@@ -5621,7 +5926,7 @@ void se_draw_menu_panel(){
       se_emscripten_flush_fs();
     }
   }
-  #if defined( USE_SDL) ||defined(PLATFORM_ANDROID)
+  #if defined( USE_SDL) ||defined(SE_PLATFORM_ANDROID)
   se_draw_controller_config(&gui_state);
   #endif
 
@@ -5754,7 +6059,7 @@ void se_draw_menu_panel(){
 #endif 
 
   float bottom_padding =0;
-  #ifdef PLATFORM_IOS
+  #ifdef SE_PLATFORM_IOS
   se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
   #endif
   igDummy((ImVec2){0,bottom_padding});
@@ -6193,13 +6498,13 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
-#if !defined(EMSCRIPTEN) && !defined(PLATFORM_ANDROID) &&!defined(PLATFORM_IOS)
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
   static bool last_toggle_fullscreen=false;
   if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
   last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
 #endif
 
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
   static bool last_back_press = false;
   if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
@@ -6227,13 +6532,13 @@ static void frame(void) {
   float top_padding =0;
   float left_padding = 0, right_padding=0;
   style->DisplaySafeAreaPadding.x = style->DisplaySafeAreaPadding.y =0;
-#ifdef PLATFORM_IOS
+#ifdef SE_PLATFORM_IOS
   se_ios_get_safe_ui_padding(&top_padding,NULL,&left_padding,&right_padding);
   style->DisplaySafeAreaPadding.x = left_padding;
   style->DisplaySafeAreaPadding.y = top_padding;
 #endif
 
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   se_android_poll_events(igGetIO()->WantTextInput);
 #endif
   sb_poll_controller_input(&emu_state.joy);
@@ -6431,6 +6736,11 @@ static void frame(void) {
         emu_state.run_mode= SB_MODE_RUN;
         emu_state.step_frames=1;
       }
+      if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
+    }
+
+    if(gui_state.settings.hardcore_mode){
+      if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
@@ -6687,7 +6997,7 @@ void se_load_settings(){
       se_set_default_keybind(&gui_state);
     }
   }
-#if defined(USE_SDL) || defined(PLATFORM_ANDROID)
+#if defined(USE_SDL) || defined(SE_PLATFORM_ANDROID)
   if(!se_load_controller_settings(&gui_state.controller)){
     se_set_default_controller_binds(&gui_state.controller);
   }
@@ -6737,6 +7047,16 @@ void se_load_settings(){
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
     gui_state.last_saved_settings=gui_state.settings;
     if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
+  }
+  {
+    memset(&cloud_state,0,sizeof(se_cloud_state_t));
+    for(int i=0;i<SE_NUM_SAVE_STATES;i++)cloud_state.save_states_mutex[i] = mutex_create();
+    char refresh_token_path[SB_FILE_PATH_SIZE];
+    snprintf(refresh_token_path,SB_FILE_PATH_SIZE,"%srefresh_token.txt",se_get_pref_path());
+    if(sb_file_exists(refresh_token_path)){
+      cloud_state.awaiting_login_swap = true;
+      cloud_drive_create(se_drive_ready_callback);
+    }
   }
 }
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){
@@ -7211,6 +7531,7 @@ static void se_init(){
   }
 }
 static void init(void) {
+  cloud_drive_init();
   gui_state.overlay_open= true;
 #ifdef USE_SDL
   SDL_SetMainReady();
@@ -7219,11 +7540,11 @@ static void init(void) {
   }
 #endif
   gui_state.ui_type=SE_UI_DESKTOP;
-  #if defined(PLATFORM_ANDROID)
+  #if defined(SE_PLATFORM_ANDROID)
   gui_state.ui_type = SE_UI_ANDROID;
-  #elif defined(PLATFORM_IOS)
+  #elif defined(SE_PLATFORM_IOS)
   gui_state.ui_type = SE_UI_IOS;
-  #elif defined(PLATFORM_WEB)
+  #elif defined(SE_PLATFORM_WEB)
   gui_state.ui_type = SE_UI_WEB;
   #endif
 
@@ -7281,7 +7602,7 @@ static void init(void) {
   };
   gui_state.quad_vb = sg_make_buffer(&vb_desc);
   sg_pop_debug_group();
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   se_android_request_permissions();
   #endif
 }
@@ -7293,6 +7614,7 @@ static void cleanup(void) {
 #ifdef USE_SDL
   SDL_Quit();
 #endif
+  cloud_drive_cleanup();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {
@@ -7382,7 +7704,7 @@ static void headless_mode(){
 #endif 
 }
 
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1rom(JNIEnv *env, jobject thiz, jstring filePath) {
     const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
     gui_state.ran_from_launcher=true;
@@ -7420,7 +7742,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
   #endif
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0)headless_mode();
 
-  #ifdef PLATFORM_IOS
+  #ifdef SE_PLATFORM_IOS
   se_ios_set_documents_working_directory();
   #endif 
 

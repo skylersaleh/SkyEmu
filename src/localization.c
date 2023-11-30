@@ -6,7 +6,7 @@
 #include <locale.h>
 #include <ctype.h>
 
-#if defined(PLATFORM_IOS) || defined(PLATFORM_MACOS)
+#if defined(SE_PLATFORM_IOS) || defined(SE_PLATFORM_MACOS)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
@@ -22,6 +22,11 @@
 // - "Rewind"
 // - "Slow"
 // - "Fast Forward"
+
+// Strings removed in v4:
+// - "Controller"
+// - "GB Palette %d"
+// - "Reset Palette to Defaults"
 
 //#define SHOW_TRANSLATE_ME 1
 
@@ -1780,13 +1785,13 @@ const char* se_language_string(int language_enum){
     }
     return "";
 }
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
 extern void se_android_get_language(char* language_buffer, size_t buffer_size);
 #endif
 int se_get_default_language(){
     static int default_lang = SE_LANG_DEFAULT;
     if(default_lang==SE_LANG_DEFAULT){
-        #if defined(PLATFORM_IOS) || defined(PLATFORM_MACOS)
+        #if defined(SE_PLATFORM_IOS) || defined(SE_PLATFORM_MACOS)
         // Try to get from CF Locale
         if(default_lang == SE_LANG_DEFAULT){
             char lang_buffer[128];
@@ -1797,7 +1802,7 @@ int se_get_default_language(){
             if(default_lang != SE_LANG_DEFAULT) printf("Detected CF locale language: %s (enum: %s)\n", lang_buffer ,se_language_string(default_lang));
         }
         #endif
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
         // Try to get from JNI
         if(default_lang == SE_LANG_DEFAULT){
             char lang_buffer[128];
@@ -1825,7 +1830,7 @@ int se_get_default_language(){
             printf("Couldn't detect language, defaulting to English\n");
             default_lang = SE_LANG_ENGLISH;
         }
-        #ifdef PLATFORM_WINDOWS
+        #ifdef SE_PLATFORM_WINDOWS
             //Needed to let windows open files from UTF-8 paths
             setlocale(LC_ALL, ".65001");
         #endif
