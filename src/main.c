@@ -4195,6 +4195,7 @@ void se_download_emscripten_file(const char * path){
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   }, name, data, data_size);
+  free(data);
 }
 #endif 
 
