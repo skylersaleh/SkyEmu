@@ -330,6 +330,10 @@ typedef struct{
 #define SE_SCREEN_NONE  0
 #define SE_SCREEN_BOTH  0xC0
 
+#define SE_NO_SORT 0
+#define SE_SORT_ALPHA_ASC 1
+#define SE_SORT_ALPHA_DESC 2
+
 typedef struct{
   uint16_t start_pixel;
   uint16_t end_pixel;
@@ -375,6 +379,9 @@ typedef struct {
     se_keybind_state_t key;
     se_controller_state_t controller;
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
+    se_game_info_t sorted_recently_loaded_games[SE_NUM_RECENT_PATHS];
+    int num_recently_loaded_games;
+    int recent_games_sort_type;
     persistent_settings_t settings;
     persistent_settings_t last_saved_settings;
     bool overlay_open;
@@ -1304,6 +1311,25 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   free(bios_data);
   return loaded_bios;
 }
+static int game_info_comparator(const void* a, const void* b){
+  const se_game_info_t* ga = (const se_game_info_t*)a;
+  const se_game_info_t* gb = (const se_game_info_t*)b;
+  return strcmp(ga->path,gb->path);
+}
+static void se_sort_recent_games_list(){
+  gui_state.num_recently_loaded_games=32;
+  for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
+    memset(gui_state.sorted_recently_loaded_games[i].path,0,SB_FILE_PATH_SIZE);
+    if(gui_state.recently_loaded_games[i].path[0]==0){gui_state.num_recently_loaded_games=i;break;}
+  }
+  for(int i=0;i<gui_state.num_recently_loaded_games;++i){
+    strncpy(gui_state.sorted_recently_loaded_games[i].path,gui_state.recently_loaded_games[i].path,SB_FILE_PATH_SIZE);
+  }
+  qsort(gui_state.sorted_recently_loaded_games,gui_state.num_recently_loaded_games,sizeof(se_game_info_t),game_info_comparator);
+  for (int i=0;i<gui_state.num_recently_loaded_games;++i){
+    printf("Sorted recent game %d: %s\n",i,gui_state.sorted_recently_loaded_games[i].path);
+  }
+}
 static void se_save_recent_games_list(){
   gui_state_t* gui = &gui_state;
   char pref_path[SB_FILE_PATH_SIZE];
@@ -1319,8 +1345,9 @@ static void se_save_recent_games_list(){
   }
   fclose(f);
   se_emscripten_flush_fs();
+  se_sort_recent_games_list();
 }
-void se_load_recent_games_list(){
+static void se_load_recent_games_list(){
   gui_state_t* gui = &gui_state;
   char pref_path[SB_FILE_PATH_SIZE];
   snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
@@ -1339,6 +1366,7 @@ void se_load_recent_games_list(){
     }
   }
   fclose(f);
+  se_sort_recent_games_list();
 }
 
 bool se_key_is_pressed(int keycode){
@@ -4553,9 +4581,22 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
   igBegin(se_localize_and_cache(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igSameLine(win_max.x-32,0);
+  const char* icon=ICON_FK_SORT;
+  se_game_info_t* base = gui_state.recently_loaded_games;
+  int sign = 1;
+  switch(gui_state.recent_games_sort_type){
+    case SE_NO_SORT: icon=ICON_FK_SORT;break;
+    case SE_SORT_ALPHA_ASC: icon=ICON_FK_SORT_ALPHA_ASC;base=gui_state.sorted_recently_loaded_games;break;
+    case SE_SORT_ALPHA_DESC: icon=ICON_FK_SORT_ALPHA_DESC;base=&gui_state.sorted_recently_loaded_games[gui_state.num_recently_loaded_games-1];sign=-1;break;
+  }
+  if(se_button(icon, (ImVec2){32,32})){
+    gui_state.recent_games_sort_type++;
+    if(gui_state.recent_games_sort_type>SE_SORT_ALPHA_DESC)gui_state.recent_games_sort_type=SE_NO_SORT;
+  }
   int num_entries=0;
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    se_game_info_t *info = gui_state.recently_loaded_games+i;
+    se_game_info_t *info = base+i*sign;
     if(strcmp(info->path,"")==0)break;
     igPushIDInt(i);
     const char* base, *file_name, *ext; 
