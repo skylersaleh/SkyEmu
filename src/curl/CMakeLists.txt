@@ -484,7 +484,7 @@ if(use_core_foundation_and_core_services)
 endif()
 
 if(CURL_USE_OPENSSL)
-  find_package(OpenSSL REQUIRED)
+  # find_package(OpenSSL REQUIRED) # SkyEmu vendors its own OpenSSL
   set(SSL_ENABLED ON)
   set(USE_OPENSSL ON)
 
@@ -492,7 +492,7 @@ if(CURL_USE_OPENSSL)
   # version of CMake.  This allows our dependents to get our dependencies
   # transitively.
   if(NOT CMAKE_VERSION VERSION_LESS 3.4)
-    list(APPEND CURL_LIBS OpenSSL::SSL OpenSSL::Crypto)
+    list(APPEND CURL_LIBS ssl crypto)
   else()
     list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES})
     include_directories(${OPENSSL_INCLUDE_DIR})

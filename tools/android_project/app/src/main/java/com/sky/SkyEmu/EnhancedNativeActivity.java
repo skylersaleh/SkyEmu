@@ -30,6 +30,8 @@ import android.app.NativeActivity;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
+import androidx.browser.customtabs.CustomTabsIntent;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -49,6 +51,7 @@ public class EnhancedNativeActivity extends NativeActivity {
     public View mRootView;
     private Vector<Integer> keyboardEvents;
     private boolean first_event;
+    CustomTabsIntent authIntent;
 
     static {
         System.loadLibrary("SkyEmu");
@@ -60,7 +63,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         return metrics.xdpi/120.0f;
     }
-    public String getLanguage() {
+    public static String getLanguage() {
         return Locale.getDefault().toString();
     }
     /*Handle permission request results*/
@@ -374,6 +377,11 @@ public class EnhancedNativeActivity extends NativeActivity {
                 Log.i("SkyEmu", "Copied file path: " + copiedFilePath);
             }
         }
+    }
+    public void openCustomTab(String url){
+        authIntent = new CustomTabsIntent.Builder().build();
+        authIntent.intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        authIntent.launchUrl(EnhancedNativeActivity.this, Uri.parse(url));
     }
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {

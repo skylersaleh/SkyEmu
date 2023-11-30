@@ -163,6 +163,7 @@ typedef struct {
   uint8_t *rom_data;
   char rom_path[SB_FILE_PATH_SIZE]; 
   bool force_dmg_mode; 
+  uint64_t game_checksum;
 } sb_emu_state_t;
 typedef struct{
   bool read_since_reset;
@@ -244,7 +245,7 @@ static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
   }
   return NULL;
 }
-static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size){
+static bool sb_save_file_data(const char* path, const uint8_t* data, size_t file_size){
   FILE *f = fopen(path, "wb");
   size_t written = -1; 
   if(f){
@@ -286,7 +287,7 @@ static const char* sb_parent_path(const char* path){
 }
 static const char *sb_get_home_path(){
   static char homedir[SB_FILE_PATH_SIZE];
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   return "/sdcard/";
 #elif defined(_WIN32)
   snprintf(homedir, SB_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
@@ -321,7 +322,7 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
   }
 }
 static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
-  char * seperator = base_path[0]==0? "" : "/"; 
+  const char * seperator = base_path[0]==0? "" : "/"; 
   if(strlen(base_path)!=0){
     char last_base_char = base_path[strlen(base_path)-1];
     if(last_base_char=='/'||last_base_char=='\\')seperator="";
