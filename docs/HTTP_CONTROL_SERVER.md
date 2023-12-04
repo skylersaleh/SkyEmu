@@ -320,7 +320,7 @@ Loads a rom from a parameter specified "path" on the server. Can be initially pa
 
 **Example**
 
-```http://localhost:8080/load?path=/tmp/rom.gba&pause=1```
+```http://localhost:8080/load_rom?path=/tmp/rom.gba&pause=1```
 
 **Result:**
 
