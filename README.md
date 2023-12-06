@@ -1,11 +1,11 @@
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_win/dev/WindowsRelease.zip" rel="Download Windows">![Windows Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_win.yml/badge.svg)</a>
-<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/dev/MacOSRelease.zip" rel="Download macOS">![Mac Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_mac.yml/badge.svg)
-<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/dev/LinuxRelease.zip" rel="Download Linux">![Linux Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_linux.yml/badge.svg)
-<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_android/dev/AndroidRelease.zip" rel="Download Android">![Android Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_android.yml/badge.svg)
-<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)
-<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_freebsd/dev/FreeBSDRelease.zip" rel="Download FreeBSD">![FreeBSD Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_freebsd.yml/badge.svg)
-<a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)
-<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield) 
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_mac/dev/MacOSRelease.zip" rel="Download macOS">![Mac Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_mac.yml/badge.svg)</a>
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_linux/dev/LinuxRelease.zip" rel="Download Linux">![Linux Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_linux.yml/badge.svg)</a>
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_android/dev/AndroidRelease.zip" rel="Download Android">![Android Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_android.yml/badge.svg)</a>
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)</a>
+<a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_freebsd/dev/FreeBSDRelease.zip" rel="Download FreeBSD">![FreeBSD Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_freebsd.yml/badge.svg)</a>
+<a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)</a>
+<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield)</a> 
 
 ![SkyEmu](https://github.com/skylersaleh/SkyEmu/assets/7118296/367de77a-d370-40f7-a8b5-f387bd3a6218)
 
