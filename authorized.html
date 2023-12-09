@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Authorized</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <script type="text/javascript">
+        function checkQuery() {
+            var fragment = window.location.hash;
+            if (fragment.includes('access_token')){
+                var access_token = fragment.split('=')[1].split('&')[0];
+                window.opener.access_token = access_token;
+                setTimeout(function() {
+                    window.close();
+                    window.opener.focus();
+                }, 500);
+            }
+        }
+        window.onload = checkQuery;
+        </script>
+    </head>
+    <body>
+    
+    </body>
+</html>
