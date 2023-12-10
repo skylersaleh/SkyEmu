@@ -4605,11 +4605,14 @@ void se_load_rom_overlay(bool visible){
   igPopItemWidth();
   igSameLine(0,5);
 
-  const char* icon=ICON_FK_SORT;
+  const char* icon=ICON_FK_LONG_ARROW_DOWN ICON_FK_CLOCK_O;
   switch(gui_state.recent_games_sort_type){
     case SE_NO_SORT:        icon=ICON_FK_LONG_ARROW_DOWN ICON_FK_CLOCK_O ;break;
     case SE_SORT_ALPHA_ASC: icon=ICON_FK_SORT_ALPHA_ASC;break;
     case SE_SORT_ALPHA_DESC:icon=ICON_FK_SORT_ALPHA_DESC;break;
+    default: 
+      gui_state.recent_games_sort_type = SE_NO_SORT;
+      se_sort_recent_games_list();
   }
   if(se_button(icon,(ImVec2){50,0})){
     gui_state.recent_games_sort_type++;
