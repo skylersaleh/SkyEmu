@@ -1333,7 +1333,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
           // Check if the bubble made it to the execute stage before being squashed, 
           // and apply the bubble cycle if it was not squashed. 
           // Note, only a single pipeline bubble is tracked using this infrastructure. 
-          int pc_bank = SB_BFE(pc,24,8);
+          int pc_bank = SB_BFE(pc,24,4);
           int prefetch_cycles = gba->mem.wait_state_table[pc_bank*4]; 
           int prefetch_phase = (gba->mem.prefetch_size)%prefetch_cycles;
           if(gba->mem.prefetch_size>gba->cpu.i_cycles&&prefetch_phase==prefetch_cycles-1)wait+=1;
@@ -1488,7 +1488,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
           gba->mem.openbus_word = *(uint32_t*)(gba->mem.cart_rom+maddr);
           if(req_type&0x3){
             uint16_t res16 = gba->mem.openbus_word >> (addr&2)*8;
-            gba->mem.openbus_word = res16*0x10001;
+            gba->mem.openbus_word = res16*0x10001u;
           }
         }
       }
@@ -1571,10 +1571,10 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
   uint32_t word_data = data; 
   if(req_size_bytes==2){
     word_data<<= (address&2)*8;
-    word_mask =0x0000ffff<< ((address&2)*8);
+    word_mask =0x0000ffffu<< ((address&2)*8u);
   }else if(req_size_bytes==1){
     word_data<<= (address&3)*8;
-    word_mask =0x000000ff<< ((address&3)*8);
+    word_mask =0x000000ffu<< ((address&3)*8u);
   }
   word_data&=word_mask;
 
@@ -2522,7 +2522,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
               // events for very large DMAs. 
               if(fast_dma_count>128)fast_dma_count=128;
               bytes = fast_dma_count*transfer_bytes;
-              memcpy(dest_start,source_start, bytes);
+              memmove(dest_start,source_start, bytes);
               gba->dma[i].current_transaction=fast_dma_count;
               int trans_type = type?2:0;
               // First non-sequential fetch
