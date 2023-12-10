@@ -419,6 +419,7 @@ typedef struct {
     char loaded_custom_font_path[SB_FILE_PATH_SIZE];
     se_custom_theme_t theme;
     bool ran_from_launcher;
+    char search_buffer[32];
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -4538,6 +4539,19 @@ bool se_load_rom_file_browser_callback(const char* path){
   se_load_rom(path);
   return emu_state.rom_loaded;
 }
+bool se_string_contains_string_case_insensitive(char *canidate, char *search) {
+  int len1 = strlen(canidate);
+  int len2 = strlen(search);
+  if(len2==0)return true;
+  for (int i = 0; i < len1 - len2; i++) {
+    int j=0;
+    for (j = 0; j < len2; j++) {
+        if (tolower(canidate[i+j]) != tolower(search[j]))break;
+    }
+    if (j == len2) return true;
+  }
+  return false;
+}
 void se_load_rom_overlay(bool visible){
   if(visible==false)return;
   ImVec2 w_pos, w_size;
@@ -4580,19 +4594,28 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(0.9);
   igBegin(se_localize_and_cache(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-  igSameLine(win_max.x-32,0);
+  
+  igSameLine(0,5);
+  se_text("%s ",ICON_FK_SEARCH);
+  igSameLine(0,5);
+  igPushItemWidth(-55);
+  igInputText("##search",gui_state.search_buffer,sizeof(gui_state.search_buffer),ImGuiInputTextFlags_None, NULL,NULL);
+  igPopItemWidth();
+  igSameLine(0,5);
+
   const char* icon=ICON_FK_SORT;
   se_game_info_t* base = gui_state.recently_loaded_games;
   int sign = 1;
   switch(gui_state.recent_games_sort_type){
-    case SE_NO_SORT: icon=ICON_FK_SORT;break;
+    case SE_NO_SORT: icon=ICON_FK_LONG_ARROW_DOWN ICON_FK_CLOCK_O ;break;
     case SE_SORT_ALPHA_ASC: icon=ICON_FK_SORT_ALPHA_ASC;base=gui_state.sorted_recently_loaded_games;break;
     case SE_SORT_ALPHA_DESC: icon=ICON_FK_SORT_ALPHA_DESC;base=&gui_state.sorted_recently_loaded_games[gui_state.num_recently_loaded_games-1];sign=-1;break;
   }
-  if(se_button(icon, (ImVec2){32,32})){
+  if(se_button(icon,(ImVec2){50,0})){
     gui_state.recent_games_sort_type++;
     if(gui_state.recent_games_sort_type>SE_SORT_ALPHA_DESC)gui_state.recent_games_sort_type=SE_NO_SORT;
   }
+  igSeparator();
   int num_entries=0;
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
     se_game_info_t *info = base+i*sign;
@@ -4609,6 +4632,7 @@ void se_load_rom_overlay(bool visible){
     bool save_exists = sb_file_exists(save_file_path);
     if(save_exists)reduce_width=85; 
     #endif
+    if(!se_string_contains_string_case_insensitive(info->path,gui_state.search_buffer))continue;
     if(se_selectable_with_box(file_name,se_replace_fake_path(info->path),ext_upper,false,reduce_width)){
       se_load_rom(info->path);
     }
