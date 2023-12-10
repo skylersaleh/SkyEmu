@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Authorized</title>
+        <title>Authorization</title>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <script type="text/javascript">
         function checkQuery() {
-            var fragment = window.location.hash;
-            if (fragment.includes('access_token')){
-                var access_token = fragment.split('=')[1].split('&')[0];
-                window.opener.access_token = access_token;
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('code')) {
+                const code = urlParams.get('code');
+                window.opener.authorization_code = code;
                 setTimeout(function() {
                     window.close();
                     window.opener.focus();
