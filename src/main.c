@@ -4570,8 +4570,8 @@ void se_load_rom_overlay(bool visible){
   w_size.y/=se_dpi_scale();
   igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
-  igSetNextWindowBgAlpha(SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
+  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),gui_state.settings.hardcore_mode?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   int x, y, w,  h;
@@ -4601,7 +4601,7 @@ void se_load_rom_overlay(bool visible){
   child_size.y = w_size.y-list_y_off;
   igSetNextWindowSize(child_size,ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
-  igSetNextWindowBgAlpha(0.9);
+  igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
   igBegin(se_localize_and_cache(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   igSameLine(0,5);
