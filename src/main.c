@@ -2215,6 +2215,7 @@ void se_load_rom(const char *filename){
   return; 
 }
 static void se_reset_core(){
+  if(emu_state.rom_loaded==false)return; 
   se_load_rom(gui_state.recently_loaded_games[0].path);
 }
 static bool se_write_save_to_disk(const char* path){
@@ -5729,7 +5730,10 @@ void se_draw_menu_panel(){
   gui_state.settings.draw_debug_menu = draw_debug_menu;
   bool hardcore_mode = gui_state.settings.hardcore_mode;
   se_checkbox("Hardcore Mode",&hardcore_mode);
-  gui_state.settings.hardcore_mode = hardcore_mode;
+  if(gui_state.settings.hardcore_mode!=hardcore_mode){
+    gui_state.settings.hardcore_mode = hardcore_mode;
+    se_reset_core();
+  }
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
   bool enable_hcs = gui_state.settings.http_control_server_enable;
