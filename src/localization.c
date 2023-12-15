@@ -17,6 +17,9 @@
 // - ICON_FK_KEY " Action Replay Codes" (optional)
 // - "Cheat Code Path" 
 
+// Strings added in v4 requiring translation:
+// - "Disabled in Hardcore Mode"
+
 //#define SHOW_TRANSLATE_ME 1
 
 //Special thanks to https://github.com/shooterspps and Nilay for the Chinese Translation

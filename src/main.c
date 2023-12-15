@@ -188,7 +188,8 @@ typedef struct{
   uint32_t http_control_server_enable;
   uint32_t avoid_overlaping_touchscreen;
   float custom_font_scale;
-  uint32_t padding[229];
+  uint32_t hardcore_mode; 
+  uint32_t padding[228];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -2585,6 +2586,7 @@ typedef struct{
   const char* label;
   void (*function)();
   bool visible;
+  bool allow_hardcore;
 }se_debug_tool_desc_t; 
 
 sb_debug_mmio_access_t gba_mmio_access_type(uint64_t address,int trigger_breakpoint){return gba_debug_mmio_access(&core.gba,address,trigger_breakpoint);}
@@ -2621,7 +2623,7 @@ se_debug_tool_desc_t gba_debug_tools[]={
   {ICON_FK_SITEMAP, ICON_FK_SITEMAP " MMIO", gba_mmio_debugger},
   {ICON_FK_PENCIL_SQUARE_O, ICON_FK_PENCIL_SQUARE_O " Memory",gba_memory_debugger},
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t gb_debug_tools[]={
@@ -2631,7 +2633,7 @@ se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
   {ICON_FK_DELICIOUS, ICON_FK_DELICIOUS " Tile Map",gb_tile_map_debugger},
   {ICON_FK_TH, ICON_FK_TH " Tile Data",gb_tile_data_debugger},
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t nds_debug_tools[]={
@@ -2643,7 +2645,7 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
   {ICON_FK_INFO_CIRCLE, ICON_FK_INFO_CIRCLE " NDS IO",nds_io_debugger},
 
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats},
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
   {NULL,NULL,NULL}
 };
 static se_debug_tool_desc_t* se_get_debug_description(){
@@ -2676,7 +2678,7 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
   se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
 }
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
-  if(!save_state->valid || save_state->system != emu_state.system)return; 
+  if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.hardcore_mode)return; 
   *core=save_state->state;
   emu_state.render_frame = true;
   se_emulate_single_frame();
@@ -2800,7 +2802,10 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
       igBegin(se_localize_and_cache(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-      desc->function();
+      if(gui_state.settings.hardcore_mode && desc->allow_hardcore == false){
+        se_text("Disabled in Hardcore Mode");
+      }else desc->function();
+  
       float bottom_padding =0;
       #ifdef PLATFORM_IOS
       se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
@@ -5382,126 +5387,133 @@ void se_draw_touch_controls_settings(){
 }
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
+  int win_w = igGetWindowContentRegionWidth();
+  ImDrawList*dl= igGetWindowDrawList();
+
   se_text(ICON_FK_FLOPPY_O " Save States");
   igSeparator();
 
-  int win_w = igGetWindowContentRegionWidth();
-  ImDrawList*dl= igGetWindowDrawList();
-  if(!emu_state.rom_loaded)se_push_disabled();
-  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
-    int slot_x = 0;
-    int slot_y = i;
-    int slot_w = (win_w-style->FramePadding.x)*0.5;
-    int slot_h = 64; 
-    if(i%2)igSameLine(0,style->FramePadding.x);
+  if(gui_state.settings.hardcore_mode)se_text("Disabled in Hardcore Mode");
+  else{
+    if(!emu_state.rom_loaded)se_push_disabled();
+    for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+      int slot_x = 0;
+      int slot_y = i;
+      int slot_w = (win_w-style->FramePadding.x)*0.5;
+      int slot_h = 64; 
+      if(i%2)igSameLine(0,style->FramePadding.x);
 
-    igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
-    ImVec2 screen_p;
-    igGetCursorScreenPos(&screen_p);
-    int screen_x = screen_p.x;
-    int screen_y = screen_p.y;
-    int screen_w = 64;
-    int screen_h = 64+style->FramePadding.y*2; 
-    int button_w = 55; 
-    se_text(se_localize_and_cache("Save Slot %d"),i);
-    if(se_button(se_localize_and_cache("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
-    if(!save_states[i].valid)se_push_disabled();
-    if(se_button(se_localize_and_cache("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
-    if(!save_states[i].valid)se_pop_disabled();
+      igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_None);
+      ImVec2 screen_p;
+      igGetCursorScreenPos(&screen_p);
+      int screen_x = screen_p.x;
+      int screen_y = screen_p.y;
+      int screen_w = 64;
+      int screen_h = 64+style->FramePadding.y*2; 
+      int button_w = 55; 
+      se_text(se_localize_and_cache("Save Slot %d"),i);
+      if(se_button(se_localize_and_cache("Capture"),(ImVec2){button_w,0}))se_capture_state_slot(i);
+      if(!save_states[i].valid)se_push_disabled();
+      if(se_button(se_localize_and_cache("Restore"),(ImVec2){button_w,0}))se_restore_state_slot(i);
+      if(!save_states[i].valid)se_pop_disabled();
 
-    if(save_states[i].valid){
-      float w_scale = 1.0;
-      float h_scale = 1.0;
-      if(save_states[i].screenshot_width>save_states[i].screenshot_height){
-        h_scale = (float)save_states[i].screenshot_height/(float)save_states[i].screenshot_width;
+      if(save_states[i].valid){
+        float w_scale = 1.0;
+        float h_scale = 1.0;
+        if(save_states[i].screenshot_width>save_states[i].screenshot_height){
+          h_scale = (float)save_states[i].screenshot_height/(float)save_states[i].screenshot_width;
+        }else{
+          w_scale = (float)save_states[i].screenshot_width/(float)save_states[i].screenshot_height;
+        }
+        screen_w*=w_scale;
+        screen_h*=h_scale;
+        screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+        screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+    
+        se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
+                      screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
+        if(save_states[i].valid==2){
+          igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
+          se_button(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
+          se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
+        }
       }else{
-        w_scale = (float)save_states[i].screenshot_width/(float)save_states[i].screenshot_height;
+        screen_h*=0.85;
+        screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
+        screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
+        ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+        ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+        ImVec2 anchor;
+        igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
+        se_text(ICON_FK_BAN);
       }
-      screen_w*=w_scale;
-      screen_h*=h_scale;
-      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
-      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
-   
-      se_draw_image(save_states[i].screenshot,save_states[i].screenshot_width,save_states[i].screenshot_height,
-                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
-      if(save_states[i].valid==2){
-        igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-15,screen_y+screen_h*0.5-15});
-        se_button(ICON_FK_EXCLAMATION_TRIANGLE,(ImVec2){30,30});
-        se_tooltip("This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues");
-      }
-    }else{
-      screen_h*=0.85;
-      screen_x+=button_w+(slot_w-screen_w-button_w)*0.5;
-      screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
-      ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
-      ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
-      ImVec2 anchor;
-      igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
-      se_text(ICON_FK_BAN);
+      igEndChildFrame();
     }
-    igEndChildFrame();
+    if(!emu_state.rom_loaded)se_pop_disabled();
   }
-  if(!emu_state.rom_loaded)se_pop_disabled();
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_text(ICON_FK_KEY " Action Replay Codes");
     igSeparator();
-    int free_cheat_index = -1; 
-    for(int i=0;i<SE_NUM_CHEATS;i++){
-      se_cheat_t* cheat = &cheats[i];
-      if (cheat->state==-1){free_cheat_index=i; continue;}
-      igPushIDInt(i);
-      if(gui_state.editing_cheat_index==i){
-        igSetNextItemWidth(win_w-55);
-        igInputText("##Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
-        cheat->state = 0; 
-        igSameLine(win_w-40,0);
-        if(se_button(ICON_FK_CHECK, (ImVec2){0,0})) {
-          gui_state.editing_cheat_index = -1;
+    if(gui_state.settings.hardcore_mode) se_text("Disabled in Hardcore Mode");
+    else{
+      int free_cheat_index = -1; 
+      for(int i=0;i<SE_NUM_CHEATS;i++){
+        se_cheat_t* cheat = &cheats[i];
+        if (cheat->state==-1){free_cheat_index=i; continue;}
+        igPushIDInt(i);
+        if(gui_state.editing_cheat_index==i){
+          igSetNextItemWidth(win_w-55);
+          igInputText("##Name",cheat->name,SE_MAX_CHEAT_NAME_SIZE-1,ImGuiInputTextFlags_None,NULL,NULL);
+          cheat->state = 0; 
+          igSameLine(win_w-40,0);
+          if(se_button(ICON_FK_CHECK, (ImVec2){0,0})) {
+            gui_state.editing_cheat_index = -1;
+            se_save_cheats(gui_state.cheat_path);
+          }
+        }else{
+          bool active = cheat->state;
+          if(se_checkbox(cheat->name, &active)){
+            cheat->state = active ? 1:0;
+            se_save_cheats(gui_state.cheat_path);
+          }
+          igSameLine(win_w-40,0);
+          if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
+            gui_state.editing_cheat_index = i;
+          }
+        }
+        igSameLine(win_w-15,0);
+        if(se_button(ICON_FK_TRASH, (ImVec2){-1,0})){
+          if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
+          cheat->state = -1;
           se_save_cheats(gui_state.cheat_path);
         }
-      }else{
-        bool active = cheat->state;
-        if(se_checkbox(cheat->name, &active)){
-          cheat->state = active ? 1:0;
-          se_save_cheats(gui_state.cheat_path);
+        if(gui_state.editing_cheat_index==i){
+          igPushFont(gui_state.mono_font);
+          char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
+          int off=0;
+          for(int i=0;i<cheat->size;i+=1){
+            off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X",cheat->buffer[i]);
+            if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
+            else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
+          }
+          igSetNextItemWidth(win_w);
+          // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
+          if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
+            se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
+          }
+          igPopFont();
         }
-        igSameLine(win_w-40,0);
-        if(se_button(ICON_FK_WRENCH, (ImVec2){0,0})) {
-          gui_state.editing_cheat_index = i;
-        }
+        igPopID();
       }
-      igSameLine(win_w-15,0);
-      if(se_button(ICON_FK_TRASH, (ImVec2){-1,0})){
-        if(gui_state.editing_cheat_index == i)gui_state.editing_cheat_index=-1;
-        cheat->state = -1;
-        se_save_cheats(gui_state.cheat_path);
-      }
-      if(gui_state.editing_cheat_index==i){
-        igPushFont(gui_state.mono_font);
-        char code_buffer[SE_MAX_CHEAT_CODE_SIZE*8] = { 0 };        
-        int off=0;
-        for(int i=0;i<cheat->size;i+=1){
-          off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"%08X",cheat->buffer[i]);
-          if(i%2)off+=snprintf(code_buffer+off,sizeof(code_buffer)-off,"\n");
-          else off+=snprintf(code_buffer+off,sizeof(code_buffer)-off," ");
+      if(free_cheat_index!=-1){
+        if(se_button(ICON_FK_PLUS " New", (ImVec2){0,0})){
+          gui_state.editing_cheat_index = free_cheat_index;
+          se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
+          cheat->state = 0; 
+          strcpy(cheat->name,"Untitled Code");
+          memset(cheat->buffer,0,sizeof(cheat->buffer));
         }
-        igSetNextItemWidth(win_w);
-        // Not setting ImGuiInputTextFlags_CharsHexadecimal as it doesn't allow whitespace
-        if(igInputTextMultiline("##CheatCode",code_buffer,sizeof(code_buffer),(ImVec2){0,300},ImGuiInputTextFlags_CharsUppercase,NULL,NULL)){
-          se_convert_cheat_code(code_buffer,gui_state.editing_cheat_index);
-        }
-        igPopFont();
-      }
-      igPopID();
-    }
-    if(free_cheat_index!=-1){
-      if(se_button(ICON_FK_PLUS " New", (ImVec2){0,0})){
-        gui_state.editing_cheat_index = free_cheat_index;
-        se_cheat_t * cheat = cheats+gui_state.editing_cheat_index;
-        cheat->state = 0; 
-        strcpy(cheat->name,"Untitled Code");
-        memset(cheat->buffer,0,sizeof(cheat->buffer));
       }
     }
   }
@@ -5715,6 +5727,9 @@ void se_draw_menu_panel(){
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
+  bool hardcore_mode = gui_state.settings.hardcore_mode;
+  se_checkbox("Hardcore Mode",&hardcore_mode);
+  gui_state.settings.hardcore_mode = hardcore_mode;
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
   bool enable_hcs = gui_state.settings.http_control_server_enable;
@@ -6304,6 +6319,8 @@ static void frame(void) {
     }
     int next_toggle_id = -1; 
 
+    int first_hardcore_toggle = 2;
+
     if(emu_state.run_mode!=SB_MODE_PAUSE){
       if(curr->inputs[SE_KEY_EMU_REWIND] && !prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 1;
       if(!curr->inputs[SE_KEY_EMU_REWIND] && prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 2;
@@ -6322,15 +6339,19 @@ static void frame(void) {
     }
     if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
+      bool hardcore_disabled = gui_state.settings.hardcore_mode&& i<first_hardcore_toggle;
+      if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
       if(se_button_themed(toggle_regions[i]+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT},false))next_toggle_id = i;
       igSameLine(0,1);
-      se_tooltip(toggle_tooltips[i]);
+      if(hardcore_disabled) se_tooltip("Disabled in Hardcore Mode");
+      else se_tooltip(toggle_tooltips[i]);
       
       if(active_button)igPopStyleColor(1);
 
       if(i==num_toggles-1)igPopStyleVar(1);
+      if(hardcore_disabled)se_pop_disabled();
     }
     if(!emu_state.rom_loaded)se_pop_disabled();
 
@@ -6345,6 +6366,11 @@ static void frame(void) {
       case 2: {emu_state.run_mode=emu_state.run_mode==SB_MODE_RUN&&emu_state.step_frames==1?SB_MODE_PAUSE: SB_MODE_RUN;emu_state.step_frames=1;} ;break;
       case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
       case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
+    }
+
+    if(gui_state.settings.hardcore_mode){
+      if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
+      if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
     if(curr->inputs[SE_KEY_EMU_PAUSE] && !prev->inputs[SE_KEY_EMU_PAUSE]){
@@ -6605,7 +6631,7 @@ void se_load_settings(){
     char settings_path[SB_FILE_PATH_SIZE];
     snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
     if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){gui_state.settings.settings_file_version=-1;}
-    int max_settings_version_supported =2;
+    int max_settings_version_supported =3;
     if(gui_state.settings.settings_file_version>max_settings_version_supported){
       gui_state.settings.volume=0.8;
       gui_state.settings.draw_debug_menu = false; 
@@ -6634,6 +6660,10 @@ void se_load_settings(){
       gui_state.settings.http_control_server_enable = false; 
       gui_state.settings.http_control_server_port=8080;
       gui_state.settings.avoid_overlaping_touchscreen = true;
+    }
+    if(gui_state.settings.settings_file_version<3){
+      gui_state.settings.settings_file_version = 3;
+      gui_state.settings.hardcore_mode=0;
     }
     if(gui_state.settings.custom_font_scale<0.5)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.custom_font_scale>2.0)gui_state.settings.custom_font_scale=1.0;
@@ -7107,6 +7137,8 @@ static void se_init(){
     emu_state.cmd_line_args =emu_state.cmd_line_args+2;
     gui_state.settings.http_control_server_enable=true;
     http_server_mode=true;
+    // HTTP Server mode only has frame stepping which is not allowed in hardcore mode.
+    gui_state.settings.hardcore_mode = false; 
   } 
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
