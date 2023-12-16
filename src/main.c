@@ -1454,15 +1454,14 @@ void se_draw_emu_stats(){
     stats->waveform_fps_render[i]=stats->waveform_fps_render[i+1];
     if(stats->waveform_fps_render[i]>render_max)render_max=stats->waveform_fps_render[i];
     if(stats->waveform_fps_render[i]<render_min)render_min=stats->waveform_fps_render[i];
-    if(stats->waveform_fps_render[i]>5){
-      render_avg+=1.0/stats->waveform_fps_render[i];
-      render_data_points++;
-    }
+    render_avg+=1.0/stats->waveform_fps_render[i];
+    render_data_points++;
+    
 
     if(stats->waveform_fps_emulation[i]>emulate_max)emulate_max=stats->waveform_fps_emulation[i];
     if(stats->waveform_fps_emulation[i]<emulate_min)emulate_min=stats->waveform_fps_emulation[i];
-    if(stats->waveform_fps_emulation[i]>5){
-      emulate_avg+=1.0/stats->waveform_fps_emulation[i];
+    if(fabs(stats->waveform_fps_emulation[i])>1.0){
+      emulate_avg+=1.0/fabs(stats->waveform_fps_emulation[i]);
       ++emulate_data_points;
     }
   }
@@ -1472,6 +1471,7 @@ void se_draw_emu_stats(){
   render_avg=1.0/render_avg;
   emulate_avg/=emulate_data_points;
   emulate_avg=1.0/emulate_avg;
+  if(stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA-1]<0)emulate_avg*=-1;
 
   stats->waveform_fps_render[SE_STATS_GRAPH_DATA-1] = fps_render;
 
@@ -1490,7 +1490,7 @@ void se_draw_emu_stats(){
   igPlotLinesFloatPtr("",stats->waveform_fps_render,SE_STATS_GRAPH_DATA,0,label_tmp,0,render_max*1.3,(ImVec2){content_width,80},4);
 
   snprintf(label_tmp,128,se_localize_and_cache("Emulation FPS: %2.1f\n"),emulate_avg);
-  igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,0,emulate_max*1.3,(ImVec2){content_width,80},4);
+  igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,emulate_min,emulate_max*1.3,(ImVec2){content_width,80},4);
   
   se_text(ICON_FK_VOLUME_UP " Audio");
   igSeparator();
@@ -2184,6 +2184,7 @@ void se_load_rom(const char *filename){
     emu_state.run_mode= SB_MODE_PAUSE;
   }else{
     emu_state.run_mode= SB_MODE_RUN;
+    emu_state.step_frames = 1; 
     se_game_info_t * recent_games=gui_state.recently_loaded_games;
     //Create a copy in case file name comes from one of these slots that will be modified. 
     char temp_filename[SB_FILE_PATH_SIZE];
@@ -4807,7 +4808,7 @@ void se_update_frame() {
   static double simulation_time = -1;
   double curr_time = se_time();
 
-  if(fabs(curr_time-simulation_time)>1.0/60.*4||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
+  if(fabs(curr_time-simulation_time)>1.0/60.*10||emu_state.run_mode==SB_MODE_PAUSE)simulation_time = curr_time;
   if(emu_state.run_mode==SB_MODE_RUN||emu_state.run_mode==SB_MODE_STEP||emu_state.run_mode==SB_MODE_REWIND){
     emu_state.frame=0;
     int max_frames_per_tick =1+ emu_state.step_frames;
@@ -4815,12 +4816,14 @@ void se_update_frame() {
 
     emu_state.render_frame = true;
 
-    static double display_time = 0;
-    if(emu_state.step_frames==0)emu_state.step_frames=1;
-
     double sim_fps= se_get_sim_fps();
     double sim_time_increment = 1./sim_fps/emu_state.step_frames;
-    bool unlocked_mode = emu_state.step_frames<0;
+    if(emu_state.run_mode==SB_MODE_REWIND)sim_time_increment*=frames_per_rewind_state/2;
+    if(emu_state.step_frames<0){
+      max_frames_per_tick =1;
+      sim_time_increment = 1./sim_fps*-emu_state.step_frames;
+    }
+    bool unlocked_mode = emu_state.step_frames==0;
     if(gui_state.test_runner_mode)unlocked_mode=true;
     if(unlocked_mode&&emu_state.run_mode!=SB_MODE_STEP){
       sim_time_increment=0;
@@ -4828,7 +4831,6 @@ void se_update_frame() {
       simulation_time=curr_time+1./30.;
     }
     while(max_frames_per_tick--){
-      double error = curr_time-simulation_time;
       // On steps emulate all frames, but only render the last frame of the step
       // and don't allow screen ghosting
       if(emu_state.run_mode==SB_MODE_STEP){
@@ -4861,7 +4863,6 @@ void se_update_frame() {
       emu_state.render_frame = false;
       curr_time = se_time();
       if(emu_state.run_mode==SB_MODE_PAUSE)break;
-
     }
   }
   if(emu_state.run_mode==SB_MODE_STEP)printf("Emulated %d frames\n",emu_state.frame);
@@ -6266,7 +6267,7 @@ static void frame(void) {
     }
 
     
-    int num_toggles = 5;
+    int num_toggles = 4;
     int sel_width =SE_TOGGLE_WIDTH;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
     int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
@@ -6297,57 +6298,96 @@ static void frame(void) {
       emu_state.run_mode=SB_MODE_RESET;
     }
 
+    for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+      if(curr->inputs[SE_KEY_CAPTURE_STATE(i)])se_capture_state_slot(i);
+      if(curr->inputs[SE_KEY_RESTORE_STATE(i)])se_restore_state_slot(i);
+    }
+
     if(!emu_state.rom_loaded) emu_state.run_mode = SB_MODE_PAUSE;
 
     int curr_toggle = 3;
-    if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==2)curr_toggle=0;
-    if(emu_state.run_mode==SB_MODE_REWIND&&emu_state.step_frames==1)curr_toggle=1;
+    if(emu_state.run_mode==SB_MODE_REWIND)curr_toggle=0;
+    if(emu_state.run_mode==SB_MODE_RUN && (emu_state.step_frames<0))curr_toggle=1;
     if(emu_state.run_mode==SB_MODE_PAUSE)curr_toggle=2;
     if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1)curr_toggle=2;
-    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==2)curr_toggle=3;
-    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==-1)curr_toggle=4;
+    if(emu_state.run_mode==SB_MODE_RUN && (emu_state.step_frames>1 || emu_state.step_frames==0))curr_toggle=3;
 
     if(emu_state.run_mode==SB_MODE_PAUSE)gui_state.menubar_hide_timer=se_time();
-    const char* toggle_labels[]={ICON_FK_FAST_BACKWARD, ICON_FK_BACKWARD, ICON_FK_PAUSE, ICON_FK_FORWARD,ICON_FK_FAST_FORWARD};
-    int toggle_regions[]={SE_REGION_MAX_REWIND, SE_REGION_REWIND, SE_REGION_PAUSE, SE_REGION_FF,SE_REGION_MAX_FF};
-    const char* toggle_tooltips[]={
-      "Rewind at 8x speed",
-      "Rewind at 4x speed",
-      "Toggle pause/play.\n When paused, the rom selection screen will be shown.",
-      "Run at 2x Speed",
-      "Run at the fastest speed possible",
+
+    const char* fast_forward_label = ICON_FK_FORWARD;
+    if(emu_state.run_mode==SB_MODE_RUN){
+      if(emu_state.step_frames==0)fast_forward_label=ICON_FK_UNLOCK;
+      if(emu_state.step_frames>1){
+        static char buffer[3]="2X";
+        buffer[0]='0'+emu_state.step_frames;
+        fast_forward_label=buffer;
+      }
+    }
+    const char* rewind_label = ICON_FK_BACKWARD;
+    if(emu_state.run_mode==SB_MODE_REWIND){
+      if(emu_state.step_frames<0)rewind_label=ICON_FK_UNLOCK;
+      else if(emu_state.step_frames>=1){
+        static char buffer[3]="2X";
+        buffer[0]='0'+emu_state.step_frames;
+        rewind_label=buffer;
+      }
+    }
+    const char* slow_label = ICON_FK_HOURGLASS;
+    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames<0){
+      static char buffer[4]="1/X";
+      buffer[2]='0'-emu_state.step_frames;
+      slow_label=buffer;
+    }
+    const char* toggle_labels[]={
+      rewind_label,
+      slow_label,
+      ICON_FK_PLAY,
+      fast_forward_label
     };
-    if(emu_state.run_mode==SB_MODE_PAUSE){
-      toggle_labels[2]=ICON_FK_PLAY;
-      toggle_regions[2]=SE_REGION_PLAY;
+
+    const char* toggle_tooltips[]={
+      "Rewind",
+      "Slow",
+      "Toggle pause/play.\n When paused, the rom selection screen will be shown.",
+      "Fast Forward",
+    };
+    if(emu_state.run_mode==SB_MODE_RUN && emu_state.step_frames==1){
+      toggle_labels[2]=ICON_FK_PAUSE;
     }
     int next_toggle_id = -1; 
 
     int first_hardcore_toggle = 2;
 
     if(emu_state.run_mode!=SB_MODE_PAUSE){
-      if(curr->inputs[SE_KEY_EMU_REWIND] && !prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 1;
-      if(!curr->inputs[SE_KEY_EMU_REWIND] && prev->inputs[SE_KEY_EMU_REWIND])next_toggle_id = 2;
-      if(curr->inputs[SE_KEY_EMU_FF_2X] && !prev->inputs[SE_KEY_EMU_FF_2X])next_toggle_id = 3;
-      if(!curr->inputs[SE_KEY_EMU_FF_2X] && prev->inputs[SE_KEY_EMU_FF_2X])next_toggle_id = 2;
-      if(curr->inputs[SE_KEY_EMU_FF_MAX] && !prev->inputs[SE_KEY_EMU_FF_MAX])next_toggle_id = 4;
-      if(!curr->inputs[SE_KEY_EMU_FF_MAX] && prev->inputs[SE_KEY_EMU_FF_MAX])next_toggle_id = 2;
-
-      //Don't pause a game that is already running at normal speed. 
-      if(curr_toggle==2 &&next_toggle_id==2)next_toggle_id=-1;
+      if(curr->inputs[SE_KEY_EMU_REWIND] && !prev->inputs[SE_KEY_EMU_REWIND]){
+        emu_state.run_mode=SB_MODE_REWIND;
+        emu_state.step_frames=2;
+      }
+      if(
+          (!curr->inputs[SE_KEY_EMU_REWIND] && prev->inputs[SE_KEY_EMU_REWIND]) ||
+          (!curr->inputs[SE_KEY_EMU_FF_2X] && prev->inputs[SE_KEY_EMU_FF_2X]) ||
+          (!curr->inputs[SE_KEY_EMU_FF_MAX] && prev->inputs[SE_KEY_EMU_FF_MAX])
+        ){
+        emu_state.run_mode=SB_MODE_RUN;
+        emu_state.step_frames=1;
+      }
+      if(curr->inputs[SE_KEY_EMU_FF_2X] && !prev->inputs[SE_KEY_EMU_FF_2X]){
+        emu_state.run_mode=SB_MODE_RUN;
+        emu_state.step_frames=2;
+      }
+      if(curr->inputs[SE_KEY_EMU_FF_MAX] && !prev->inputs[SE_KEY_EMU_FF_MAX]){
+        emu_state.run_mode=SB_MODE_RUN;
+        emu_state.step_frames=-1;
+      }
     }
 
-    for(int i=0;i<SE_NUM_SAVE_STATES;++i){
-      if(curr->inputs[SE_KEY_CAPTURE_STATE(i)])se_capture_state_slot(i);
-      if(curr->inputs[SE_KEY_RESTORE_STATE(i)])se_restore_state_slot(i);
-    }
     if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
       bool hardcore_disabled = gui_state.settings.hardcore_mode&& i<first_hardcore_toggle;
       if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(se_button_themed(toggle_regions[i]+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT},false))next_toggle_id = i;
+      if(se_button_themed(SE_REGION_BLANK+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT},true))next_toggle_id = i;
       igSameLine(0,1);
       if(hardcore_disabled) se_tooltip("Disabled in Hardcore Mode");
       else se_tooltip(toggle_tooltips[i]);
@@ -6358,22 +6398,36 @@ static void frame(void) {
       if(hardcore_disabled)se_pop_disabled();
     }
     if(!emu_state.rom_loaded)se_pop_disabled();
-
-    if(curr_toggle==next_toggle_id && curr_toggle!=2){
-      //Clicking the same toggle that is already active unclicks it. 
-      next_toggle_id = 2; 
-    }
     
     switch(next_toggle_id){
-      case 0: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=2;} ;break;
-      case 1: {emu_state.run_mode=SB_MODE_REWIND;emu_state.step_frames=1;} ;break;
+      case 0: {
+        emu_state.run_mode=SB_MODE_REWIND;
+        if(emu_state.step_frames==2 && curr_toggle == next_toggle_id)emu_state.step_frames=4;
+        else if(emu_state.step_frames==4 && curr_toggle == next_toggle_id)emu_state.step_frames=8;
+        else emu_state.step_frames=2;
+      } ;break;
+      case 1: {
+        emu_state.run_mode=SB_MODE_RUN;
+        if(emu_state.step_frames==-2&& curr_toggle == next_toggle_id)emu_state.step_frames=-4;
+        else if(emu_state.step_frames==-4&& curr_toggle == next_toggle_id)emu_state.step_frames=-8;
+        else emu_state.step_frames=-2;
+      } ;break;
       case 2: {emu_state.run_mode=emu_state.run_mode==SB_MODE_RUN&&emu_state.step_frames==1?SB_MODE_PAUSE: SB_MODE_RUN;emu_state.step_frames=1;} ;break;
-      case 3: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=2;} ;break;
-      case 4: {emu_state.run_mode=SB_MODE_RUN;emu_state.step_frames=-1;} ;break;
+      case 3: {
+        emu_state.run_mode=SB_MODE_RUN;
+        if(emu_state.step_frames==2     && curr_toggle == next_toggle_id)emu_state.step_frames=4;
+        else if(emu_state.step_frames==4&& curr_toggle == next_toggle_id)emu_state.step_frames=8;
+        else if(emu_state.step_frames==8&& curr_toggle == next_toggle_id)emu_state.step_frames=0;
+        else emu_state.step_frames=2;
+        break;
+      } 
     }
 
     if(gui_state.settings.hardcore_mode){
-      if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
+      if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP){
+        emu_state.run_mode= SB_MODE_RUN;
+        emu_state.step_frames=1;
+      }
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
@@ -6580,20 +6634,24 @@ static void frame(void) {
   int num_samples_to_push = saudio_expect()*2;
   enum{samples_to_push=128};
   float volume_sq = gui_state.settings.volume*gui_state.settings.volume/32768.;
+  int sample_copies = 1;
+  if(emu_state.step_frames<0)sample_copies = -emu_state.step_frames;
+  int sample_copy_index = sample_copies; 
   for(int s = 0; s<num_samples_to_push;s+=samples_to_push){
-    static int fill = 0; 
-    float average_volume=0;
     float audio_buff[samples_to_push];
-    int pushed = 0; 
     if(sb_ring_buffer_size(&emu_state.audio_ring_buff)<=samples_to_push){
       se_reset_audio_ring();
       break;
     }
-    for(int i=0;i<samples_to_push;++i){
-      int16_t data = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr++)%SB_AUDIO_RING_BUFFER_SIZE];
-      audio_buff[i]=data*volume_sq;
-      ++pushed;
-      average_volume+=fabs(audio_buff[i]);
+    for(int i=0;i<samples_to_push/2;++i){
+      int16_t data0 = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr)%SB_AUDIO_RING_BUFFER_SIZE];
+      int16_t data1 = emu_state.audio_ring_buff.data[(emu_state.audio_ring_buff.read_ptr+1)%SB_AUDIO_RING_BUFFER_SIZE];
+      if(--sample_copy_index == 0){
+        sample_copy_index = sample_copies;
+        emu_state.audio_ring_buff.read_ptr+=2;
+      }
+      audio_buff[i*2]=data0*volume_sq;
+      audio_buff[i*2+1]=data1*volume_sq;
     }
     saudio_push(audio_buff, samples_to_push/2);
     gui_state.audio_watchdog_timer = 0;

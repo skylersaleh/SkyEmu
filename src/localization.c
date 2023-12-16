@@ -19,6 +19,9 @@
 
 // Strings added in v4 requiring translation:
 // - "Disabled in Hardcore Mode"
+// - "Rewind"
+// - "Slow"
+// - "Fast Forward"
 
 //#define SHOW_TRANSLATE_ME 1
 
