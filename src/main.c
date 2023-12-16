@@ -117,6 +117,7 @@ const static char* se_keybind_names[SE_NUM_KEYBINDS]={
   "Solar Sensor-",
   "Toggle Full Screen"
 };
+
 #define SE_ANALOG_UP_DOWN    0
 #define SE_ANALOG_LEFT_RIGHT 1
 #define SE_ANALOG_L 2
@@ -700,7 +701,7 @@ bool se_slider_float_themed(const char* label, float* p_data, float p_min, float
   float render_knob_size = 20.0; 
   se_draw_theme_region_tint(SE_REGION_VOL_KNOB, knob_x-render_knob_size*0.5,pos.y,render_knob_size,frame_size.y,tint);
 
-  bool button_result = igSliderFloat(label,p_data,p_min,p_max,format,ImGuiSliderFlags_AlwaysClamp|ImGuiSliderFlags_NoInput);
+  bool button_result = igSliderFloat(label,p_data,p_min,p_max,format,ImGuiSliderFlags_AlwaysClamp);
 
   *style = restore_style; 
   return button_result;
