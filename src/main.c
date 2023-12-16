@@ -94,7 +94,7 @@ const static char* se_keybind_names[SE_NUM_KEYBINDS]={
   "Select",
   "Fold Screen (NDS)",
   "Tap Screen (NDS)",
-  "Emulator " ICON_FK_PAUSE "/" ICON_FK_PLAY,
+  "Emulator " ICON_FK_PAUSE "/" ICON_FK_PLAY, // NOLINT
   "Emulator " ICON_FK_BACKWARD,
   "Emulator " ICON_FK_FORWARD,
   "Emulator " ICON_FK_FAST_FORWARD,
@@ -1572,7 +1572,7 @@ void se_psg_debugger(){
   }
 }
 void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
-  const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL};
+  const char* reg_names[]={"R0","R1","R2","R3","R4","R5","R6","R7","R8","R9 (SB)","R10 (SL)","R11 (FP)","R12 (IP)","R13 (SP)","R14 (LR)","R15 (" ICON_FK_BUG ")","CPSR","SPSR",NULL}; // NOLINT
   if(se_button("Step Instruction",(ImVec2){0,0})){
     arm->step_instructions=1;
     emu_state.run_mode= SB_MODE_RUN;
@@ -1618,7 +1618,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     bool v = SB_BFE(cpsr,b,1);
     int y = i/4;
     int x = i%4; 
-    if(x!=0)igSameLine(x*w/4,0);
+    if(x!=0)igSameLine((float)x*w/4,0);
     se_checkbox(flag_names[i],&v);
     cpsr&=~(1<<b);
     cpsr|= ((int)v)<<b;
@@ -6271,7 +6271,7 @@ static void frame(void) {
     int num_toggles = 4;
     int sel_width =SE_TOGGLE_WIDTH;
     igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing,(ImVec2){1,1});
-    int toggle_x = (width/2)/se_dpi_scale()-sel_width*num_toggles/2;
+    int toggle_x = ((float)width/2)/se_dpi_scale()-(float)sel_width*num_toggles/2;
     if((width)/se_dpi_scale()-toggle_x-(sel_width+1)*num_toggles<volume_width)toggle_x=(width)/se_dpi_scale()-(sel_width+1)*num_toggles-volume_width;
     if(toggle_x<orig_x)toggle_x=orig_x;
 
