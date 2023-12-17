@@ -407,7 +407,7 @@ typedef enum{
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
-
+// clang-format off
 
 mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DISPCNT , "DISPCNT ", { 
@@ -1785,6 +1785,8 @@ mmio_reg_t nds7_io_reg_desc[]={
   { NDS7_SNDCAP1LEN, "SNDCAP1LEN", { 0 }}, /* Sound Capture 1 Length (W) */
 
 };
+
+// clang-format on
 
 // Interrupt sources
 #define GBA_INT_LCD_VBLANK 0   
