@@ -5277,7 +5277,8 @@ void se_draw_controller_config(gui_state_t* gui){
   if(cont->sdl_joystick){
     cont_name = SDL_JoystickName(cont->sdl_joystick);
   }
-  if(igBeginCombo(se_localize_and_cache("Controller"), se_localize_and_cache(cont_name), ImGuiComboFlags_None)){
+  igPushItemWidth(-1);
+  if(igBeginCombo("##Controller", se_localize_and_cache(cont_name), ImGuiComboFlags_None)){
     {
       bool is_selected=cont->sdl_joystick==NULL;
       if(igSelectableBool(se_localize_and_cache("No Controller"),is_selected,ImGuiSelectableFlags_None, (ImVec2){0,0})){
@@ -5298,6 +5299,7 @@ void se_draw_controller_config(gui_state_t* gui){
     }
     igEndCombo();
   }
+  igPopItemWidth();
   if(!cont->sdl_joystick)return;
 #else
   const char* cont_name = SE_ANDROID_CONTROLLER_NAME;
@@ -5374,7 +5376,6 @@ void se_draw_touch_controls_settings(){
   se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
 
   se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
-  igPushItemWidth(-1);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
   igPopItemWidth();
   bool auto_hide = gui_state.settings.auto_hide_touch_controls;
@@ -5388,7 +5389,7 @@ void se_draw_touch_controls_settings(){
   bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
   se_checkbox("Avoid NDS Touchscreen",&avoid_touchscreen);
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
-
+  igPopItemWidth();
 }
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
