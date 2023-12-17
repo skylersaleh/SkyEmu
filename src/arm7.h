@@ -428,6 +428,8 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
   if(SB_LIKELY(reg<8))return reg;
   int mode = cpu->registers[CPSR]&0xf;
 
+  // clang-format off
+
   const static int8_t lookup[10*16+8]={
     -1,-1,-1,-1,-1,-1,-1,-1, //8 extra padding to remove the need to -8 from computation
      8, 9,10,11,12,13,14,15,16,16, //mode 0x0 (user)
@@ -447,6 +449,9 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1, //mode 0xE (inv)
      8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
+
+  // clang-format on
+  
   int8_t r = lookup[mode*10+reg];
   if(SB_LIKELY(r!=-1))return r; 
   cpu->trigger_breakpoint=true;
