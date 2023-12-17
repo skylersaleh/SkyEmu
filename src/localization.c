@@ -23,6 +23,11 @@
 // - "Slow"
 // - "Fast Forward"
 
+// Strings removed in v4:
+// - "Controller"
+// - "GB Palette %d"
+// - "Reset Palette to Defaults"
+
 //#define SHOW_TRANSLATE_ME 1
 
 //Special thanks to https://github.com/shooterspps and Nilay for the Chinese Translation

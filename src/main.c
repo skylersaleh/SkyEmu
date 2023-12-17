@@ -5393,7 +5393,7 @@ void se_draw_touch_controls_settings(){
 }
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
-  int win_w = igGetWindowContentRegionWidth();
+  float win_w = igGetWindowContentRegionWidth();
   ImDrawList*dl= igGetWindowDrawList();
 
   se_text(ICON_FK_FLOPPY_O " Save States");
@@ -5589,20 +5589,29 @@ void se_draw_menu_panel(){
   }
   se_text("Game Boy Color Palette");
   for(int i=0;i<4;++i){
-    char buff[60];
-    snprintf(buff,60,se_localize_and_cache("GB Palette %d"),i);
-    float color[3]; 
+    igPushIDInt(i);
+    float color[4]; 
     uint32_t col = gui_state.settings.gb_palette[i];
     color[0]= SB_BFE(col,0,8)/255.;
     color[1]= SB_BFE(col,8,8)/255.;
     color[2]= SB_BFE(col,16,8)/255.;
-    igColorEdit3(buff,color,ImGuiColorEditFlags_None);
+    float w = (win_w-20)*0.25-2;
+    if(i)igSameLine(0,2);
+    if(igColorButton("##color-button",(ImVec4){color[0],color[1],color[2],1.0},ImGuiColorEditFlags_NoInputs| ImGuiColorEditFlags_NoLabel,(ImVec2){w,20})){
+      igOpenPopup("##picker-popup",ImGuiWindowFlags_None);
+    }
+    if (igBeginPopup("##picker-popup",ImGuiWindowFlags_None)){
+      igColorPicker3("##picker", color, ImGuiColorEditFlags_None);
+      igEndPopup();
+    }
     col = (((int)(color[0]*255))&0xff);
     col |= (((int)(color[1]*255))&0xff)<<8;
     col |= (((int)(color[2]*255))&0xff)<<16;
     gui_state.settings.gb_palette[i]=col;
+    igPopID();
   }
-  if(se_button("Reset Palette to Defaults",(ImVec2){0,0}))se_reset_default_gb_palette();
+  igSameLine(0,2);
+  if(se_button(ICON_FK_REPEAT,(ImVec2){20,20}))se_reset_default_gb_palette();
   if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
     se_draw_touch_controls_settings();
   }else{
