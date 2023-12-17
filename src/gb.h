@@ -82,6 +82,8 @@
 
 #define SB_SPRITES_PER_SCANLINE 10
 
+// clang-format off 
+
 mmio_reg_t gb_io_reg_desc[]={
   { SB_IO_JOYPAD, "JOYPAD", { 
     { 5, 1, "Select Action buttons    (0=Select)"},
@@ -281,6 +283,8 @@ mmio_reg_t gb_io_reg_desc[]={
     { 4, 1, "Joypad   Interrupt Enable" },
   }},     
 };
+
+// clang-format on
 
 typedef struct {
   // Registers

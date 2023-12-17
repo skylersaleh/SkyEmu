@@ -141,6 +141,8 @@
 // #define GBA_?       0x4xx0800      /* R/W  ?         Mirrors of 4000800h (repeated each 64K) */
 // #define GBA_(3DS)   0x4700000      /* W    (3DS)     Disable ARM7 bootrom overlay (3DS only) */
 
+// clang-format off
+
 mmio_reg_t gba_io_reg_desc[]={
   // Interrupt, Waitstate, and Power-Down Control
   { GBA_IE     , "IE", {
@@ -584,6 +586,8 @@ mmio_reg_t gba_io_reg_desc[]={
   { GBA_JOY_TRANS, "JOY_TRANS", {0} },     /* R/W  SIO JOY Bus Transmit Data */
   { GBA_JOYSTAT  , "JOYSTAT", {0} },     /* R/?  SIO JOY Bus Receive Status */  
 };
+
+// clang-format on
 
 // Interrupt sources
 #define GBA_INT_LCD_VBLANK 0   
