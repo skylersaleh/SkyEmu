@@ -214,7 +214,7 @@ StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
 TabWidth:        2
-UseTab:          Always
+UseTab:          Never
 WhitespaceSensitiveMacros:
   - BOOST_PP_STRINGIZE
   - CF_SWIFT_NAME
