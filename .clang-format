@@ -221,5 +221,9 @@ WhitespaceSensitiveMacros:
   - NS_SWIFT_NAME
   - PP_STRINGIZE
   - STRINGIZE
+  - EM_ASM
+  - EM_JS
+  - EM_ASM_
+  - EM_JS_
 ...
 
