@@ -2,8 +2,8 @@
 Language:        Cpp
 # BasedOnStyle:  LLVM
 AccessModifierOffset: -2
-AlignAfterOpenBracket: Align
-AlignArrayOfStructures: Right
+AlignAfterOpenBracket: DontAlign
+AlignArrayOfStructures: None
 AlignConsecutiveAssignments:
   Enabled:         false
   AcrossEmptyLines: false
@@ -39,9 +39,9 @@ AllowShortBlocksOnASingleLine: Always
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortEnumsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: All
-AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
 AllowShortLambdasOnASingleLine: All
-AllowShortLoopsOnASingleLine: false
+AllowShortLoopsOnASingleLine: true
 AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
@@ -51,25 +51,6 @@ AttributeMacros:
 BinPackArguments: true
 BinPackParameters: true
 BitFieldColonSpacing: Both
-BraceWrapping:
-  AfterCaseLabel:  false
-  AfterClass:      false
-  AfterControlStatement: Never
-  AfterEnum:       false
-  AfterExternBlock: false
-  AfterFunction:   false
-  AfterNamespace:  false
-  AfterObjCDeclaration: false
-  AfterStruct:     false
-  AfterUnion:      false
-  BeforeCatch:     false
-  BeforeElse:      false
-  BeforeLambdaBody: false
-  BeforeWhile:     false
-  IndentBraces:    false
-  SplitEmptyFunction: true
-  SplitEmptyRecord: true
-  SplitEmptyNamespace: true
 BreakAfterAttributes: Never
 BreakAfterJavaFieldAnnotations: false
 BreakArrays:     true
@@ -85,8 +66,8 @@ ColumnLimit:     0
 CommentPragmas:  '^ IWYU pragma:'
 CompactNamespaces: false
 ConstructorInitializerIndentWidth: 2
-ContinuationIndentWidth: 2
-Cpp11BracedListStyle: true
+ContinuationIndentWidth: 0
+Cpp11BracedListStyle: false
 DerivePointerAlignment: false
 DisableFormat:   false
 EmptyLineAfterAccessModifier: Never
@@ -117,7 +98,7 @@ IncludeIsMainRegex: '(Test)?$'
 IncludeIsMainSourceRegex: ''
 IndentAccessModifiers: false
 IndentCaseBlocks: false
-IndentCaseLabels: false
+IndentCaseLabels: true
 IndentExternBlock: AfterExternBlock
 IndentGotoLabels: true
 IndentPPDirectives: None
@@ -148,7 +129,7 @@ ObjCBlockIndentWidth: 2
 ObjCBreakBeforeNestedBlockParam: true
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
-PackConstructorInitializers: BinPack
+PackConstructorInitializers: CurrentLine
 PenaltyBreakAssignment: 2
 PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakComment: 300
@@ -157,13 +138,13 @@ PenaltyBreakOpenParenthesis: 0
 PenaltyBreakString: 1000
 PenaltyBreakTemplateDeclaration: 10
 PenaltyExcessCharacter: 1000000
-PenaltyIndentedWhitespace: 0
+PenaltyIndentedWhitespace: 50
 PenaltyReturnTypeOnItsOwnLine: 60
-PointerAlignment: Right
+PointerAlignment: Left
 PPIndentWidth:   -1
-QualifierAlignment: Leave
+QualifierAlignment: Left
 ReferenceAlignment: Pointer
-ReflowComments:  true
+ReflowComments:  false
 RemoveBracesLLVM: false
 RemoveSemicolon: false
 RequiresClausePosition: OwnLine

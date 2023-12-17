@@ -26,7 +26,7 @@
 // #define SHOW_TRANSLATE_ME 1
 
 // Special thanks to https://github.com/shooterspps and Nilay for the Chinese Translation
-static char *zh_localization_array[] = {
+static char* zh_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " 载入游戏",
   "Up", "上",
   "Down", "下",
@@ -228,10 +228,11 @@ static char *zh_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay 代码",
   "Create new files in paths", "在路径中创建新文件",
   "Cheat Code Path", "作弊码路径",
-  NULL, NULL};
+  NULL, NULL
+};
 
 // Armenian translation by https://github.com/udxs
-static char *hy_localization_array[] = {
+static char* hy_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Տեղադրեք Խաղ",
   "Up", "Վերև",
   "Down", "Ներքև",
@@ -436,10 +437,11 @@ static char *hy_localization_array[] = {
   "Create new files in paths", "Ստեղծեք նոր ֆայլեր ուղիներով",
   "Cheat Code Path", "Խաբել Կոդը Ուղին",
 
-  NULL, NULL};
+  NULL, NULL
+};
 
 // Greek translation by https://github.com/OFFTKP
-static char *gr_localization_array[] = {
+static char* gr_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Φόρτωση Παιχνιδιού",
   "Up", "Πάνω",
   "Down", "Κάτω",
@@ -643,10 +645,11 @@ static char *gr_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay",
   "Create new files in paths", "Δημιουργία νέων αρχείων στα μονοπάτια",
   "Cheat Code Path", "Μονοπάτι Cheat Code",
-  NULL, NULL};
+  NULL, NULL
+};
 
 // Dutch translation by https://github.com/DenSinH
-static char *nl_localization_array[] = {
+static char* nl_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Spel laden",
   "Up", "Omhoog",
   "Down", "Omlaag",
@@ -850,9 +853,10 @@ static char *nl_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay Codes",
   "Create new files in paths", "Maak nieuwe bestanden in paden",
   "Cheat Code Path", "Cheat Code Pad",
-  NULL, NULL};
+  NULL, NULL
+};
 // Danish Translation by https://github.com/nadiaholmquist
-static char *da_localization_array[] = {
+static char* da_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Åbn spil",
   "Up", "Op",
   "Down", "Ned",
@@ -1055,9 +1059,10 @@ static char *da_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay-koder",
   "Create new files in paths", "Opret nye filer under stierne",
   "Cheat Code Path", "Snydekode-sti",
-  NULL, NULL};
+  NULL, NULL
+};
 // German translation https://github.com/ladystarbreeze
-static char *de_localization_array[] = {
+static char* de_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Lade Spiel",
   "Up", "Hoch",
   "Down", "Runter",
@@ -1260,10 +1265,11 @@ static char *de_localization_array[] = {
   ICON_FK_PLUS " New", ICON_FK_PLUS " Neu" ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay-Codes",
   "Create new files in paths", "Erstelle neue Dateien in Pfaden",
   "Cheat Code Path", "Cheatcode-Pfad",
-  NULL, NULL};
+  NULL, NULL
+};
 
 // Italian translation by https://github.com/SimoneN64
-static char *it_localization_array[] = {
+static char* it_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Carica Gioco",
   "Up", "Sù",
   "Down", "Giù",
@@ -1467,10 +1473,11 @@ static char *it_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Codici Action Replay",
   "Create new files in paths", "Crea nuovi file nei path",
   "Cheat Code Path", "Path dei trucchi",
-  NULL, NULL};
+  NULL, NULL
+};
 
 // Russian translation by https://github.com/GreatA1exander
-static char *ru_localization_array[] = {
+static char* ru_localization_array[] = {
   ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Загрузить игру",
   "Up", "Вверх",
   "Down", "Вниз",
@@ -1674,15 +1681,16 @@ static char *ru_localization_array[] = {
   ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Коды Action Replay",
   "Create new files in paths", "Создавать новые файлы в путях",
   "Cheat Code Path", "Путь к чит-кодам",
-  NULL, NULL};
+  NULL, NULL
+};
 
-char **localization_map = NULL;
+char** localization_map = NULL;
 size_t localization_size = 0;
 int    se_get_default_language();
 
-int  se_localize_cmp(const void *a, const void *b) { return strcmp(((const char **)a)[0], ((const char **)b)[0]); }
+int  se_localize_cmp(const void* a, const void* b) { return strcmp(((const char**)a)[0], ((const char**)b)[0]); }
 void se_set_language(int language_enum) {
-  char **new_map = NULL;
+  char** new_map = NULL;
   if(language_enum == SE_LANG_DEFAULT) language_enum = se_get_default_language();
   if(language_enum == SE_LANG_CHINESE) new_map = zh_localization_array;
   if(language_enum == SE_LANG_ARMENIAN) new_map = hy_localization_array;
@@ -1698,11 +1706,11 @@ void se_set_language(int language_enum) {
     if(localization_map) {
       while(localization_map[localization_size * 2])
         ++localization_size;
-      qsort(localization_map, localization_size, sizeof(const char *) * 2, se_localize_cmp);
+      qsort(localization_map, localization_size, sizeof(const char*) * 2, se_localize_cmp);
     }
   }
 }
-int se_convert_locale_to_enum(const char *clocale) {
+int se_convert_locale_to_enum(const char* clocale) {
   // Convert the detected language to lowercase for easier comparison
   char lowercase_locale[128]; // Assuming the language code won't exceed 16 characters
   int  i = 0;
@@ -1753,27 +1761,27 @@ int se_convert_locale_to_enum(const char *clocale) {
   }
   return SE_LANG_DEFAULT;
 }
-const char *se_language_string(int language_enum) {
+const char* se_language_string(int language_enum) {
   switch(language_enum) {
-  case SE_LANG_DEFAULT: return se_localize("Default");
-  case SE_LANG_ENGLISH: return "English";
-  case SE_LANG_DUTCH: return "Nederlands";
-  case SE_LANG_DANISH: return "Dansk";
-  case SE_LANG_GERMAN: return "Deutsch";
-  case SE_LANG_ITALIAN:
-    return "Italiano";
-    // These languages require unicode support to represent correctly
+    case SE_LANG_DEFAULT: return se_localize("Default");
+    case SE_LANG_ENGLISH: return "English";
+    case SE_LANG_DUTCH: return "Nederlands";
+    case SE_LANG_DANISH: return "Dansk";
+    case SE_LANG_GERMAN: return "Deutsch";
+    case SE_LANG_ITALIAN:
+      return "Italiano";
+      // These languages require unicode support to represent correctly
 #ifdef UNICODE_GUI
-  case SE_LANG_CHINESE: return "中文";
-  case SE_LANG_ARMENIAN: return "Հայերեն";
-  case SE_LANG_GREEK: return "Ελληνικά";
-  case SE_LANG_RUSSIAN: return "Русский";
+    case SE_LANG_CHINESE: return "中文";
+    case SE_LANG_ARMENIAN: return "Հայերեն";
+    case SE_LANG_GREEK: return "Ελληνικά";
+    case SE_LANG_RUSSIAN: return "Русский";
 #endif
   }
   return "";
 }
 #ifdef PLATFORM_ANDROID
-extern void se_android_get_language(char *language_buffer, size_t buffer_size);
+extern void se_android_get_language(char* language_buffer, size_t buffer_size);
 #endif
 int se_get_default_language() {
   static int default_lang = SE_LANG_DEFAULT;
@@ -1800,7 +1808,7 @@ int se_get_default_language() {
 #endif
     // Try to get from environment
     if(default_lang == SE_LANG_DEFAULT) {
-      char *clocale = getenv("LANG");
+      char* clocale = getenv("LANG");
       if(clocale) default_lang = se_convert_locale_to_enum(clocale);
       if(default_lang != SE_LANG_DEFAULT) printf("Detected environment locale language: %s (enum: %s)\n", clocale, se_language_string(default_lang));
     }
@@ -1808,7 +1816,7 @@ int se_get_default_language() {
     // Try to get from setlocale
     if(default_lang == SE_LANG_DEFAULT) {
       setlocale(LC_ALL, "");
-      char *clocale = setlocale(LC_ALL, NULL);
+      char* clocale = setlocale(LC_ALL, NULL);
       if(clocale) default_lang = se_convert_locale_to_enum(clocale);
       if(default_lang != SE_LANG_DEFAULT) printf("Detected C locale language: %s (enum: %s)\n", clocale, se_language_string(default_lang));
     }
@@ -1824,9 +1832,9 @@ int se_get_default_language() {
   }
   return default_lang;
 }
-const char *se_localize(const char *string) {
+const char* se_localize(const char* string) {
   if(localization_map == NULL) return string;
-  const char **result = (const char **)bsearch(&string, localization_map, localization_size, sizeof(const char *) * 2, se_localize_cmp);
+  const char** result = (const char**)bsearch(&string, localization_map, localization_size, sizeof(const char*) * 2, se_localize_cmp);
   if(!result)
     return string;
   else
