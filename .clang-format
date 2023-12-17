@@ -213,7 +213,7 @@ StatementAttributeLikeMacros:
 StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
-TabWidth:        8
+TabWidth:        2
 UseTab:          Never
 WhitespaceSensitiveMacros:
   - BOOST_PP_STRINGIZE
