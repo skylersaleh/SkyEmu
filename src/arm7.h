@@ -205,6 +205,8 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value);
 
 #define ARM7_BFE(VALUE, BITOFFSET, SIZE) (((VALUE) >> (BITOFFSET)) & ((1u << (SIZE)) - 1))
 
+// clang-format off
+
 // ARM7 ARM Classes
 const static arm7_instruction_t arm7_instruction_classes[]={
    {arm7_data_processing,      "DP",      "cccc0010oooSnnnnddddrrrrOOOOOOOO"},
@@ -409,6 +411,8 @@ const static arm7_instruction_t arm9t_instruction_classes[]={
    {arm7t_unknown,   "UNKNOWN3",           "1011100---------"},
    {NULL},
 };  
+
+// clang-format on
 
 static arm7_handler_t arm7_lookup_table[4096] = { 0 };
 static arm7_handler_t arm9_lookup_table[4096] = { 0 };
