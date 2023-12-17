@@ -2046,6 +2046,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
         if(se_input_int("",&v, 1,5,ImGuiInputTextFlags_CharsHexadecimal)){
           se_write32(write,addr,v);
         }
+        igPopItemWidth();
         igSameLine(0,2);
         se_text("Data");
         igPopID();
@@ -5377,7 +5378,6 @@ void se_draw_touch_controls_settings(){
 
   se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
-  igPopItemWidth();
   bool auto_hide = gui_state.settings.auto_hide_touch_controls;
   se_checkbox("Hide when inactive",&auto_hide);
   gui_state.settings.auto_hide_touch_controls = auto_hide;
@@ -5676,11 +5676,12 @@ void se_draw_menu_panel(){
       gui_state.update_font_atlas=true;
       strncpy(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE);
     }
-
+    igPushItemWidth(-1);
     float old_scale = gui_state.settings.custom_font_scale;
-    se_slider_float("##FontScale",&gui_state.settings.custom_font_scale,0.5,1.5,"Font Scale: %0.2fx");
+    se_text("Font Scale");igSameLine(SE_FIELD_INDENT,0);
+    se_slider_float("##FontScale",&gui_state.settings.custom_font_scale,0.5,1.5,"Scale: %0.2fx");
     if(old_scale!=gui_state.settings.custom_font_scale)gui_state.update_font_atlas=true;
-    
+    igPopItemWidth();
 
   
     se_custom_theme_t * theme = &gui_state.theme;
