@@ -129,6 +129,7 @@ const static char *se_analog_bind_names[] = {
     "Analog L",
     "Analog R",
 };
+
 // Reserve space for extra keybinds/analog binds so that adding them in new versions don't break
 // a users settings.
 #define SE_NUM_BINDS_ALLOC 64
@@ -145,6 +146,7 @@ typedef struct {
   int32_t bound_id[SE_NUM_BINDS_ALLOC];
   float   value[SE_NUM_BINDS_ALLOC];
 } se_keybind_state_t;
+
 typedef struct {
   char name[128];
   char guid[64];
@@ -158,9 +160,11 @@ typedef struct {
   se_keybind_state_t analog;
   double             axis_last_zero_time[256];
 } se_controller_state_t;
+
 typedef struct {
   char path[SB_FILE_PATH_SIZE];
 } se_game_info_t;
+
 typedef struct {
   // This structure is directly saved out for the user settings.
   // Be very careful to keep alignment and ordering the same otherwise you will break the settings.
@@ -192,6 +196,7 @@ typedef struct {
   uint32_t padding[228];
 } persistent_settings_t;
 _Static_assert(sizeof(persistent_settings_t) == 1024, "persistent_settings_t must be exactly 1024 bytes");
+
 #define SE_STATS_GRAPH_DATA 256
 typedef struct {
   double last_render_time;
@@ -224,6 +229,7 @@ typedef struct {
   void (*file_open_fn)(const char *dir);
   char *output_path;
 } se_file_browser_state_t;
+
 typedef struct {
   uint32_t turbo_toggle;
   uint32_t hold_toggle;
@@ -359,6 +365,7 @@ typedef struct {
   uint8_t           palettes[5 * 4];
   se_theme_region_t regions[SE_TOTAL_REGIONS];
 } se_custom_theme_t;
+
 typedef struct {
   uint64_t       laptime;
   sg_pass_action pass_action;
@@ -386,6 +393,7 @@ typedef struct {
   persistent_settings_t last_saved_settings;
   bool                  overlay_open;
   se_emulator_stats_t   emu_stats;
+
   // Utilize a watchdog channel to detect if the audio context has encountered an error
   // and restart it if a problem occurred.
   int                     audio_watchdog_timer;
@@ -445,6 +453,7 @@ typedef struct {
 
 // TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1, .joy.solar_sensor = 0.5};
+
 #define SE_MAX_CONST(A, B) ((A) > (B) ? (A) : (B))
 typedef union {
   sb_gb_t gb;
@@ -453,6 +462,7 @@ typedef union {
   // Raw data padded out to 64B to make rewind efficient
   uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t)) / SE_REWIND_SEGMENT_SIZE + 1];
 } se_core_state_t;
+
 typedef union {
   gba_scratch_t gba;
   gb_scratch_t  gb;
@@ -463,6 +473,7 @@ typedef struct {
   uint32_t offset;
   uint64_t data[SE_REWIND_SEGMENT_SIZE / 8];
 } se_core_delta_t;
+
 typedef struct {
   se_core_delta_t deltas[SE_REWIND_BUFFER_SIZE];
   uint32_t        size;
@@ -470,6 +481,7 @@ typedef struct {
   bool            first_push;
   se_core_state_t last_core;
 } se_core_rewind_buffer_t;
+
 typedef struct {
   uint8_t         screenshot[SE_MAX_SCREENSHOT_SIZE];
   int32_t         screenshot_width;
@@ -478,12 +490,14 @@ typedef struct {
   int32_t         valid; // 0: invalid, 1: Valid (Perfect Save State) 2: Valid (BESS restore)
   se_core_state_t state;
 } se_save_state_t;
+
 typedef struct {
   char     name[SE_MAX_CHEAT_NAME_SIZE];
   uint32_t buffer[SE_MAX_CHEAT_CODE_SIZE];
   uint32_t size;  // In 32bit words
   int32_t  state; //-1: invalid, 0: inactive, 1: active
 } se_cheat_t;
+
 typedef struct {
   char     name[39];    // Emulator Name
   char     build[41];   // Emulator build/commit hash
@@ -517,6 +531,7 @@ static bool        se_load_theme_from_file(const char *filename);
 static bool        se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool        se_draw_theme_region_tint(int region, float x, float y, float w, float h, uint32_t tint);
 static bool        se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
+
 static const char *se_get_pref_path() {
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -530,6 +545,7 @@ static const char *se_get_pref_path() {
 #endif
   return "";
 }
+
 #ifdef PLATFORM_ANDROID
 float se_android_get_display_dpi_scale();
 #endif
@@ -564,6 +580,7 @@ static void se_cache_glyphs(const char *input_string) {
   }
 #endif
 }
+
 char *se_replace_fake_path(char *new_path) {
   static char fake_path[SB_FILE_PATH_SIZE];
   if(gui_state.fake_paths) {
@@ -576,26 +593,31 @@ char *se_replace_fake_path(char *new_path) {
   }
   return new_path;
 }
+
 static inline const char *se_localize_and_cache(const char *input_str) {
   const char *localized_string = se_localize(input_str);
   se_cache_glyphs(localized_string);
   return localized_string;
 }
+
 static inline bool se_checkbox(const char *label, bool *v) {
   return igCheckbox(se_localize_and_cache(label), v);
 }
+
 static void se_text(const char *label, ...) {
   va_list args;
   va_start(args, label);
   igTextV(se_localize_and_cache(label), args);
   va_end(args);
 }
+
 static void se_text_disabled(const char *label, ...) {
   va_list args;
   va_start(args, label);
   igTextDisabledV(se_localize_and_cache(label), args);
   va_end(args);
 }
+
 static bool se_combo_str(const char *label, int *current_item, const char *items_separated_by_zeros, int popup_max_height_in_items) {
   const char *localize_string = items_separated_by_zeros;
   while(localize_string[0]) {
@@ -604,24 +626,29 @@ static bool se_combo_str(const char *label, int *current_item, const char *items
   }
   return igComboStr(se_localize_and_cache(label), current_item, se_localize_and_cache(items_separated_by_zeros), popup_max_height_in_items);
 }
+
 static int se_slider_float(const char *label, float *v, float v_min, float v_max, const char *format) {
   return igSliderFloat(se_localize_and_cache(label), v, v_min, v_max, se_localize_and_cache(format), ImGuiSliderFlags_AlwaysClamp);
 }
+
 static bool se_input_int(const char *label, int *v, int step, int step_fast, ImGuiInputTextFlags flags) {
   return igInputInt(se_localize_and_cache(label), v, step, step_fast, flags);
 }
+
 static bool se_input_uint32(const char *label, uint32_t *v, int step, int step_fast, ImGuiInputTextFlags flags) {
   int  val = *v;
   bool ret = se_input_int(label, &val, step, step_fast, flags);
   *v = val;
   return ret;
 }
+
 static bool se_input_int32(const char *label, int32_t *v, int step, int step_fast, ImGuiInputTextFlags flags) {
   int  val = *v;
   bool ret = se_input_int(label, &val, step, step_fast, flags);
   *v = val;
   return ret;
 }
+
 static bool se_button_themed(int region, const char *label, ImVec2 size, bool always_draw_label) {
   label = se_localize_and_cache(label);
   ImVec2 label_size;
@@ -655,6 +682,7 @@ static bool se_button_themed(int region, const char *label, ImVec2 size, bool al
   *style = restore_style;
   return button_result;
 }
+
 bool se_slider_float_themed(const char *label, float *p_data, float p_min, float p_max, const char *format) {
   if(igGetCurrentWindow()->SkipItems) return false;
 
@@ -721,6 +749,7 @@ bool se_slider_int_themed(const char *label, int *v, float v_min, float v_max, c
 static bool se_button(const char *label, ImVec2 size) {
   return se_button_themed(SE_REGION_BLANK, se_localize_and_cache(label), size, true);
 }
+
 static bool se_input_path(const char *label, char *new_path, ImGuiInputTextFlags flags) {
   int win_w = igGetWindowWidth();
   se_text(label);
@@ -763,6 +792,7 @@ static bool se_input_path(const char *label, char *new_path, ImGuiInputTextFlags
   igPopID();
   return b;
 }
+
 static bool se_input_file_callback(const char *label, char *new_path, const char **types, void (*file_open_fn)(const char *), ImGuiInputTextFlags flags) {
   int win_w = igGetWindowWidth();
   se_text(label);
@@ -805,9 +835,11 @@ static bool se_input_file_callback(const char *label, char *new_path, const char
   igPopID();
   return b;
 }
+
 static bool se_input_file(const char *label, char *new_path, const char **types, ImGuiInputTextFlags flags) {
   return se_input_file_callback(label, new_path, types, NULL, flags);
 }
+
 void se_mkdir(char *path) {
   char *sep = strrchr(path, '/');
   if(sep != NULL) {
@@ -818,6 +850,7 @@ void se_mkdir(char *path) {
   if(mkdir(path, 0777) && errno != EEXIST)
     printf("error while trying to create '%s'\n%m\n", path);
 }
+
 FILE *se_fopen_mkdir(const char *fpath, char *mode) {
   char *path = strdup(fpath);
   char *sep = strrchr(path, '/');
@@ -832,6 +865,7 @@ FILE *se_fopen_mkdir(const char *fpath, char *mode) {
   free(path);
   return fopen(fpath, mode);
 }
+
 void se_copy_file(const char *original_path, const char *copy_path) {
 
   FILE *source = fopen(original_path, "rb");
@@ -852,6 +886,7 @@ void se_copy_file(const char *original_path, const char *copy_path) {
   fclose(source);
   fclose(dest);
 }
+
 void se_bios_file_open_fn(const char *dir) {
   // Make use of the fact that the accept function is called before the output path is updated.
   char *se_bios_file_open_tmp_path = gui_state.file_browser.output_path;
@@ -997,6 +1032,7 @@ se_cheat_t              cheats[SE_NUM_CHEATS];
 bool se_more_rewind_deltas(se_core_rewind_buffer_t *rewind, uint32_t index) {
   return (rewind->deltas[index % SE_REWIND_BUFFER_SIZE].offset & SE_LAST_DELTA_IN_TX) == 0;
 }
+
 void se_push_rewind_state(se_core_state_t *core, se_core_rewind_buffer_t *rewind) {
   if(!rewind->first_push) {
     rewind->first_push = true;
@@ -1036,6 +1072,7 @@ void se_push_rewind_state(se_core_state_t *core, se_core_rewind_buffer_t *rewind
   while(rewind->size > 0 && se_more_rewind_deltas(rewind, rewind->index - rewind->size))
     rewind->size--;
 }
+
 void se_rewind_state_single_tick(se_core_state_t *core, se_core_rewind_buffer_t *rewind) {
   uint64_t *old_data = (uint64_t *)&rewind->last_core;
   int       rewound_deltas = 0;
@@ -1057,16 +1094,19 @@ void se_rewind_state_single_tick(se_core_state_t *core, se_core_rewind_buffer_t 
   rewind->index = rewind->index % SE_REWIND_BUFFER_SIZE;
   *core = rewind->last_core;
 }
+
 void se_reset_rewind_buffer(se_core_rewind_buffer_t *rewind) {
   rewind->index = rewind->size = 0;
   rewind->first_push = false;
 }
+
 se_emu_id se_get_emu_id() {
   se_emu_id emu_id = {0};
   strncpy(emu_id.name, "SkyEmu", sizeof(emu_id.name));
   strncpy(emu_id.build, GIT_COMMIT_HASH, sizeof(emu_id.build));
   return emu_id;
 }
+
 uint8_t *se_save_state_to_image(se_save_state_t *save_state, uint32_t *width, uint32_t *height) {
   se_emu_id emu_id = se_get_emu_id();
   emu_id.bess_offset = se_save_best_effort_state(&save_state->state);
@@ -1118,6 +1158,7 @@ uint8_t *se_save_state_to_image(se_save_state_t *save_state, uint32_t *width, ui
   *height = save_state->screenshot_height * scale;
   return imdata;
 }
+
 bool se_save_state_to_disk(se_save_state_t *save_state, const char *filename) {
   if(emu_state.rom_loaded == false) return false;
   uint32_t width = 0, height = 0;
@@ -1127,6 +1168,7 @@ bool se_save_state_to_disk(se_save_state_t *save_state, const char *filename) {
   se_emscripten_flush_fs();
   return success;
 }
+
 bool se_bess_state_restore(uint8_t *state_data, size_t data_size, const se_emu_id emu_id, se_save_state_t *state) {
   state->state = core;
   printf("Attempting BESS Restore\n");
@@ -1145,6 +1187,7 @@ bool se_bess_state_restore(uint8_t *state_data, size_t data_size, const se_emu_i
   }
   return valid;
 }
+
 bool se_load_state_from_disk(se_save_state_t *save_state, const char *filename) {
   save_state->valid = false;
   int      im_w, im_h, im_c;
@@ -1209,17 +1252,20 @@ bool se_load_state_from_disk(se_save_state_t *save_state, const char *filename) 
   free(data);
   return save_state->valid;
 }
+
 double se_time() {
   static uint64_t base_time = 0;
   if(base_time == 0) base_time = stm_now();
   return stm_sec(stm_diff(stm_now(), base_time));
 }
+
 static void se_tooltip(const char *tooltip) {
   if(igGetCurrentContext()->HoveredIdTimer < 1.5 || gui_state.last_touch_time > 0) return;
   if(igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !igIsItemActive()) {
     igSetTooltip(se_localize_and_cache(tooltip));
   }
 }
+
 double se_fps_counter(int tick) {
   static int    call = -1;
   static double last_t = 0;
@@ -1268,15 +1314,18 @@ void se_load_search_paths() {
     }
   }
 }
+
 void se_save_search_paths() {
   char settings_path[SB_FILE_PATH_SIZE];
   snprintf(settings_path, SB_FILE_PATH_SIZE, "%ssearch_paths.bin", se_get_pref_path());
   sb_save_file_data(settings_path, (uint8_t *)&gui_state.paths, sizeof(gui_state.paths));
   se_emscripten_flush_fs();
 }
+
 void se_reset_bios_info() {
   memset(&gui_state.bios_info, 0, sizeof(se_bios_info_t));
 }
+
 bool se_load_bios_file(const char *name, const char *base_path, const char *file_name, uint8_t *data, size_t data_size) {
   bool        loaded_bios = false;
   const char *base, *file, *ext;
@@ -1331,16 +1380,19 @@ bool se_load_bios_file(const char *name, const char *base_path, const char *file
   free(bios_data);
   return loaded_bios;
 }
+
 static int se_game_info_alpha_comparator(const void *a, const void *b) {
   const int ga = *(int *)a;
   const int gb = *(int *)b;
   return strcmp(gui_state.recently_loaded_games[ga].path, gui_state.recently_loaded_games[gb].path);
 }
+
 static int se_game_info_rev_alpha_comparator(const void *a, const void *b) {
   const int ga = *(int *)a;
   const int gb = *(int *)b;
   return strcmp(gui_state.recently_loaded_games[gb].path, gui_state.recently_loaded_games[ga].path);
 }
+
 static void se_sort_recent_games_list() {
   int size = 0;
   for(int i = 0; i < SE_NUM_RECENT_PATHS; ++i) {
@@ -1356,6 +1408,7 @@ static void se_sort_recent_games_list() {
   else if(gui_state.recent_games_sort_type == SE_SORT_ALPHA_DESC)
     qsort(gui_state.sorted_recently_loaded_games, size, sizeof(int), se_game_info_rev_alpha_comparator);
 }
+
 static void se_save_recent_games_list() {
   gui_state_t *gui = &gui_state;
   char         pref_path[SB_FILE_PATH_SIZE];
@@ -1373,6 +1426,7 @@ static void se_save_recent_games_list() {
   se_emscripten_flush_fs();
   se_sort_recent_games_list();
 }
+
 static void se_load_recent_games_list() {
   gui_state_t *gui = &gui_state;
   char         pref_path[SB_FILE_PATH_SIZE];
@@ -1403,6 +1457,7 @@ bool se_key_is_pressed(int keycode) {
   if(igGetIO()->WantCaptureKeyboard && !emu_state.joy.inputs[SE_KEY_PEN_DOWN]) return false;
   return gui_state.button_state[keycode];
 }
+
 static sg_image *se_get_image() {
   if(gui_state.current_image < GUI_MAX_IMAGES_PER_FRAME) {
     gui_state.current_image++;
@@ -1410,12 +1465,14 @@ static sg_image *se_get_image() {
   }
   return NULL;
 }
+
 static void se_free_all_images() {
   for(int i = 0; i < gui_state.current_image; ++i) {
     sg_destroy_image(gui_state.image_stack[i]);
   }
   gui_state.current_image = 0;
 }
+
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address, uint8_t data);
 typedef sb_debug_mmio_access_t (*emu_mmio_access_type)(uint64_t address, int trigger_breakpoint);
@@ -1426,6 +1483,7 @@ static uint16_t se_read16(emu_byte_read_t read, uint64_t address) {
   data |= (*read)(address + 0);
   return data;
 }
+
 static uint32_t se_read32(emu_byte_read_t read, uint64_t address) {
   uint32_t data = (*read)(address + 3);
   data <<= 8;
@@ -1436,16 +1494,19 @@ static uint32_t se_read32(emu_byte_read_t read, uint64_t address) {
   data |= (*read)(address + 0);
   return data;
 }
+
 static void se_write16(emu_byte_write_t write, uint64_t address, uint16_t data) {
   write(address, SB_BFE(data, 0, 8));
   write(address + 1, SB_BFE(data, 8, 8));
 }
+
 static void se_write32(emu_byte_write_t write, uint64_t address, uint32_t data) {
   write(address, SB_BFE(data, 0, 8));
   write(address + 1, SB_BFE(data, 8, 8));
   write(address + 2, SB_BFE(data, 16, 8));
   write(address + 3, SB_BFE(data, 24, 8));
 }
+
 void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emulated) {
   if(frames_emulated == 0) return;
   double time = se_time();
@@ -1460,6 +1521,7 @@ void se_record_emulation_frame_stats(se_emulator_stats_t *stats, int frames_emul
   for(int i = 0; i < abs_frames; ++i)
     stats->waveform_fps_emulation[SE_STATS_GRAPH_DATA - abs_frames + i] = fps;
 }
+
 void se_draw_emu_stats() {
   se_emulator_stats_t *stats = &gui_state.emu_stats;
   double               curr_time = se_time();
@@ -1590,6 +1652,7 @@ void se_psg_debugger() {
     }
   }
 }
+
 void se_draw_arm_state(const char *label, arm7_t *arm, emu_byte_read_t read) {
   const char *reg_names[] = {"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9 (SB)", "R10 (SL)", "R11 (FP)", "R12 (IP)", "R13 (SP)", "R14 (LR)", "R15 (" ICON_FK_BUG ")", "CPSR", "SPSR", NULL}; // NOLINT
   if(se_button("Step Instruction", (ImVec2){0, 0})) {
@@ -1835,6 +1898,7 @@ void gb_cpu_debugger() {
     }
   }
 }
+
 void se_draw_mem_debug_state(const char *label, gui_state_t *gui, emu_byte_read_t read, emu_byte_write_t write) {
   se_text(ICON_FK_EXCHANGE " Read/Write Memory Address");
   igSeparator();
@@ -1880,6 +1944,7 @@ void se_draw_mem_debug_state(const char *label, gui_state_t *gui, emu_byte_read_
     free(data);
   }
 }
+
 void gb_tile_map_debugger() {
   sb_gb_t       *gb = &core.gb;
   static uint8_t tmp_image[512 * 512 * 3];
@@ -1958,6 +2023,7 @@ void gb_tile_map_debugger() {
       se_text("No tile hovered");
   }
 }
+
 void gb_tile_data_debugger() {
   sb_gb_t       *gb = &core.gb;
   static uint8_t tmp_image[512 * 512 * 3];
@@ -2306,7 +2372,9 @@ static bool se_write_save_to_disk(const char *path) {
   }
   return saved;
 }
+
 static bool se_sync_save_to_disk() { return se_write_save_to_disk(emu_state.save_file_path); }
+
 // Returns offset into savestate where bess info can be found
 static uint32_t se_save_best_effort_state(se_core_state_t *state) {
   if(emu_state.system == SYSTEM_GB) return sb_save_best_effort_state(&state->gb);
@@ -2314,12 +2382,14 @@ static uint32_t se_save_best_effort_state(se_core_state_t *state) {
   if(emu_state.system == SYSTEM_NDS) return nds_save_best_effort_state(&state->nds);
   return -1;
 }
+
 static bool se_load_best_effort_state(se_core_state_t *state, uint8_t *save_state_data, uint32_t size, uint32_t bess_offset) {
   if(emu_state.system == SYSTEM_GB) return sb_load_best_effort_state(&state->gb, save_state_data, size, bess_offset);
   if(emu_state.system == SYSTEM_GBA) return gba_load_best_effort_state(&state->gba, save_state_data, size, bess_offset);
   if(emu_state.system == SYSTEM_NDS) return nds_load_best_effort_state(&state->nds, save_state_data, size, bess_offset);
   return false;
 }
+
 static double se_get_sim_fps() {
   double sim_fps = 1.0;
   if(emu_state.system == SYSTEM_GB)
@@ -2330,6 +2400,7 @@ static double se_get_sim_fps() {
     sim_fps = 59.8261;
   return sim_fps;
 }
+
 static size_t se_get_core_size() {
   if(emu_state.system == SYSTEM_GB)
     return sizeof(core.gb);
@@ -2339,6 +2410,7 @@ static size_t se_get_core_size() {
     return sizeof(core.nds);
   return 0;
 }
+
 typedef struct {
   float red_color[3];
   float green_color[3];
@@ -2346,6 +2418,7 @@ typedef struct {
   float gamma;
   bool  is_grayscale;
 } se_lcd_info_t;
+
 se_lcd_info_t se_get_lcd_info() {
   if(emu_state.system == SYSTEM_GB) {
     if(core.gb.model == SB_GBC) {
@@ -2387,6 +2460,7 @@ se_lcd_info_t se_get_lcd_info() {
       .gamma = 2.2
   };
 }
+
 static void se_emulate_single_frame() {
   if(emu_state.system == SYSTEM_GB) {
     if(gui_state.test_runner_mode) {
@@ -2409,6 +2483,7 @@ static void se_emulate_single_frame() {
 
   se_run_all_ar_cheats();
 }
+
 static void se_screenshot(uint8_t *output_buffer, int *out_width, int *out_height) {
   *out_height = *out_width = 0;
   // output_bufer is always SE_MAX_SCREENSHOT_SIZE bytes. RGB8
@@ -2429,6 +2504,7 @@ static void se_screenshot(uint8_t *output_buffer, int *out_width, int *out_heigh
   for(int i = 3; i < SE_MAX_SCREENSHOT_SIZE; i += 4)
     output_buffer[i] = 0xff;
 }
+
 typedef struct {
   uint8_t *data;
   int      im_width;
@@ -2440,12 +2516,14 @@ typedef struct {
   float    rotation;
   bool     is_touch;
 } se_draw_lcd_callback_t;
+
 void se_draw_lcd_callback(const ImDrawList *parent_list, const ImDrawCmd *cmd) {
   if(cmd->UserCallbackData == NULL) return;
   se_draw_lcd_callback_t *call = (se_draw_lcd_callback_t *)cmd->UserCallbackData;
   se_draw_lcd(call->data, call->im_width, call->im_height, call->x, call->y, call->render_width, call->render_height, call->rotation, call->is_touch);
   free(call);
 }
+
 void se_draw_lcd_defer(uint8_t *data, int im_width, int im_height, int x, int y, int render_width, int render_height, float rotation, bool is_touch) {
   se_draw_lcd_callback_t *call = (se_draw_lcd_callback_t *)malloc(sizeof(se_draw_lcd_callback_t));
   call->data = data;
@@ -2459,6 +2537,7 @@ void se_draw_lcd_defer(uint8_t *data, int im_width, int im_height, int x, int y,
   call->is_touch = is_touch;
   ImDrawList_AddCallback(igGetWindowDrawList(), se_draw_lcd_callback, call);
 }
+
 static void se_draw_emulated_system_screen(bool preview) {
   int lcd_render_x = 0, lcd_render_y = 0;
   int lcd_render_w = 0, lcd_render_h = 0;
@@ -2628,6 +2707,7 @@ static void se_draw_emulated_system_screen(bool preview) {
   }
   if(!gui_state.block_touchscreen || preview) sb_draw_onscreen_controller(&emu_state, controller_h, controller_y_pad, preview);
 }
+
 static uint8_t gba_byte_read(uint64_t address) { return gba_read8_debug(&core.gba, address); }
 static void    gba_byte_write(uint64_t address, uint8_t data) { gba_store8_debug(&core.gba, address, data); }
 
@@ -2666,6 +2746,7 @@ void                   nds7_mem_debugger() { se_draw_mem_debug_state("NDS9 MEM",
 void                   nds9_mem_debugger() { se_draw_mem_debug_state("NDS7_MEM", &gui_state, &nds7_byte_read, &nds7_byte_write); }
 void                   nds7_cpu_debugger() { se_draw_arm_state("ARM7", &core.nds.arm7, &nds7_byte_read); }
 void                   nds9_cpu_debugger() { se_draw_arm_state("ARM9", &core.nds.arm9, &nds9_byte_read); }
+
 void                   nds_io_debugger() {
   nds_t *nds = &core.nds;
   for(int cpu = 0; cpu < 2; ++cpu) {
@@ -2708,6 +2789,7 @@ se_debug_tool_desc_t nds_debug_tools[] = {
     {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats", se_draw_emu_stats, .allow_hardcore = true},
     {NULL, NULL, NULL}
 };
+
 static se_debug_tool_desc_t *se_get_debug_description() {
   se_debug_tool_desc_t *desc = NULL;
   if(emu_state.system == SYSTEM_GBA) desc = gba_debug_tools;
@@ -2715,12 +2797,14 @@ static se_debug_tool_desc_t *se_get_debug_description() {
   if(emu_state.system == SYSTEM_NDS) desc = nds_debug_tools;
   return desc;
 }
+
 emu_byte_read_t se_read_byte_func(int addr_map) {
   if(emu_state.system == SYSTEM_GBA) return gba_byte_read;
   if(emu_state.system == SYSTEM_GB) return gb_byte_read;
   if(emu_state.system == SYSTEM_NDS) return addr_map == 7 ? nds7_byte_read : nds9_byte_read;
   return null_byte_read;
 }
+
 emu_byte_write_t se_write_byte_func(int addr_map) {
   if(emu_state.system == SYSTEM_GBA) return gba_byte_write;
   if(emu_state.system == SYSTEM_GB) return gb_byte_write;
@@ -2737,16 +2821,19 @@ void se_capture_state(se_core_state_t *core, se_save_state_t *save_state) {
   save_state->system = emu_state.system;
   se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
 }
+
 void se_restore_state(se_core_state_t *core, se_save_state_t *save_state) {
   if(!save_state->valid || save_state->system != emu_state.system || gui_state.settings.hardcore_mode) return;
   *core = save_state->state;
   emu_state.render_frame = true;
   se_emulate_single_frame();
 }
+
 void se_reset_save_states() {
   for(int i = 0; i < SE_NUM_SAVE_STATES; ++i)
     save_states[i].valid = false;
 }
+
 void se_reset_cheats() {
   memset(cheats, 0, sizeof(cheats));
   for(int i = 0; i < SE_NUM_CHEATS; ++i) {
@@ -2754,6 +2841,7 @@ void se_reset_cheats() {
   }
   gui_state.editing_cheat_index = -1;
 }
+
 void se_save_cheats(const char *filename) {
   FILE *f = fopen(filename, "wb");
   if(!f) {
@@ -2773,6 +2861,7 @@ void se_save_cheats(const char *filename) {
   }
   fclose(f);
 }
+
 void se_load_cheats(const char *filename) {
   size_t   data_size = 0;
   uint8_t *data = sb_load_file_data(filename, &data_size);
@@ -2814,6 +2903,7 @@ void se_load_cheats(const char *filename) {
   }
   free(data);
 }
+
 static void se_draw_debug_menu() {
   se_debug_tool_desc_t *desc = se_get_debug_description();
   if(!desc) return;
@@ -2855,6 +2945,7 @@ static void se_draw_debug_menu() {
     }
   }
 }
+
 static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, float height) {
   se_debug_tool_desc_t *desc = se_get_debug_description();
   if(!desc) return screen_x;
@@ -2882,6 +2973,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
   }
   return screen_x;
 }
+
 void se_set_default_keybind(gui_state_t *gui) {
   for(int i = 0; i < SE_NUM_KEYBINDS; ++i)
     gui->key.bound_id[i] = -1;
@@ -2914,12 +3006,14 @@ void se_set_default_keybind(gui_state_t *gui) {
     gui->key.bound_id[SE_KEY_RESTORE_STATE(i)] = SAPP_KEYCODE_F1 + i;
   }
 }
+
 void sb_poll_controller_input(sb_joy_t *joy) {
   for(int i = 0; i < SE_NUM_KEYBINDS; ++i) {
     gui_state.key.value[i] = se_key_is_pressed(gui_state.key.bound_id[i]);
     joy->inputs[i] += 0.5 < gui_state.key.value[i];
   }
 }
+
 void se_reset_joy(sb_joy_t *joy) {
   for(int i = 0; i < SE_NUM_KEYBINDS; ++i) {
     joy->inputs[i] = 0;
@@ -3117,6 +3211,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height, int x, int y, int r
 void se_draw_image(uint8_t *data, int im_width, int im_height, int x, int y, int render_width, int render_height, bool has_alpha) {
   se_draw_image_opacity(data, im_width, im_height, x, y, render_width, render_height, has_alpha, 1.0);
 }
+
 bool se_draw_image_button(uint8_t *data, int im_width, int im_height, int x, int y, int render_width, int render_height, bool has_alpha) {
   float dpi_scale = se_dpi_scale();
   igPushStyleColorVec4(ImGuiCol_Button, (ImVec4){0.f, 0.f, 0.f, 0.f});
@@ -3137,12 +3232,14 @@ bool se_draw_image_button(uint8_t *data, int im_width, int im_height, int x, int
   igPopStyleColor(3);
   return clicked;
 }
+
 float sb_distance(float *a, float *b, int dims) {
   float v = 0;
   for(int i = 0; i < dims; ++i)
     v += (a[i] - b[i]) * (a[i] - b[i]);
   return sqrtf(v);
 }
+
 void se_initialize_keybind(se_keybind_state_t *state) {
   for(int i = 0; i < SE_NUM_BINDS_ALLOC; ++i) {
     state->bound_id[i] = -1;
@@ -3152,6 +3249,7 @@ void se_initialize_keybind(se_keybind_state_t *state) {
   state->bind_being_set = -1;
   state->last_bind_activitiy = -1;
 }
+
 #ifdef PLATFORM_ANDROID
 const char *se_android_key_to_name(int key) {
   switch(key) {
@@ -3448,6 +3546,7 @@ const char *se_android_key_to_name(int key) {
   return NULL;
 }
 #endif
+
 // Returns true if modifed
 bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t *state) {
   double       rebind_timer = SE_REBIND_TIMER_LENGTH - (se_time() - state->rebind_start_time);
@@ -3547,6 +3646,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t *state) {
   igPopID();
   return settings_changed;
 }
+
 void sb_draw_onscreen_controller(sb_emu_state_t *state, int controller_h, int controller_y_pad, bool preview) {
   if(state->run_mode != SB_MODE_RUN && preview == false) return;
   controller_h *= gui_state.settings.touch_controls_scale;
@@ -3946,6 +4046,7 @@ void sb_draw_onscreen_controller(sb_emu_state_t *state, int controller_h, int co
   state->joy.inputs[SE_KEY_R] += SB_BFE(button_press, 5, 1);
   state->joy.inputs[SE_KEY_SELECT] += SB_BFE(button_press, 6, 1);
 }
+
 void se_update_key_turbo(sb_emu_state_t *state) {
   double t = se_time() * 15;
   bool   turbo_press = (t - (int)t) > 0.5;
@@ -3958,6 +4059,7 @@ void se_update_key_turbo(sb_emu_state_t *state) {
     state->joy.inputs[SE_KEY_R] += state->joy.inputs[SE_KEY_TURBO_R];
   }
 }
+
 void se_update_solar_sensor(sb_emu_state_t *state) {
   static double last_t = 0;
   double        dt = se_time() - last_t;
@@ -3968,6 +4070,7 @@ void se_update_solar_sensor(sb_emu_state_t *state) {
   if(state->joy.solar_sensor < 0.0) state->joy.solar_sensor = 0.0;
   last_t = se_time();
 }
+
 void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char *text) {
   ImVec2 curr_cursor;
   igGetCursorPos(&curr_cursor);
@@ -3991,6 +4094,7 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char *text) {
   se_text(text);
   igSetCursorPos(backup_cursor);
 }
+
 // CPU: 73%->48
 bool se_selectable_with_box(const char *first_label, const char *second_label, const char *box, bool force_hover, int reduce_width) {
   ImVec2 win_min, win_sz, win_max;
@@ -4072,6 +4176,7 @@ void se_android_open_file_picker() {
     (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
 }
+
 float se_android_get_display_dpi_scale() {
   ANativeActivity *activity = (ANativeActivity *)sapp_android_get_native_activity();
   // Attaches the current thread to the JVM.
@@ -4092,6 +4197,7 @@ float se_android_get_display_dpi_scale() {
   }
   return result;
 }
+
 void se_android_get_visible_rect(float *top, float *bottom) {
   ANativeActivity *activity = (ANativeActivity *)sapp_android_get_native_activity();
   // Attaches the current thread to the JVM.
@@ -4111,6 +4217,7 @@ void se_android_get_visible_rect(float *top, float *bottom) {
     (*pJavaVM)->DetachCurrentThread(pJavaVM);
   }
 }
+
 void se_android_get_language(char *language_buffer, size_t buffer_size) {
 
   ANativeActivity *activity = (ANativeActivity *)sapp_android_get_native_activity();
@@ -4145,6 +4252,7 @@ void se_android_send_controller_key(uint32_t bound_id, bool value) {
     cont->key.value[k] = value;
   }
 }
+
 void se_android_poll_events(bool visible) {
   se_controller_state_t *cont = &gui_state.controller;
   cont->key.last_bind_activitiy = -1;
@@ -4272,6 +4380,7 @@ void se_android_request_permissions() {
   }
 }
 #endif
+
 #ifdef EMSCRIPTEN
 void se_download_emscripten_file(const char *path) {
   const char *base, *file, *ext;
@@ -4334,6 +4443,7 @@ int file_sorter(const void *a, const void *b) {
   }
   return bf->path[i] == '\0' ? 0 : -1;
 }
+
 void se_file_browser_accept(const char *path) {
   se_file_browser_state_t *file_browse = &gui_state.file_browser;
   if(file_browse->file_open_fn) {
@@ -4345,6 +4455,7 @@ void se_file_browser_accept(const char *path) {
     gui_state.file_browser.state = SE_FILE_BROWSER_CLOSED;
   }
 }
+
 static void se_file_picker_click_region(int x, int y, int w, int h, void (*accept_func)(const char *)) {
   float delta_dpi_scale = se_dpi_scale() / sapp_dpi_scale();
 
@@ -4419,6 +4530,7 @@ static void se_file_picker_click_region(int x, int y, int w, int h, void (*accep
 #endif
   ++gui_state.current_click_region_id;
 }
+
 static void se_reset_html_click_regions() {
   while(gui_state.current_click_region_id < gui_state.max_click_region_id) {
 #if defined(EMSCRIPTEN)
@@ -4431,6 +4543,7 @@ static void se_reset_html_click_regions() {
   }
   gui_state.current_click_region_id = 0;
 }
+
 // Opens a file picker when clicked is true or a user clicks in the click region defined by x,y,w,h in ImGUI coordinates
 // File pickers only open for the click region on web platforms due to web security precautions. On Desktop/Native platforms
 // they only open if clicked is set to true.
@@ -4481,6 +4594,7 @@ void se_open_file_browser(bool clicked, float x, float y, float w, float h, void
   se_android_open_file_picker();
 #endif
 }
+
 void se_convert_cheat_code(char *text_code, int cheat_index) {
   if(cheat_index >= SE_NUM_CHEATS) return;
   se_cheat_t *cheat = cheats + cheat_index;
@@ -4620,10 +4734,12 @@ bool se_process_file_browser() {
   igEnd();
   return true;
 }
+
 bool se_load_rom_file_browser_callback(const char *path) {
   se_load_rom(path);
   return emu_state.rom_loaded;
 }
+
 bool se_string_contains_string_case_insensitive(char *canidate, char *search) {
   int len1 = strlen(canidate);
   int len2 = strlen(search);
@@ -4637,6 +4753,7 @@ bool se_string_contains_string_case_insensitive(char *canidate, char *search) {
   }
   return false;
 }
+
 void se_load_rom_overlay(bool visible) {
   if(visible == false) return;
   ImVec2 w_pos, w_size;
@@ -4739,6 +4856,7 @@ void se_load_rom_overlay(bool visible) {
   igEnd();
   return;
 }
+
 #ifdef USE_SDL
 static void se_poll_sdl() {
   SDL_Event              sdlEvent;
@@ -4955,6 +5073,7 @@ void se_update_frame() {
   hcs_resume_callbacks();
 #endif
 }
+
 void se_imgui_theme() {
   ImVec4 *colors = igGetStyle()->Colors;
   colors[ImGuiCol_Text] = (ImVec4){1.00f, 1.00f, 1.00f, 1.00f};
@@ -5191,6 +5310,7 @@ void se_imgui_theme() {
     }
   }
 }
+
 #if defined(EMSCRIPTEN)
 // Setup the offline file system
 EM_JS(void, em_init_fs, (),{
@@ -5268,6 +5388,7 @@ bool se_load_controller_settings(se_controller_state_t *cont) {
   }
   return load_old_settings;
 }
+
 #ifdef USE_SDL
 int se_get_sdl_key_bind(SDL_GameController *gc, int button, int joystick_direction_mask) {
   SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForButton(gc, button);
@@ -5326,6 +5447,7 @@ void se_set_default_controller_binds(se_controller_state_t *cont) {
   cont->analog.bound_id[SE_ANALOG_L] = se_get_sdl_axis_bind(gc, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
   cont->analog.bound_id[SE_ANALOG_R] = se_get_sdl_axis_bind(gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
 }
+
 void se_set_new_controller(se_controller_state_t *cont, int index) {
   SDL_Joystick *joy = SDL_JoystickOpen(index);
   if(joy == cont->sdl_joystick) return;
@@ -5410,24 +5532,29 @@ void se_reset_default_gb_palette() {
     gui_state.settings.gb_palette[i] = palette[i * 3] | (palette[i * 3 + 1] << 8) | (palette[i * 3 + 2] << 16);
   }
 }
+
 void se_capture_state_slot(int slot) {
   se_capture_state(&core, save_states + slot);
   char save_state_path[SB_FILE_PATH_SIZE];
   snprintf(save_state_path, SB_FILE_PATH_SIZE, "%s.slot%d.state.png", emu_state.save_data_base_path, slot);
   se_save_state_to_disk(save_states + slot, save_state_path);
 }
+
 void se_restore_state_slot(int slot) {
   if(save_states[slot].valid) se_restore_state(&core, save_states + slot);
 }
+
 void se_push_disabled() {
   ImGuiStyle *style = igGetStyle();
   igPushStyleColorVec4(ImGuiCol_Text, style->Colors[ImGuiCol_TextDisabled]);
   igPushItemFlag(ImGuiItemFlags_Disabled, true);
 }
+
 void se_pop_disabled() {
   igPopStyleColor(1);
   igPopItemFlag();
 }
+
 void se_draw_touch_controls_settings() {
 
   se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
@@ -5470,6 +5597,7 @@ void se_draw_touch_controls_settings() {
   se_checkbox("Avoid NDS Touchscreen", &avoid_touchscreen);
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
 }
+
 void se_draw_menu_panel() {
   ImGuiStyle *style = igGetStyle();
   int         win_w = igGetWindowContentRegionWidth();
@@ -5909,12 +6037,14 @@ typedef struct {
   uint8_t *data;
   size_t   size;
 } se_png_write_context_t;
+
 void se_png_write_mem(void *context, void *data, int size) {
   se_png_write_context_t *cont = (se_png_write_context_t *)context;
   cont->data = realloc(cont->data, size + cont->size);
   memcpy(cont->data + cont->size, data, size);
   cont->size += size;
 }
+
 uint64_t se_hex_string_to_int(const char *s) {
   uint64_t num = 0;
   while(*s) {
@@ -5926,6 +6056,7 @@ uint64_t se_hex_string_to_int(const char *s) {
   }
   return num;
 }
+
 void se_append_char_to_string(char **str, uint64_t *size, char c) {
   if(*size == 0) *size = 1;
   *str = realloc(*str, *size + 1);
@@ -5933,6 +6064,7 @@ void se_append_char_to_string(char **str, uint64_t *size, char c) {
   (*str)[*size] = '\0';
   *size += 1;
 }
+
 uint8_t *se_hcs_callback(const char *cmd, const char **params, uint64_t *result_size, const char **mime_type) {
   *result_size = 0;
   *mime_type = "text/html";
@@ -6805,6 +6937,7 @@ static void frame(void) {
     gui_state.last_saved_settings = gui_state.settings;
   }
 }
+
 void se_load_settings() {
   se_load_recent_games_list();
   se_load_search_paths();
@@ -6868,6 +7001,7 @@ void se_load_settings() {
     if(gui_state.settings.theme == SE_THEME_CUSTOM) se_load_theme_from_file(gui_state.paths.theme);
   }
 }
+
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds) {
   *hybrid_nds = false;
   float rotation = gui_state.settings.screen_rotation * 0.5 * 3.14159;
@@ -6930,6 +7064,7 @@ static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, b
   }
   }
 }
+
 static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lcd_render_w, float lcd_render_h, bool hybrid_nds) {
   float dpi_scale = se_dpi_scale();
   float lx = lcd_render_x * dpi_scale;
@@ -6976,6 +7111,7 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
     se_draw_lcd_defer(core.gb.lcd.framebuffer, SB_LCD_W, SB_LCD_H, lx, ly, lw, lh, rotation, false);
   }
 }
+
 static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint) {
   if(gui_state.settings.theme != SE_THEME_CUSTOM) return false;
   se_theme_region_t *r = &gui_state.theme.regions[region];
@@ -7071,15 +7207,18 @@ static bool se_draw_theme_region_tint_partial(int region, float x, float y, floa
   }
   return true;
 }
+
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h, uint32_t tint) {
   return se_draw_theme_region_tint_partial(region, x, y, w, h, 1.0, 1.0, tint);
 }
+
 static bool se_draw_theme_region(int region, float x, float y, float w, float h) {
   return se_draw_theme_region_tint(region, x, y, w, h, 0xffffffff);
 }
 
 static void se_compute_lcd_render_dims(float *available_dims, float *render_dims) {
 }
+
 static bool se_load_theme_from_image(uint8_t *im, uint32_t im_w, uint32_t im_h) {
   if(!im) { return false; }
 
@@ -7313,6 +7452,7 @@ static bool se_load_theme_from_image(uint8_t *im, uint32_t im_w, uint32_t im_h) 
   gui_state.theme.image = sg_make_image(&desc);
   return true;
 }
+
 static bool se_load_theme_from_file(const char *filename) {
   int im_w, im_h, im_c;
   strncpy(gui_state.loaded_theme_path, filename, SB_FILE_PATH_SIZE);
@@ -7328,6 +7468,7 @@ static bool se_load_theme_from_file(const char *filename) {
   }
   return ret;
 }
+
 static void se_init() {
   printf("SkyEmu %s\n", GIT_COMMIT_HASH);
   stm_setup();
@@ -7440,6 +7581,7 @@ static void init(void) {
   se_android_request_permissions();
 #endif
 }
+
 static void cleanup(void) {
   simgui_shutdown();
   se_free_all_images();
@@ -7449,6 +7591,7 @@ static void cleanup(void) {
   SDL_Quit();
 #endif
 }
+
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response *response) {
   if(response->succeeded) {
@@ -7461,6 +7604,7 @@ static void emsc_load_callback(const sapp_html5_fetch_response *response) {
   free(response->user_data);
 }
 #endif
+
 static void event(const sapp_event *ev) {
   simgui_handle_event(ev);
   if(ev->type == SAPP_EVENTTYPE_FILES_DROPPED) {
@@ -7512,6 +7656,7 @@ static void event(const sapp_event *ev) {
     if(b < 3) gui_state.mouse_button[0] = ev->type == SAPP_EVENTTYPE_MOUSE_DOWN;
   }
 }
+
 bool se_run_ar_cheat(const uint32_t *buffer, uint32_t size) {
   if(emu_state.system == SYSTEM_GBA) return gba_run_ar_cheat(&core.gba, buffer, size);
   if(emu_state.system == SYSTEM_GB) return sb_run_ar_cheat(&core.gb, buffer, size);
@@ -7519,6 +7664,7 @@ bool se_run_ar_cheat(const uint32_t *buffer, uint32_t size) {
 
   return false;
 }
+
 void se_run_all_ar_cheats() {
   for(int i = 0; i < SE_NUM_CHEATS; ++i) {
     se_cheat_t *cheat = cheats + i;
@@ -7543,6 +7689,7 @@ void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1rom(JNIEnv *e
   se_load_rom(nativeFilePath);
   (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
 }
+
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1file(JNIEnv *env, jobject thiz, jstring filePath) {
   const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
   se_file_browser_accept(nativeFilePath);
