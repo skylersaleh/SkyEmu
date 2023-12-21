@@ -4803,7 +4803,7 @@ void se_load_rom_overlay(bool visible){
   igGetWindowSize(&w_size);
   w_size.x/=se_dpi_scale();
   w_size.y/=se_dpi_scale();
-  igSetNextWindowSize((ImVec2){w_size.x,0},ImGuiCond_Always);
+  igSetNextWindowSize((ImVec2){w_size.x,w_size.y},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
   igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),gui_state.settings.hardcore_mode?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
