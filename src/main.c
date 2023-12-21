@@ -5312,7 +5312,7 @@ void se_imgui_theme()
   style->ChildBorderSize                   = 0;
   style->PopupBorderSize                   = 0;
   style->FrameBorderSize                   = 0;
-  style->TabBorderSize                     = 1;
+  style->TabBorderSize                     = 0;
   style->WindowRounding                    = 0;
   style->ChildRounding                     = 4;
   style->FrameRounding                     = 0;
@@ -5737,18 +5737,28 @@ void se_draw_menu_panel(){
     }
     cloud_state.awaiting_login = cloud_state.awaiting_login_swap;
   } else {
-    igBeginChildFrame(5000, (ImVec2){64,64},ImGuiWindowFlags_None);
+    ImVec2 avatar_frame_sz = (ImVec2){64+style->FramePadding.x*2,64+style->FramePadding.y*2};
     ImVec2 screen_p;
     igGetCursorScreenPos(&screen_p);
     int screen_x = screen_p.x;
     int screen_y = screen_p.y;
+    ImVec2 ava_dims = {38,38};
     if (cloud_state.user_info.avatar){
       void* avatar = cloud_state.user_info.avatar;
       int avatar_w = cloud_state.user_info.avatar_width;
       int avatar_h = cloud_state.user_info.avatar_height;
-      se_draw_image(avatar,avatar_w,avatar_h,screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),64*se_dpi_scale(),64*se_dpi_scale(), true);
+      float border_size = 1; 
+      igDummy(ava_dims);
+      ImU32 col = igGetColorU32Col(ImGuiCol_FrameBg,1.0);
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),
+                              (ImVec2){screen_x-border_size,screen_y-border_size},
+                              (ImVec2){screen_x+border_size+ava_dims.x,screen_y+border_size+ava_dims.y},
+                              col,0,ImDrawCornerFlags_None);
+    
+      se_draw_image(avatar,avatar_w,avatar_h,screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),ava_dims.x*se_dpi_scale(),ava_dims.y*se_dpi_scale(), true);
+      igSameLine(0,5);
     }
-    igEndChildFrame();
+    igBeginGroup();
     char logged_in[256];
     snprintf(logged_in,256,se_localize_and_cache("Logged in as %s"),cloud_state.user_info.name);
     se_text(logged_in);
@@ -5757,6 +5767,7 @@ void se_draw_menu_panel(){
       cloud_drive_destroy(cloud_state.drive);
       cloud_state.drive = NULL;
     }
+    igEndGroup();
   }
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
