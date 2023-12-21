@@ -498,8 +498,9 @@ typedef struct{
   cloud_drive_t* drive;
   bool awaiting_login;
   bool awaiting_login_swap;
+  bool awaiting_logout;
+  bool awaiting_logout_swap;
   char username[128];
-  sg_image profile_picture;
   se_save_state_t save_states[SE_NUM_SAVE_STATES];
   mutex_t save_states_mutex[SE_NUM_SAVE_STATES];
   bool save_states_busy[SE_NUM_SAVE_STATES];
@@ -2813,6 +2814,15 @@ void se_capture_cloud_callback(void* userdata, void* data){
   cloud_state.save_states[slot].valid = true;
   cloud_state.save_states_busy_swap[slot] = false;
   mutex_unlock(cloud_state.save_states_mutex[slot]);
+}
+void se_logged_out_cloud_callback(){
+  cloud_state.drive = NULL;
+  memset(cloud_state.save_states, 0, sizeof(cloud_state.save_states));
+  memset(cloud_state.save_states_busy_swap, 0, sizeof(cloud_state.save_states_busy_swap));
+  cloud_state.awaiting_login = false;
+  cloud_state.awaiting_logout = false;
+  cloud_state.awaiting_login_swap = false;
+  cloud_state.awaiting_logout_swap = false;
 }
 void se_write_png_cloud(void* context, void* data, int size){
   char file[SB_FILE_PATH_SIZE];
@@ -5771,11 +5781,13 @@ void se_draw_menu_panel(){
     char logged_in[256];
     snprintf(logged_in,256,se_localize_and_cache("Logged in as %s"),cloud_state.user_info.name);
     se_text(logged_in);
+    if (cloud_state.awaiting_logout) se_push_disabled();
     if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
-      cloud_drive_logout(cloud_state.drive);
-      cloud_drive_destroy(cloud_state.drive);
-      cloud_state.drive = NULL;
+      cloud_state.awaiting_logout_swap = true;
+      cloud_drive_logout(cloud_state.drive,se_logged_out_cloud_callback);
     }
+    if (cloud_state.awaiting_logout) se_pop_disabled();
+    cloud_state.awaiting_logout = cloud_state.awaiting_logout_swap;
     igEndGroup();
   }
 
