@@ -22,11 +22,14 @@
 // - "Rewind"
 // - "Slow"
 // - "Fast Forward"
+// - "Save File"
+// - ICON_FK_CROSSHAIRS " Located Files"
 
 // Strings removed in v4:
 // - "Controller"
 // - "GB Palette %d"
 // - "Reset Palette to Defaults"
+// - ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files"
 
 //#define SHOW_TRANSLATE_ME 1
 

@@ -4830,7 +4830,7 @@ void se_load_rom_overlay(bool visible){
   float y1 = igGetCursorPosY();
   bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
   float y2 = igGetCursorPosY();
-  se_open_file_browser(clicked, x,y2-y1,w,h, se_load_rom,valid_rom_file_types,NULL);
+  se_open_file_browser(clicked, x,y,w,y2-y1, se_load_rom,valid_rom_file_types,NULL);
   
   
   se_section(ICON_FK_CLOCK_O " Load Recently Played Game");
@@ -5839,7 +5839,20 @@ void se_draw_menu_panel(){
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
-      se_section(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
+      se_section(ICON_FK_CROSSHAIRS " Located Files");
+      const char* wildcard_types[]={NULL};
+      if(sb_file_exists(emu_state.save_file_path)){
+        igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
+        se_text(ICON_FK_CHECK);
+      }else{
+        igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
+        se_text(ICON_FK_TIMES);
+      }
+      igPopStyleColor(1);
+      igSameLine(0,2);
+      igSetNextItemWidth(win_w-55);
+      se_input_file_callback("Save File",emu_state.save_file_path,wildcard_types,se_bios_file_open_fn,ImGuiInputTextFlags_None);
+
       bool missing_bios = false;
       for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
         if(info->name[i][0]){
@@ -5854,8 +5867,7 @@ void se_draw_menu_panel(){
           igPopStyleColor(1);
           igSameLine(0,2);
           igSetNextItemWidth(win_w-55);
-          const char* bios_types[]={NULL};
-          se_input_file_callback(info->name[i],info->path[i],bios_types,se_bios_file_open_fn,ImGuiInputTextFlags_None);
+          se_input_file_callback(info->name[i],info->path[i],wildcard_types,se_bios_file_open_fn,ImGuiInputTextFlags_None);
         }
       }
       if(missing_bios){
