@@ -946,26 +946,39 @@ void cloud_drive_download(cloud_drive_t* drive, const char* filename,
 #ifndef EMSCRIPTEN
     std::thread download_thread([drive, name, fcallback, userdata] {
 #endif
-        google_cloud_drive_get_files(drive, [name, fcallback, userdata](cloud_drive_t* drive) {
-            if (time(NULL) > drive->expire_timestamp - 60)
+        if (time(NULL) > drive->expire_timestamp - 60)
+        {
+            if (drive->access_token.empty())
             {
-                if (drive->access_token.empty())
-                {
-                    printf("[cloud] failed to use refresh token\n");
-                    return;
-                }
-                google_use_refresh_token(drive, [name, fcallback, userdata](cloud_drive_t* drive) {
-                    google_cloud_drive_download(drive, name, fcallback, userdata);
-                });
+                printf("[cloud] failed to use refresh token\n");
+                return;
             }
-            else
-            {
+            google_use_refresh_token(drive, [name, fcallback, userdata](cloud_drive_t* drive) {
                 google_cloud_drive_download(drive, name, fcallback, userdata);
-            }
-        });
+            });
+        }
+        else
+        {
+            google_cloud_drive_download(drive, name, fcallback, userdata);
+        }
 #ifndef EMSCRIPTEN
     });
     download_thread.detach();
+#endif
+}
+
+void cloud_drive_sync(cloud_drive_t* drive, void(*callback)())
+{
+    std::function<void()> fcallback = callback;
+#ifndef EMSCRIPTEN
+    std::thread sync_thread([drive, fcallback] {
+#endif
+        google_cloud_drive_get_files(drive, [fcallback](cloud_drive_t*) {
+            fcallback();
+        });
+#ifndef EMSCRIPTEN
+    });
+    sync_thread.detach();
 #endif
 }
 

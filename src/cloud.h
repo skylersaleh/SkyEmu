@@ -33,6 +33,9 @@ void cloud_drive_upload(cloud_drive_t* cloud_drive, const char* filename, const 
 // Calls callback when the download is complete.
 void cloud_drive_download(cloud_drive_t* cloud_drive, const char* filename, void(*callback)(void* userdata, void* data, size_t size), void* userdata);
 
+// Redownload the file map from the cloud.
+void cloud_drive_sync(cloud_drive_t* cloud_drive, void(*callback)());
+
 // Has lifetime equal to the cloud drive instance.
 cloud_user_info_t cloud_drive_get_user_info(cloud_drive_t* cloud_drive);
 
