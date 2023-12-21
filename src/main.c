@@ -637,6 +637,27 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
   *v = val;
   return ret;
 }
+static void se_section(const char* label,...){
+  ImGuiStyle * style = igGetStyle();
+  float height = igGetFontSize() + style->FramePadding.y * 2.0f;
+  ImDrawList*dl= igGetWindowDrawList();
+  ImVec2 b_min,b_sz,b_max,b_cursor;
+
+  igGetWindowPos(&b_min);
+  igGetWindowSize(&b_sz);
+  igGetCursorPos(&b_cursor);
+  b_min.x+=b_cursor.x-style->FramePadding.x;
+  b_min.y+=b_cursor.y-style->FramePadding.y;
+  b_min.y-=igGetScrollY();
+  b_max.x = b_min.x+b_sz.x; 
+  b_max.y = b_min.y+height; 
+
+  ImDrawList_AddRectFilled(dl,b_min,b_max,igGetColorU32Col(ImGuiCol_TitleBg,1.0),0,ImDrawCornerFlags_None);
+  va_list args;
+  va_start(args, label);
+  igTextV(se_localize_and_cache(label),args);
+  va_end(args);
+}
 static bool se_button_themed(int region, const char* label, ImVec2 size, bool always_draw_label){
   label=se_localize_and_cache(label);
   ImVec2 label_size;
@@ -1581,8 +1602,7 @@ void se_draw_emu_stats(){
   }
 
   float content_width = igGetWindowContentRegionWidth();
-  se_text(ICON_FK_CLOCK_O " FPS");
-  igSeparator();
+  se_section(ICON_FK_CLOCK_O " FPS");
   char label_tmp[128];
   snprintf(label_tmp,128,se_localize_and_cache("Display FPS: %2.1f\n"),render_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_render,SE_STATS_GRAPH_DATA,0,label_tmp,0,render_max*1.3,(ImVec2){content_width,80},4);
@@ -1590,8 +1610,7 @@ void se_draw_emu_stats(){
   snprintf(label_tmp,128,se_localize_and_cache("Emulation FPS: %2.1f\n"),emulate_avg);
   igPlotLinesFloatPtr("",stats->waveform_fps_emulation,SE_STATS_GRAPH_DATA,0,label_tmp,emulate_min,emulate_max*1.3,(ImVec2){content_width,80},4);
   
-  se_text(ICON_FK_VOLUME_UP " Audio");
-  igSeparator();
+  se_section(ICON_FK_VOLUME_UP " Audio");
   igPlotLinesFloatPtr("",stats->waveform_l,SE_STATS_GRAPH_DATA,0,se_localize_and_cache("Left Audio Channel"),-1,1,(ImVec2){content_width,80},4);
   igPlotLinesFloatPtr("",stats->waveform_r,SE_STATS_GRAPH_DATA,0,se_localize_and_cache("Right Audio Channel"),-1,1,(ImVec2){content_width,80},4);
   
@@ -1625,8 +1644,7 @@ void se_draw_emu_stats(){
   snprintf(label_tmp,128,se_localize_and_cache("Audio Watchdog Triggered %d Times"),gui_state.audio_watchdog_triggered);
   se_text(label_tmp);
 
-  se_text(ICON_FK_INFO_CIRCLE " Build Info");
-  igSeparator();
+  se_section(ICON_FK_INFO_CIRCLE " Build Info");
   se_text("%s (%s)", se_get_host_platform(),se_get_host_arch());
   se_text("Branch \"%s\" built on %s %s", GIT_BRANCH, __DATE__, __TIME__);
   se_text("Commit Hash:");
@@ -1642,8 +1660,7 @@ void se_psg_debugger(){
   sb_frame_sequencer_t* seq = emu_state.system == SYSTEM_GB ? &core.gb.audio.sequencer : (sb_frame_sequencer_t*)&core.gba.audio.sequencer;
 
   for(int i=0;i<4;++i){
-    se_text("Channel %d",i+1);
-    igSeparator();
+    se_section("Channel %d",i+1);
     se_checkbox("Active", &seq->active[i]);
     se_checkbox("Powered", &seq->powered[i]);
     se_text("Channel t: %f",seq->chan_t[i]);
@@ -1688,8 +1705,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     }
   }
   int r = 0; 
-  se_text(ICON_FK_SERVER " Registers");
-  igSeparator();
+  se_section(ICON_FK_SERVER " Registers");
   int w= igGetWindowWidth();
   while(reg_names[r]){
     int value = arm7_reg_read(arm,r);
@@ -1731,8 +1747,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   int off = buffer_size/2;
   if(pc<off)off=pc;
   for(int i=0;i<buffer_size;++i)buffer[i]=read(pc-off+i);
-  se_text(ICON_FK_LIST_OL " Disassembly");
-  igSeparator();
+  se_section(ICON_FK_LIST_OL " Disassembly");
   csh handle;
   if (cs_open(CS_ARCH_ARM, thumb? CS_MODE_THUMB: CS_MODE_ARM, &handle) == CS_ERR_OK){
     cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
@@ -1768,8 +1783,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     }  
   }
   bool clear_step_data = emu_state.run_mode!=SB_MODE_PAUSE;
-  se_text(ICON_FK_RANDOM " Last Branch Locations");
-  igSeparator();
+  se_section(ICON_FK_RANDOM " Last Branch Locations");
   igBeginChildStr(("##BranchLoc"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
   for(int i=0;i<ARM_DEBUG_BRANCH_RING_SIZE&&i<arm->debug_branch_ring_offset;++i){
     uint32_t ind = (arm->debug_branch_ring_offset-i-1);
@@ -1780,8 +1794,7 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
   }
   igEndChild();
   if(clear_step_data)arm->debug_branch_ring_offset=0;
-  se_text("SWI");
-  igSeparator();
+  se_section("SWI");
   igBeginChildStr(("##SWI"),(ImVec2){0,150},true,ImGuiWindowFlags_None);
   for(int i=0;i<ARM_DEBUG_SWI_RING_SIZE&&i<arm->debug_swi_ring_offset;++i){
     uint32_t ind = (arm->debug_swi_ring_offset-i-1);
@@ -1838,8 +1851,7 @@ void gb_cpu_debugger(){
   };
   int w= igGetWindowWidth();
   int r = 0; 
-  se_text(ICON_FK_SERVER " 16b Registers");
-  igSeparator();
+  se_section(ICON_FK_SERVER " 16b Registers");
   while(register_names_16b[r]){
     int value = register_values_16b[r];
     if(r%2){
@@ -1850,8 +1862,7 @@ void gb_cpu_debugger(){
     ++r;
   }
   r = 0; 
-  se_text(ICON_FK_SERVER " 8b Registers");
-  igSeparator();
+  se_section(ICON_FK_SERVER " 8b Registers");
   while(register_names_8b[r]){
     int value = register_values_8b[r];
     if(r%2){
@@ -1862,8 +1873,7 @@ void gb_cpu_debugger(){
     ++r;
   }
   r = 0; 
-  se_text(ICON_FK_SERVER " Flag Registers");
-  igSeparator();
+  se_section(ICON_FK_SERVER " Flag Registers");
   while(flag_names[r]){
     bool value = flag_values[r];
     if(r%2){
@@ -1873,9 +1883,7 @@ void gb_cpu_debugger(){
     se_checkbox(flag_names[r],&value);
     ++r;
   }
-  se_text(ICON_FK_SERVER " Instructions");
-  igSeparator();
- 
+  se_section(ICON_FK_SERVER " Instructions"); 
   for (int i = -6; i < 5; ++i) {
       char instr_str[80];
       int pc_render = i + cpu_state->pc;
@@ -1902,8 +1910,7 @@ void gb_cpu_debugger(){
     }  
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
-  se_text(ICON_FK_EXCHANGE " Read/Write Memory Address");
-  igSeparator();
+  se_section(ICON_FK_EXCHANGE " Read/Write Memory Address");
   se_input_int("address",&gui->mem_view_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
   igSeparator();
   int v = se_read32(read,gui->mem_view_address);
@@ -1930,8 +1937,7 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
   if(se_input_int("data (signed 8b)",&v, 1,5,ImGuiInputTextFlags_None)){
     (*write)(gui->mem_view_address,v);
   }
-  se_text(ICON_FK_FILE_O " Dump Memory to File");
-  igSeparator();
+  se_section(ICON_FK_FILE_O " Dump Memory to File");
   se_input_int("Start Address",&gui->mem_dump_start_address, 1,5,ImGuiInputTextFlags_CharsHexadecimal);
   se_input_int("Size",&gui->mem_dump_size, 1,5,ImGuiInputTextFlags_None);
   if(se_button("Save Memory Dump",(ImVec2){0,0})){
@@ -1974,8 +1980,7 @@ void gb_tile_map_debugger(){
     int box_y1 = tile_map ==0 ? sy : wy;
     int box_y2 = box_y1+(SB_LCD_H-1);
     int tile_map_base = tile_map==0? bg_tile_map_base:win_tile_map_base;
-    se_text("%s Tile Map",tile_map == 0  ? "Background" : "Window");
-    igSeparator();
+    se_section("%s Tile Map",tile_map == 0  ? "Background" : "Window");
     int x = igGetCursorPosX()+win.x-igGetScrollX();
     int y = igGetCursorPosY()+win.y-igGetScrollY();
     int w = image_width*scale;
@@ -2034,8 +2039,7 @@ void gb_tile_data_debugger(){
 
   // Draw tile data arrays
   for(int tile_data_bank = 0;tile_data_bank<SB_VRAM_NUM_BANKS;++tile_data_bank){
-    se_text("Tile Data Bank %d\n",tile_data_bank);
-    igSeparator();
+    se_section("Tile Data Bank %d\n",tile_data_bank);
     int tiles_per_row = 16;
     int image_height = 384/tiles_per_row*(8+2);
     int image_width =  tiles_per_row*(8+2);
@@ -2712,8 +2716,7 @@ void nds9_cpu_debugger(){se_draw_arm_state("ARM9",&core.nds.arm9,&nds9_byte_read
 void nds_io_debugger(){
   nds_t * nds = &core.nds;
   for(int cpu=0;cpu<2;++cpu){
-    se_text(cpu? ICON_FK_EXCHANGE " ARM9 IPC FIFO":ICON_FK_EXCHANGE " ARM7 IPC FIFO");
-    igSeparator();
+    se_section(cpu? ICON_FK_EXCHANGE " ARM9 IPC FIFO":ICON_FK_EXCHANGE " ARM7 IPC FIFO");
     se_text("Write Pointer: %d\n", nds->ipc[cpu].write_ptr);
     se_text("Read Pointer: %d\n", nds->ipc[cpu].read_ptr);
     se_text("Size: %d\n", (nds->ipc[cpu].write_ptr-nds->ipc[cpu].read_ptr)&0x1f);
@@ -4156,7 +4159,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   float disp_y_min = igGetCursorPosY();
   float disp_y_max = disp_y_min+item_height+padding*2;
   //Early out if not visible (helps for long lists)
-  if(disp_y_max<win_min.y||disp_y_min>win_max.y){
+  if(disp_y_max<win_min.y-item_height||disp_y_min>win_max.y+item_height){
     igSetCursorPosY(disp_y_max);
     return false;
   }
@@ -4168,6 +4171,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   int box_h = item_height-padding*2;
   int box_w = box_h;
   bool clicked = false;
+  igPushIDStr(first_label);
   igPushIDStr(second_label);
   ImVec2 curr_pos; 
   igGetCursorPos(&curr_pos);
@@ -4186,6 +4190,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   se_text_disabled(second_label);
   igEndChildFrame();
   igSetCursorPos(next_pos);
+  igPopID();
   igPopID();
 #ifdef UNICODE_GUI
   free((void*)first_label);
@@ -4825,15 +4830,10 @@ void se_load_rom_overlay(bool visible){
   bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
   se_open_file_browser(clicked, x,y,w,h, se_load_rom,valid_rom_file_types,NULL);
   
-  igEnd();
-  ImVec2 child_size; 
-  child_size.x = w_size.x;
-  child_size.y = w_size.y-list_y_off;
-  igSetNextWindowSize(child_size,ImGuiCond_Always);
-  igSetNextWindowPos((ImVec2){(w_pos.x),list_y_off+w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
-  igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize_and_cache(ICON_FK_CLOCK_O " Load Recently Played Game"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
+  se_section(ICON_FK_CLOCK_O " Load Recently Played Game");
+  igDummy((ImVec2){1,1});
+
   igSameLine(0,5);
   se_text("%s ",ICON_FK_SEARCH);
   igSameLine(0,5);
@@ -5494,8 +5494,7 @@ void se_set_new_controller(se_controller_state_t* cont, int index){
 #endif
 
 void se_draw_controller_config(gui_state_t* gui){
-  se_text(ICON_FK_GAMEPAD " Controllers");
-  igSeparator();
+  se_section(ICON_FK_GAMEPAD " Controllers");
   ImGuiStyle* style = igGetStyle();
   se_controller_state_t *cont = &gui->controller;
 #if USE_SDL
@@ -5579,8 +5578,7 @@ void se_pop_disabled(){
 }
 void se_draw_touch_controls_settings(){
 
-  se_text(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
-  igSeparator();
+  se_section(ICON_FK_HAND_O_RIGHT " Touch Control Settings");
   float aspect_ratio = gui_state.screen_width/(float)gui_state.screen_height;
   float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
 
@@ -5703,8 +5701,7 @@ void se_draw_save_states(bool cloud){
 void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   int win_w = igGetWindowContentRegionWidth();
-  se_text(ICON_FK_FLOPPY_O " Save States");
-  igSeparator();
+  se_section(ICON_FK_FLOPPY_O " Save States");
   if(gui_state.settings.hardcore_mode)se_text("Disabled in Hardcore Mode");
   else{
     if (cloud_state.drive){
@@ -5723,8 +5720,7 @@ void se_draw_menu_panel(){
       se_draw_save_states(false);
     }
   }
-  se_text(ICON_FK_CLOUD " Google Drive");
-  igSeparator();
+  se_section(ICON_FK_CLOUD " Google Drive");
   if (!cloud_state.drive){
     if (cloud_state.awaiting_login) se_push_disabled();
     bool clicked = false;
@@ -5764,8 +5760,7 @@ void se_draw_menu_panel(){
   }
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
-    se_text(ICON_FK_KEY " Action Replay Codes");
-    igSeparator();
+    se_section(ICON_FK_KEY " Action Replay Codes");
     if(gui_state.settings.hardcore_mode) se_text("Disabled in Hardcore Mode");
     else{
       int free_cheat_index = -1; 
@@ -5831,8 +5826,7 @@ void se_draw_menu_panel(){
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
-      se_text(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
-      igSeparator();
+      se_section(ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files");
       bool missing_bios = false;
       for(int i=0;i<sizeof(info->name)/sizeof(info->name[0]);++i){
         if(info->name[i][0]){
@@ -5859,8 +5853,7 @@ void se_draw_menu_panel(){
       }
     }
   }
-  se_text(ICON_FK_DESKTOP " Display Settings");
-  igSeparator();
+  se_section(ICON_FK_DESKTOP " Display Settings");
   int v = gui_state.settings.screen_shader;
   igPushItemWidth(-1);
   se_text("Screen Shader");igSameLine(SE_FIELD_INDENT,0);
@@ -5920,8 +5913,7 @@ void se_draw_menu_panel(){
   if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
     se_draw_touch_controls_settings();
   }else{
-    se_text(ICON_FK_KEYBOARD_O " Keybinds");
-    igSeparator();
+    se_section(ICON_FK_KEYBOARD_O " Keybinds");
     bool value= true; 
     bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
     if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
@@ -5943,8 +5935,7 @@ void se_draw_menu_panel(){
   if(gui_state.ui_type!=SE_UI_ANDROID&&gui_state.ui_type!=SE_UI_IOS){
     se_draw_touch_controls_settings();
   }
-  se_text(ICON_FK_TEXT_HEIGHT " GUI");
-  igSeparator();
+  se_section(ICON_FK_TEXT_HEIGHT " GUI");
   se_text("Language");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   if(igBeginCombo("##Language", se_language_string(gui_state.settings.language), ImGuiComboFlags_HeightLargest)){
@@ -6024,8 +6015,7 @@ void se_draw_menu_panel(){
     bool fullscreen = sapp_is_fullscreen();
     se_checkbox("Full Screen",&fullscreen);
     if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
-    se_text(ICON_FK_CODE_FORK " Additional Search Paths");
-    igSeparator();
+    se_section(ICON_FK_CODE_FORK " Additional Search Paths");
     se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
     se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
     se_input_path("Cheat Code Path", gui_state.paths.cheat_codes,ImGuiInputTextFlags_None);
@@ -6037,8 +6027,7 @@ void se_draw_menu_panel(){
       gui_state.last_saved_paths=gui_state.paths;
     }
   }
-  se_text(ICON_FK_WRENCH " Advanced");
-  igSeparator();
+  se_section(ICON_FK_WRENCH " Advanced");
   se_text("Solar Sensor");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
   se_slider_float("##Solar Sensor",&emu_state.joy.solar_sensor,0.,1.,"Brightness: %.2f");
