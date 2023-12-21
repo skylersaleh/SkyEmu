@@ -1573,8 +1573,10 @@ void se_draw_emu_stats(){
     stats->waveform_fps_render[i]=stats->waveform_fps_render[i+1];
     if(stats->waveform_fps_render[i]>render_max)render_max=stats->waveform_fps_render[i];
     if(stats->waveform_fps_render[i]<render_min)render_min=stats->waveform_fps_render[i];
-    render_avg+=1.0/stats->waveform_fps_render[i];
-    render_data_points++;
+    if(fabs(stats->waveform_fps_render[i])>1.0){
+      render_avg+=1.0/stats->waveform_fps_render[i];
+      render_data_points++;
+    }
     
 
     if(stats->waveform_fps_emulation[i]>emulate_max)emulate_max=stats->waveform_fps_emulation[i];
