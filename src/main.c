@@ -4827,8 +4827,10 @@ void se_load_rom_overlay(bool visible){
     prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
     prompt2 = "You can also drag & drop a ROM/save file to load it";
   }
+  float y1 = igGetCursorPosY();
   bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
-  se_open_file_browser(clicked, x,y,w,h, se_load_rom,valid_rom_file_types,NULL);
+  float y2 = igGetCursorPosY();
+  se_open_file_browser(clicked, x,y2-y1,w,h, se_load_rom,valid_rom_file_types,NULL);
   
   
   se_section(ICON_FK_CLOCK_O " Load Recently Played Game");
