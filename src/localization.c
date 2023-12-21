@@ -1838,6 +1838,7 @@ int se_get_default_language(){
             setlocale(LC_ALL, ".65001");
         #endif
     }
+    if(strcmp("",se_language_string(default_lang))==0)return SE_LANG_ENGLISH;
     return default_lang;
 
 }
