@@ -2857,16 +2857,21 @@ void se_login_cloud(){
   cloud_state.awaiting_login_swap = true;
   cloud_drive_create(se_drive_ready_callback);
 }
+static void se_sync_cloud_save_states_callback(){
+  for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
+    char file[SB_FILE_PATH_SIZE];
+    snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%d.state.png",emu_state.game_checksum,(int)i);
+    cloud_drive_download(cloud_state.drive, file, se_state_download_callback, (void*)i);
+  }
+}
 static void se_sync_cloud_save_states(){
   if(cloud_state.drive == NULL) return;
   printf("Syncing cloud saves...\n");
   for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
-    memset(cloud_state.save_states[i].screenshot, 0, sizeof(cloud_state.save_states[i].screenshot));
-    char file[SB_FILE_PATH_SIZE];
-    snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%d.state.png",emu_state.game_checksum,(int)i);
+    memset(&cloud_state.save_states[i], 0, sizeof(cloud_state.save_states[i]));
     cloud_state.save_states_busy_swap[i] = true;
-    cloud_drive_download(cloud_state.drive, file, se_state_download_callback, (void*)i);
   }
+  cloud_drive_sync(cloud_state.drive, se_sync_cloud_save_states_callback);
 }
 void se_drive_login(bool clicked, int x, int y, int w, int h){
 #ifdef EMSCRIPTEN
