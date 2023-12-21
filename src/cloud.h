@@ -19,11 +19,8 @@ typedef struct {
 // Also fills the file map with the files in the cloud.
 void cloud_drive_create(void(*ready_callback)(cloud_drive_t*));
 
-// Destroy the cloud drive instance.
-void cloud_drive_destroy(cloud_drive_t* cloud_drive);
-
 // Log out of the cloud drive and forget the token.
-void cloud_drive_logout(cloud_drive_t* cloud_drive);
+void cloud_drive_logout(cloud_drive_t* cloud_drive, void(*callback)());
 
 // Upload a file to the cloud.
 // Calls cleanup_callback when the upload is complete.
