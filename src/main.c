@@ -496,11 +496,6 @@ typedef struct{
 }se_emu_id;
 typedef struct{
   cloud_drive_t* drive;
-  bool awaiting_login;
-  bool awaiting_login_swap;
-  bool awaiting_logout;
-  bool awaiting_logout_swap;
-  char username[128];
   se_save_state_t save_states[SE_NUM_SAVE_STATES];
   mutex_t save_states_mutex[SE_NUM_SAVE_STATES];
   bool save_states_busy[SE_NUM_SAVE_STATES];
@@ -2819,10 +2814,6 @@ void se_logged_out_cloud_callback(){
   cloud_state.drive = NULL;
   memset(cloud_state.save_states, 0, sizeof(cloud_state.save_states));
   memset(cloud_state.save_states_busy_swap, 0, sizeof(cloud_state.save_states_busy_swap));
-  cloud_state.awaiting_login = false;
-  cloud_state.awaiting_logout = false;
-  cloud_state.awaiting_login_swap = false;
-  cloud_state.awaiting_logout_swap = false;
 }
 void se_write_png_cloud(void* context, void* data, int size){
   char file[SB_FILE_PATH_SIZE];
@@ -2851,7 +2842,6 @@ void se_restore_state_slot_cloud(size_t slot){
 static void se_drive_ready_callback(cloud_drive_t* drive){
   cloud_state.drive = drive;
   if(drive){
-    cloud_state.awaiting_login_swap = false;
     cloud_state.user_info = cloud_drive_get_user_info(drive);
 
     // If there's a game, check if there's any save states to download
@@ -2860,11 +2850,9 @@ static void se_drive_ready_callback(cloud_drive_t* drive){
     }
   }else{
     printf("Something went wrong during cloud login\n");
-    cloud_state.awaiting_login_swap = false;
   }
 }
 void se_login_cloud(){
-  cloud_state.awaiting_login_swap = true;
   cloud_drive_create(se_drive_ready_callback);
 }
 static void se_sync_cloud_save_states_callback(){
@@ -2909,7 +2897,7 @@ void se_drive_login(bool clicked, int x, int y, int w, int h){
         };
     });
   }
-  if(cloud_state.awaiting_login) return;
+  if(cloud_drive_pending_login()) return;
   EM_ASM_INT({
     var input = document.getElementById('driveLogin');
     input.style.left = $0 +'px';
@@ -5741,10 +5729,11 @@ void se_draw_menu_panel(){
   }
   se_section(ICON_FK_CLOUD " Google Drive");
   if (!cloud_state.drive){
-    if (cloud_state.awaiting_login) se_push_disabled();
+    bool pending_login = cloud_drive_pending_login();
+    if (pending_login) se_push_disabled();
     bool clicked = false;
     if (se_button(ICON_FK_SIGN_IN " Login",(ImVec2){0,0})){clicked=true;}
-    if (cloud_state.awaiting_login) se_pop_disabled();
+    if (pending_login) se_pop_disabled();
     if(igIsItemVisible()){
       ImVec2 min, max;
       igGetItemRectMin(&min);
@@ -5754,7 +5743,6 @@ void se_draw_menu_panel(){
       max.y+=style->FramePadding.y;
       se_drive_login(clicked, min.x, min.y, max.x-min.x, max.y-min.y);
     }
-    cloud_state.awaiting_login = cloud_state.awaiting_login_swap;
   } else {
     ImVec2 avatar_frame_sz = (ImVec2){64+style->FramePadding.x*2,64+style->FramePadding.y*2};
     ImVec2 screen_p;
@@ -5781,13 +5769,12 @@ void se_draw_menu_panel(){
     char logged_in[256];
     snprintf(logged_in,256,se_localize_and_cache("Logged in as %s"),cloud_state.user_info.name);
     se_text(logged_in);
-    if (cloud_state.awaiting_logout) se_push_disabled();
+    bool pending_logout = cloud_drive_pending_logout();
+    if (pending_logout) se_push_disabled();
     if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
-      cloud_state.awaiting_logout_swap = true;
       cloud_drive_logout(cloud_state.drive,se_logged_out_cloud_callback);
     }
-    if (cloud_state.awaiting_logout) se_pop_disabled();
-    cloud_state.awaiting_logout = cloud_state.awaiting_logout_swap;
+    if (pending_logout) se_pop_disabled();
     igEndGroup();
   }
 
@@ -7098,7 +7085,6 @@ void se_load_settings(){
     char refresh_token_path[SB_FILE_PATH_SIZE];
     snprintf(refresh_token_path,SB_FILE_PATH_SIZE,"%srefresh_token.txt",se_get_pref_path());
     if(sb_file_exists(refresh_token_path)){
-      cloud_state.awaiting_login_swap = true;
       cloud_drive_create(se_drive_ready_callback);
     }
   }

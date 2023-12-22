@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct cloud_drive_t cloud_drive_t;
 
@@ -38,6 +39,9 @@ cloud_user_info_t cloud_drive_get_user_info(cloud_drive_t* cloud_drive);
 
 void cloud_drive_init();
 void cloud_drive_cleanup();
+
+bool cloud_drive_pending_login();
+bool cloud_drive_pending_logout();
 
 uint64_t cloud_drive_hash(const char* input, size_t input_size);
 #endif

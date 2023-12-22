@@ -50,6 +50,9 @@ extern "C" {
 }
 #endif
 
+bool pending_login = false;
+bool pending_logout = false;
+
 struct file_metadata_t
 {
     std::string id;
@@ -99,7 +102,7 @@ struct cloud_drive_t
     }
 };
 
-void google_cloud_drive_init(cloud_drive_t*, std::function<void(cloud_drive_t*)>);
+void google_cloud_drive_init(cloud_drive_t*);
 
 #define GOOGLE_CLIENT_ID "617320710875-o9ev86s5ad18bmmgb98p0dkbqlfufekr.apps.googleusercontent.com"
 #define GOOGLE_CLIENT_ID_WEB "617320710875-dakb2f10lgnnn3a97bgva18l83221pc3.apps.googleusercontent.com"
@@ -277,13 +280,12 @@ extern "C" void em_oath_sign_in_callback(cloud_drive_t* drive, const char* refre
         sb_save_file_data(refresh_path.c_str(), (uint8_t*)drive->refresh_token.c_str(),
                           drive->refresh_token.size() + 1);
         em_flush_fs();
-        google_cloud_drive_init(drive, drive->ready_callback);
+        google_cloud_drive_init(drive);
     }
     else
     {
         printf("[cloud] refresh token or access token is null\n");
         drive->ready_callback(nullptr);
-        delete drive;
     }
 }
 #endif
@@ -717,20 +719,20 @@ bool google_check_username_exists(cloud_drive_t* drive)
     return false;
 }
 
-void google_get_user_data(cloud_drive_t* drive, std::function<void(cloud_drive_t*)> callback)
+void google_get_user_data(cloud_drive_t* drive)
 {
     bool avatar_exists = google_check_avatar_exists(drive);
     bool username_exists = google_check_username_exists(drive);
     if (avatar_exists && username_exists)
     {
-        callback(drive);
+        drive->ready_callback(drive);
         return;
     }
 
     drive->inc();
     https_request(http_request_e::GET, "https://www.googleapis.com/drive/v3/about?fields=user", "",
                   {{"Authorization", "Bearer " + drive->access_token}},
-                  [drive, avatar_exists, callback](const std::vector<uint8_t>& data) {
+                  [drive, avatar_exists](const std::vector<uint8_t>& data) {
                         std::string path = drive->save_directory + "cloud_username.txt";
                         nlohmann::json json = nlohmann::json::parse(data);
                         if (json.find("error") != json.end())
@@ -738,6 +740,7 @@ void google_get_user_data(cloud_drive_t* drive, std::function<void(cloud_drive_t
                             std::string error = json["error"]["message"];
                             printf("[cloud] failed to get username: %s\n", error.c_str());
                             drive->dec();
+                            drive->ready_callback(nullptr);
                             return;
                         }
 
@@ -749,18 +752,19 @@ void google_get_user_data(cloud_drive_t* drive, std::function<void(cloud_drive_t
                             drive->inc();
                             std::string url = json["user"]["photoLink"];
                             https_request(http_request_e::GET, url, "", {},
-                                        [drive, callback](const std::vector<uint8_t>& data) {
+                                        [drive](const std::vector<uint8_t>& data) {
                                             sb_save_file_data(
                                                 (drive->save_directory + "profile_picture").c_str(),
                                                 data.data(), data.size());
                                             em_flush_fs();
                                             google_check_avatar_exists(drive);
-                                            callback(drive);
                                             drive->dec();
+                                            drive->ready_callback(drive);
                                         });
                         } else {
                             printf("[cloud] failed to get username: no user in response\n");
                             drive->dec();
+                            drive->ready_callback(nullptr);
                             return;
                         }
                         drive->dec();
@@ -770,42 +774,34 @@ void google_get_user_data(cloud_drive_t* drive, std::function<void(cloud_drive_t
 void google_cloud_drive_mkdir(cloud_drive_t* drive, const std::string& name, const std::string& parent, std::function<void(cloud_drive_t*)> callback)
 {
     google_cloud_drive_upload(drive, name, parent, "application/vnd.google-apps.folder", NULL,
-                                      0, [callback](cloud_drive_t* drive) {
-                                          google_cloud_drive_get_files(
-                                              drive, [callback](cloud_drive_t* drive) {
-                                                google_get_user_data(drive, callback);
-                                              });
-                                      });
+                                0, [callback](cloud_drive_t* drive) {
+                                            callback(drive);
+                                });
 }
 
-void google_cloud_drive_init(cloud_drive_t* drive, std::function<void(cloud_drive_t*)> callback)
+void google_cloud_drive_init(cloud_drive_t* drive)
 {
-    google_cloud_drive_get_files(drive, [callback](cloud_drive_t* drive) {
+    google_cloud_drive_get_files(drive, [](cloud_drive_t* drive) {
         bool folders_exist;
-        bool skyemu_folder_exists;
-        bool save_states_folder_exists;
-        
         {
             std::lock_guard<std::mutex> lock(drive->file_mutex);
             folders_exist = drive->files.size() > 0;
-            skyemu_folder_exists = drive->files.find("SkyEmu") != drive->files.end();
-            save_states_folder_exists = drive->files.find("save_states") != drive->files.end();
         }
 
         if (!folders_exist)
         {
-            google_cloud_drive_mkdir(drive, "SkyEmu", "", [callback](cloud_drive_t* drive) {
-                google_cloud_drive_mkdir(drive, "save_states", "SkyEmu", [callback](cloud_drive_t* drive) {
+            google_cloud_drive_mkdir(drive, "SkyEmu", "", [](cloud_drive_t* drive) {
+                google_cloud_drive_mkdir(drive, "save_states", "SkyEmu", [](cloud_drive_t* drive) {
                             google_cloud_drive_get_files(
-                                drive, [callback](cloud_drive_t* drive) {
-                                    google_get_user_data(drive, callback);
+                                drive, [](cloud_drive_t* drive) {
+                                    google_get_user_data(drive);
                                 });
                         });
             });
         }
         else
         {
-            google_get_user_data(drive, callback);
+            google_get_user_data(drive);
         }
     });
 }
@@ -893,7 +889,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                         std::string error_description = json["error_description"];
                         printf("[cloud] got response with error while authenticating: %s: %s\n",
                                error.c_str(), error_description.c_str());
-                        delete drive;
+                        drive->ready_callback(nullptr);
                         return;
                     }
 
@@ -904,7 +900,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                     sb_save_file_data(refresh_path.c_str(), (uint8_t*)drive->refresh_token.c_str(),
                                       drive->refresh_token.size() + 1);
                     em_flush_fs();
-                    google_cloud_drive_init(drive, drive->ready_callback);
+                    google_cloud_drive_init(drive);
                 });
 
             #ifdef SE_PLATFORM_ANDROID
@@ -919,13 +915,13 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
         {
             std::string error = req.get_param_value("error");
             printf("[cloud] while authenticating got error: %s\n", error.c_str());
-            delete drive;
+            drive->ready_callback(nullptr);
         }
         else
         {
             printf(
                 "[cloud] while authenticating got response that contains neither code nor error\n");
-            delete drive;
+            drive->ready_callback(nullptr);
         }
     });
     // TODO: disallow http_server from listening to port 5000
@@ -935,12 +931,24 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
 
 void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
 {
+    pending_login = true;
+    cloud_drive_t* drive = new cloud_drive_t;
+    std::function<void(cloud_drive_t*)> fcallback = [ready_callback, drive](cloud_drive_t* called_drive) {
+        pending_login = false;
+        ready_callback(called_drive);
+
+        // If this callback is called with a nullptr that means something went wrong
+        // during authentication and the drive object we created should be deleted
+        if (called_drive == nullptr)
+        {
+            delete drive;
+        }
+    };
 #ifndef EMSCRIPTEN
-    std::thread create_thread([ready_callback] {
+    std::thread create_thread([drive, fcallback] {
 #endif
-        cloud_drive_t* drive = new cloud_drive_t;
         drive->save_directory = se_get_pref_path();
-        drive->ready_callback = ready_callback;
+        drive->ready_callback = fcallback;
 
         std::string refresh_path = drive->save_directory + "refresh_token.txt";
         if (sb_file_exists(refresh_path.c_str()))
@@ -950,22 +958,22 @@ void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
             if (refresh_token_data == NULL)
             {
                 printf("[cloud] failed to load refresh token\n");
-                ready_callback(nullptr);
+                drive->ready_callback(nullptr);
                 return;
             }
             drive->refresh_token = std::string((char*)refresh_token_data, refresh_token_size - 1);
             free(refresh_token_data);
 
-            google_use_refresh_token(drive, [ready_callback, refresh_path](cloud_drive_t* drive) {
+            google_use_refresh_token(drive, [refresh_path](cloud_drive_t* drive) {
                 if (drive->access_token.empty())
                 {
                     printf("[cloud] failed to use refresh token\n");
                     ::remove(refresh_path.c_str());
-                    ready_callback(nullptr);
+                    drive->ready_callback(nullptr);
                 }
                 else
                 {
-                    google_cloud_drive_init(drive, ready_callback);
+                    google_cloud_drive_init(drive);
                 }
             });
             return;
@@ -979,6 +987,7 @@ void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
 
 void cloud_drive_logout(cloud_drive_t* drive, void (*callback)())
 {
+    pending_logout = true;
     std::function<void()> fcallback = callback;
     drive->scheduled_deletion = true; // no more requests
 #ifndef EMSCRIPTEN
@@ -993,6 +1002,7 @@ void cloud_drive_logout(cloud_drive_t* drive, void (*callback)())
                     [drive, fcallback](const std::vector<uint8_t>& data) {
                         delete drive;
                         fcallback();
+                        pending_logout = false;
                     });
         
         em_flush_fs();
@@ -1128,4 +1138,14 @@ void cloud_drive_cleanup()
 uint64_t cloud_drive_hash(const char* input, size_t input_size)
 {
     return XXH64(input, input_size, 0);
+}
+
+bool cloud_drive_pending_login()
+{
+    return pending_login;
+}
+
+bool cloud_drive_pending_logout()
+{
+    return pending_logout;
 }
