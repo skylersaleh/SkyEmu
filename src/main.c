@@ -499,7 +499,6 @@ typedef struct{
   se_save_state_t save_states[SE_NUM_SAVE_STATES];
   mutex_t save_states_mutex[SE_NUM_SAVE_STATES];
   bool save_states_busy[SE_NUM_SAVE_STATES];
-  bool save_states_busy_swap[SE_NUM_SAVE_STATES];
   cloud_user_info_t user_info;
 } se_cloud_state_t;
 static void se_sync_cloud_save_states();
@@ -2793,13 +2792,13 @@ void se_state_download_callback(void* userdata, void* data, size_t size){
   se_save_state_t* save_state = cloud_state.save_states+slot;
   if (data == NULL) {
     printf("Failed to download save state\n");
-    cloud_state.save_states_busy_swap[slot] = false;
+    cloud_state.save_states_busy[slot] = false;
     return;
   }
 
   mutex_lock(cloud_state.save_states_mutex[slot]);
   se_load_state_from_mem(save_state, data, size);
-  cloud_state.save_states_busy_swap[slot] = false;
+  cloud_state.save_states_busy[slot] = false;
   mutex_unlock(cloud_state.save_states_mutex[slot]);
 }
 void se_capture_cloud_callback(void* userdata, void* data){
@@ -2807,13 +2806,13 @@ void se_capture_cloud_callback(void* userdata, void* data){
   size_t slot = (size_t)userdata;
   mutex_lock(cloud_state.save_states_mutex[slot]);
   cloud_state.save_states[slot].valid = true;
-  cloud_state.save_states_busy_swap[slot] = false;
+  cloud_state.save_states_busy[slot] = false;
   mutex_unlock(cloud_state.save_states_mutex[slot]);
 }
 void se_logged_out_cloud_callback(){
   cloud_state.drive = NULL;
   memset(cloud_state.save_states, 0, sizeof(cloud_state.save_states));
-  memset(cloud_state.save_states_busy_swap, 0, sizeof(cloud_state.save_states_busy_swap));
+  memset(cloud_state.save_states_busy, 0, sizeof(cloud_state.save_states_busy));
 }
 void se_write_png_cloud(void* context, void* data, int size){
   char file[SB_FILE_PATH_SIZE];
@@ -2829,7 +2828,7 @@ void se_capture_state_slot_cloud(size_t slot){
   se_save_state_t* save_state = cloud_state.save_states+slot;
   se_capture_state(&core, save_state);
   save_state->valid = false;
-  cloud_state.save_states_busy_swap[slot] = true;
+  cloud_state.save_states_busy[slot] = true;
   uint32_t width=0, height=0;
   uint8_t* imdata = se_save_state_to_image(save_state, &width,&height);
   int len;
@@ -2867,7 +2866,7 @@ static void se_sync_cloud_save_states(){
   printf("Syncing cloud saves...\n");
   for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
     memset(&cloud_state.save_states[i], 0, sizeof(cloud_state.save_states[i]));
-    cloud_state.save_states_busy_swap[i] = true;
+    cloud_state.save_states_busy[i] = true;
   }
   cloud_drive_sync(cloud_state.drive, se_sync_cloud_save_states_callback);
 }
@@ -5644,8 +5643,8 @@ void se_draw_save_states(bool cloud){
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
     se_text(se_localize_and_cache("Save Slot %d"),i);
-    cloud_state.save_states_busy[i] = cloud_state.save_states_busy_swap[i];
-    if(cloud&&cloud_state.save_states_busy[i])se_push_disabled();
+    bool cloud_busy = cloud&&cloud_state.save_states_busy[i];
+    if(cloud_busy)se_push_disabled();
     char capture_text[32];
     snprintf(capture_text,32,"%s%s",cloud?ICON_FK_CLOUD_UPLOAD" ":"",se_localize_and_cache("Capture"));
     if(se_button(capture_text,(ImVec2){button_w,0})){
@@ -5666,7 +5665,7 @@ void se_draw_save_states(bool cloud){
       }
     }
     if(!states[i].valid)se_pop_disabled();
-    if(cloud&&cloud_state.save_states_busy[i])se_pop_disabled();
+    if(cloud_busy)se_pop_disabled();
     if(states[i].valid){
       float w_scale = 1.0;
       float h_scale = 1.0;
@@ -5695,7 +5694,7 @@ void se_draw_save_states(bool cloud){
       ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
       ImVec2 anchor;
       igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
-      if(cloud&&cloud_state.save_states_busy[i]){
+      if(cloud_busy){
         se_text(ICON_FK_SPINNER);
       } else
       se_text(ICON_FK_BAN);
