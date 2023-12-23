@@ -497,7 +497,7 @@ typedef struct{
 typedef struct{
   cloud_drive_t* drive;
   se_save_state_t save_states[SE_NUM_SAVE_STATES];
-  mutex_t save_states_mutex[SE_NUM_SAVE_STATES];
+  mutex_t save_states_mutex;
   bool save_states_busy[SE_NUM_SAVE_STATES];
   cloud_user_info_t user_info;
 } se_cloud_state_t;
@@ -2796,18 +2796,18 @@ void se_state_download_callback(void* userdata, void* data, size_t size){
     return;
   }
 
-  mutex_lock(cloud_state.save_states_mutex[slot]);
+  mutex_lock(cloud_state.save_states_mutex);
   se_load_state_from_mem(save_state, data, size);
   cloud_state.save_states_busy[slot] = false;
-  mutex_unlock(cloud_state.save_states_mutex[slot]);
+  mutex_unlock(cloud_state.save_states_mutex);
 }
 void se_capture_cloud_callback(void* userdata, void* data){
   free(data);
   size_t slot = (size_t)userdata;
-  mutex_lock(cloud_state.save_states_mutex[slot]);
+  mutex_lock(cloud_state.save_states_mutex);
   cloud_state.save_states[slot].valid = true;
   cloud_state.save_states_busy[slot] = false;
-  mutex_unlock(cloud_state.save_states_mutex[slot]);
+  mutex_unlock(cloud_state.save_states_mutex);
 }
 void se_logged_out_cloud_callback(){
   cloud_state.drive = NULL;
@@ -5626,7 +5626,7 @@ void se_draw_save_states(bool cloud){
   ImDrawList*dl= igGetWindowDrawList();
   if(!emu_state.rom_loaded)se_push_disabled();
   for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
-    mutex_lock(cloud_state.save_states_mutex[i]);
+    mutex_lock(cloud_state.save_states_mutex);
     se_save_state_t* states = cloud?cloud_state.save_states:save_states;
     int slot_x = 0;
     int slot_y = i;
@@ -5700,7 +5700,7 @@ void se_draw_save_states(bool cloud){
       se_text(ICON_FK_BAN);
     }
     igEndChildFrame();
-    mutex_unlock(cloud_state.save_states_mutex[i]);
+    mutex_unlock(cloud_state.save_states_mutex);
   }
   if(!emu_state.rom_loaded)se_pop_disabled();
 }
@@ -7080,7 +7080,7 @@ void se_load_settings(){
   }
   {
     memset(&cloud_state,0,sizeof(se_cloud_state_t));
-    for(int i=0;i<SE_NUM_SAVE_STATES;i++)cloud_state.save_states_mutex[i] = mutex_create();
+    cloud_state.save_states_mutex = mutex_create();
     char refresh_token_path[SB_FILE_PATH_SIZE];
     snprintf(refresh_token_path,SB_FILE_PATH_SIZE,"%srefresh_token.txt",se_get_pref_path());
     if(sb_file_exists(refresh_token_path)){
