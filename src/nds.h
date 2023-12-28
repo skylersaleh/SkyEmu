@@ -4631,7 +4631,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   if(nds->gpu.test_busy>0)gxstat|= 1<<0;
 
   nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
-  if(sz<cmd_params||sz==0)return; 
+  if(SB_LIKELY(sz==0||sz<cmd_params))return; 
   if(cmd_params<1)cmd_params=1;
 
   int32_t p[NDS_GPU_MAX_PARAM];
@@ -5479,9 +5479,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     if(lcd_x==0||lcd_x==NDS_LCD_W){
       bool vblank = lcd_y>=NDS_LCD_H&&lcd_y<263;
       bool hblank = lcd_x>=NDS_LCD_W;
-      uint32_t new_if = 0;
-      uint32_t new_if7 = 0;
       if(ppu_id==0){
+        uint32_t new_if = 0;
+        uint32_t new_if7 = 0;
         uint16_t disp_stat = nds9_io_read16(nds, GBA_DISPSTAT)&~0x7;
         uint16_t disp_stat7 = nds7_io_read16(nds, GBA_DISPSTAT)&~0x7;
         uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
@@ -5588,10 +5588,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
     int display_mode = SB_BFE(dispcnt,16,2);
     bool enable_capture = SB_BFE(dispcapcnt,31,1)&&ppu_id==0;
-    render|=enable_capture;
     int forced_blank = SB_BFE(dispcnt,7,1);
     render&= !forced_blank;
-    if(!render)continue;
+    if(!render&&!enable_capture)continue;
     
     bool enable_3d = ppu_id==0&&SB_BFE(dispcnt,3,1);
     int bg_mode = SB_BFE(dispcnt,0,3);
@@ -6903,10 +6902,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(SB_LIKELY(fast_forward_ticks)){
-        if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks)&&!gx_fifo_full)fast_forward_ticks=ticks;
+        if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks&&!gx_fifo_full))fast_forward_ticks=ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(SB_UNLIKELY(nds->active_if_pipe_stages)){
-          for(int i=0;i<fast_forward_ticks;++i)nds_tick_interrupts(nds);
+          for(int i=0;i<fast_forward_ticks&&nds->active_if_pipe_stages;++i)nds_tick_interrupts(nds);
         }
         if(nds->gpu.cmd_busy_cycles){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
