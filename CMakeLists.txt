@@ -20,7 +20,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(LINK_LIBS "")
 
 # Adds user options
-option(SKYEMU_LIBRETRO, "enables libretro support")
+option(LIBRETRO, "enables libretro support" OFF)
 
 # Set compile_commands.json generation for clangd on by default
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -52,7 +52,7 @@ if (MSVC)
 
 endif()
 
-if( (NOT ANDROID))
+if( (NOT ANDROID AND NOT LIBRETRO))
     set(USE_SDL 1)
     add_definitions(-DUSE_SDL=1)
 endif()
@@ -85,25 +85,25 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # Linux -pthread shenanigans
-if ((CMAKE_SYSTEM_NAME STREQUAL Linux) AND NOT EMSCRIPTEN AND NOT ANDROID)
+if ((CMAKE_SYSTEM_NAME STREQUAL Linux) AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT LIBRETRO)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     find_package(ALSA REQUIRED)
     set(SE_PLATFORM_LINUX TRUE)
     add_definitions(-DSE_PLATFORM_LINUX=1)
 endif()
-if (UNIX AND NOT APPLE AND NOT SE_PLATFORM_LINUX AND NOT EMSCRIPTEN AND NOT ANDROID)
+if (UNIX AND NOT APPLE AND NOT SE_PLATFORM_LINUX AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT LIBRETRO)
   set(SE_PLATFORM_FREEBSD TRUE)
   add_definitions(-DSE_PLATFORM_FREEBSD=1)
   find_package(ALSA REQUIRED)
   link_directories(/usr/local/lib)
 endif()
 
-if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
+if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD AND NOT LIBRETRO)
     find_package(X11 REQUIRED)
 endif()
 
-if(NOT EMSCRIPTEN)
+if(NOT EMSCRIPTEN AND NOT LIBRETRO)
   set(WITH_APPS OFF) # don't build executable
   set(CURL_USE_LIBSSH2 OFF)
   set(CURL_USE_LIBPSL OFF)
@@ -126,7 +126,7 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # TinyFileDialogs
-if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT SE_PLATFORM_LINUX) AND (NOT SE_PLATFORM_FREEBSD))
+if ((NOT IOS) AND (NOT LIBRETRO) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT SE_PLATFORM_LINUX) AND (NOT SE_PLATFORM_FREEBSD))
     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
     add_library(tinyfd STATIC 
@@ -138,24 +138,26 @@ if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT SE_PLATFORM_LINUX)
     set_property(TARGET tinyfd PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
-if(NOT EMSCRIPTEN)
+if(NOT EMSCRIPTEN AND NOT LIBRETRO)
   set(ENABLE_HTTP_CONTROL_SERVER 1)
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
-add_library(cimgui STATIC 
-    src/cimgui/cimgui.cpp 
-    src/cimgui/cimgui.h 
-    src/cimgui/imgui/imgui.cpp
-    src/cimgui/imgui/imgui.h
-    src/cimgui/imgui/imgui_widgets.cpp 
-    src/cimgui/imgui/imgui_draw.cpp 
-    src/cimgui/imgui/imgui_tables.cpp
-    src/cimgui/imgui/imgui_demo.cpp
-    )
-set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+if (NOT LIBRETRO)
+  add_library(cimgui STATIC 
+      src/cimgui/cimgui.cpp 
+      src/cimgui/cimgui.h 
+      src/cimgui/imgui/imgui.cpp
+      src/cimgui/imgui/imgui.h
+      src/cimgui/imgui/imgui_widgets.cpp 
+      src/cimgui/imgui/imgui_draw.cpp 
+      src/cimgui/imgui/imgui_tables.cpp
+      src/cimgui/imgui/imgui_demo.cpp
+      )
+  set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  target_include_directories(cimgui INTERFACE src/cimgui)
+endif()
 
-target_include_directories(cimgui INTERFACE src/cimgui)
 if(USE_SDL)
     message("Build with SDL!")
 
@@ -190,53 +192,55 @@ if (EMSCRIPTEN)
 endif ()
 
 #=== LIBRARY: sokol
-# add headers to the the file list because they are useful to have in IDEs
-set(SOKOL_HEADERS
-    src/sokol/sokol_gfx.h
-    src/sokol/sokol_app.h
-    src/sokol/sokol_time.h
-    src/sokol/sokol_imgui.h
-    src/sokol/sokol_audio.h
-    src/sokol/sokol_glue.h)
-if(ANDROID)
-    add_definitions(-DSE_PLATFORM_ANDROID)
-    set(LINK_LIBS ${LINK_LIBS}  GLESv3 EGL OpenSLES log android)
-    message("Android Build!")
+if(NOT LIBRETRO)
+  # add headers to the the file list because they are useful to have in IDEs
+  set(SOKOL_HEADERS
+      src/sokol/sokol_gfx.h
+      src/sokol/sokol_app.h
+      src/sokol/sokol_time.h
+      src/sokol/sokol_imgui.h
+      src/sokol/sokol_audio.h
+      src/sokol/sokol_glue.h)
+  if(ANDROID)
+      add_definitions(-DSE_PLATFORM_ANDROID)
+      set(LINK_LIBS ${LINK_LIBS}  GLESv3 EGL OpenSLES log android)
+      message("Android Build!")
+  endif()
+  if(MACOS OR IOS)
+      add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
+      if(MACOS AND (NOT IOS))
+          add_definitions(-DSE_PLATFORM_MACOS)
+          target_link_libraries(sokol PUBLIC
+              "-framework QuartzCore"
+              "-framework Cocoa"
+              "-framework MetalKit"
+              "-framework AudioToolbox"
+              "-framework Metal")
+      endif()
+      if(IOS)
+          set(system_libs ${system_libs} "-framework Foundation" "-framework UIKit" "-framework AudioToolbox" "-framework AVFoundation -framework GameController")
+          if (SOKOL_BACKEND STREQUAL SOKOL_METAL)
+              set(system_libs ${system_libs} "-framework Metal" "-framework MetalKit")
+          else()
+              set(system_libs ${system_libs} "-framework OpenGLES" "-framework GLKit")
+          endif()
+          target_link_libraries(sokol PUBLIC ${system_libs})
+      endif()
+  else()
+      add_library(sokol STATIC src/sokol/sokol.c ${SOKOL_HEADERS})
+      set_property(TARGET sokol PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+      if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
+          target_include_directories(sokol PRIVATE "${X11_INCLUDE_DIR}")
+          target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
+      endif()
+      if (CMAKE_SYSTEM_NAME STREQUAL Linux)
+          target_link_libraries(sokol INTERFACE m)
+          target_link_libraries(sokol PUBLIC Threads::Threads)
+      endif()
+  endif()
+  target_link_libraries(sokol PUBLIC cimgui)
+  target_include_directories(sokol INTERFACE src/sokol)
 endif()
-if(MACOS OR IOS)
-    add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
-    if(MACOS AND (NOT IOS))
-        add_definitions(-DSE_PLATFORM_MACOS)
-        target_link_libraries(sokol PUBLIC
-            "-framework QuartzCore"
-            "-framework Cocoa"
-            "-framework MetalKit"
-            "-framework AudioToolbox"
-            "-framework Metal")
-    endif()
-    if(IOS)
-        set(system_libs ${system_libs} "-framework Foundation" "-framework UIKit" "-framework AudioToolbox" "-framework AVFoundation -framework GameController")
-        if (SOKOL_BACKEND STREQUAL SOKOL_METAL)
-            set(system_libs ${system_libs} "-framework Metal" "-framework MetalKit")
-        else()
-            set(system_libs ${system_libs} "-framework OpenGLES" "-framework GLKit")
-        endif()
-        target_link_libraries(sokol PUBLIC ${system_libs})
-    endif()
-else()
-    add_library(sokol STATIC src/sokol/sokol.c ${SOKOL_HEADERS})
-    set_property(TARGET sokol PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-    if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
-        target_include_directories(sokol PRIVATE "${X11_INCLUDE_DIR}")
-        target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
-    endif()
-    if (CMAKE_SYSTEM_NAME STREQUAL Linux)
-        target_link_libraries(sokol INTERFACE m)
-        target_link_libraries(sokol PUBLIC Threads::Threads)
-    endif()
-endif()
-target_link_libraries(sokol PUBLIC cimgui)
-target_include_directories(sokol INTERFACE src/sokol)
 
 find_package(Git)
 
@@ -285,22 +289,17 @@ add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
 set(SKYEMU_SRC_EXTRA src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
-set(SKYEMU_SRC src/main.c ${SKYEMU_SRC_EXTRA})
-set(SKYEMU_SRC_LIBRETRO src/libretro.c ${SKYEMU_SRC_EXTRA})
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)
-  set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
+  set(SKYEMU_SRC_EXTRA ${SKYEMU_SRC_EXTRA} src/http_control_server.cpp)
 endif()
 
-set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp)
-
 if(UNICODE_GUI)
-  set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
+  set(SKYEMU_SRC_EXTRA ${SKYEMU_SRC_EXTRA} src/utf8proc/utf8proc.c)
   include_directories(src/utf8proc/)
   add_definitions(-DUNICODE_GUI=1)
   add_definitions(-DUTF8PROC_STATIC=1)
-
 endif()
 
 if(USE_SDL)
@@ -308,11 +307,14 @@ if(USE_SDL)
 endif()
 
 if(IOS)
-    set(SKYEMU_SRC ${SKYEMU_SRC} src/ios_support.m)
+    set(SKYEMU_SRC_EXTRA ${SKYEMU_SRC_EXTRA} src/ios_support.m)
     add_definitions(-DSE_PLATFORM_IOS)
 endif()
 
-if (SKYEMU_LIBRETRO)
+set(SKYEMU_SRC src/main.c src/cloud.cpp ${SKYEMU_SRC_EXTRA})
+set(SKYEMU_SRC_LIBRETRO src/libretro.c ${SKYEMU_SRC_EXTRA})
+
+if (LIBRETRO)
     add_library(${PROJECT_NAME} SHARED ${SKYEMU_SRC_LIBRETRO})
 elseif(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
@@ -346,9 +348,12 @@ endif ()
 if (EMSCRIPTEN)
   configure_file(src/sw.js.in ${CMAKE_CURRENT_BINARY_DIR}/bin/sw.js)
 endif ()
-set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
 
-if(NOT EMSCRIPTEN)
+if(NOT LIBRETRO)
+  set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
+endif()
+
+if(NOT EMSCRIPTEN AND NOT LIBRETRO)
   target_include_directories(${PROJECT_NAME} PRIVATE src/openssl/include)
   # OpenSSL autogenerates some header file such as openssl/opensslconf.h and we want to include them
   target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/openssl/include)
@@ -356,22 +361,24 @@ if(NOT EMSCRIPTEN)
   set(LINK_LIBS ${LINK_LIBS} libcurl_static ssl crypto)
 endif()
 
-if(SKYEMU_LIBRETRO)
+if(LIBRETRO)
   target_include_directories(${PROJECT_NAME} PRIVATE src/libretro-common)
 endif()
 
-set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
-set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
-set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
-set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
-set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
-set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
-add_subdirectory(src/capstone)
-set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+if(NOT LIBRETRO)
+  set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
+  set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
+  set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
+  set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
+  set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
+  set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
+  add_subdirectory(src/capstone)
+  set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
-set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
-if(USE_SDL)
-  set(LINK_LIBS ${LINK_LIBS} SDL2-static)
+  set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
+  if(USE_SDL)
+    set(LINK_LIBS ${LINK_LIBS} SDL2-static)
+  endif()
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
