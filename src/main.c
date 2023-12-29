@@ -132,22 +132,37 @@ const static char* se_analog_bind_names[]={
   "Analog L",
   "Analog R",
 };
-//Reserve space for extra keybinds/analog binds so that adding them in new versions don't break
-//a users settings.
-#define SE_NUM_BINDS_ALLOC 64
 
 #define GUI_MAX_IMAGES_PER_FRAME 16
-#define SE_NUM_RECENT_PATHS 32
-#define SE_FONT_CACHE_PAGE_SIZE 16
-#define SE_MAX_UNICODE_CODE_POINT 0xffff
+#define SE_FILE_BROWSER_CLOSED 0
+#define SE_FILE_BROWSER_OPEN 1
+#define SE_FILE_BROWSER_SELECTED 2
 
 typedef struct{
-  int bind_being_set;
-  double rebind_start_time;//The time that the rebind button was pressed (used for the timer to cancel keybinding)
-  int last_bind_activitiy;// ID of binding with latest activity only within the current frame. -1 if no keys pressed/movement during frame. 
-  int32_t bound_id[SE_NUM_BINDS_ALLOC];
-  float value[SE_NUM_BINDS_ALLOC];
-}se_keybind_state_t;
+  char current_path[SE_FILE_PATH_SIZE];
+  char file_path[SE_FILE_PATH_SIZE];
+  int state; // 0 = Closed no file selected,  1= Open,  2 = closed file selected
+  tinydir_file* cached_files;
+  char cached_path[SE_FILE_PATH_SIZE];
+  char cached_ext_filter[SE_FILE_PATH_SIZE];
+  size_t num_cached_files;
+  double cached_time; 
+  tinydir_dir cached_dir; 
+  bool has_cache;
+  bool allow_directory;
+  unsigned num_file_types;
+  const char** file_types; 
+  void (*file_open_fn)(const char* dir);
+  char * output_path;
+}se_file_browser_state_t;
+
+typedef struct{
+  uint32_t turbo_toggle;
+  uint32_t hold_toggle; 
+  uint32_t last_turbo_toggle_presses;
+  uint32_t last_hold_toggle_presses;
+}se_touch_controls_t; 
+
 typedef struct{
   char name[128];
   char guid[64];
@@ -161,103 +176,11 @@ typedef struct{
   se_keybind_state_t analog;
   double axis_last_zero_time[256];
 }se_controller_state_t;
-typedef struct{
-  char path[SB_FILE_PATH_SIZE];
-}se_game_info_t;
-typedef struct{
-  // This structure is directly saved out for the user settings. 
-  // Be very careful to keep alignment and ordering the same otherwise you will break the settings. 
-  uint32_t draw_debug_menu;
-  float volume; 
-  uint32_t theme; 
-  uint32_t settings_file_version; 
-  uint32_t gb_palette[4];
-  float ghosting;
-  float color_correction;
-  uint32_t integer_scaling; 
-  uint32_t screen_shader; //0: pixels, 1: lcd, 2: lcd+subpixels, 3: upscale
-  uint32_t screen_rotation; //0: No rotation, 1: Rotate Left, 2: Rotate Right, 3: Upside Down
-  uint32_t stretch_to_fit;
-  uint32_t auto_hide_touch_controls;
-  float touch_controls_opacity; 
-  uint32_t always_show_menubar;
-  uint32_t language;
-  float touch_controls_scale; 
-  uint32_t touch_controls_show_turbo; 
-  uint32_t save_to_path;
-  uint32_t force_dmg_mode; 
-  uint32_t gba_color_correction_mode; // 0 = SkyEmu, 1 = Higan
-  uint32_t http_control_server_port; 
-  uint32_t http_control_server_enable;
-  uint32_t avoid_overlaping_touchscreen;
-  float custom_font_scale;
-  uint32_t hardcore_mode; 
-  uint32_t padding[228];
-}persistent_settings_t; 
-_Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
-#define SE_STATS_GRAPH_DATA 256
-typedef struct{
-  double last_render_time;
-  double last_emu_time;
-  float volume_l;
-  float volume_r;
-  float waveform_l[SE_STATS_GRAPH_DATA];
-  float waveform_r[SE_STATS_GRAPH_DATA];
-  float waveform_fps_emulation[SE_STATS_GRAPH_DATA];
-  float waveform_fps_render[SE_STATS_GRAPH_DATA];
-}se_emulator_stats_t;
-#define SE_FILE_BROWSER_CLOSED 0
-#define SE_FILE_BROWSER_OPEN 1
-#define SE_FILE_BROWSER_SELECTED 2
-
-typedef struct{
-  char current_path[SB_FILE_PATH_SIZE];
-  char file_path[SB_FILE_PATH_SIZE];
-  int state; // 0 = Closed no file selected,  1= Open,  2 = closed file selected
-  tinydir_file* cached_files;
-  char cached_path[SB_FILE_PATH_SIZE];
-  char cached_ext_filter[SB_FILE_PATH_SIZE];
-  size_t num_cached_files;
-  double cached_time; 
-  tinydir_dir cached_dir; 
-  bool has_cache;
-  bool allow_directory;
-  unsigned num_file_types;
-  const char** file_types; 
-  void (*file_open_fn)(const char* dir);
-  char * output_path;
-}se_file_browser_state_t;
-typedef struct{
-  uint32_t turbo_toggle;
-  uint32_t hold_toggle; 
-  uint32_t last_turbo_toggle_presses;
-  uint32_t last_hold_toggle_presses;
-}se_touch_controls_t; 
-
-typedef struct{
-  char save[SB_FILE_PATH_SIZE];
-  char bios[SB_FILE_PATH_SIZE];
-  char cheat_codes[SB_FILE_PATH_SIZE];
-  char theme[SB_FILE_PATH_SIZE];
-  char custom_font[SB_FILE_PATH_SIZE];
-  char padding[3][SB_FILE_PATH_SIZE];
-}se_search_paths_t;
-
-_Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
-
-#define SE_MAX_BIOS_FILES 8
-#define SE_BIOS_NAME_SIZE 32
 
 #define SE_UI_DESKTOP 0
 #define SE_UI_ANDROID 1 
 #define SE_UI_IOS     2
 #define SE_UI_WEB     3
-
-typedef struct{
-  char path[SE_MAX_BIOS_FILES][SB_FILE_PATH_SIZE];
-  char name[SE_MAX_BIOS_FILES][SE_BIOS_NAME_SIZE];
-  bool success[SE_MAX_BIOS_FILES];
-}se_bios_info_t;
 
 #define SE_MAX_CONTROL_POINTS 32
 #define SE_REGION_NAME                 0
@@ -339,22 +262,6 @@ typedef struct{
 #define SE_SORT_ALPHA_DESC 2
 
 typedef struct{
-  uint16_t start_pixel;
-  uint16_t end_pixel;
-  uint8_t resize_control;
-  uint8_t screen_control;
-  uint8_t gamepad_control;
-}se_control_point_t;
-
-typedef struct{
-  int x,y;
-  int w,h;
-  bool active;
-  se_control_point_t control_points_x[SE_MAX_CONTROL_POINTS];
-  se_control_point_t control_points_y[SE_MAX_CONTROL_POINTS];
-}se_theme_region_t;
-
-typedef struct{
   sg_image image;
   uint32_t im_w;
   uint32_t im_h;
@@ -362,6 +269,7 @@ typedef struct{
   uint8_t palettes[5*4];
   se_theme_region_t regions[SE_TOTAL_REGIONS];
 }se_custom_theme_t;
+
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
@@ -411,40 +319,19 @@ typedef struct {
     bool update_font_atlas;
     sb_joy_t hcs_joypad; 
     int editing_cheat_index; //-1 when not editing a cheat
-    char cheat_path[SB_FILE_PATH_SIZE];
+    char cheat_path[SE_FILE_PATH_SIZE];
     ImFont* mono_font; 
 
     uint32_t current_click_region_id;
     uint32_t max_click_region_id;
     uint32_t ui_type; 
     bool fake_paths; 
-    char loaded_theme_path[SB_FILE_PATH_SIZE];
-    char loaded_custom_font_path[SB_FILE_PATH_SIZE];
+    char loaded_theme_path[SE_FILE_PATH_SIZE];
+    char loaded_custom_font_path[SE_FILE_PATH_SIZE];
     se_custom_theme_t theme;
     bool ran_from_launcher;
     char search_buffer[32];
 } gui_state_t;
-
-#define SE_REWIND_BUFFER_SIZE (1024*1024)
-#define SE_REWIND_SEGMENT_SIZE 64
-#define SE_LAST_DELTA_IN_TX (1u<<31)
-
-#define SE_NUM_SAVE_STATES 4
-#define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
-
-#define SE_NUM_CHEATS 32
-#define SE_MAX_CHEAT_NAME_SIZE 32
-#define SE_MAX_CHEAT_CODE_SIZE 256
-
-#define SE_THEME_DARK 0
-#define SE_THEME_LIGHT 1
-#define SE_THEME_BLACK 2
-#define SE_THEME_CUSTOM 3
-
-#define SE_MENU_BAR_HEIGHT 24
-#define SE_MENU_BAR_BUTTON_WIDTH 30
-#define SE_TOGGLE_WIDTH 35
-#define SE_VOLUME_SLIDER_WIDTH 100
 
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = {.pc_breakpoint = -1, .joy.solar_sensor=0.5};
@@ -576,7 +463,7 @@ static void se_cache_glyphs(const char* input_string){
   #endif
 }
 char* se_replace_fake_path(char * new_path){
-  static char fake_path[SB_FILE_PATH_SIZE]; 
+  static char fake_path[SE_FILE_PATH_SIZE]; 
   if(gui_state.fake_paths){
     const char* base, *filename, *ext; 
     sb_breakup_path(new_path,&base, &filename,&ext);
@@ -763,13 +650,13 @@ static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags
   else igPushItemWidth(-1);
 
   new_path = se_replace_fake_path(new_path);
-  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
+  bool b = igInputText("##",new_path,SE_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
     if(has_path){
       igSameLine(0,1);
       if(se_button("" ICON_FK_TIMES,(ImVec2){button_w-2,0})){
-        strncpy(new_path,"",SB_FILE_PATH_SIZE);
+        strncpy(new_path,"",SE_FILE_PATH_SIZE);
       }
     }
     igSameLine(0,1);
@@ -801,7 +688,7 @@ static bool se_input_file_callback(const char* label, char* new_path, const char
   if(!read_only)igPushItemWidth(has_path?-button_w*2 : -button_w);
   else igPushItemWidth(-1);
   new_path = se_replace_fake_path(new_path);
-  bool b = igInputText("##",new_path,SB_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
+  bool b = igInputText("##",new_path,SE_FILE_PATH_SIZE,flags|ImGuiInputTextFlags_ReadOnly,NULL,NULL);
   igPopItemWidth();
   if(!read_only){
     if(has_path){
@@ -879,9 +766,9 @@ void se_copy_file(const char * original_path, const char* copy_path){
 void se_bios_file_open_fn(const char* dir){
   //Make use of the fact that the accept function is called before the output path is updated.
   char * se_bios_file_open_tmp_path = gui_state.file_browser.output_path;
-  if(strncmp(dir,se_bios_file_open_tmp_path,SB_FILE_PATH_SIZE)!=0){
-    if(sb_file_exists(se_bios_file_open_tmp_path)||strncmp(dir,"",SB_FILE_PATH_SIZE)==0)remove(se_bios_file_open_tmp_path);
-    if(strncmp(dir,"",SB_FILE_PATH_SIZE)!=0)se_copy_file(dir,se_bios_file_open_tmp_path);
+  if(strncmp(dir,se_bios_file_open_tmp_path,SE_FILE_PATH_SIZE)!=0){
+    if(sb_file_exists(se_bios_file_open_tmp_path)||strncmp(dir,"",SE_FILE_PATH_SIZE)==0)remove(se_bios_file_open_tmp_path);
+    if(strncmp(dir,"",SE_FILE_PATH_SIZE)!=0)se_copy_file(dir,se_bios_file_open_tmp_path);
   }
   emu_state.run_mode=SB_MODE_RESET;
 }
@@ -1343,8 +1230,8 @@ static void se_emscripten_flush_fs(){
 #endif
 }
 void se_load_search_paths(){
-  char settings_path[SB_FILE_PATH_SIZE];
-  snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
+  char settings_path[SE_FILE_PATH_SIZE];
+  snprintf(settings_path,SE_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
   if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.paths,sizeof(gui_state.paths)))memset(&gui_state.paths,0,sizeof(gui_state.paths));
   char * paths[]={
     gui_state.paths.save,
@@ -1352,7 +1239,7 @@ void se_load_search_paths(){
     gui_state.paths.cheat_codes
   };
   for(int i=0;i<sizeof(paths)/sizeof(paths[0]);++i){
-    paths[i][SB_FILE_PATH_SIZE-1]=0;
+    paths[i][SE_FILE_PATH_SIZE-1]=0;
     uint32_t len = strlen(paths[i]);
     if(len==0){
       paths[i][0]='.';
@@ -1360,13 +1247,13 @@ void se_load_search_paths(){
       paths[i][2]=0;
     }else{
       char last_c = paths[i][len-1];
-      if((last_c!='/'&&last_c!='\\')&&len<SB_FILE_PATH_SIZE)paths[i][len]='/';
+      if((last_c!='/'&&last_c!='\\')&&len<SE_FILE_PATH_SIZE)paths[i][len]='/';
     }
   }
 }
 void se_save_search_paths(){
-  char settings_path[SB_FILE_PATH_SIZE];
-  snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
+  char settings_path[SE_FILE_PATH_SIZE];
+  snprintf(settings_path,SE_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
   sb_save_file_data(settings_path,(uint8_t*)&gui_state.paths,sizeof(gui_state.paths));
   se_emscripten_flush_fs();
 }
@@ -1377,11 +1264,11 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   bool loaded_bios=false;
   const char* base, *file, *ext; 
   sb_breakup_path(base_path, &base,&file, &ext);
-  static char bios_path[SB_FILE_PATH_SIZE];
-  static char bios_create_path[SB_FILE_PATH_SIZE];
-  se_join_path(bios_path,SB_FILE_PATH_SIZE,base,file_name,NULL);
+  static char bios_path[SE_FILE_PATH_SIZE];
+  static char bios_create_path[SE_FILE_PATH_SIZE];
+  se_join_path(bios_path,SE_FILE_PATH_SIZE,base,file_name,NULL);
   size_t bios_bytes=0;
-  strncpy(bios_create_path,bios_path,SB_FILE_PATH_SIZE);
+  strncpy(bios_create_path,bios_path,SE_FILE_PATH_SIZE);
   uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
   if(bios_data){
     if(bios_bytes==data_size){
@@ -1393,9 +1280,9 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
     }
   }
   if(!loaded_bios){
-    se_join_path(bios_path,SB_FILE_PATH_SIZE,gui_state.paths.bios,file_name,NULL);
+    se_join_path(bios_path,SE_FILE_PATH_SIZE,gui_state.paths.bios,file_name,NULL);
     size_t bios_bytes=0;
-    if(gui_state.settings.save_to_path)strncpy(bios_create_path,bios_path,SB_FILE_PATH_SIZE);
+    if(gui_state.settings.save_to_path)strncpy(bios_create_path,bios_path,SE_FILE_PATH_SIZE);
 
     uint8_t *bios_data = sb_load_file_data(bios_path, &bios_bytes);
     if(bios_data){
@@ -1451,8 +1338,8 @@ static void se_sort_recent_games_list(){
 }
 static void se_save_recent_games_list(){
   gui_state_t* gui = &gui_state;
-  char pref_path[SB_FILE_PATH_SIZE];
-  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  char pref_path[SE_FILE_PATH_SIZE];
+  snprintf(pref_path,SE_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
   FILE* f = fopen(pref_path,"wb");
   if(!f){
     printf("Failed to save recent games list to: %s\n",pref_path);
@@ -1468,15 +1355,15 @@ static void se_save_recent_games_list(){
 }
 static void se_load_recent_games_list(){
   gui_state_t* gui = &gui_state;
-  char pref_path[SB_FILE_PATH_SIZE];
-  snprintf(pref_path,SB_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
+  char pref_path[SE_FILE_PATH_SIZE];
+  snprintf(pref_path,SE_FILE_PATH_SIZE,"%s/%s",se_get_pref_path(), "recent_games.txt");
   FILE* f = fopen(pref_path,"rb");
   if(!f)return; 
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    memset(gui->recently_loaded_games[i].path,0,SB_FILE_PATH_SIZE);
+    memset(gui->recently_loaded_games[i].path,0,SE_FILE_PATH_SIZE);
   }
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
-    char* res = fgets(gui->recently_loaded_games[i].path, SB_FILE_PATH_SIZE,f);
+    char* res = fgets(gui->recently_loaded_games[i].path, SE_FILE_PATH_SIZE,f);
     if(res==NULL)break;
     //Get rid of newline and carriage return characters at end
     while(*res){
@@ -1943,8 +1830,8 @@ void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_
     for(int i=0;i<gui->mem_dump_size;++i)data[i]=(*read)(gui->mem_dump_start_address+i);
     const char *base, *file_name,*ext;
     sb_breakup_path(emu_state.save_file_path,&base,&file_name,&ext);
-    char new_path[SB_FILE_PATH_SIZE];
-    snprintf(new_path,SB_FILE_PATH_SIZE,"%s/%s-memdump.bin",base,file_name);
+    char new_path[SE_FILE_PATH_SIZE];
+    snprintf(new_path,SE_FILE_PATH_SIZE,"%s/%s-memdump.bin",base,file_name);
     sb_save_file_data(new_path,data,gui->mem_dump_size);
     free(data);
   }
@@ -2193,25 +2080,25 @@ void se_load_rom(const char *filename){
     sb_breakup_path(filename,&base, &c, &ext);
   #if defined(EMSCRIPTEN)
       if(sb_path_has_file_ext(filename,".sav")||sb_path_has_file_ext(filename,".code")){
-        if(strncmp(filename,gui_state.recently_loaded_games[0].path,SB_FILE_PATH_SIZE)!=0){
+        if(strncmp(filename,gui_state.recently_loaded_games[0].path,SE_FILE_PATH_SIZE)!=0){
           return se_load_rom(gui_state.recently_loaded_games[0].path);
         }
         return;
       }
-      snprintf(emu_state.save_data_base_path, SB_FILE_PATH_SIZE,"/offline/%s", c);
+      snprintf(emu_state.save_data_base_path, SE_FILE_PATH_SIZE,"/offline/%s", c);
   #else
-      se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
+      se_join_path(emu_state.save_data_base_path, SE_FILE_PATH_SIZE, base, c, NULL);
   #endif
-    snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
+    snprintf(save_file, SE_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
     if(!sb_file_exists(save_file)){
       const char* base, *c, *ext; 
       sb_breakup_path(filename,&base, &c, &ext);
-      char tmp_path[SB_FILE_PATH_SIZE];
-      se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
+      char tmp_path[SE_FILE_PATH_SIZE];
+      se_join_path(tmp_path,SE_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
 
       if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
-        se_join_path(emu_state.save_data_base_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
-        strncpy(save_file,tmp_path,SB_FILE_PATH_SIZE);
+        se_join_path(emu_state.save_data_base_path,SE_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
+        strncpy(save_file,tmp_path,SE_FILE_PATH_SIZE);
       }
     }
   }
@@ -2221,14 +2108,14 @@ void se_load_rom(const char *filename){
     cheat_path[0] = '\0';
     const char* base, *c, *ext; 
     sb_breakup_path(filename,&base, &c, &ext);
-    snprintf(cheat_path, SB_FILE_PATH_SIZE, "%s.code",emu_state.save_data_base_path);
+    snprintf(cheat_path, SE_FILE_PATH_SIZE, "%s.code",emu_state.save_data_base_path);
     if(!sb_file_exists(cheat_path)){
       const char* base, *c, *ext; 
       sb_breakup_path(filename,&base, &c, &ext);
-      char tmp_path[SB_FILE_PATH_SIZE];
-      se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.cheat_codes,c,".code");
+      char tmp_path[SE_FILE_PATH_SIZE];
+      se_join_path(tmp_path,SE_FILE_PATH_SIZE,gui_state.paths.cheat_codes,c,".code");
       if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
-        strncpy(cheat_path,tmp_path,SB_FILE_PATH_SIZE);
+        strncpy(cheat_path,tmp_path,SE_FILE_PATH_SIZE);
       }
     }
     se_load_cheats(cheat_path);
@@ -2255,10 +2142,10 @@ void se_load_rom(const char *filename){
     if(mz_zip_reader_init_file(&zip, filename, 0)){
       size_t total_files = mz_zip_reader_get_num_files(&zip);
       for(size_t i=0;i<total_files;++i){
-        char file_name_buff[SB_FILE_PATH_SIZE];
+        char file_name_buff[SE_FILE_PATH_SIZE];
         bool success= true;
-        mz_zip_reader_get_filename(&zip, i, file_name_buff, SB_FILE_PATH_SIZE);
-        file_name_buff[SB_FILE_PATH_SIZE-1]=0;
+        mz_zip_reader_get_filename(&zip, i, file_name_buff, SE_FILE_PATH_SIZE);
+        file_name_buff[SE_FILE_PATH_SIZE-1]=0;
         mz_zip_archive_file_stat stat={0};
         success&= mz_zip_reader_file_stat(&zip,i, &stat);
         success&= !stat.m_is_directory;
@@ -2289,15 +2176,15 @@ void se_load_rom(const char *filename){
     emu_state.step_frames = 1; 
     se_game_info_t * recent_games=gui_state.recently_loaded_games;
     //Create a copy in case file name comes from one of these slots that will be modified. 
-    char temp_filename[SB_FILE_PATH_SIZE];
-    strncpy(temp_filename,filename,SB_FILE_PATH_SIZE);
-    if(strncmp(filename,recent_games[0].path,SB_FILE_PATH_SIZE)!=0){
+    char temp_filename[SE_FILE_PATH_SIZE];
+    strncpy(temp_filename,filename,SE_FILE_PATH_SIZE);
+    if(strncmp(filename,recent_games[0].path,SE_FILE_PATH_SIZE)!=0){
       se_game_info_t g;
-      strncpy(g.path,filename,SB_FILE_PATH_SIZE);
+      strncpy(g.path,filename,SE_FILE_PATH_SIZE);
       for(int i=0; i<SE_NUM_RECENT_PATHS;++i){
         se_game_info_t g2 = recent_games[i];
         recent_games[i]=g;
-        if(strncmp(temp_filename,g2.path,SB_FILE_PATH_SIZE)==0||strncmp("",g2.path,SB_FILE_PATH_SIZE)==0)break;
+        if(strncmp(temp_filename,g2.path,SE_FILE_PATH_SIZE)==0||strncmp("",g2.path,SE_FILE_PATH_SIZE)==0)break;
         g=g2;
       }
     }
@@ -2305,13 +2192,13 @@ void se_load_rom(const char *filename){
   }
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     save_states[i].valid=false;
-    char save_state_path[SB_FILE_PATH_SIZE];
-    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
+    char save_state_path[SE_FILE_PATH_SIZE];
+    snprintf(save_state_path,SE_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
     se_load_state_from_disk(save_states+i,save_state_path);
     if(!save_states[i].valid){
       const char* base, *file,*ext;
       sb_breakup_path(emu_state.save_data_base_path,&base,&file,&ext);
-      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.slot%d.state.png",gui_state.paths.save,file,i);
+      snprintf(save_state_path,SE_FILE_PATH_SIZE,"%s%s.slot%d.state.png",gui_state.paths.save,file,i);
       se_load_state_from_disk(save_states+i,save_state_path);
     }
   }
@@ -2816,9 +2703,9 @@ void se_logged_out_cloud_callback(){
   memset(cloud_state.save_states_busy_swap, 0, sizeof(cloud_state.save_states_busy_swap));
 }
 void se_write_png_cloud(void* context, void* data, int size){
-  char file[SB_FILE_PATH_SIZE];
+  char file[SE_FILE_PATH_SIZE];
   size_t slot = (size_t)context;
-  snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%zu.state.png",emu_state.game_checksum,slot);
+  snprintf(file,SE_FILE_PATH_SIZE,"%016llx.slot%zu.state.png",emu_state.game_checksum,slot);
   // data is freed after this function returns, so we need to copy it
   void* data_copy = malloc(size);
   memcpy(data_copy,data,size);
@@ -2857,8 +2744,8 @@ void se_login_cloud(){
 }
 static void se_sync_cloud_save_states_callback(){
   for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
-    char file[SB_FILE_PATH_SIZE];
-    snprintf(file,SB_FILE_PATH_SIZE,"%016llx.slot%d.state.png",emu_state.game_checksum,(int)i);
+    char file[SE_FILE_PATH_SIZE];
+    snprintf(file,SE_FILE_PATH_SIZE,"%016llx.slot%d.state.png",emu_state.game_checksum,(int)i);
     cloud_drive_download(cloud_state.drive, file, se_state_download_callback, (void*)i);
   }
 }
@@ -4439,8 +4326,8 @@ void se_android_request_permissions(){
 void se_download_emscripten_file(const char * path){
   const char * base,*file, *ext;
   sb_breakup_path(path,&base,&file,&ext);
-  char name[SB_FILE_PATH_SIZE];
-  snprintf(name,SB_FILE_PATH_SIZE,"%s.%s",file,ext);
+  char name[SE_FILE_PATH_SIZE];
+  snprintf(name,SE_FILE_PATH_SIZE,"%s.%s",file,ext);
   size_t data_size;
   uint8_t*data = sb_load_file_data(path,&data_size);
 
@@ -4504,7 +4391,7 @@ void se_file_browser_accept(const char * path){
     file_browse->file_open_fn(path);
   }
   if(file_browse->output_path){
-    strncpy(file_browse->output_path,path,SB_FILE_PATH_SIZE);
+    strncpy(file_browse->output_path,path,SE_FILE_PATH_SIZE);
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
   }
 }
@@ -4680,7 +4567,7 @@ bool se_process_file_browser(){
   const char *home_dir = sb_get_home_path();
   
   if(gui_state.file_browser.state==SE_FILE_BROWSER_CLOSED)return false; 
-  if(gui_state.file_browser.current_path[0]=='\0')strncpy(gui_state.file_browser.current_path,home_dir,SB_FILE_PATH_SIZE);
+  if(gui_state.file_browser.current_path[0]=='\0')strncpy(gui_state.file_browser.current_path,home_dir,SE_FILE_PATH_SIZE);
 
   ImVec2 w_pos={0,0};
   ImVec2 w_size={gui_state.screen_width,gui_state.screen_height};
@@ -4699,8 +4586,8 @@ bool se_process_file_browser(){
   }
   if(file_browse->allow_directory){
     if(se_selectable_with_box("Select Folder",gui_state.file_browser.current_path,ICON_FK_CHECK,false,0)){
-      size_t len = strnlen(gui_state.file_browser.current_path,SB_FILE_PATH_SIZE);
-      if(len<SB_FILE_PATH_SIZE-2){
+      size_t len = strnlen(gui_state.file_browser.current_path,SE_FILE_PATH_SIZE);
+      if(len<SE_FILE_PATH_SIZE-2){
         if(gui_state.file_browser.current_path[len-1]!='\\' && gui_state.file_browser.current_path[len-1]!= '/' ){
           gui_state.file_browser.current_path[len]='/';
           gui_state.file_browser.current_path[len+1]=0;
@@ -4711,12 +4598,12 @@ bool se_process_file_browser(){
   }
 
   if(se_selectable_with_box("Go to home directory",home_dir,ICON_FK_HOME,false,0)){
-    strncpy(gui_state.file_browser.current_path, home_dir, SB_FILE_PATH_SIZE);
+    strncpy(gui_state.file_browser.current_path, home_dir, SE_FILE_PATH_SIZE);
   }
 
   const char* parent_dir = sb_parent_path(gui_state.file_browser.current_path);
   if(se_selectable_with_box("Go to parent directory",parent_dir,ICON_FK_ARROW_UP,false,0)){
-    strncpy(gui_state.file_browser.current_path, parent_dir, SB_FILE_PATH_SIZE);
+    strncpy(gui_state.file_browser.current_path, parent_dir, SE_FILE_PATH_SIZE);
   }
   float list_y_off = igGetWindowHeight(); 
 
@@ -4726,9 +4613,9 @@ bool se_process_file_browser(){
   igSetNextWindowSize((ImVec2){w_size.x,w_size.y-list_y_off}, ImGuiCond_Always);
 
   igBegin(se_localize_and_cache(ICON_FK_FOLDER_OPEN " Open File From Disk"),NULL,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-  bool update_cache = file_browse->has_cache==false||file_browse->cached_time+5.<se_time()||strncmp(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE)!=0;
+  bool update_cache = file_browse->has_cache==false||file_browse->cached_time+5.<se_time()||strncmp(file_browse->cached_path,file_browse->current_path,SE_FILE_PATH_SIZE)!=0;
   if(update_cache){
-    strncpy(file_browse->cached_path,file_browse->current_path,SB_FILE_PATH_SIZE);
+    strncpy(file_browse->cached_path,file_browse->current_path,SE_FILE_PATH_SIZE);
     file_browse->cached_time=se_time();
     if(file_browse->has_cache){
       if(file_browse->cached_files){
@@ -4775,7 +4662,7 @@ bool se_process_file_browser(){
     }
     if (se_selectable_with_box(file_browse->cached_files[f].name, file_browse->cached_files[f].path, ext, false, 0)) {
       if (file_browse->cached_files[f].is_dir)
-        strncpy(gui_state.file_browser.current_path, file_browse->cached_files[f].path, SB_FILE_PATH_SIZE);
+        strncpy(gui_state.file_browser.current_path, file_browse->cached_files[f].path, SE_FILE_PATH_SIZE);
       else {
         se_file_browser_accept(file_browse->cached_files[f].path);
       }
@@ -4876,8 +4763,8 @@ void se_load_rom_overlay(bool visible){
     for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
     int reduce_width = 0; 
     #ifdef EMSCRIPTEN
-    char save_file_path[SB_FILE_PATH_SIZE];
-    snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
+    char save_file_path[SE_FILE_PATH_SIZE];
+    snprintf(save_file_path,SE_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
     bool save_exists = sb_file_exists(save_file_path);
     if(save_exists)reduce_width=85; 
     #endif
@@ -5418,8 +5305,8 @@ bool se_load_controller_settings(se_controller_state_t * cont){
   strncpy(cont->name,SE_ANDROID_CONTROLLER_NAME, sizeof(cont->name) );
 #endif
   int32_t bind_map[SE_NUM_BINDS_ALLOC*2];
-  char settings_path[SB_FILE_PATH_SIZE];
-  snprintf(settings_path,SB_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont->name);
+  char settings_path[SE_FILE_PATH_SIZE];
+  snprintf(settings_path,SE_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont->name);
   bool load_old_settings = sb_load_file_data_into_buffer(settings_path,(uint8_t*)bind_map,sizeof(bind_map));
   if(load_old_settings){
     for(int i=0;i<SE_NUM_BINDS_ALLOC;++i){
@@ -5548,8 +5435,8 @@ void se_draw_controller_config(gui_state_t* gui){
       bind_map[i]= cont->key.bound_id[i];
       bind_map[i+SE_NUM_BINDS_ALLOC]= cont->analog.bound_id[i];
     }
-    char settings_path[SB_FILE_PATH_SIZE];
-    snprintf(settings_path,SB_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont_name);
+    char settings_path[SE_FILE_PATH_SIZE];
+    snprintf(settings_path,SE_FILE_PATH_SIZE,"%s%s-bindings.bin",se_get_pref_path(),cont_name);
     sb_save_file_data(settings_path,(uint8_t*)bind_map,sizeof(bind_map));
     se_emscripten_flush_fs();
   }
@@ -5567,8 +5454,8 @@ void se_reset_default_gb_palette(){
 }
 void se_capture_state_slot(int slot){
   se_capture_state(&core, save_states+slot);
-  char save_state_path[SB_FILE_PATH_SIZE];
-  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,slot);
+  char save_state_path[SE_FILE_PATH_SIZE];
+  snprintf(save_state_path,SE_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,slot);
   se_save_state_to_disk(save_states+slot,save_state_path);
 }
 void se_restore_state_slot(int slot){
@@ -5953,8 +5840,8 @@ void se_draw_menu_panel(){
     }
 
     if(modified){
-      char settings_path[SB_FILE_PATH_SIZE];
-      snprintf(settings_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
+      char settings_path[SE_FILE_PATH_SIZE];
+      snprintf(settings_path,SE_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
       sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
       se_emscripten_flush_fs();
     }
@@ -5989,7 +5876,7 @@ void se_draw_menu_panel(){
   if(gui_state.settings.theme==SE_THEME_CUSTOM){
     const char *types[]={"*.png",NULL};
     load|= se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
-    load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
+    load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SE_FILE_PATH_SIZE)!=0;
     if(load){
       if(se_load_theme_from_file(gui_state.paths.theme))
         se_save_search_paths();
@@ -5998,10 +5885,10 @@ void se_draw_menu_panel(){
     const char *font_types[]={"*.ttf",NULL};
 
     load|= se_input_file("Custom Font", gui_state.paths.custom_font,font_types,ImGuiInputTextFlags_None);
-    load|= strncmp(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE)!=0;
+    load|= strncmp(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SE_FILE_PATH_SIZE)!=0;
     if(load){
       gui_state.update_font_atlas=true;
-      strncpy(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE);
+      strncpy(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SE_FILE_PATH_SIZE);
     }
     igPushItemWidth(-1);
     float old_scale = gui_state.settings.custom_font_scale;
@@ -7010,8 +6897,8 @@ static void frame(void) {
   }
   se_free_all_images();
   if(memcmp(&gui_state.last_saved_settings, &gui_state.settings,sizeof(gui_state.settings))){
-    char settings_path[SB_FILE_PATH_SIZE];
-    snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
+    char settings_path[SE_FILE_PATH_SIZE];
+    snprintf(settings_path,SE_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
     sb_save_file_data(settings_path,(uint8_t*)&gui_state.settings,sizeof(gui_state.settings));
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
@@ -7022,8 +6909,8 @@ void se_load_settings(){
   se_load_search_paths();
   
   {
-    char keybind_path[SB_FILE_PATH_SIZE];
-    snprintf(keybind_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
+    char keybind_path[SE_FILE_PATH_SIZE];
+    snprintf(keybind_path,SE_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
     if(!sb_load_file_data_into_buffer(keybind_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id))){
       se_set_default_keybind(&gui_state);
     }
@@ -7034,8 +6921,8 @@ void se_load_settings(){
   }
 #endif
   {
-    char settings_path[SB_FILE_PATH_SIZE];
-    snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
+    char settings_path[SE_FILE_PATH_SIZE];
+    snprintf(settings_path,SE_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
     if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){gui_state.settings.settings_file_version=-1;}
     int max_settings_version_supported =3;
     if(gui_state.settings.settings_file_version>max_settings_version_supported){
@@ -7082,8 +6969,8 @@ void se_load_settings(){
   {
     memset(&cloud_state,0,sizeof(se_cloud_state_t));
     for(int i=0;i<SE_NUM_SAVE_STATES;i++)cloud_state.save_states_mutex[i] = mutex_create();
-    char refresh_token_path[SB_FILE_PATH_SIZE];
-    snprintf(refresh_token_path,SB_FILE_PATH_SIZE,"%srefresh_token.txt",se_get_pref_path());
+    char refresh_token_path[SE_FILE_PATH_SIZE];
+    snprintf(refresh_token_path,SE_FILE_PATH_SIZE,"%srefresh_token.txt",se_get_pref_path());
     if(sb_file_exists(refresh_token_path)){
       cloud_drive_create(se_drive_ready_callback);
     }
@@ -7526,7 +7413,7 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
 }
 static bool se_load_theme_from_file(const char * filename){
   int im_w, im_h, im_c; 
-  strncpy(gui_state.loaded_theme_path,filename,SB_FILE_PATH_SIZE);
+  strncpy(gui_state.loaded_theme_path,filename,SE_FILE_PATH_SIZE);
   uint8_t *imdata = stbi_load(filename, &im_w, &im_h, &im_c, 4);
   if(!imdata){
     printf("Failed to open theme image %s\n",filename);

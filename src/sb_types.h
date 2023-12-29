@@ -37,7 +37,6 @@
 #define SB_LIKELY(x) (x)
 #endif  // defined(COMPILER_GCC)
 
-#define SB_FILE_PATH_SIZE 1024
 #define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024
 #define MAX_CARTRIDGE_RAM 128 * 1024
 #define SB_U16_LO(A) ((A)&0xff)
@@ -123,12 +122,12 @@ typedef struct {
   //Temporary storage for use by cores that persists across frames but not in save states
   //or rewind buffers
   uint32_t frames_since_rewind_push;
-  char save_data_base_path[SB_FILE_PATH_SIZE];
-  char save_file_path[SB_FILE_PATH_SIZE]; 
+  char save_data_base_path[SE_FILE_PATH_SIZE];
+  char save_file_path[SE_FILE_PATH_SIZE]; 
   float screen_ghosting_strength;  //0 = off 1 = full strength
   size_t rom_size;
   uint8_t *rom_data;
-  char rom_path[SB_FILE_PATH_SIZE]; 
+  char rom_path[SE_FILE_PATH_SIZE]; 
   bool force_dmg_mode; 
   uint64_t game_checksum;
 } sb_emu_state_t;
@@ -221,8 +220,8 @@ static void sb_free_file_data(uint8_t* data){
   if(data)free(data);
 }
 static const char* sb_parent_path(const char* path){
-  static char tmp_path[SB_FILE_PATH_SIZE];
-  snprintf(tmp_path, SB_FILE_PATH_SIZE, "%s", path);
+  static char tmp_path[SE_FILE_PATH_SIZE];
+  snprintf(tmp_path, SE_FILE_PATH_SIZE, "%s", path);
   size_t sz = strlen(tmp_path);
   while(sz>1){
     char c = tmp_path[sz-1];
@@ -243,20 +242,20 @@ static const char* sb_parent_path(const char* path){
   return tmp_path;
 }
 static const char *sb_get_home_path(){
-  static char homedir[SB_FILE_PATH_SIZE];
+  static char homedir[SE_FILE_PATH_SIZE];
 #ifdef SE_PLATFORM_ANDROID
   return "/sdcard/";
 #elif defined(_WIN32)
-  snprintf(homedir, SB_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
+  snprintf(homedir, SE_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
 #else
-  snprintf(homedir, SB_FILE_PATH_SIZE, "%s", getenv("HOME"));
+  snprintf(homedir, SE_FILE_PATH_SIZE, "%s", getenv("HOME"));
 #endif
   return homedir;
 }
 static void sb_breakup_path(const char* path, const char** base_path, const char** file_name, const char** ext){
-  static char tmp_path[SB_FILE_PATH_SIZE];
-  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
-  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
+  static char tmp_path[SE_FILE_PATH_SIZE];
+  strncpy(tmp_path,path,SE_FILE_PATH_SIZE-1);
+  tmp_path[SE_FILE_PATH_SIZE-1]='\0';
   size_t sz = strlen(tmp_path);
   *base_path = "";
   *file_name = tmp_path;
@@ -283,9 +282,9 @@ static FILE * se_load_log_file(const char* rom_path, const char* log_name){
   bool loaded_bios=false;
   const char* base, *file, *ext; 
   sb_breakup_path(rom_path, &base,&file, &ext);
-  static char log_path[SB_FILE_PATH_SIZE];
-  se_join_path(log_path,SB_FILE_PATH_SIZE,base,file,log_name);
-  log_path[SB_FILE_PATH_SIZE-1]=0;
+  static char log_path[SE_FILE_PATH_SIZE];
+  se_join_path(log_path,SE_FILE_PATH_SIZE,base,file,log_name);
+  log_path[SE_FILE_PATH_SIZE-1]=0;
   FILE * f = fopen(log_path, "rb");
   if(f)printf("Loaded log file:%s\n",log_path);
   return f; 

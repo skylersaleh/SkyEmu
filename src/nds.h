@@ -2222,7 +2222,7 @@ typedef struct{
   uint32_t nds9_pipelined_if[5];
   uint32_t nds7_pipelined_if[5];
   int active_if_pipe_stages; 
-  char save_file_path[SB_FILE_PATH_SIZE];
+  char save_file_path[SE_FILE_PATH_SIZE];
 
   uint8_t *framebuffer_top;
   uint8_t *framebuffer_bottom;
@@ -3020,8 +3020,8 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
   memset(nds,0,sizeof(nds_t));
 
-  strncpy(nds->save_file_path,emu->save_file_path,SB_FILE_PATH_SIZE);
-  nds->save_file_path[SB_FILE_PATH_SIZE-1]=0;
+  strncpy(nds->save_file_path,emu->save_file_path,SE_FILE_PATH_SIZE);
+  nds->save_file_path[SE_FILE_PATH_SIZE-1]=0;
   memset(&nds->mem,0,sizeof(nds->mem));
 
   nds->mem.card_data=emu->rom_data;
