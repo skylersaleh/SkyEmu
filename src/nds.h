@@ -6650,7 +6650,7 @@ void nds_tick_rtc(nds_t*nds){
   nds->rtc.year  = nds_bin_to_bcd(tm->tm_year%100);
   nds->rtc.day_of_week=nds_bin_to_bcd(tm->tm_wday);
 }
-static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double delta_time, int cycles){
+static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double delta_time){
 
   nds_audio_t* audio = &nds->audio;
   if(delta_time>1.0/60.)delta_time = 1.0/60.;
@@ -6923,10 +6923,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
       }
       int audio_ticks = fast_forward_ticks+(ticks!=0);
-      for(int i=0;i<audio_ticks;++i){
-        double delta_t = ((double)1)/(33513982);
-        nds_tick_audio(nds, emu,delta_t,1);
-      }
+      double delta_t = audio_ticks*((double)1)/(33513982);
+      nds_tick_audio(nds, emu,delta_t);
+      
       if(SB_UNLIKELY(ticks)){
         nds->current_clock+=1;
         nds_tick_interrupts(nds);
