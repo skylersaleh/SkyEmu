@@ -262,6 +262,22 @@ typedef struct{
 #define SE_SORT_ALPHA_DESC 2
 
 typedef struct{
+  uint16_t start_pixel;
+  uint16_t end_pixel;
+  uint8_t resize_control;
+  uint8_t screen_control;
+  uint8_t gamepad_control;
+}se_control_point_t;
+
+typedef struct{
+  int x,y;
+  int w,h;
+  bool active;
+  se_control_point_t control_points_x[SE_MAX_CONTROL_POINTS];
+  se_control_point_t control_points_y[SE_MAX_CONTROL_POINTS];
+}se_theme_region_t;
+
+typedef struct{
   sg_image image;
   uint32_t im_w;
   uint32_t im_h;

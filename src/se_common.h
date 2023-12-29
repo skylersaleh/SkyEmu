@@ -1,3 +1,6 @@
+#ifndef SE_COMMON_H
+#define SE_COMMON_H
+
 #define SE_BIND_KEYBOARD 0
 #define SE_BIND_KEY 1
 #define SE_BIND_ANALOG 2
@@ -77,14 +80,6 @@ typedef struct{
   char name[SE_MAX_BIOS_FILES][SE_BIOS_NAME_SIZE];
   bool success[SE_MAX_BIOS_FILES];
 }se_bios_info_t;
-
-typedef struct{
-  uint16_t start_pixel;
-  uint16_t end_pixel;
-  uint8_t resize_control;
-  uint8_t screen_control;
-  uint8_t gamepad_control;
-}se_control_point_t;
 
 typedef struct{
   char save[SE_FILE_PATH_SIZE];
@@ -173,3 +168,4 @@ static void se_join_path(char * dest_path, int dest_size, const char * base_path
 }
 bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size);
 
+#endif
