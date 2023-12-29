@@ -4127,8 +4127,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   float max_p[3] = {-1,-1,-1};
   
   for(int i=0;i<3;++i){
-    SE_RPT3 if(min_p[r]>v[i]->clip_pos[r])min_p[r]=v[i]->clip_pos[r];
-    SE_RPT3 if(max_p[r]<v[i]->clip_pos[r])max_p[r]=v[i]->clip_pos[r];
+    SE_RPT3 min_p[r]=fminf(v[i]->clip_pos[r],min_p[r]);
+    SE_RPT3 max_p[r]=fmaxf(v[i]->clip_pos[r],max_p[r]);
   }
 
   SE_RPT3 if(min_p[r]<-1)min_p[r]=-1;
