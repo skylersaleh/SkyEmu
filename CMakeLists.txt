@@ -19,6 +19,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
 set(LINK_LIBS "")
 
+# Adds user options
+option(SKYEMU_LIBRETRO, "enables libretro support")
+
 # Set compile_commands.json generation for clangd on by default
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -281,7 +284,9 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
+set(SKYEMU_SRC_EXTRA src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
+set(SKYEMU_SRC src/main.c ${SKYEMU_SRC_EXTRA})
+set(SKYEMU_SRC_LIBRETRO src/libretro.c ${SKYEMU_SRC_EXTRA})
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)
@@ -307,7 +312,9 @@ if(IOS)
     add_definitions(-DSE_PLATFORM_IOS)
 endif()
 
-if(WIN32)
+if (SKYEMU_LIBRETRO)
+    add_library(${PROJECT_NAME} SHARED ${SKYEMU_SRC_LIBRETRO})
+elseif(WIN32)
     set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/appicon.rc")
     add_executable(${PROJECT_NAME} WIN32 ${SKYEMU_SRC} ${APP_ICON_RESOURCE_WINDOWS})
 elseif(MACOS OR IOS)
@@ -347,6 +354,10 @@ if(NOT EMSCRIPTEN)
   target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/openssl/include)
   target_include_directories(${PROJECT_NAME} PRIVATE src/curl/include)
   set(LINK_LIBS ${LINK_LIBS} libcurl_static ssl crypto)
+endif()
+
+if(SKYEMU_LIBRETRO)
+  target_include_directories(${PROJECT_NAME} PRIVATE src/libretro-common)
 endif()
 
 set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
