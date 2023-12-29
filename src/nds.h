@@ -4238,9 +4238,10 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       SE_RPT2 uv[r]=v[0]->tex[r]+tex_i[r]*bary[1]+tex_j[r]*bary[2];
 
       float tex_color[4]={1,1,1,1};
-      bool discard = false;
-      if(tex_map)discard|=nds_sample_texture(nds, tex_color, uv);
-      if(discard)continue;
+      if(tex_map){
+        bool discard=nds_sample_texture(nds, tex_color, uv);
+        if(discard)continue;
+      }
 
       float output_col[4];
       float col_v[4]; 
@@ -4257,31 +4258,34 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
           break;
         case 2: //Toon mode
         {
-          int toon_highlight_entry = floor(col_v[0]*255/8.); 
+          int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
           //printf("toon entry: %d\n",toon_highlight_entry);
           uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
           col_v[0]= SB_BFE(color,0,5)/31.;
           col_v[1]= SB_BFE(color,5,5)/31.;
           col_v[2]= SB_BFE(color,10,5)/31.;
-          if(shade_mode){ //Highlight shading
-            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+col_v[r];
-          }else{ //Toon shading
-            SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
-          }
+          SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
+          // Highlight shading
+          if(shade_mode)SE_RPT3 output_col[r]+= col_v[r];
           output_col[3]= col_v[3]*tex_color[3];
         }break;
       }
       SE_RPT4 output_col[r]=fminf(fmaxf(output_col[r],0.f),1.0f);
-      float alpha_blend_factor = alpha_blend? output_col[3]: 1; 
       if(alpha_test){
         int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
         if(output_col[3]<=alpha_test_ref/31.)continue; 
       }
-      if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
-      for(int c=0;c<3;++c){
-        nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
+      if(alpha_blend){
+        float alpha_blend_factor = output_col[3]; 
+        if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
+        for(int c=0;c<3;++c){
+          nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
+        }
+        if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
+      }else{
+        SE_RPT3 nds->framebuffer_3d[p*4+r]=output_col[r]*255;
+        nds->framebuffer_3d[p*4+3]=255;
       }
-      if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
     }
     tri_not_rendered&=!line_rendered;
   }
