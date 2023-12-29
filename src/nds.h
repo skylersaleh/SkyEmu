@@ -2476,9 +2476,6 @@ static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address,
   return data; 
 }
 static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
-  //1Byte writes are ignored from the ARM9
-  const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
-  if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
 
   int lookup_addr = SB_BFE(address,14,10)*16+(transaction_type&0xf);
   uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
@@ -2727,7 +2724,11 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
       nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
-      *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
+        //1Byte writes are ignored from the ARM9
+      const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B);
+      if((transaction_type&ignore_write_mask)!=ignore_write_mask){
+        *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
+      }
       break;
     case 0x7: 
       nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
@@ -4246,28 +4247,31 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       SE_RPT3 col_v[r]=(v[0]->color[r]+color_i[r]*bary[1]+color_j[r]*bary[2])/255.;
       col_v[3]= alpha/31.;
 
-      if(polygon_mode==0){
-        SE_RPT4 output_col[r]=tex_color[r]*col_v[r];
-      }else if(polygon_mode==1){ 
-        //Decal Mode
-        SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
-        output_col[3]=col_v[3];
-      }else if(polygon_mode==2){
-        int toon_highlight_entry = floor(col_v[0]*255/8.); 
-        //printf("toon entry: %d\n",toon_highlight_entry);
-        uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-        col_v[0]= SB_BFE(color,0,5)/31.;
-        col_v[1]= SB_BFE(color,5,5)/31.;
-        col_v[2]= SB_BFE(color,10,5)/31.;
-        if(shade_mode){ //Highlight shading
-          SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+col_v[r];
-        }else{ //Toon shading
-          SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
-        }
-        output_col[3]= col_v[3]*tex_color[3];
+      switch(polygon_mode){
+        case 0:
+          SE_RPT4 output_col[r]=tex_color[r]*col_v[r];
+          break;
+        case 1: //Decal Mode
+          SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
+          output_col[3]=col_v[3];
+          break;
+        case 2: //Toon mode
+        {
+          int toon_highlight_entry = floor(col_v[0]*255/8.); 
+          //printf("toon entry: %d\n",toon_highlight_entry);
+          uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+          col_v[0]= SB_BFE(color,0,5)/31.;
+          col_v[1]= SB_BFE(color,5,5)/31.;
+          col_v[2]= SB_BFE(color,10,5)/31.;
+          if(shade_mode){ //Highlight shading
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+col_v[r];
+          }else{ //Toon shading
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
+          }
+          output_col[3]= col_v[3]*tex_color[3];
+        }break;
       }
-      SE_RPT4 if(output_col[r]>1.0)output_col[r]=1.;
-      SE_RPT4 if(output_col[r]<0.0)output_col[r]=0.;
+      SE_RPT4 output_col[r]=fminf(fmaxf(output_col[r],0.f),1.0f);
       float alpha_blend_factor = alpha_blend? output_col[3]: 1; 
       if(alpha_test){
         int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
