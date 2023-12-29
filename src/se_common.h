@@ -60,7 +60,7 @@
 #define SE_TOGGLE_WIDTH 35
 #define SE_VOLUME_SLIDER_WIDTH 100
 
-#ifdef _cplusplus
+#ifdef __cplusplus
 #define _STATIC_ASSERT(e, msg) static_assert(e, msg)
 #define _ALIGNOF(t) alignof(t)
 #else 
