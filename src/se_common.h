@@ -61,10 +61,10 @@
 #define SE_VOLUME_SLIDER_WIDTH 100
 
 #ifdef __cplusplus
-#define _STATIC_ASSERT(e, msg) static_assert(e, msg)
+#define __STATIC_ASSERT(e, msg) static_assert(e, msg)
 #define _ALIGNOF(t) alignof(t)
 #else 
-#define _STATIC_ASSERT(e, msg) _Static_assert(e, msg)
+#define __STATIC_ASSERT(e, msg) _Static_assert(e, msg)
 #define _ALIGNOF(t) _Alignof(t)
 #endif
 
@@ -97,7 +97,7 @@ typedef struct{
   char custom_font[SE_FILE_PATH_SIZE];
   char padding[3][SE_FILE_PATH_SIZE];
 }se_search_paths_t;
-_STATIC_ASSERT(sizeof(se_search_paths_t)==SE_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
+__STATIC_ASSERT(sizeof(se_search_paths_t)==SE_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
 
 //Reserve space for extra keybinds/analog binds so that adding them in new versions don't break
 //a users settings.
@@ -148,8 +148,8 @@ typedef struct{
   uint32_t hardcore_mode; 
   uint32_t padding[228];
 }persistent_settings_t; 
-_STATIC_ASSERT(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
-_STATIC_ASSERT(_ALIGNOF(persistent_settings_t)==4, "persistent_settings_t must have an alignment of 4 bytes");
+__STATIC_ASSERT(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
+__STATIC_ASSERT(_ALIGNOF(persistent_settings_t)==4, "persistent_settings_t must have an alignment of 4 bytes");
 
 #define SE_STATS_GRAPH_DATA 256
 typedef struct{
