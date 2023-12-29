@@ -1,9 +1,44 @@
+#include "mutex.h"
+#include <stdint.h>
+#include <stdbool.h>
 
-// include core stuff here and things
+// include core headers
+
+#define SE_AUDIO_SAMPLE_RATE 48000
+#define SE_AUDIO_BUFF_CHANNELS 2
+#define SE_REBIND_TIMER_LENGTH 5.0
+
+#define SE_TRANSPARENT_BG_ALPHA
+
+#include "gba.h"
+#include "nds.h"
+#include "gb.h"
+
+// common SE implementations
+
+bool se_load_bios_file(
+    const char* name,
+    const char* base_path,
+    const char* file_name,
+    uint8_t* data, size_t data_size
+) {
+
+  return true;
+}                   
+
+// global emu state
+
+static struct lr_emu_state_t {
+  void* rom_data;
+  int32_t screen_width;
+  int32_t screen_height;
+  int32_t screen_width_max;
+  int32_t screen_height_max;
+} emu_state;
 
 // Retro Arch implementation
 
-#include "libretro-common/include/libretro.h"
+#include "libretro.h"
 
 void retro_set_environment(retro_environment_t _env){}
 
@@ -17,7 +52,10 @@ void retro_set_input_poll(retro_input_poll_t _poll) {}
 
 void retro_set_input_state(retro_input_state_t _state) {}
 
-void retro_init(void) {}
+void retro_init(void) {
+  emu_state.screen_height_max = 1080;
+  emu_state.screen_width_max = 1920;
+}
 
 void retro_deinit(void) {}
 
@@ -35,7 +73,13 @@ void retro_get_system_info(struct retro_system_info* info){
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-  info->geometry = (struct retro_game_geometry){.aspect_ratio = 1.0, .base_height = 1080, .base_width = 1920, .max_height = 1080, .max_width = 1920};
+  info->geometry = (struct retro_game_geometry){
+    .aspect_ratio = 1.0, 
+    .base_height = emu_state.screen_height_max, 
+    .base_width = emu_state.screen_width_max,
+    .max_height = emu_state.screen_height_max, 
+    .max_width = emu_state.screen_width_max
+  };
   info->timing = (struct retro_system_timing){.fps = 60, .sample_rate = 60};
 }
 

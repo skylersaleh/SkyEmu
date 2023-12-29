@@ -361,10 +361,6 @@ if(NOT EMSCRIPTEN AND NOT LIBRETRO)
   set(LINK_LIBS ${LINK_LIBS} libcurl_static ssl crypto)
 endif()
 
-if(LIBRETRO)
-  target_include_directories(${PROJECT_NAME} PRIVATE src/libretro-common)
-endif()
-
 if(NOT LIBRETRO)
   set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
   set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
