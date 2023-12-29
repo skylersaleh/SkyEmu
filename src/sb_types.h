@@ -23,6 +23,8 @@
   #define FORCE_INLINE inline
 #endif
 
+#include "se_common.h"
+
 // Macro for hinting that an expression is likely to be false.
 #if defined(__GNUC__) || defined(__clang__)
 #define SB_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -67,41 +69,6 @@
 #define SB_GB 0 
 #define SB_GBC 1 
 #define SB_GBC_GB_BACK_COMPAT 2
-
-#define SE_BIND_KEYBOARD 0
-#define SE_BIND_KEY 1
-#define SE_BIND_ANALOG 2
-#define SE_KEY_A 0 
-#define SE_KEY_B 1 
-#define SE_KEY_X 2 
-#define SE_KEY_Y 3 
-#define SE_KEY_UP 4
-#define SE_KEY_DOWN 5
-#define SE_KEY_LEFT 6
-#define SE_KEY_RIGHT 7
-#define SE_KEY_L 8
-#define SE_KEY_R 9
-#define SE_KEY_START 10
-#define SE_KEY_SELECT 11
-#define SE_KEY_FOLD_SCREEN 12
-#define SE_KEY_PEN_DOWN 13
-#define SE_KEY_EMU_PAUSE 14
-#define SE_KEY_EMU_REWIND 15
-#define SE_KEY_EMU_FF_2X 16
-#define SE_KEY_EMU_FF_MAX 17
-#define SE_KEY_CAPTURE_STATE(A) (18+(A)*2)
-#define SE_KEY_RESTORE_STATE(A) (18+(A)*2+1)
-#define SE_KEY_RESET_GAME 26
-#define SE_KEY_TURBO_A  27
-#define SE_KEY_TURBO_B  28
-#define SE_KEY_TURBO_X  29
-#define SE_KEY_TURBO_Y  30
-#define SE_KEY_TURBO_L  31
-#define SE_KEY_TURBO_R  32
-#define SE_KEY_SOLAR_P  33
-#define SE_KEY_SOLAR_M  34
-#define SE_KEY_TOGGLE_FULLSCREEN 35
-#define SE_NUM_KEYBINDS 36
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
@@ -173,16 +140,6 @@ typedef struct{
   bool write_in_tick;
   bool trigger_breakpoint;
 }sb_debug_mmio_access_t;
-typedef struct{
-  uint32_t addr;
-  const char * name;
-  struct{
-    uint8_t start;
-    uint8_t size;
-    const char* name; 
-  } bits[32]; 
-}mmio_reg_t; 
-
 static inline float sb_random_float(float min, float max){
   float v = rand()/(float)RAND_MAX;
   return min + v*(max-min);
@@ -321,19 +278,7 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
     }
   }
 }
-static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
-  const char * seperator = base_path[0]==0? "" : "/"; 
-  if(strlen(base_path)!=0){
-    char last_base_char = base_path[strlen(base_path)-1];
-    if(last_base_char=='/'||last_base_char=='\\')seperator="";
-  }
-  if(add_extension){
-    const char * ext_sep = add_extension[0]=='.' ? "": ".";
-    snprintf(dest_path,dest_size,"%s%s%s%s%s",base_path, seperator, file_name,ext_sep,add_extension);
-  }else snprintf(dest_path,dest_size,"%s%s%s",base_path, seperator, file_name);
-  dest_path[dest_size-1]=0;
-}
-bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size);
+
 static FILE * se_load_log_file(const char* rom_path, const char* log_name){
   bool loaded_bios=false;
   const char* base, *file, *ext; 
