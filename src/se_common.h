@@ -60,6 +60,14 @@
 #define SE_TOGGLE_WIDTH 35
 #define SE_VOLUME_SLIDER_WIDTH 100
 
+#ifdef _cplusplus
+#define _STATIC_ASSERT(e, msg) static_assert(e, msg)
+#define _ALIGNOF(t) alignof(t)
+#else 
+#define _STATIC_ASSERT(e, msg) _Static_assert(e, msg)
+#define _ALIGNOF(t) _Alignof(t)
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -89,7 +97,7 @@ typedef struct{
   char custom_font[SE_FILE_PATH_SIZE];
   char padding[3][SE_FILE_PATH_SIZE];
 }se_search_paths_t;
-_Static_assert(sizeof(se_search_paths_t)==SE_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
+_STATIC_ASSERT(sizeof(se_search_paths_t)==SE_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
 
 //Reserve space for extra keybinds/analog binds so that adding them in new versions don't break
 //a users settings.
@@ -113,7 +121,6 @@ typedef struct{
 
 typedef struct{
   // This structure is directly saved out for the user settings. 
-  // Be very careful to keep alignment and ordering the same otherwise you will break the settings. 
   uint32_t draw_debug_menu;
   float volume; 
   uint32_t theme; 
@@ -141,7 +148,9 @@ typedef struct{
   uint32_t hardcore_mode; 
   uint32_t padding[228];
 }persistent_settings_t; 
-_Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
+_STATIC_ASSERT(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
+_STATIC_ASSERT(_ALIGNOF(persistent_settings_t)==4, "persistent_settings_t must have an alignment of 4 bytes");
+
 #define SE_STATS_GRAPH_DATA 256
 typedef struct{
   double last_render_time;
