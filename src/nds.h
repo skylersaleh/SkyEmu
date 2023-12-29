@@ -6904,6 +6904,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       ticks = nds->mem.slow_bus_cycles;
       nds->mem.slow_bus_cycles = 0; 
     }
+    const double audio_delta_t = ((double)1)/(33513982);
     while(ticks){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
@@ -6919,18 +6920,16 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
         }
         nds_tick_gx(nds);
+        nds->audio.current_sim_time+=fast_forward_ticks*audio_delta_t;
         nds->current_clock+=fast_forward_ticks;
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
-      }
-      int audio_ticks = fast_forward_ticks+(ticks!=0);
-      double delta_t = audio_ticks*((double)1)/(33513982);
-      nds_tick_audio(nds, emu,delta_t);
-      
+      }      
       if(SB_UNLIKELY(ticks)){
         nds->current_clock+=1;
         nds_tick_interrupts(nds);
         nds_tick_timers(nds);
         nds_tick_ppu(nds,emu->render_frame);
+        nds_tick_audio(nds, emu,audio_delta_t);
         nds_tick_gx(nds);
         ticks-=1;
       }
