@@ -2258,7 +2258,7 @@ static void nds_compute_timers(nds_t* nds);
 static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
 static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size);
-
+static FORCE_INLINE void nds_update_gx_irq(nds_t* nds);
 
 //Returns offset into savestate where bess info can be found
 static uint32_t nds_save_best_effort_state(nds_t* nds){
@@ -4606,12 +4606,8 @@ static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t n
   }
   SE_RPT3 gpu->curr_color[r]= fmax(0.0,fmin(255.0,color[r]*255));
 }
-static FORCE_INLINE void nds_tick_gx(nds_t* nds){
-  nds_gpu_t* gpu = &nds->gpu;
-  if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
-  if(gpu->pending_swap){nds_gpu_swap_buffers(nds);gpu->pending_swap=false;}
+static FORCE_INLINE void nds_update_gx_irq(nds_t* nds){
   int sz = nds_gxfifo_size(nds);
-  if(sz<=NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
   uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
   int irq_mode = SB_BFE(gxstat,30,2);
   if(irq_mode){
@@ -4624,11 +4620,19 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
     }
     nds9_io_store32(nds,NDS9_IF,if9);
   }
+}
+static FORCE_INLINE void nds_tick_gx(nds_t* nds){
+  nds_gpu_t* gpu = &nds->gpu;
+  if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
+  if(gpu->pending_swap){nds_gpu_swap_buffers(nds);gpu->pending_swap=false;}
+  int sz = nds_gxfifo_size(nds);
+  if(sz<=NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
   if(SB_LIKELY(sz==0))return; 
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
   if(SB_LIKELY(sz<cmd_params))return; 
   if(cmd_params<1)cmd_params=1;
+  nds_update_gx_irq(nds);
 
   int32_t p[NDS_GPU_MAX_PARAM];
   for(int i=0;i<cmd_params;++i)p[i]=gpu->fifo_data[(gpu->fifo_read_ptr++)%NDS_GXFIFO_STORAGE];
@@ -5079,6 +5083,7 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
         mmio&=~data;
         nds_io_store32(nds,cpu,addr,mmio);
         nds_tick_ipc_fifo(nds);
+        nds_update_gx_irq(nds);
         return false; 
       }
       break;
@@ -6925,13 +6930,13 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
       }      
       if(SB_UNLIKELY(ticks)){
-        nds->current_clock+=1;
+        nds->current_clock++;
         nds_tick_interrupts(nds);
         nds_tick_timers(nds);
         nds_tick_ppu(nds,emu->render_frame);
         nds_tick_audio(nds, emu);
         nds_tick_gx(nds);
-        ticks-=1;
+        ticks--;
       }
     }
   }
