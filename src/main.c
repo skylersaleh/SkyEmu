@@ -1752,32 +1752,31 @@ void se_draw_arm_state(const char* label, arm7_t *arm, emu_byte_read_t read){
     cs_insn *insn;
     int count = cs_disasm(handle, buffer, buffer_size, pc-off, 0, &insn);
     size_t j;
-    for (j = 0; j < count; j++) {
-      char instr_str[80];
-      
+    for (j = 0; j < count; j++) {      
       if(insn[j].address==pc){
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
-        se_text("PC " ICON_FK_ARROW_RIGHT);
-        igSameLine(40,0);
-        snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
-        instr_str[79]=0;
-        se_text(instr_str);
-        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
-        instr_str[79]=0;
-        igSameLine(130,0);
-        se_text(instr_str);
-        igPopStyleColor(1);
-      }else{
-        snprintf(instr_str,80,"0x%08x:", (int)insn[j].address);
-        instr_str[79]=0;
-        se_text("");
-        igSameLine(40,0);
-        se_text(instr_str);
-        snprintf(instr_str,80,"%s %s\n", insn[j].mnemonic,insn[j].op_str);
-        instr_str[79]=0;
-        igSameLine(130,0);
-        se_text(instr_str);
-      }
+        se_text("PC" ICON_FK_ARROW_RIGHT);
+      }else se_text("");
+      ImVec4 text_color = *igGetStyleColorVec4(ImGuiCol_Text);
+      text_color.w*=0.5;
+      igPushStyleColorVec4(ImGuiCol_Text, text_color);
+      igSameLine(32,0);
+      se_text("0x%08x:", (int)insn[j].address);
+      igPopStyleColor(1);
+      igSameLine(102,0);
+      se_text(insn[j].mnemonic);
+      igSameLine(150,0);
+      text_color = *igGetStyleColorVec4(ImGuiCol_Text);
+      float ratio = 0.3; 
+      text_color.x*=1.0-ratio;
+      text_color.y*=1.0-ratio;
+      text_color.z*=1.0-ratio;
+      text_color.z+=ratio;
+      if(text_color.z<ratio*2)text_color.z+=ratio;
+      igPushStyleColorVec4(ImGuiCol_Text, text_color);
+      se_text(insn[j].op_str);
+      igPopStyleColor(1);
+      if(insn[j].address==pc)igPopStyleColor(1);
     }  
   }
   bool clear_step_data = emu_state.run_mode!=SB_MODE_PAUSE;
@@ -1886,25 +1885,19 @@ void gb_cpu_debugger(){
       char instr_str[80];
       int pc_render = i + cpu_state->pc;
       int opcode = sb_read8(gb, pc_render);
-      if(pc_render==cpu_state->pc){
+      if(pc_render== cpu_state->pc){
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.f, 0.f, 0.f, 1.f});
-        se_text("PC " ICON_FK_ARROW_RIGHT);
-        igSameLine(40,0);
-        snprintf(instr_str,80,"0x%04x:", pc_render);
-        instr_str[79]=0;
-        se_text(instr_str);
-        igSameLine(130,0);
-        se_text(sb_decode_table[opcode].opcode_name);
-        igPopStyleColor(1);
-      }else{
-        snprintf(instr_str,80,"0x%04x:", (int)pc_render);
-        instr_str[79]=0;
-        se_text("");
-        igSameLine(40,0);
-        se_text(instr_str);
-        igSameLine(130,0);
-        se_text(sb_decode_table[opcode].opcode_name);
-      }
+        se_text("PC" ICON_FK_ARROW_RIGHT);
+      }else se_text("");
+      ImVec4 text_color = *igGetStyleColorVec4(ImGuiCol_Text);
+      text_color.w*=0.5;
+      igPushStyleColorVec4(ImGuiCol_Text, text_color);
+      igSameLine(32,0);
+      se_text("0x%04x:", (int)pc_render);
+      igPopStyleColor(1);
+      igSameLine(102,0);
+      se_text(sb_decode_table[opcode].opcode_name);
+      if(pc_render== cpu_state->pc)igPopStyleColor(1);
     }  
 }
 void se_draw_mem_debug_state(const char* label, gui_state_t* gui, emu_byte_read_t read,emu_byte_write_t write){
