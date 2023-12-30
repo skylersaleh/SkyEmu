@@ -6867,17 +6867,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
-      if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
-        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-        if(int7_if){
-          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-          int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
-        }
-        if(SB_UNLIKELY(nds->arm7.registers[PC]== emu->pc_breakpoint))nds->arm7.trigger_breakpoint=true;
-        else arm7_exec_instruction(&nds->arm7);
-      }
       if(SB_LIKELY(!nds->dma_processed[1])){
         uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
         if(int9_if){
@@ -6896,6 +6885,17 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           }
         }
       }
+      if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
+        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+        if(int7_if){
+          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+          int7_if&=ie;
+          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+        }
+        if(SB_UNLIKELY(nds->arm7.registers[PC]== emu->pc_breakpoint))nds->arm7.trigger_breakpoint=true;
+        else arm7_exec_instruction(&nds->arm7);
+      }
       if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
         emu->run_mode = SB_MODE_PAUSE;
         nds->arm7.trigger_breakpoint=false;
@@ -6903,11 +6903,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }      
-    int ticks = 1;
-    if(nds->mem.slow_bus_cycles){
-      ticks = nds->mem.slow_bus_cycles;
-      nds->mem.slow_bus_cycles = 0; 
-    }
+    int ticks = 1+nds->mem.slow_bus_cycles;
+    nds->mem.slow_bus_cycles = 0; 
+    
     while(ticks){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
