@@ -140,7 +140,6 @@ typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
   int step_frames; 
-  int pc_breakpoint;     // PC to run until
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;

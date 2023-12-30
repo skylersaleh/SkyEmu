@@ -6880,14 +6880,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
         }
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
-          if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
-          else{
-            nds->arm9.i_cycles=0;
-            arm9_exec_instruction(&nds->arm9);
-            if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
-            else if(!nds->arm9.i_cycles)arm9_exec_instruction(&nds->arm9);
-            nds->mem.slow_bus_cycles+=nds->arm9.i_cycles/2;
-          }
+          nds->arm9.i_cycles=0;
+          arm9_exec_instruction(&nds->arm9);
+          if(!nds->arm9.i_cycles)arm9_exec_instruction(&nds->arm9);
+          nds->mem.slow_bus_cycles+=nds->arm9.i_cycles/2;
         }
       }
       if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
@@ -6898,8 +6894,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           int7_if&=ie;
           if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
         }
-        if(SB_UNLIKELY(nds->arm7.registers[PC]== emu->pc_breakpoint))nds->arm7.trigger_breakpoint=true;
-        else arm7_exec_instruction(&nds->arm7);
+        arm7_exec_instruction(&nds->arm7);
       }
       if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
         emu->run_mode = SB_MODE_PAUSE;

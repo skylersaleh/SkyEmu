@@ -447,7 +447,7 @@ typedef struct {
 #define SE_VOLUME_SLIDER_WIDTH 100
 
 //TODO: Clean this up to use unions...
-sb_emu_state_t emu_state = {.pc_breakpoint = -1, .joy.solar_sensor=0.5};
+sb_emu_state_t emu_state = { .joy.solar_sensor=0.5};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
 typedef union{
   sb_gb_t gb;
