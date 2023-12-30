@@ -2054,9 +2054,7 @@ typedef struct{
   uint16_t tx_reg; 
 }nds_touch_t; 
 typedef struct{
-  double current_sim_time;
-  double current_sample_generated_time;
-  uint32_t cycles_since_tick;
+  uint64_t current_sample_generated_time;
   struct{
     uint32_t timer;
     uint32_t sample;
@@ -6650,20 +6648,16 @@ void nds_tick_rtc(nds_t*nds){
   nds->rtc.year  = nds_bin_to_bcd(tm->tm_year%100);
   nds->rtc.day_of_week=nds_bin_to_bcd(tm->tm_wday);
 }
-static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double delta_time){
+static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
 
   nds_audio_t* audio = &nds->audio;
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  audio->current_sim_time +=delta_time;
-  float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
+  uint64_t current_sim_time =nds->current_clock*64;
 
-  while(audio->current_sample_generated_time < audio->current_sim_time){
-    uint64_t current_cycles = audio->current_sample_generated_time*33513982;
+  while(audio->current_sample_generated_time < current_sim_time){
+    uint64_t prev_cycles = audio->current_sample_generated_time;
+    audio->current_sample_generated_time+=33513982*64/SE_AUDIO_SAMPLE_RATE;
+    uint64_t cycles_since_tick=(audio->current_sample_generated_time-prev_cycles)/64; 
 
-    audio->current_sample_generated_time+=sample_delta_t;
-    uint64_t next_cycles = audio->current_sample_generated_time*33513982;
-    audio->cycles_since_tick=next_cycles-current_cycles; 
-    
     const float lowpass_coef = 0.999;
 
     float l = 0, r = 0; 
@@ -6715,7 +6709,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         r+=v*pan/128.;
         l+=v*(128-pan)/128.;
       }
-      audio->channel[c].timer+=audio->cycles_since_tick;
+      audio->channel[c].timer+=cycles_since_tick;
       while(audio->channel[c].timer>0x1ffff){
         audio->channel[c].timer-=0x20000;
         audio->channel[c].timer+=tmr;
@@ -6786,6 +6780,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         audio->channel[c].sample+=1;
       }
     }
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     // Clipping
     if(l>1.0)l=1;
@@ -6795,7 +6790,6 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     l*=0.5;
     r*=0.5;
 
-    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
@@ -6803,10 +6797,8 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(l)*(1.0-lowpass_coef);
     emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(r)*(1.0-lowpass_coef); 
 
-
     emu->audio_ring_buff.data[write_entry0] = l*32760;
     emu->audio_ring_buff.data[write_entry1] = r*32760;
-    audio->cycles_since_tick=0;
   }
 }
 
@@ -6904,7 +6896,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       ticks = nds->mem.slow_bus_cycles;
       nds->mem.slow_bus_cycles = 0; 
     }
-    const double audio_delta_t = ((double)1)/(33513982);
     while(ticks){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
@@ -6920,7 +6911,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
         }
         nds_tick_gx(nds);
-        nds->audio.current_sim_time+=fast_forward_ticks*audio_delta_t;
         nds->current_clock+=fast_forward_ticks;
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
       }      
@@ -6929,7 +6919,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         nds_tick_interrupts(nds);
         nds_tick_timers(nds);
         nds_tick_ppu(nds,emu->render_frame);
-        nds_tick_audio(nds, emu,audio_delta_t);
+        nds_tick_audio(nds, emu);
         nds_tick_gx(nds);
         ticks-=1;
       }
