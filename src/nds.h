@@ -4614,30 +4614,20 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   if(sz<=NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
   uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
   int irq_mode = SB_BFE(gxstat,30,2);
-  bool less_than_half_full = sz<128;
-  bool empty = sz<=0;
-  uint32_t if9 = nds9_io_read32(nds,NDS9_IF);
-  switch(irq_mode){
-    case 1: if(less_than_half_full)if9|=(1<<NDS9_INT_GX_FIFO); break;
-    case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
+  if(irq_mode){
+    bool less_than_half_full = sz<128;
+    bool empty = sz<=0;
+    uint32_t if9 = nds9_io_read32(nds,NDS9_IF);
+    switch(irq_mode){
+      case 1: if(less_than_half_full)if9|=(1<<NDS9_INT_GX_FIFO); break;
+      case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
+    }
+    nds9_io_store32(nds,NDS9_IF,if9);
   }
-  nds9_io_store32(nds,NDS9_IF,if9);
-  gxstat&= 0xc0000000;
-  gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
-  gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
-  if(gpu->box_test_result)gxstat|=(1<<1);//Box test
-  if(gpu->matrix_stack_error)gxstat|=1<<15;
-  gxstat|= (sz&0x1ff)<<16;
-  if(less_than_half_full)gxstat|= 1<<25; //Less than half full
-  if(empty)gxstat|= 1<<26;  //Empty
+  if(SB_LIKELY(sz==0))return; 
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
-  if(sz!=0&&sz>=cmd_params)gxstat|= 1<<27;//is busy
-
-  if(nds->gpu.test_busy>0)gxstat|= 1<<0;
-
-  nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
-  if(SB_LIKELY(sz==0||sz<cmd_params))return; 
+  if(SB_LIKELY(sz<cmd_params))return; 
   if(cmd_params<1)cmd_params=1;
 
   int32_t p[NDS_GPU_MAX_PARAM];
@@ -4650,14 +4640,16 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   float fixed_to_float = 1.0/(1<<12);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
 
-  if(SB_UNLIKELY(nds->gx_log&&cmd)){
-    fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
-    fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
-    fprintf(nds->gx_log,"proj: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
-    fprintf(nds->gx_log,"\nmv: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
-    fprintf(nds->gx_log,"\n");
+  if(SB_UNLIKELY(nds->gx_log)){
+    if(cmd){
+      fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
+      fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
+      fprintf(nds->gx_log,"proj: ");
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
+      fprintf(nds->gx_log,"\nmv: ");
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
+      fprintf(nds->gx_log,"\n");
+    }
   }
   
 
@@ -5060,15 +5052,15 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
   uint32_t word_mask = nds_word_mask(addr,transaction_type);
   uint32_t baddr =addr;
   addr&=~3;
-  if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7;
   /*if(addr!=0x04000208&&addr!=0x04000301&&addr!=0x04000138
     &&addr!= 0x040001c0 && addr!=0x040001c2)printf("MMIO Read: %08x\n",addr);*/
 
   //if(addr>=0x4000620&&addr<0x04000800&&!(transaction_type&NDS_MEM_DEBUG))printf("MMIO Read: %08x\n",addr);
 
+  if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   //Reading ClipMTX
-  if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
+  else if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
     float clipmtx[16];
     for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix[i];
     nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix);
@@ -5149,6 +5141,27 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
       nds9_io_store32(nds,NDS9_RDLINES_COUNT,46);
       break;
     }
+    case NDS9_GXSTAT:{
+      if(cpu!=NDS_ARM9)return true; 
+      int sz = nds_gxfifo_size(nds);
+      nds_gpu_t* gpu = &nds->gpu;
+      uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
+      bool less_than_half_full = sz<128;
+      bool empty = sz<=0;     
+      gxstat&= 0xc0000000;
+      gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
+      gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
+      if(gpu->box_test_result)gxstat|=(1<<1);//Box test
+      if(gpu->matrix_stack_error)gxstat|=1<<15;
+      gxstat|= (sz&0x1ff)<<16;
+      if(less_than_half_full)gxstat|= 1<<25; //Less than half full
+      if(empty)gxstat|= 1<<26;  //Empty
+      uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
+      uint32_t cmd_params = nds_gpu_cmd_params(cmd);
+      if(sz!=0&&sz>=cmd_params)gxstat|= 1<<27;//is busy
+      if(nds->gpu.test_busy>0)gxstat|= 1<<0;
+      nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
+    }break;
     case NDS9_RAM_COUNT:
       if(cpu!=NDS_ARM9||(transaction_type&NDS_MEM_DEBUG))return true;
       nds9_io_store16(nds,NDS9_RAM_COUNT+2,nds->gpu.curr_vert);
@@ -5278,15 +5291,14 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
   if(addr>=GBA_DMA0SAD&&addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
-  if(addr>=0x4000440&& addr<0x40005CC &&cpu==NDS_ARM9){
+  else if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
+  else if(addr>=0x4000440&& addr<0x40005CC &&cpu==NDS_ARM9){
     nds_gxfifo_push(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
-  } 
-  if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
+  }else if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
       nds_gpu_write_packed_cmd(nds,mmio);
-  } 
-  if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
-  switch(addr){
+  }else if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
 
+  switch(addr){
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
@@ -6507,7 +6519,7 @@ static void nds_compute_timers(nds_t* nds){
 
   int ticks = nds->current_clock-nds->last_timer_clock; 
   nds->last_timer_clock=nds->current_clock;
-  int timer_ticks_before_event = 32768; 
+  int timer_ticks_before_event = 1024*1024*1024; 
   for(int cpu=0;cpu<2;++cpu){
     int last_timer_overflow = 0; 
     for(int t=0;t<4;++t){ 
@@ -6605,7 +6617,7 @@ static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float
   return y;
 }
 static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
-  if(nds->active_if_pipe_stages){
+  if(SB_UNLIKELY(nds->active_if_pipe_stages)){
     uint32_t if_bit = nds->nds9_pipelined_if[0];
     if(if_bit){
       uint32_t if_val = nds9_io_read32(nds,NDS9_IF);
