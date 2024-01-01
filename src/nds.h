@@ -1981,7 +1981,6 @@ typedef struct{
   bool last_hblank;
   bool last_vcmp;
   bool last_vcmp7;
-  int last_lcd_y; 
   struct {
     int32_t internal_bgx;
     int32_t internal_bgy;
@@ -5601,12 +5600,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             ppu->aff[aff].internal_bgx = (ppu->aff[aff].internal_bgx<<4)>>4;
             ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
           }
+          uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
+          nds->display_flip = SB_BFE(powcnt1,15,1);
         }
-        uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
-        nds->display_flip = SB_BFE(powcnt1,15,1);
         nds->activate_dmas|=nds->dma_wait_ppu;
       }
-      ppu->last_lcd_y  = lcd_y;
     }
     uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
     int display_mode = SB_BFE(dispcnt,16,2);
@@ -5889,10 +5887,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
 
           if(SB_UNLIKELY(enable_3d&&bg==0)){
             int p = lcd_x+lcd_y*NDS_LCD_W;
+            if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
             col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
-            if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
           }else{
             bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
@@ -6174,34 +6172,35 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       int disp_g = g; 
       int disp_b = b; 
       {
-        uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
-        int factor = SB_BFE(master_brightness,0,5);
+        uint16_t master_brightness= nds9_io_read16(nds,reg_offset+NDS_A_MASTER_BRIGHT);
         int mode = SB_BFE(master_brightness,14,2);
-        if(factor>16)factor=16;
-        if(mode==1){
-          disp_r += (63-disp_r)*factor/16;
-          disp_g += (63-disp_g)*factor/16;
-          disp_b += (63-disp_b)*factor/16;
-        }else if(mode==2){
-          disp_r -= disp_r*factor/16;
-          disp_g -= disp_g*factor/16;
-          disp_b -= disp_b*factor/16;
+        if(SB_UNLIKELY(mode)){
+          int factor = SB_BFE(master_brightness,0,5);
+          if(factor>16)factor=16;
+          if(mode==1){
+            disp_r += (63-disp_r)*factor/16;
+            disp_g += (63-disp_g)*factor/16;
+            disp_b += (63-disp_b)*factor/16;
+            if(disp_r>31)disp_r=31;
+            if(disp_g>31)disp_g=31;
+            if(disp_b>31)disp_b=31;
+          }else if(mode==2){
+            disp_r -= disp_r*factor/16;
+            disp_g -= disp_g*factor/16;
+            disp_b -= disp_b*factor/16;
+            if(disp_r<0)r=0;
+            if(disp_g<0)g=0;
+            if(disp_b<0)b=0;
+          }
         }
-        if(disp_r<0)r=0;
-        if(disp_g<0)g=0;
-        if(disp_b<0)b=0;
-
-        if(disp_r>31)disp_r=31;
-        if(disp_g>31)disp_g=31;
-        if(disp_b>31)disp_b=31;
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-      float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
+      float screen_blend_factor = 0.3*nds->ghosting_strength;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
-      framebuffer[p+0] = disp_r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
-      framebuffer[p+1] = disp_g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
-      framebuffer[p+2] = disp_b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
+      framebuffer[p+0] = disp_r*7+(framebuffer[p+0]-disp_r*7)*screen_blend_factor;
+      framebuffer[p+1] = disp_g*7+(framebuffer[p+1]-disp_g*7)*screen_blend_factor;
+      framebuffer[p+2] = disp_b*7+(framebuffer[p+2]-disp_b*7)*screen_blend_factor; 
       int backdrop_type = 5;
       uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
       
