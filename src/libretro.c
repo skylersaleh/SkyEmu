@@ -55,7 +55,7 @@ void retro_set_video_refresh(retro_video_refresh_t refresh) {
     height = SB_LCD_H;
     break;    
 
-  default:;
+  default: return;
   }
 
   int pitch = width * 4; 
