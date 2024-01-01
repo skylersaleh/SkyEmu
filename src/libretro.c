@@ -1,3 +1,5 @@
+#include "SDL2/include/SDL_joystick.h"
+#include "SDL2/include/SDL_video.h"
 #include "mutex.h"
 #include "sb_types.h"
 #include <stdio.h>
@@ -39,8 +41,9 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
 
 #include "libretro.h"
 
-retro_video_refresh_t video_refresh_cbk = NULL;
-retro_input_poll_t input_poll_ckb = NULL;
+retro_video_refresh_t video_refresh_cb = NULL;
+retro_input_poll_t input_poll_cb = NULL;
+retro_input_state_t input_state_cb = NULL;
 
 void retro_set_environment(retro_environment_t env) {
   enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -48,7 +51,7 @@ void retro_set_environment(retro_environment_t env) {
 }
 
 void retro_set_video_refresh(retro_video_refresh_t refresh) {
-  video_refresh_cbk = refresh;
+  video_refresh_cb = refresh;
 }
 
 void retro_set_audio_sample(retro_audio_sample_t _sample) {}
@@ -56,10 +59,12 @@ void retro_set_audio_sample(retro_audio_sample_t _sample) {}
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t _batch) {}
 
 void retro_set_input_poll(retro_input_poll_t poll) {
-  input_poll_ckb = poll;
+  input_poll_cb = poll;
 }
 
-void retro_set_input_state(retro_input_state_t _state) {}
+void retro_set_input_state(retro_input_state_t state) {
+  input_state_cb = state;
+}
 
 void retro_init(void) {
   lr_state.gb_state.dmg_palette[0] = 0xff;
@@ -74,6 +79,8 @@ void retro_init(void) {
   lr_state.gb_state.dmg_palette[9] = 0xcc;
   lr_state.gb_state.dmg_palette[10] = 0x66;
   lr_state.gb_state.dmg_palette[11] = 0x00;
+
+  lr_state.emu_state.render_frame = true;
 }
 
 void retro_deinit(void) {
@@ -129,8 +136,22 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
-  input_poll_ckb();
-  
+  input_poll_cb();
+
+  lr_state.emu_state.joy.inputs[SE_KEY_A] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_a);
+  lr_state.emu_state.joy.inputs[SE_KEY_B] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_b);
+  lr_state.emu_state.joy.inputs[SE_KEY_L] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_l);
+  lr_state.emu_state.joy.inputs[SE_KEY_R] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_r);
+  lr_state.emu_state.joy.inputs[SE_KEY_DOWN] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_DOWN);
+  lr_state.emu_state.joy.inputs[SE_KEY_RIGHT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RIGHT);
+  lr_state.emu_state.joy.inputs[SE_KEY_LEFT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LEFT);
+  lr_state.emu_state.joy.inputs[SE_KEY_UP] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_UP);
+  lr_state.emu_state.joy.inputs[SE_KEY_X] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_x);
+  lr_state.emu_state.joy.inputs[SE_KEY_Y] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_y);
+  lr_state.emu_state.joy.inputs[SE_KEY_SELECT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RETURN);
+  lr_state.emu_state.joy.inputs[SE_KEY_START] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_ESCAPE);
+
+    
   switch (lr_state.emu_state.system) {
   case SYSTEM_GB:
     sb_tick(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);  
@@ -146,7 +167,7 @@ void retro_run(void) {
 
     switch (lr_state.emu_state.system) {
     case SYSTEM_GB:
-      data = lr_state.scratch.gb.framebuffer;
+      data = lr_state.scratch.gb.framebuffer;      
       width = SB_LCD_W;
       height = SB_LCD_H;
       break;    
@@ -154,8 +175,8 @@ void retro_run(void) {
     default: break;
     }
 
-    int pitch = width * 4; 
-    video_refresh_cbk(data, width, height, pitch);
+    int pitch = width * 4;
+    video_refresh_cb(data, width, height, pitch);
   } while (false);
 }
 
