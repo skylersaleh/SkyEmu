@@ -5820,7 +5820,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
         for(int x=0;x<NDS_LCD_W;++x){
           uint8_t window_control = ppu->window[x];
-          if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
+          ppu->first_target_buffer[x]=backdrop_col*SB_BFE(window_control,4,1);
         }
       }
     }
@@ -5874,17 +5874,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           uint32_t col =0;         
           bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1)&&bg_type!=NDS_BG_INVALID;
           if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
-
-          bool rot_scale = bg_type!=NDS_BG_TEXT;
           uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
           int priority = SB_BFE(bgcnt,0,2);
-          int character_base = SB_BFE(bgcnt,2,4);
-          bool mosaic = SB_BFE(bgcnt,6,1);
-          bool colors = SB_BFE(bgcnt,7,1);
-          int screen_base = SB_BFE(bgcnt,8,5);
-          bool display_overflow =SB_BFE(bgcnt,13,1);
-          int screen_size = SB_BFE(bgcnt,14,2); 
-
           if(SB_UNLIKELY(enable_3d&&bg==0)){
             int p = lcd_x+lcd_y*NDS_LCD_W;
             if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
@@ -5892,6 +5883,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
           }else{
+            bool rot_scale = bg_type!=NDS_BG_TEXT;
+            int character_base = SB_BFE(bgcnt,2,4);
+            bool mosaic = SB_BFE(bgcnt,6,1);
+            bool colors = SB_BFE(bgcnt,7,1);
+            int screen_base = SB_BFE(bgcnt,8,5);
+            bool display_overflow =SB_BFE(bgcnt,13,1);
+            int screen_size = SB_BFE(bgcnt,14,2); 
+
             bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             //NDS can have an affine "bitmap" that is really a large affine tile map
@@ -6122,7 +6121,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           int write_block = SB_BFE(dispcapcnt, 16,2);
           int write_offset = SB_BFE(dispcapcnt, 18,2);
           bool source_a = SB_BFE(dispcapcnt,24,1);
-          if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
+          if(source_a){
             int p = lcd_x+lcd_y*NDS_LCD_W;
             color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
@@ -6195,7 +6194,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         }
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-      float screen_blend_factor = 0.3*nds->ghosting_strength;
+      float screen_blend_factor = nds->ghosting_strength;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
       framebuffer[p+0] = disp_r*7+(framebuffer[p+0]-disp_r*7)*screen_blend_factor;
@@ -6814,7 +6813,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   //printf("#####New Frame#####\n");
-  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f);
+  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f)*0.3;
 
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
