@@ -29,6 +29,12 @@ static struct lr_state_t {
   sb_gb_t gb_state;
 } lr_state;
 
+// SE implementations
+
+bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t* data, size_t data_size) {
+  return false;
+}
+
 // Retro Arch implementation
 
 #include "libretro.h"
@@ -86,14 +92,6 @@ void retro_get_system_info(struct retro_system_info* info){
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-  // info->geometry = (struct retro_game_geometry){
-  //   .aspect_ratio = 1.0, 
-  //   .base_height = lr_state.screen_height_max , 
-  //   .base_width = lr_state.screen_width_max,
-  //   .max_height = lr_state.screen_height_max, 
-  //   .max_width = lr_state.screen_width_max
-  // };
-  // info->timing = (struct retro_system_timing){.fps = 60, .sample_rate = 60};
   switch (lr_state.emu_state.system) {
   case SYSTEM_GB:
     info->geometry.aspect_ratio = 0.0;
