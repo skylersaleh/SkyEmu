@@ -834,7 +834,7 @@ typedef struct{
   uint8_t bios[16*1024];
   FILE * log_cmp_file; 
   bool skip_bios_intro;
-  char save_file_path[SE_FILE_PATH_SIZE];  
+  char save_file_path[SB_FILE_PATH_SIZE];  
 }gba_scratch_t;
 static void gba_process_audio_writes(gba_t* gba);
 static uint8_t gba_audio_process_byte_write(gba_t *gba, uint32_t addr, uint8_t value);
