@@ -5882,6 +5882,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+            // Treat 3d as semitransparent (needed for Soul Silver particle effects)
+            col|=1<<16;
           }else{
             bool rot_scale = bg_type!=NDS_BG_TEXT;
             int character_base = SB_BFE(bgcnt,2,4);
