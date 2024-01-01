@@ -1981,7 +1981,6 @@ typedef struct{
   bool last_hblank;
   bool last_vcmp;
   bool last_vcmp7;
-  int last_lcd_y; 
   struct {
     int32_t internal_bgx;
     int32_t internal_bgy;
@@ -2054,9 +2053,7 @@ typedef struct{
   uint16_t tx_reg; 
 }nds_touch_t; 
 typedef struct{
-  double current_sim_time;
-  double current_sample_generated_time;
-  uint32_t cycles_since_tick;
+  uint64_t current_sample_generated_time;
   struct{
     uint32_t timer;
     uint32_t sample;
@@ -2260,7 +2257,7 @@ static void nds_compute_timers(nds_t* nds);
 static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
 static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size);
-
+static FORCE_INLINE void nds_update_gx_irq(nds_t* nds);
 
 //Returns offset into savestate where bess info can be found
 static uint32_t nds_save_best_effort_state(nds_t* nds){
@@ -2476,9 +2473,6 @@ static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address,
   return data; 
 }
 static FORCE_INLINE uint32_t nds_apply_vram_mem_op(nds_t *nds,uint32_t address, uint32_t data, int transaction_type){
-  //1Byte writes are ignored from the ARM9
-  const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
-  if((transaction_type&ignore_write_mask)==ignore_write_mask)return 0;
 
   int lookup_addr = SB_BFE(address,14,10)*16+(transaction_type&0xf);
   uint64_t key = nds->mem.vram_translation_cache[lookup_addr];
@@ -2655,41 +2649,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&(NDS_MEM_ARM9))||(transaction_type&(NDS_MEM_WRITE)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
-      /*else{
-        bool found = false; 
-        bool code = (transaction_type&NDS_MEM_CODE);
-        static uint32_t dcache[4*1024/32];
-        static uint32_t icache[8*1024/32];
-        uint32_t * cache = code?icache:dcache;
-        uint32_t hash =    code? 8*1024/4/32- 1: 4*1024/4/32-1;
-        uint32_t key = addr/32;
-        if((transaction_type&NDS_MEM_WRITE)){
-          if((addr/16)&1)key|=0x10000000;
-          else key|=0x20000000;
-        }
-        uint32_t cache_addr = (key&hash);
-        uint32_t shift_val = key; 
-        uint32_t evict_key = cache[cache_addr*4+3]>>28;
-        for(int i=0;i<4;++i){
-          uint32_t t = cache[cache_addr*4+i];
-          cache[cache_addr*4+i] = shift_val;
-          shift_val = t; 
-          if(((key^shift_val)&0x0fffffff)==0){
-            cache[cache_addr*4+0]|=shift_val&0xf0000000;
-            found=true;
-            break;
-          }
-        }
-        if(!(transaction_type&NDS_MEM_WRITE)){
-          if(!found){
-            int seq_words = 4; 
-            if(evict_key>2)seq_words=8;
-            if(code)nds->mem.slow_bus_cycles+=8;
-            else nds->mem.slow_bus_cycles+=8+seq_words;
-          }
-        }
-      }*/
+      if(!(transaction_type&(NDS_MEM_ARM9)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -2727,7 +2687,11 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
       nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
-      *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
+        //1Byte writes are ignored from the ARM9
+      const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B);
+      if((transaction_type&ignore_write_mask)!=ignore_write_mask){
+        *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
+      }
       break;
     case 0x7: 
       nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
@@ -2757,7 +2721,41 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, ui
       return *ret; 
     }
   }
-  return nds9_process_memory_transaction(nds,addr,data,transaction_type);
+  //int old_slow_bus_cycles = nds->mem.slow_bus_cycles;
+  uint32_t ret_data = nds9_process_memory_transaction(nds,addr,data,transaction_type);
+  /*int bus = addr>>24;
+  if((bus==0x02&& SB_BFE(addr,0,24)<0x00800000)||(bus==0xff&& SB_BFE(addr,0,24)<0x00008000)){
+    if(!(transaction_type&NDS_MEM_WRITE)){
+      bool found = false; 
+      bool code = (transaction_type&NDS_MEM_CODE);
+      static uint32_t dcache[4*1024/32];
+      static uint32_t icache[8*1024/32];
+      uint32_t * cache = code?icache:dcache;
+      uint32_t hash =    code? (8*1024)/128- 1: (4*1024)/128-1;
+      uint32_t key = addr/32;
+      uint32_t cache_addr = (key&hash)*4;
+      uint32_t shift_val = key; 
+      for(int i=0;i<4;++i){
+        uint32_t t = cache[cache_addr+i];
+        cache[cache_addr+i] = shift_val;
+        shift_val = t; 
+        if(key==shift_val){
+          found=true;
+          break;
+        }
+      }
+      if(!found){
+        int seq_words = 4; 
+        if(code)nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
+        else nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
+      }else{
+        nds->mem.slow_bus_cycles= old_slow_bus_cycles;
+      }
+    }else{
+      nds->mem.slow_bus_cycles= old_slow_bus_cycles;
+    }
+  }*/
+  return ret_data; 
 }
 
 static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
@@ -3866,7 +3864,7 @@ static void nds_gpu_swap_buffers(nds_t*nds){
 
     nds->framebuffer_3d_depth[i]=10e24;
   }
-  printf("Rendered %d verts and %d polys\n",nds->gpu.curr_vert,nds->gpu.poly_ram_offset);
+  //printf("Rendered %d verts and %d polys\n",nds->gpu.curr_vert,nds->gpu.poly_ram_offset);
   nds->gpu.curr_vert = 0; 
   nds->gpu.poly_ram_offset=0;
 }
@@ -4126,8 +4124,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   float max_p[3] = {-1,-1,-1};
   
   for(int i=0;i<3;++i){
-    SE_RPT3 if(min_p[r]>v[i]->clip_pos[r])min_p[r]=v[i]->clip_pos[r];
-    SE_RPT3 if(max_p[r]<v[i]->clip_pos[r])max_p[r]=v[i]->clip_pos[r];
+    SE_RPT3 min_p[r]=fminf(v[i]->clip_pos[r],min_p[r]);
+    SE_RPT3 max_p[r]=fmaxf(v[i]->clip_pos[r],max_p[r]);
   }
 
   SE_RPT3 if(min_p[r]<-1)min_p[r]=-1;
@@ -4237,47 +4235,54 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       SE_RPT2 uv[r]=v[0]->tex[r]+tex_i[r]*bary[1]+tex_j[r]*bary[2];
 
       float tex_color[4]={1,1,1,1};
-      bool discard = false;
-      if(tex_map)discard|=nds_sample_texture(nds, tex_color, uv);
-      if(discard)continue;
+      if(tex_map){
+        bool discard=nds_sample_texture(nds, tex_color, uv);
+        if(discard)continue;
+      }
 
       float output_col[4];
       float col_v[4]; 
       SE_RPT3 col_v[r]=(v[0]->color[r]+color_i[r]*bary[1]+color_j[r]*bary[2])/255.;
       col_v[3]= alpha/31.;
 
-      if(polygon_mode==0){
-        SE_RPT4 output_col[r]=tex_color[r]*col_v[r];
-      }else if(polygon_mode==1){ 
-        //Decal Mode
-        SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
-        output_col[3]=col_v[3];
-      }else if(polygon_mode==2){
-        int toon_highlight_entry = floor(col_v[0]*255/8.); 
-        //printf("toon entry: %d\n",toon_highlight_entry);
-        uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-        col_v[0]= SB_BFE(color,0,5)/31.;
-        col_v[1]= SB_BFE(color,5,5)/31.;
-        col_v[2]= SB_BFE(color,10,5)/31.;
-        if(shade_mode){ //Highlight shading
-          SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+col_v[r];
-        }else{ //Toon shading
+      switch(polygon_mode){
+        case 0:
+          SE_RPT4 output_col[r]=tex_color[r]*col_v[r];
+          break;
+        case 1: //Decal Mode
+          SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
+          output_col[3]=col_v[3];
+          break;
+        case 2: //Toon mode
+        {
+          int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
+          //printf("toon entry: %d\n",toon_highlight_entry);
+          uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+          col_v[0]= SB_BFE(color,0,5)/31.;
+          col_v[1]= SB_BFE(color,5,5)/31.;
+          col_v[2]= SB_BFE(color,10,5)/31.;
           SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
-        }
-        output_col[3]= col_v[3]*tex_color[3];
+          // Highlight shading
+          if(shade_mode)SE_RPT3 output_col[r]+= col_v[r];
+          output_col[3]= col_v[3]*tex_color[3];
+        }break;
       }
-      SE_RPT4 if(output_col[r]>1.0)output_col[r]=1.;
-      SE_RPT4 if(output_col[r]<0.0)output_col[r]=0.;
-      float alpha_blend_factor = alpha_blend? output_col[3]: 1; 
+      SE_RPT4 output_col[r]=fminf(fmaxf(output_col[r],0.f),1.0f);
       if(alpha_test){
         int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
         if(output_col[3]<=alpha_test_ref/31.)continue; 
       }
-      if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
-      for(int c=0;c<3;++c){
-        nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
+      if(alpha_blend){
+        float alpha_blend_factor = output_col[3]; 
+        if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
+        for(int c=0;c<3;++c){
+          nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
+        }
+        if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
+      }else{
+        SE_RPT3 nds->framebuffer_3d[p*4+r]=output_col[r]*255;
+        nds->framebuffer_3d[p*4+3]=255;
       }
-      if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
     }
     tri_not_rendered&=!line_rendered;
   }
@@ -4600,39 +4605,33 @@ static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t n
   }
   SE_RPT3 gpu->curr_color[r]= fmax(0.0,fmin(255.0,color[r]*255));
 }
+static FORCE_INLINE void nds_update_gx_irq(nds_t* nds){
+  int sz = nds_gxfifo_size(nds);
+  uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
+  int irq_mode = SB_BFE(gxstat,30,2);
+  if(irq_mode){
+    bool less_than_half_full = sz<128;
+    bool empty = sz<=0;
+    uint32_t if9 = nds9_io_read32(nds,NDS9_IF);
+    switch(irq_mode){
+      case 1: if(less_than_half_full)if9|=(1<<NDS9_INT_GX_FIFO); break;
+      case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
+    }
+    nds9_io_store32(nds,NDS9_IF,if9);
+  }
+}
 static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   nds_gpu_t* gpu = &nds->gpu;
   if(gpu->cmd_busy_cycles>0){gpu->cmd_busy_cycles--;return;}
   if(gpu->pending_swap){nds_gpu_swap_buffers(nds);gpu->pending_swap=false;}
   int sz = nds_gxfifo_size(nds);
   if(sz<=NDS_GX_DMA_THRESHOLD){nds->activate_dmas|=nds->dma_wait_gx;}
-  uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
-  int irq_mode = SB_BFE(gxstat,30,2);
-  bool less_than_half_full = sz<128;
-  bool empty = sz<=0;
-  uint32_t if9 = nds9_io_read32(nds,NDS9_IF);
-  switch(irq_mode){
-    case 1: if(less_than_half_full)if9|=(1<<NDS9_INT_GX_FIFO); break;
-    case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
-  }
-  nds9_io_store32(nds,NDS9_IF,if9);
-  gxstat&= 0xc0000000;
-  gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
-  gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
-  if(gpu->box_test_result)gxstat|=(1<<1);//Box test
-  if(gpu->matrix_stack_error)gxstat|=1<<15;
-  gxstat|= (sz&0x1ff)<<16;
-  if(less_than_half_full)gxstat|= 1<<25; //Less than half full
-  if(empty)gxstat|= 1<<26;  //Empty
+  if(SB_LIKELY(sz==0))return; 
   uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
   uint32_t cmd_params = nds_gpu_cmd_params(cmd);
-  if(sz!=0&&sz>=cmd_params)gxstat|= 1<<27;//is busy
-
-  if(nds->gpu.test_busy>0)gxstat|= 1<<0;
-
-  nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
-  if(SB_LIKELY(sz==0||sz<cmd_params))return; 
+  if(SB_LIKELY(sz<cmd_params))return; 
   if(cmd_params<1)cmd_params=1;
+  nds_update_gx_irq(nds);
 
   int32_t p[NDS_GPU_MAX_PARAM];
   for(int i=0;i<cmd_params;++i)p[i]=gpu->fifo_data[(gpu->fifo_read_ptr++)%NDS_GXFIFO_STORAGE];
@@ -4644,14 +4643,16 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   float fixed_to_float = 1.0/(1<<12);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
 
-  if(SB_UNLIKELY(nds->gx_log&&cmd)){
-    fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
-    fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
-    fprintf(nds->gx_log,"proj: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
-    fprintf(nds->gx_log,"\nmv: ");
-    for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
-    fprintf(nds->gx_log,"\n");
+  if(SB_UNLIKELY(nds->gx_log)){
+    if(cmd){
+      fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
+      fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
+      fprintf(nds->gx_log,"proj: ");
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
+      fprintf(nds->gx_log,"\nmv: ");
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
+      fprintf(nds->gx_log,"\n");
+    }
   }
   
 
@@ -5054,15 +5055,15 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
   uint32_t word_mask = nds_word_mask(addr,transaction_type);
   uint32_t baddr =addr;
   addr&=~3;
-  if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7;
   /*if(addr!=0x04000208&&addr!=0x04000301&&addr!=0x04000138
     &&addr!= 0x040001c0 && addr!=0x040001c2)printf("MMIO Read: %08x\n",addr);*/
 
   //if(addr>=0x4000620&&addr<0x04000800&&!(transaction_type&NDS_MEM_DEBUG))printf("MMIO Read: %08x\n",addr);
 
+  if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   //Reading ClipMTX
-  if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
+  else if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
     float clipmtx[16];
     for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix[i];
     nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix);
@@ -5081,6 +5082,7 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
         mmio&=~data;
         nds_io_store32(nds,cpu,addr,mmio);
         nds_tick_ipc_fifo(nds);
+        nds_update_gx_irq(nds);
         return false; 
       }
       break;
@@ -5143,6 +5145,27 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
       nds9_io_store32(nds,NDS9_RDLINES_COUNT,46);
       break;
     }
+    case NDS9_GXSTAT:{
+      if(cpu!=NDS_ARM9)return true; 
+      int sz = nds_gxfifo_size(nds);
+      nds_gpu_t* gpu = &nds->gpu;
+      uint32_t gxstat = nds9_io_read32(nds,NDS9_GXSTAT);
+      bool less_than_half_full = sz<128;
+      bool empty = sz<=0;     
+      gxstat&= 0xc0000000;
+      gxstat|= (gpu->mv_matrix_stack_ptr&0x1f)<<8;//8-12
+      gxstat|= (gpu->proj_matrix_stack_ptr&0x1)<<13;
+      if(gpu->box_test_result)gxstat|=(1<<1);//Box test
+      if(gpu->matrix_stack_error)gxstat|=1<<15;
+      gxstat|= (sz&0x1ff)<<16;
+      if(less_than_half_full)gxstat|= 1<<25; //Less than half full
+      if(empty)gxstat|= 1<<26;  //Empty
+      uint8_t cmd = gpu->fifo_cmd[gpu->fifo_read_ptr%NDS_GXFIFO_STORAGE];
+      uint32_t cmd_params = nds_gpu_cmd_params(cmd);
+      if(sz!=0&&sz>=cmd_params)gxstat|= 1<<27;//is busy
+      if(nds->gpu.test_busy>0)gxstat|= 1<<0;
+      nds9_io_store32(nds,NDS9_GXSTAT,gxstat);
+    }break;
     case NDS9_RAM_COUNT:
       if(cpu!=NDS_ARM9||(transaction_type&NDS_MEM_DEBUG))return true;
       nds9_io_store16(nds,NDS9_RAM_COUNT+2,nds->gpu.curr_vert);
@@ -5272,15 +5295,14 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   int cpu = (transaction_type&NDS_MEM_ARM9)? NDS_ARM9: NDS_ARM7; 
 
   if(addr>=GBA_DMA0SAD&&addr<=GBA_DMA3CNT_H)nds->activate_dmas=true;
-  if(addr>=0x4000440&& addr<0x40005CC &&cpu==NDS_ARM9){
+  else if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
+  else if(addr>=0x4000440&& addr<0x40005CC &&cpu==NDS_ARM9){
     nds_gxfifo_push(nds, (addr-0x4000400)/4, nds_align_data(baddr,data,transaction_type));
-  } 
-  if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
+  }else if(addr>=0x4000400&& addr<0x4000440 &&cpu==NDS_ARM9){
       nds_gpu_write_packed_cmd(nds,mmio);
-  } 
-  if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
-  switch(addr){
+  }else if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
 
+  switch(addr){
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
@@ -5578,12 +5600,11 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             ppu->aff[aff].internal_bgx = (ppu->aff[aff].internal_bgx<<4)>>4;
             ppu->aff[aff].internal_bgy = (ppu->aff[aff].internal_bgy<<4)>>4;
           }
+          uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
+          nds->display_flip = SB_BFE(powcnt1,15,1);
         }
-        uint16_t powcnt1 = nds9_io_read16(nds,NDS9_POWCNT1);
-        nds->display_flip = SB_BFE(powcnt1,15,1);
         nds->activate_dmas|=nds->dma_wait_ppu;
       }
-      ppu->last_lcd_y  = lcd_y;
     }
     uint32_t dispcnt = nds9_io_read32(nds, GBA_DISPCNT+reg_offset);
     int display_mode = SB_BFE(dispcnt,16,2);
@@ -5866,10 +5887,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
 
           if(SB_UNLIKELY(enable_3d&&bg==0)){
             int p = lcd_x+lcd_y*NDS_LCD_W;
+            if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
             col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
-            if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
           }else{
             bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
@@ -5933,19 +5954,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             if(bitmap_mode){
               screen_base_addr=screen_base*16*1024;
               int p = bg_x+(bg_y)*screen_size_x;
-              if(bitmap_mode){
-                bool direct_color = SB_BFE(bgcnt,2,1);
-                if(direct_color){
-                  col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
-                  if(!SB_BFE(col,15,1))continue;
-                }
-                else{
-                  int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
-                  if(pallete_id==0)continue;
-                  col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
-                }
-              }else{
+              bool direct_color = SB_BFE(bgcnt,2,1);
+              if(direct_color){
                 col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+                if(!SB_BFE(col,15,1))continue;
+              }else{
+                int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
+                if(pallete_id==0)continue;
+                col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
               }
             }else{
               bg_x = bg_x&(screen_size_x-1);
@@ -6156,36 +6172,35 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       int disp_g = g; 
       int disp_b = b; 
       {
-        uint16_t master_brightness= nds9_io_read16(nds,ppu_id==0?NDS_A_MASTER_BRIGHT:NDS9_B_MASTER_BRIGHT);
-        int factor = SB_BFE(master_brightness,0,5);
+        uint16_t master_brightness= nds9_io_read16(nds,reg_offset+NDS_A_MASTER_BRIGHT);
         int mode = SB_BFE(master_brightness,14,2);
-        if(factor>16)factor=16;
-        if(mode==1){
-          disp_r += (63-disp_r)*factor/16;
-          disp_g += (63-disp_g)*factor/16;
-          disp_b += (63-disp_b)*factor/16;
-        }else if(mode==2){
-          disp_r -= disp_r*factor/16;
-          disp_g -= disp_g*factor/16;
-          disp_b -= disp_b*factor/16;
+        if(SB_UNLIKELY(mode)){
+          int factor = SB_BFE(master_brightness,0,5);
+          if(factor>16)factor=16;
+          if(mode==1){
+            disp_r += (63-disp_r)*factor/16;
+            disp_g += (63-disp_g)*factor/16;
+            disp_b += (63-disp_b)*factor/16;
+            if(disp_r>31)disp_r=31;
+            if(disp_g>31)disp_g=31;
+            if(disp_b>31)disp_b=31;
+          }else if(mode==2){
+            disp_r -= disp_r*factor/16;
+            disp_g -= disp_g*factor/16;
+            disp_b -= disp_b*factor/16;
+            if(disp_r<0)r=0;
+            if(disp_g<0)g=0;
+            if(disp_b<0)b=0;
+          }
         }
-        if(disp_r<0)r=0;
-        if(disp_g<0)g=0;
-        if(disp_b<0)b=0;
-
-        if(disp_r>31)disp_r=31;
-        if(disp_g>31)disp_g=31;
-        if(disp_b>31)disp_b=31;
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-      float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
-      if(screen_blend_factor>1.0)screen_blend_factor=1;
-      if(screen_blend_factor<0.0)screen_blend_factor=0;
+      float screen_blend_factor = 0.3*nds->ghosting_strength;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
-      framebuffer[p+0] = disp_r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
-      framebuffer[p+1] = disp_g*7*screen_blend_factor+framebuffer[p+1]*(1.0-screen_blend_factor);
-      framebuffer[p+2] = disp_b*7*screen_blend_factor+framebuffer[p+2]*(1.0-screen_blend_factor); 
+      framebuffer[p+0] = disp_r*7+(framebuffer[p+0]-disp_r*7)*screen_blend_factor;
+      framebuffer[p+1] = disp_g*7+(framebuffer[p+1]-disp_g*7)*screen_blend_factor;
+      framebuffer[p+2] = disp_b*7+(framebuffer[p+2]-disp_b*7)*screen_blend_factor; 
       int backdrop_type = 5;
       uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
       
@@ -6501,7 +6516,7 @@ static void nds_compute_timers(nds_t* nds){
 
   int ticks = nds->current_clock-nds->last_timer_clock; 
   nds->last_timer_clock=nds->current_clock;
-  int timer_ticks_before_event = 32768; 
+  int timer_ticks_before_event = 1024*1024*1024; 
   for(int cpu=0;cpu<2;++cpu){
     int last_timer_overflow = 0; 
     for(int t=0;t<4;++t){ 
@@ -6514,7 +6529,7 @@ static void nds_compute_timers(nds_t* nds){
         bool count_up     = SB_BFE(tm_cnt_h,2,1)&&t!=0;
         bool irq_en       = SB_BFE(tm_cnt_h,6,1);
         uint16_t value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
-        if(enable!=timer->last_enable&&enable){
+        if(enable!=timer->last_enable){
           timer->startup_delay=2;
           value = timer->reload_value;
           nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
@@ -6599,7 +6614,7 @@ static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float
   return y;
 }
 static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
-  if(nds->active_if_pipe_stages){
+  if(SB_UNLIKELY(nds->active_if_pipe_stages)){
     uint32_t if_bit = nds->nds9_pipelined_if[0];
     if(if_bit){
       uint32_t if_val = nds9_io_read32(nds,NDS9_IF);
@@ -6642,20 +6657,16 @@ void nds_tick_rtc(nds_t*nds){
   nds->rtc.year  = nds_bin_to_bcd(tm->tm_year%100);
   nds->rtc.day_of_week=nds_bin_to_bcd(tm->tm_wday);
 }
-static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double delta_time, int cycles){
+static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
 
   nds_audio_t* audio = &nds->audio;
-  if(delta_time>1.0/60.)delta_time = 1.0/60.;
-  audio->current_sim_time +=delta_time;
-  float sample_delta_t = 1.0/SE_AUDIO_SAMPLE_RATE;
+  uint64_t current_sim_time =nds->current_clock*64;
 
-  while(audio->current_sample_generated_time < audio->current_sim_time){
-    uint64_t current_cycles = audio->current_sample_generated_time*33513982;
+  while(audio->current_sample_generated_time < current_sim_time){
+    uint64_t prev_cycles = audio->current_sample_generated_time;
+    audio->current_sample_generated_time+=33513982*64/SE_AUDIO_SAMPLE_RATE;
+    uint64_t cycles_since_tick=(audio->current_sample_generated_time-prev_cycles)/64; 
 
-    audio->current_sample_generated_time+=sample_delta_t;
-    uint64_t next_cycles = audio->current_sample_generated_time*33513982;
-    audio->cycles_since_tick=next_cycles-current_cycles; 
-    
     const float lowpass_coef = 0.999;
 
     float l = 0, r = 0; 
@@ -6707,7 +6718,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         r+=v*pan/128.;
         l+=v*(128-pan)/128.;
       }
-      audio->channel[c].timer+=audio->cycles_since_tick;
+      audio->channel[c].timer+=cycles_since_tick;
       while(audio->channel[c].timer>0x1ffff){
         audio->channel[c].timer-=0x20000;
         audio->channel[c].timer+=tmr;
@@ -6778,6 +6789,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
         audio->channel[c].sample+=1;
       }
     }
+    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
     // Clipping
     if(l>1.0)l=1;
@@ -6787,7 +6799,6 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     l*=0.5;
     r*=0.5;
 
-    if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
@@ -6795,17 +6806,15 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu, double de
     emu->mix_l_volume = emu->mix_l_volume*lowpass_coef + fabs(l)*(1.0-lowpass_coef);
     emu->mix_r_volume = emu->mix_r_volume*lowpass_coef + fabs(r)*(1.0-lowpass_coef); 
 
-
     emu->audio_ring_buff.data[write_entry0] = l*32760;
     emu->audio_ring_buff.data[write_entry1] = r*32760;
-    audio->cycles_since_tick=0;
   }
 }
 
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   //printf("#####New Frame#####\n");
-  nds->ghosting_strength = emu->screen_ghosting_strength;
+  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f);
 
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -6855,17 +6864,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
-      if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
-        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-        if(int7_if){
-          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-          int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
-        }
-        if(SB_UNLIKELY(nds->arm7.registers[PC]== emu->pc_breakpoint))nds->arm7.trigger_breakpoint=true;
-        else arm7_exec_instruction(&nds->arm7);
-      }
       if(SB_LIKELY(!nds->dma_processed[1])){
         uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
         if(int9_if){
@@ -6874,15 +6872,21 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
         }
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
-          if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
-          else{
-            nds->arm9.i_cycles=0;
-            arm9_exec_instruction(&nds->arm9);
-            if(SB_UNLIKELY(nds->arm9.registers[PC]== emu->pc_breakpoint))nds->arm9.trigger_breakpoint=true;
-            else if(!nds->arm9.i_cycles)arm9_exec_instruction(&nds->arm9);
-            nds->mem.slow_bus_cycles+=nds->arm9.i_cycles/2;
-          }
+          nds->arm9.i_cycles=0;
+          arm9_exec_instruction(&nds->arm9);
+          if(!nds->arm9.i_cycles)arm9_exec_instruction(&nds->arm9);
+          nds->mem.slow_bus_cycles+=nds->arm9.i_cycles/2;
         }
+      }
+      if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
+        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+        if(int7_if){
+          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
+          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
+          int7_if&=ie;
+          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+        }
+        arm7_exec_instruction(&nds->arm7);
       }
       if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
         emu->run_mode = SB_MODE_PAUSE;
@@ -6891,18 +6895,17 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }      
-    int ticks = 1;
-    if(nds->mem.slow_bus_cycles){
-      ticks = nds->mem.slow_bus_cycles;
-      nds->mem.slow_bus_cycles = 0; 
-    }
+    int ticks = (nds->mem.slow_bus_cycles==0)+nds->mem.slow_bus_cycles;
+    nds->mem.slow_bus_cycles = 0; 
+    
     while(ticks){
       int ppu_fast_forward = nds->ppu_fast_forward_ticks;
       if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
       int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(SB_LIKELY(fast_forward_ticks)){
-        if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks&&!gx_fifo_full))fast_forward_ticks=ticks;
+        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full))ticks=fast_forward_ticks;
+        else if(fast_forward_ticks>ticks)fast_forward_ticks=ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(SB_UNLIKELY(nds->active_if_pipe_stages)){
           for(int i=0;i<fast_forward_ticks&&nds->active_if_pipe_stages;++i)nds_tick_interrupts(nds);
@@ -6913,19 +6916,15 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         nds_tick_gx(nds);
         nds->current_clock+=fast_forward_ticks;
         ticks =ticks<=fast_forward_ticks?0:ticks-fast_forward_ticks;
-      }
-      int audio_ticks = fast_forward_ticks+(ticks!=0);
-      for(int i=0;i<audio_ticks;++i){
-        double delta_t = ((double)1)/(33513982);
-        nds_tick_audio(nds, emu,delta_t,1);
-      }
+      }      
       if(SB_UNLIKELY(ticks)){
-        nds->current_clock+=1;
+        nds->current_clock++;
         nds_tick_interrupts(nds);
         nds_tick_timers(nds);
         nds_tick_ppu(nds,emu->render_frame);
+        nds_tick_audio(nds, emu);
         nds_tick_gx(nds);
-        ticks-=1;
+        ticks--;
       }
     }
   }
@@ -6956,6 +6955,35 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     nds->mem.dtcm_load_mode= SB_BFE(data, 17,1); 
     nds->mem.itcm_enable   = SB_BFE(data, 18,1); 
     nds->mem.itcm_load_mode= SB_BFE(data, 19,1); 
+    bool icache_enable = SB_BFE(data,12,1);
+    bool dcache_enable = SB_BFE(data,2,1);
+    bool cache_policy = SB_BFE(data,14,1);
+    printf("C1,C0,0 write I$: %d D$: %d policy:%d\n",icache_enable, dcache_enable,cache_policy);
+  }else if(Cn==2&&Cm==0){
+    printf("Cache ability for cache %d:",Cp, data);
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1))printf("R%d,",i);
+    printf("\n");
+  }else if(Cn==3&&Cm==0){
+    printf("Cache write behavior cache %d Write Through: ",Cp, data);
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==0)printf("R%d,",i);
+    printf(" Write Back: ");
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==1)printf("R%d,",i);
+    printf("\n");
+  }else if(Cn==3&&Cm==0&&(Cp==0||Cp==1)){
+    printf("Access permissions for cache %d ",Cp);
+    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*2,2));
+    printf("\n");
+  }else if(Cn==5&&Cm==0&&(Cp==2||Cp==3)){
+    printf("Extended Access permissions for cache %d ",Cp-2);
+    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*4,4));
+    printf("\n");
+  }else if(Cn==6){
+    int region = Cm; 
+    int cache = Cp; 
+    bool enable = SB_BFE(data, 0,1);
+    uint32_t size = 2<<SB_BFE(data,1,5);
+    uint32_t base = SB_BFE(data,12,20)*4096;
+    printf("Protection region:%d for cache %d @ base: 0x%08x size: 0x%08x enable:%d\n",region,cache,base,size,enable);
   }else if(Cn==9&&Cm==1){
     int size = SB_BFE(data,1,5);
     int base = SB_BFE(data,12,20);
@@ -6971,6 +6999,8 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
       nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
       printf("ITCM Start:0x%08x End: 0x%08x\n",nds->mem.itcm_start_address,nds->mem.itcm_end_address);
     }
+  }else if(Cn==9&&Cm==0){
+    printf("Cache lock down (%d) :%x\n",Cp, data);
   }else if(Cn==7){
     int size = SB_BFE(data,1,5);
     int base = SB_BFE(data,12,20);
