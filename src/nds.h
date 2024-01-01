@@ -5820,7 +5820,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
         for(int x=0;x<NDS_LCD_W;++x){
           uint8_t window_control = ppu->window[x];
-          ppu->first_target_buffer[x]=backdrop_col*SB_BFE(window_control,4,1);
+          if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;  
         }
       }
     }
