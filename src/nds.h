@@ -6288,6 +6288,9 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
     scr_y2 = tsc_data[11];
   }
   if(is_touched){
+    // Prevent divide by zero on NULL calibration data
+    if(scr_x2==scr_x1)scr_x2++;
+    if(scr_y2==scr_y1)scr_y1++;
     nds->touch.x_reg = ((x - scr_x1 + 1) * (adc_x2 - adc_x1) / (scr_x2 - scr_x1) + adc_x1)<<3;
     nds->touch.y_reg = ((y - scr_y1 + 1) * (adc_y2 - adc_y1) / (scr_y2 - scr_y1) + adc_y1)<<3;
   }else{
