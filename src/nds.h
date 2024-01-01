@@ -6970,6 +6970,20 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     printf("Cache ability for cache %d:",Cp, data);
     for(int i=0;i<8;++i)if(SB_BFE(data,i,1))printf("R%d,",i);
     printf("\n");
+  }else if(Cn==3&&Cm==0){
+    printf("Cache write behavior cache %d Write Through: ",Cp, data);
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==0)printf("R%d,",i);
+    printf(" Write Back: ");
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==1)printf("R%d,",i);
+    printf("\n");
+  }else if(Cn==3&&Cm==0&&(Cp==0||Cp==1)){
+    printf("Access permissions for cache %d ",Cp);
+    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*2,2));
+    printf("\n");
+  }else if(Cn==5&&Cm==0&&(Cp==2||Cp==3)){
+    printf("Extended Access permissions for cache %d ",Cp-2);
+    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*4,4));
+    printf("\n");
   }else if(Cn==6){
     int region = Cm; 
     int cache = Cp; 
