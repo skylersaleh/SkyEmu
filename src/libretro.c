@@ -39,38 +39,42 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
 
 #include "libretro.h"
 
+retro_video_refresh_t video_refresh_cbk = NULL;
+retro_input_poll_t input_poll_ckb = NULL;
+
 void retro_set_environment(retro_environment_t env) {
   enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
   env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_format);
 }
 
 void retro_set_video_refresh(retro_video_refresh_t refresh) {
-  void* data;
-  int width, height;
-
-  switch (lr_state.emu_state.system) {
-  case SYSTEM_GB:
-    data = lr_state.scratch.gb.framebuffer;
-    width = SB_LCD_W;
-    height = SB_LCD_H;
-    break;    
-
-  default: return;
-  }
-
-  int pitch = width * 4; 
-  refresh(data, width, height, pitch);
+  video_refresh_cbk = refresh;
 }
 
 void retro_set_audio_sample(retro_audio_sample_t _sample) {}
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t _batch) {}
 
-void retro_set_input_poll(retro_input_poll_t _poll) {}
+void retro_set_input_poll(retro_input_poll_t poll) {
+  input_poll_ckb = poll;
+}
 
 void retro_set_input_state(retro_input_state_t _state) {}
 
-void retro_init(void) {}
+void retro_init(void) {
+  lr_state.gb_state.dmg_palette[0] = 0xff;
+  lr_state.gb_state.dmg_palette[1] = 0xcc;
+  lr_state.gb_state.dmg_palette[2] = 0x66;
+  lr_state.gb_state.dmg_palette[3] = 0x00;
+  lr_state.gb_state.dmg_palette[4] = 0xff;
+  lr_state.gb_state.dmg_palette[5] = 0xcc;
+  lr_state.gb_state.dmg_palette[6] = 0x66;
+  lr_state.gb_state.dmg_palette[7] = 0x00;
+  lr_state.gb_state.dmg_palette[8] = 0xff;
+  lr_state.gb_state.dmg_palette[9] = 0xcc;
+  lr_state.gb_state.dmg_palette[10] = 0x66;
+  lr_state.gb_state.dmg_palette[11] = 0x00;
+}
 
 void retro_deinit(void) {
   if (lr_state.emu_state.rom_loaded) {
@@ -125,6 +129,8 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+  input_poll_ckb();
+  
   switch (lr_state.emu_state.system) {
   case SYSTEM_GB:
     sb_tick(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);  
@@ -133,6 +139,24 @@ void retro_run(void) {
   case SYSTEM_NONE:
   default:;
   }
+
+  do {
+    void* data;
+    int width, height;
+
+    switch (lr_state.emu_state.system) {
+    case SYSTEM_GB:
+      data = lr_state.scratch.gb.framebuffer;
+      width = SB_LCD_W;
+      height = SB_LCD_H;
+      break;    
+
+    default: break;
+    }
+
+    int pitch = width * 4; 
+    video_refresh_cbk(data, width, height, pitch);
+  } while (false);
 }
 
 size_t retro_serialize_size(void) {
