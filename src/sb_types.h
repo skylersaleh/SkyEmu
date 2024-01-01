@@ -23,8 +23,6 @@
   #define FORCE_INLINE inline
 #endif
 
-#include "se_common.h"
-
 // Macro for hinting that an expression is likely to be false.
 #if defined(__GNUC__) || defined(__clang__)
 #define SB_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -37,6 +35,7 @@
 #define SB_LIKELY(x) (x)
 #endif  // defined(COMPILER_GCC)
 
+#define SB_FILE_PATH_SIZE 1024
 #define MAX_CARTRIDGE_SIZE 8 * 1024 * 1024
 #define MAX_CARTRIDGE_RAM 128 * 1024
 #define SB_U16_LO(A) ((A)&0xff)
@@ -68,6 +67,41 @@
 #define SB_GB 0 
 #define SB_GBC 1 
 #define SB_GBC_GB_BACK_COMPAT 2
+
+#define SE_BIND_KEYBOARD 0
+#define SE_BIND_KEY 1
+#define SE_BIND_ANALOG 2
+#define SE_KEY_A 0 
+#define SE_KEY_B 1 
+#define SE_KEY_X 2 
+#define SE_KEY_Y 3 
+#define SE_KEY_UP 4
+#define SE_KEY_DOWN 5
+#define SE_KEY_LEFT 6
+#define SE_KEY_RIGHT 7
+#define SE_KEY_L 8
+#define SE_KEY_R 9
+#define SE_KEY_START 10
+#define SE_KEY_SELECT 11
+#define SE_KEY_FOLD_SCREEN 12
+#define SE_KEY_PEN_DOWN 13
+#define SE_KEY_EMU_PAUSE 14
+#define SE_KEY_EMU_REWIND 15
+#define SE_KEY_EMU_FF_2X 16
+#define SE_KEY_EMU_FF_MAX 17
+#define SE_KEY_CAPTURE_STATE(A) (18+(A)*2)
+#define SE_KEY_RESTORE_STATE(A) (18+(A)*2+1)
+#define SE_KEY_RESET_GAME 26
+#define SE_KEY_TURBO_A  27
+#define SE_KEY_TURBO_B  28
+#define SE_KEY_TURBO_X  29
+#define SE_KEY_TURBO_Y  30
+#define SE_KEY_TURBO_L  31
+#define SE_KEY_TURBO_R  32
+#define SE_KEY_SOLAR_P  33
+#define SE_KEY_SOLAR_M  34
+#define SE_KEY_TOGGLE_FULLSCREEN 35
+#define SE_NUM_KEYBINDS 36
 
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
@@ -106,7 +140,6 @@ typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
   int step_frames; 
-  int pc_breakpoint;     // PC to run until
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
@@ -122,12 +155,12 @@ typedef struct {
   //Temporary storage for use by cores that persists across frames but not in save states
   //or rewind buffers
   uint32_t frames_since_rewind_push;
-  char save_data_base_path[SE_FILE_PATH_SIZE];
-  char save_file_path[SE_FILE_PATH_SIZE]; 
+  char save_data_base_path[SB_FILE_PATH_SIZE];
+  char save_file_path[SB_FILE_PATH_SIZE]; 
   float screen_ghosting_strength;  //0 = off 1 = full strength
   size_t rom_size;
   uint8_t *rom_data;
-  char rom_path[SE_FILE_PATH_SIZE]; 
+  char rom_path[SB_FILE_PATH_SIZE]; 
   bool force_dmg_mode; 
   uint64_t game_checksum;
 } sb_emu_state_t;
@@ -139,6 +172,16 @@ typedef struct{
   bool write_in_tick;
   bool trigger_breakpoint;
 }sb_debug_mmio_access_t;
+typedef struct{
+  uint32_t addr;
+  const char * name;
+  struct{
+    uint8_t start;
+    uint8_t size;
+    const char* name; 
+  } bits[32]; 
+}mmio_reg_t; 
+
 static inline float sb_random_float(float min, float max){
   float v = rand()/(float)RAND_MAX;
   return min + v*(max-min);
@@ -220,8 +263,8 @@ static void sb_free_file_data(uint8_t* data){
   if(data)free(data);
 }
 static const char* sb_parent_path(const char* path){
-  static char tmp_path[SE_FILE_PATH_SIZE];
-  snprintf(tmp_path, SE_FILE_PATH_SIZE, "%s", path);
+  static char tmp_path[SB_FILE_PATH_SIZE];
+  snprintf(tmp_path, SB_FILE_PATH_SIZE, "%s", path);
   size_t sz = strlen(tmp_path);
   while(sz>1){
     char c = tmp_path[sz-1];
@@ -242,20 +285,20 @@ static const char* sb_parent_path(const char* path){
   return tmp_path;
 }
 static const char *sb_get_home_path(){
-  static char homedir[SE_FILE_PATH_SIZE];
+  static char homedir[SB_FILE_PATH_SIZE];
 #ifdef SE_PLATFORM_ANDROID
   return "/sdcard/";
 #elif defined(_WIN32)
-  snprintf(homedir, SE_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
+  snprintf(homedir, SB_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
 #else
-  snprintf(homedir, SE_FILE_PATH_SIZE, "%s", getenv("HOME"));
+  snprintf(homedir, SB_FILE_PATH_SIZE, "%s", getenv("HOME"));
 #endif
   return homedir;
 }
 static void sb_breakup_path(const char* path, const char** base_path, const char** file_name, const char** ext){
-  static char tmp_path[SE_FILE_PATH_SIZE];
-  strncpy(tmp_path,path,SE_FILE_PATH_SIZE-1);
-  tmp_path[SE_FILE_PATH_SIZE-1]='\0';
+  static char tmp_path[SB_FILE_PATH_SIZE];
+  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
+  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
   size_t sz = strlen(tmp_path);
   *base_path = "";
   *file_name = tmp_path;
@@ -277,14 +320,26 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
     }
   }
 }
-
+static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
+  const char * seperator = base_path[0]==0? "" : "/"; 
+  if(strlen(base_path)!=0){
+    char last_base_char = base_path[strlen(base_path)-1];
+    if(last_base_char=='/'||last_base_char=='\\')seperator="";
+  }
+  if(add_extension){
+    const char * ext_sep = add_extension[0]=='.' ? "": ".";
+    snprintf(dest_path,dest_size,"%s%s%s%s%s",base_path, seperator, file_name,ext_sep,add_extension);
+  }else snprintf(dest_path,dest_size,"%s%s%s",base_path, seperator, file_name);
+  dest_path[dest_size-1]=0;
+}
+bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t * data, size_t data_size);
 static FILE * se_load_log_file(const char* rom_path, const char* log_name){
   bool loaded_bios=false;
   const char* base, *file, *ext; 
   sb_breakup_path(rom_path, &base,&file, &ext);
-  static char log_path[SE_FILE_PATH_SIZE];
-  se_join_path(log_path,SE_FILE_PATH_SIZE,base,file,log_name);
-  log_path[SE_FILE_PATH_SIZE-1]=0;
+  static char log_path[SB_FILE_PATH_SIZE];
+  se_join_path(log_path,SB_FILE_PATH_SIZE,base,file,log_name);
+  log_path[SB_FILE_PATH_SIZE-1]=0;
   FILE * f = fopen(log_path, "rb");
   if(f)printf("Loaded log file:%s\n",log_path);
   return f; 
