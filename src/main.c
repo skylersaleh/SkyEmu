@@ -3212,6 +3212,7 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     .render_scale_y[0] = -sin(rotation),
     .render_scale_y[1] = cos(rotation),
     .lcd_is_grayscale = lcd_info.is_grayscale,
+    .integer_scaling = gui_state.settings.integer_scaling,
     .input_gamma = lcd_info.gamma,
     .red_color = {lcd_info.red_color[0],lcd_info.red_color[1],lcd_info.red_color[2]},
     .green_color = {lcd_info.green_color[0],lcd_info.green_color[1],lcd_info.green_color[2]},
