@@ -5956,19 +5956,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             if(bitmap_mode){
               screen_base_addr=screen_base*16*1024;
               int p = bg_x+(bg_y)*screen_size_x;
-              if(bitmap_mode){
-                bool direct_color = SB_BFE(bgcnt,2,1);
-                if(direct_color){
-                  col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
-                  if(!SB_BFE(col,15,1))continue;
-                }
-                else{
-                  int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
-                  if(pallete_id==0)continue;
-                  col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
-                }
-              }else{
+              bool direct_color = SB_BFE(bgcnt,2,1);
+              if(direct_color){
                 col = nds_ppu_read16(nds,bg_base+screen_base_addr+p*2);
+                if(!SB_BFE(col,15,1))continue;
+              }else{
+                int pallete_id  = nds_ppu_read8(nds,bg_base+screen_base_addr+p);
+                if(pallete_id==0)continue;
+                col = *(uint16_t*)(nds->mem.palette+pallete_offset+pallete_id*2);
               }
             }else{
               bg_x = bg_x&(screen_size_x-1);
@@ -6202,8 +6197,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
       float screen_blend_factor = 1.0-(0.3*nds->ghosting_strength);
-      if(screen_blend_factor>1.0)screen_blend_factor=1;
-      if(screen_blend_factor<0.0)screen_blend_factor=0;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
       framebuffer[p+0] = disp_r*7*screen_blend_factor+framebuffer[p+0]*(1.0-screen_blend_factor);
@@ -6537,7 +6530,7 @@ static void nds_compute_timers(nds_t* nds){
         bool count_up     = SB_BFE(tm_cnt_h,2,1)&&t!=0;
         bool irq_en       = SB_BFE(tm_cnt_h,6,1);
         uint16_t value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
-        if(enable!=timer->last_enable&&enable){
+        if(enable!=timer->last_enable){
           timer->startup_delay=2;
           value = timer->reload_value;
           nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
@@ -6822,7 +6815,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   //printf("#####New Frame#####\n");
-  nds->ghosting_strength = emu->screen_ghosting_strength;
+  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f);
 
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -6912,7 +6905,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(SB_LIKELY(fast_forward_ticks)){
-        if(SB_LIKELY(!(nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)&&fast_forward_ticks>ticks&&!gx_fifo_full))fast_forward_ticks=ticks;
+        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full))ticks=fast_forward_ticks;
+        else if(fast_forward_ticks>ticks)fast_forward_ticks=ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(SB_UNLIKELY(nds->active_if_pipe_stages)){
           for(int i=0;i<fast_forward_ticks&&nds->active_if_pipe_stages;++i)nds_tick_interrupts(nds);
