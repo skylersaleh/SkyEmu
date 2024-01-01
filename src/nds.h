@@ -2650,41 +2650,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&(NDS_MEM_ARM9))||(transaction_type&(NDS_MEM_WRITE)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
-      /*else{
-        bool found = false; 
-        bool code = (transaction_type&NDS_MEM_CODE);
-        static uint32_t dcache[4*1024/32];
-        static uint32_t icache[8*1024/32];
-        uint32_t * cache = code?icache:dcache;
-        uint32_t hash =    code? 8*1024/4/32- 1: 4*1024/4/32-1;
-        uint32_t key = addr/32;
-        if((transaction_type&NDS_MEM_WRITE)){
-          if((addr/16)&1)key|=0x10000000;
-          else key|=0x20000000;
-        }
-        uint32_t cache_addr = (key&hash);
-        uint32_t shift_val = key; 
-        uint32_t evict_key = cache[cache_addr*4+3]>>28;
-        for(int i=0;i<4;++i){
-          uint32_t t = cache[cache_addr*4+i];
-          cache[cache_addr*4+i] = shift_val;
-          shift_val = t; 
-          if(((key^shift_val)&0x0fffffff)==0){
-            cache[cache_addr*4+0]|=shift_val&0xf0000000;
-            found=true;
-            break;
-          }
-        }
-        if(!(transaction_type&NDS_MEM_WRITE)){
-          if(!found){
-            int seq_words = 4; 
-            if(evict_key>2)seq_words=8;
-            if(code)nds->mem.slow_bus_cycles+=8;
-            else nds->mem.slow_bus_cycles+=8+seq_words;
-          }
-        }
-      }*/
+      if(!(transaction_type&(NDS_MEM_ARM9)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -2756,7 +2722,41 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, ui
       return *ret; 
     }
   }
-  return nds9_process_memory_transaction(nds,addr,data,transaction_type);
+  //int old_slow_bus_cycles = nds->mem.slow_bus_cycles;
+  uint32_t ret_data = nds9_process_memory_transaction(nds,addr,data,transaction_type);
+  /*int bus = addr>>24;
+  if((bus==0x02&& SB_BFE(addr,0,24)<0x00800000)||(bus==0xff&& SB_BFE(addr,0,24)<0x00008000)){
+    if(!(transaction_type&NDS_MEM_WRITE)){
+      bool found = false; 
+      bool code = (transaction_type&NDS_MEM_CODE);
+      static uint32_t dcache[4*1024/32];
+      static uint32_t icache[8*1024/32];
+      uint32_t * cache = code?icache:dcache;
+      uint32_t hash =    code? (8*1024)/128- 1: (4*1024)/128-1;
+      uint32_t key = addr/32;
+      uint32_t cache_addr = (key&hash)*4;
+      uint32_t shift_val = key; 
+      for(int i=0;i<4;++i){
+        uint32_t t = cache[cache_addr+i];
+        cache[cache_addr+i] = shift_val;
+        shift_val = t; 
+        if(key==shift_val){
+          found=true;
+          break;
+        }
+      }
+      if(!found){
+        int seq_words = 4; 
+        if(code)nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
+        else nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
+      }else{
+        nds->mem.slow_bus_cycles= old_slow_bus_cycles;
+      }
+    }else{
+      nds->mem.slow_bus_cycles= old_slow_bus_cycles;
+    }
+  }*/
+  return ret_data; 
 }
 
 static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32_t addr, uint32_t data, int transaction_type){
@@ -3865,7 +3865,7 @@ static void nds_gpu_swap_buffers(nds_t*nds){
 
     nds->framebuffer_3d_depth[i]=10e24;
   }
-  printf("Rendered %d verts and %d polys\n",nds->gpu.curr_vert,nds->gpu.poly_ram_offset);
+  //printf("Rendered %d verts and %d polys\n",nds->gpu.curr_vert,nds->gpu.poly_ram_offset);
   nds->gpu.curr_vert = 0; 
   nds->gpu.poly_ram_offset=0;
 }
@@ -6903,7 +6903,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         break;
       }
     }      
-    int ticks = 1+nds->mem.slow_bus_cycles;
+    int ticks = (nds->mem.slow_bus_cycles==0)+nds->mem.slow_bus_cycles;
     nds->mem.slow_bus_cycles = 0; 
     
     while(ticks){
@@ -6962,6 +6962,21 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     nds->mem.dtcm_load_mode= SB_BFE(data, 17,1); 
     nds->mem.itcm_enable   = SB_BFE(data, 18,1); 
     nds->mem.itcm_load_mode= SB_BFE(data, 19,1); 
+    bool icache_enable = SB_BFE(data,12,1);
+    bool dcache_enable = SB_BFE(data,2,1);
+    bool cache_policy = SB_BFE(data,14,1);
+    printf("C1,C0,0 write I$: %d D$: %d policy:%d\n",icache_enable, dcache_enable,cache_policy);
+  }else if(Cn==2&&Cm==0){
+    printf("Cache ability for cache %d:",Cp, data);
+    for(int i=0;i<8;++i)if(SB_BFE(data,i,1))printf("R%d,",i);
+    printf("\n");
+  }else if(Cn==6){
+    int region = Cm; 
+    int cache = Cp; 
+    bool enable = SB_BFE(data, 0,1);
+    uint32_t size = 2<<SB_BFE(data,1,5);
+    uint32_t base = SB_BFE(data,12,20)*4096;
+    printf("Protection region:%d for cache %d @ base: 0x%08x size: 0x%08x enable:%d\n",region,cache,base,size,enable);
   }else if(Cn==9&&Cm==1){
     int size = SB_BFE(data,1,5);
     int base = SB_BFE(data,12,20);
@@ -6977,6 +6992,8 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
       nds->mem.itcm_end_address = nds->mem.itcm_start_address+ (512<<size); 
       printf("ITCM Start:0x%08x End: 0x%08x\n",nds->mem.itcm_start_address,nds->mem.itcm_end_address);
     }
+  }else if(Cn==9&&Cm==0){
+    printf("Cache lock down (%d) :%x\n",Cp, data);
   }else if(Cn==7){
     int size = SB_BFE(data,1,5);
     int base = SB_BFE(data,12,20);
