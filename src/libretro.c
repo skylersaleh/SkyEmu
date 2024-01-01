@@ -1,6 +1,5 @@
 #include "mutex.h"
 #include "sb_types.h"
-#include "se_common.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -29,17 +28,6 @@ static struct lr_state_t {
   sb_emu_state_t emu_state;
   sb_gb_t gb_state;
 } lr_state;
-
-void lr_reset(void) {
-  switch (lr_state.emu_state.system) {
-  case SYSTEM_GB:
-    sb_load_rom(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);
-    break;
-
-  case SYSTEM_NONE:
-  default:;
-  }
-}
 
 // Retro Arch implementation
 
@@ -80,7 +68,7 @@ void retro_init(void) {}
 
 void retro_deinit(void) {
   if (lr_state.emu_state.rom_loaded) {
-    free(lr_state.emu_state.rom_path);
+    free(lr_state.emu_state.rom_data);
   }
 }
 
@@ -127,7 +115,15 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 void retro_set_controller_port_device(unsigned port, unsigned device) {}
 
 void retro_reset(void) {
-  lr_reset();
+  switch (lr_state.emu_state.system) {
+  case SYSTEM_GB:
+    sb_load_rom(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);
+    break;
+
+  case SYSTEM_NONE:
+  default:;
+  }
+
 }
 
 void retro_run(void) {
@@ -162,7 +158,7 @@ bool retro_load_game(const struct retro_game_info* game) {
     free(lr_state.emu_state.rom_data);
   }
   lr_state.emu_state.rom_loaded = true;
-  strncpy(lr_state.emu_state.rom_path, game->path, SE_FILE_PATH_SIZE);
+  strncpy(lr_state.emu_state.rom_path, game->path, SB_FILE_PATH_SIZE);
   lr_state.emu_state.rom_data = malloc(game->size);
   memcpy(lr_state.emu_state.rom_data, game->data, game->size);
   lr_state.emu_state.rom_size = game->size;
