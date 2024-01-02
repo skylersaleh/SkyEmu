@@ -4510,7 +4510,9 @@ static int nds_gpu_cmd_params(int cmd){
 
 static int nds_gpu_cmd_cycles(int cmd){
   //https://melonds.kuribo64.net/board/thread.php?id=141
-  return 3; 
+  int params = nds_gpu_cmd_params(cmd); 
+  if(params==0)params=1;
+  return params;
   switch(cmd){
     case 0x10:return   1 ; /*MTX_MODE - Set Matrix Mode (W)*/
     case 0x11:return  17 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
@@ -6908,12 +6910,17 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
       int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
       int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
       if(SB_LIKELY(fast_forward_ticks)){
-        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full))ticks=fast_forward_ticks;
+        if(SB_UNLIKELY(nds->active_if_pipe_stages)){
+          int i=0;
+          while(i<fast_forward_ticks&&nds->active_if_pipe_stages){
+            nds_tick_interrupts(nds);
+            ++i;
+          }
+          fast_forward_ticks =i;
+        }
+        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full));
         else if(fast_forward_ticks>ticks)fast_forward_ticks=ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
-        if(SB_UNLIKELY(nds->active_if_pipe_stages)){
-          for(int i=0;i<fast_forward_ticks&&nds->active_if_pipe_stages;++i)nds_tick_interrupts(nds);
-        }
         if(nds->gpu.cmd_busy_cycles){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
         }
