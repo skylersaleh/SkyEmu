@@ -683,7 +683,6 @@ typedef struct{
   bool last_vblank;
   bool last_hblank;
   int last_lcd_y; 
-  bool has_hit_vblank;
   struct {
     int32_t internal_bgx;
     int32_t internal_bgy;
@@ -826,6 +825,8 @@ typedef struct gba_t{
   int last_cpu_tick;
   int residual_dma_ticks; 
   bool stop_mode; 
+  bool frame_in_progress;
+  bool pause_after_frame; 
   gba_solar_sensor_t solar_sensor;
 } gba_t; 
 
@@ -1381,6 +1382,12 @@ static FORCE_INLINE uint32_t arm7_read16_seq(void* user_data, uint32_t address, 
   gba_compute_access_cycles((gba_t*)user_data,address,seq?0:1);
   return gba_read16((gba_t*)user_data,address);
 }
+void gba_cpu_breakpoint(void* user_data){
+  gba_t * gba = (gba_t*)user_data;
+  gba->frame_in_progress=false; 
+  gba->pause_after_frame=true;
+  printf("Hit ARM7 Breakpoint\n");
+}
 //Used to process special behavior triggered by MMIO write
 static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, int req_size_bytes);
 
@@ -1447,7 +1454,7 @@ static FORCE_INLINE uint32_t * gba_dword_lookup(gba_t* gba,unsigned addr, int re
         }else ret = (uint32_t*)(gba->mem.io+(addr&0x3fc));
         if(!(req_type&GBA_REQ_DEBUG)){
           gba->mem.mmio_debug_access_buffer[(addr&0xffff)/4]|=(req_type&GBA_REQ_WRITE)?0x70:0xf;
-          if(gba->mem.mmio_debug_access_buffer[(addr&0xffff)/4]&0x80)gba->cpu.trigger_breakpoint =true;
+          if(gba->mem.mmio_debug_access_buffer[(addr&0xffff)/4]&0x80)gba->cpu.trigger_breakpoint(gba);
         }
       }
       break;
@@ -1617,7 +1624,10 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     if(gba->cpu.registers[15]<0x4000){
       //Writes to haltcnt halt the CPU
       if(word_mask&0xff00){
-        if(word_data&0x8000)gba->stop_mode = true;
+        if(word_data&0x8000){
+          gba->stop_mode = true;
+          gba->frame_in_progress=false;
+        }
         gba->cpu.wait_for_interrupt = true;
       }
       uint32_t data = gba_io_read32(gba,address_u32);
@@ -1854,7 +1864,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     }
     if(lcd_y != gba->ppu.last_lcd_y){
       if(vblank!=gba->ppu.last_vblank){
-        if(vblank)gba->ppu.has_hit_vblank=true;
+        if(vblank)gba->frame_in_progress=false;
         gba->ppu.last_vblank = vblank;
         bool vblank_irq_en = SB_BFE(disp_stat,3,1);
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
@@ -3779,13 +3789,13 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   }
 
   gba_tick_keypad(&emu->joy,gba);
-  gba->ppu.has_hit_vblank=false;
+  gba->frame_in_progress=true;
   float solar_value = emu->joy.solar_sensor;
   if(!(solar_value <1.00))solar_value=1.00;
   if(!(solar_value >0.00))solar_value=0.00;
   gba->solar_sensor.value = 0xE7-solar_value*(0xE7-0x32);
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
-  while(true){
+  while(gba->frame_in_progress){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
     if(!ticks&&gba->residual_dma_ticks){ticks=gba->residual_dma_ticks;gba->residual_dma_ticks=0;}
     if(!ticks){
@@ -3799,7 +3809,6 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
           int_if *= SB_BFE(ime,0,1);
           arm7_process_interrupts(&gba->cpu, int_if);
         }
-        if(SB_UNLIKELY(gba->cpu.trigger_breakpoint)){emu->run_mode = SB_MODE_PAUSE; gba->cpu.trigger_breakpoint=false; break;}
       }
       arm7_exec_instruction(&gba->cpu);
       gba->last_cpu_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
@@ -3830,11 +3839,14 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
       gba_tick_timers(gba);
       gba_tick_ppu(gba,emu->render_frame);
     }
-    if(SB_UNLIKELY(gba->ppu.has_hit_vblank||gba->stop_mode))break;
   } 
   emu->joy.rumble = SB_BFE(gba->cart.gpio_data,3,1); 
   //LCD turns off in stop mode
-  if(gba->stop_mode)memset(scratch->framebuffer,0,sizeof(scratch->framebuffer));       
+  if(gba->stop_mode)memset(scratch->framebuffer,0,sizeof(scratch->framebuffer));
+  if(gba->pause_after_frame){
+    emu->run_mode=SB_MODE_PAUSE;
+    gba->pause_after_frame=false;
+  }       
 }
 
 #endif

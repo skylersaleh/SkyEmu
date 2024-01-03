@@ -1991,7 +1991,6 @@ typedef struct{
   uint8_t window[NDS_LCD_W];
   uint32_t bg_vram_base;
   uint32_t obj_vram_base; 
-  bool new_frame;
 }nds_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -2210,6 +2209,8 @@ typedef struct{
   bool dma_wait_ppu;
   bool dma_processed[2];
   bool display_flip;
+  bool frame_in_progress;
+  bool pause_after_frame; 
   nds_timer_t timers[2][4];
   uint32_t next_timer_clock;
   uint64_t last_timer_clock;
@@ -2674,7 +2675,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
-          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
+          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm9.trigger_breakpoint(nds);
         }
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
@@ -2815,7 +2816,7 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
-          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
+          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint(nds);
         }
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
@@ -2957,6 +2958,18 @@ void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write
 
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data);
+void nds7_cpu_breakpoint(void* user_data){
+  nds_t * nds = (nds_t*)user_data;
+  nds->frame_in_progress=false; 
+  nds->pause_after_frame=true;
+  printf("Hit ARM7 Breakpoint\n");
+}
+void nds9_cpu_breakpoint(void* user_data){
+  nds_t * nds = (nds_t*)user_data;
+  nds->pause_after_frame=true;
+  nds->frame_in_progress=false; 
+  printf("Hit ARM9 Breakpoint\n");
+}
 
 
 static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
@@ -5545,6 +5558,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
           if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
           if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
+          nds->frame_in_progress=false;
         }
         if(new_if)nds9_send_interrupt(nds,3,new_if);
         if(new_if7)nds7_send_interrupt(nds,3,new_if7);
@@ -5590,7 +5604,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           //Done with capture
           dispcapcnt&=~(1<<31);
           nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
-          ppu->new_frame=true;
         }else{
           for(int aff=0;aff<2;++aff){
             ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
@@ -6840,6 +6853,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->arm9.write32    = nds9_arm_write32;
   nds->arm9.coprocessor_read =  nds->arm7.coprocessor_read =nds_coprocessor_read;
   nds->arm9.coprocessor_write=  nds->arm7.coprocessor_write=nds_coprocessor_write;
+  nds->arm7.trigger_breakpoint = nds7_cpu_breakpoint;
+  nds->arm9.trigger_breakpoint = nds9_cpu_breakpoint;
 
   nds->arm7.user_data = (void*)nds;
   nds->arm9.user_data = (void*)nds;
@@ -6865,8 +6880,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   for(int i=0;i<sizeof(nds->mem.mmio_debug_access_buffer)/8;++i){
     d[i]&=0x9191919191919191ULL;
   }
-  nds->ppu[0].new_frame=false;
-  while(!nds->ppu[0].new_frame){
+  nds->frame_in_progress=true;
+  while(nds->frame_in_progress){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
@@ -6893,12 +6908,6 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
         }
         arm7_exec_instruction(&nds->arm7);
-      }
-      if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
-        emu->run_mode = SB_MODE_PAUSE;
-        nds->arm7.trigger_breakpoint=false;
-        nds->arm9.trigger_breakpoint=false;
-        break;
       }
     }      
     int ticks = (nds->mem.slow_bus_cycles==0)+nds->mem.slow_bus_cycles;
@@ -6938,6 +6947,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         ticks--;
       }
     }
+  }
+  if(nds->pause_after_frame){
+    emu->run_mode=SB_MODE_PAUSE;
+    nds->pause_after_frame=false;
   }
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32

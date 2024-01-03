@@ -44,6 +44,8 @@ typedef void (*arm_write16_fn_t)(void* user_data, uint32_t address, uint16_t dat
 typedef void (*arm_write8_fn_t)(void* user_data, uint32_t address, uint8_t data);
 typedef uint32_t (*arm_coproc_read_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 typedef void (*arm_coproc_write_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp, uint32_t data);
+typedef void (*arm_trigger_breakpoint_fn_t)(void* user_data);
+
 
 #define ARM_DEBUG_BRANCH_RING_SIZE 32
 #define ARM_DEBUG_SWI_RING_SIZE 32
@@ -76,7 +78,6 @@ typedef struct {
   bool next_fetch_sequential;
   uint32_t registers[37];
   uint64_t executed_instructions;
-  bool trigger_breakpoint;
   bool print_instructions;
   void* user_data;
   FILE* log_cmp_file;
@@ -90,6 +91,7 @@ typedef struct {
   arm_write8_fn_t     write8;
   arm_coproc_read_fn_t coprocessor_read;
   arm_coproc_write_fn_t coprocessor_write;
+  arm_trigger_breakpoint_fn_t trigger_breakpoint; 
   bool wait_for_interrupt; 
   uint32_t irq_table_address; 
   uint32_t phased_opcode; 
@@ -444,8 +446,8 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
      8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
   int8_t r = lookup[mode*10+reg];
-  if(SB_LIKELY(r!=-1))return r; 
-  cpu->trigger_breakpoint=true;
+  if(SB_LIKELY(r!=-1))return r;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
   printf("Undefined ARM mode: %d\n",mode);
   return 0;
 }
@@ -723,7 +725,7 @@ static void arm_check_log_file(arm7_t*cpu){
     for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
     if(!matches){
       static int last_pc_break =0;
-      if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
+      if(last_pc_break!=cpu->registers[PC])  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
       last_pc_break = cpu->registers[PC];
       printf("Log mismatch detected\n");
       printf("=====================\n");
@@ -763,7 +765,7 @@ static void arm_check_log_file(arm7_t*cpu){
       int prev_mode = prev_cpsr&0x1f;
       if(log_mode==0x12&&prev_mode!=0x12){
         printf("Interrupt!\n");
-        cpu->trigger_breakpoint=false;       
+      if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
       }
       thumb = arm7_get_thumb_bit(cpu);
       if(thumb){
@@ -854,7 +856,9 @@ static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
     }
     if(SB_UNLIKELY(cpu->step_instructions)){
       --cpu->step_instructions;
-      if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
+      if(cpu->step_instructions==0){
+        if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
+      }
     }
   }
   if(SB_UNLIKELY(cpu->phased_op_id))return;
@@ -926,7 +930,9 @@ static void arm9_exec_instruction(arm7_t* cpu){
     }
     if(SB_UNLIKELY(cpu->step_instructions)){
       --cpu->step_instructions;
-      if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
+      if(cpu->step_instructions==0){
+        if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
+      }
     }
   }
   if(SB_UNLIKELY(cpu->phased_op_id))return;
@@ -1450,7 +1456,6 @@ static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x PC:%08x\n",opcode, cpu->registers[R14_und]);
   cpu->i_cycles+=1;
-  //cpu->trigger_breakpoint = true;
 }
 static FORCE_INLINE void arm9_clz(arm7_t* cpu, uint32_t opcode){
   int Rd = ARM7_BFE(opcode,12,4);
@@ -1726,11 +1731,11 @@ static FORCE_INLINE void arm9_branch(arm7_t* cpu, uint32_t opcode){
 }
 static FORCE_INLINE void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_coproc_data_transfer) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 static FORCE_INLINE void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_coproc_data_op) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 static FORCE_INLINE void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode){
   int coprocessor_opcode = SB_BFE(opcode,21,3);
@@ -2268,7 +2273,7 @@ static FORCE_INLINE void arm7t_unknown(arm7_t* cpu, uint32_t opcode){
   arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Thumb Instruction Class: (arm7t_unknown) Opcode %x\n",opcode);
   printf("PC: %08x\n",cpu->registers[PC]);
-  //cpu->trigger_breakpoint=true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 
 #endif
