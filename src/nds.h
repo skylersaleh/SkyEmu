@@ -616,6 +616,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA0DAD  , "DMA0DAD", { 0 } },   /* W    DMA 0 Destination Address */
   { GBA_DMA0CNT_L, "DMA0CNT_L", { 0 } },   /* W    DMA 0 Word Count */
   { GBA_DMA0CNT_H, "DMA0CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -628,6 +629,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA1DAD  , "DMA1DAD", { 0 } },   /* W    DMA 1 Destination Address */
   { GBA_DMA1CNT_L, "DMA1CNT_L", { 0 } },   /* W    DMA 1 Word Count */
   { GBA_DMA1CNT_H, "DMA1CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -640,6 +642,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA2DAD  , "DMA2DAD", { 0 } },   /* W    DMA 2 Destination Address */
   { GBA_DMA2CNT_L, "DMA2CNT_L", { 0 } },   /* W    DMA 2 Word Count */
   { GBA_DMA2CNT_H, "DMA2CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -652,6 +655,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA3DAD  , "DMA3DAD", { 0 } },   /* W    DMA 3 Destination Address */
   { GBA_DMA3CNT_L, "DMA3CNT_L", { 0 } },   /* W    DMA 3 Word Count */
   { GBA_DMA3CNT_H, "DMA3CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -6434,7 +6438,8 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
 
         uint32_t src = nds->dma[cpu][i].source_addr;
         uint32_t dst = nds->dma[cpu][i].dest_addr;
-        uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
+        int cnt_bits = cpu==NDS_ARM7?16:21;
+        uint32_t cnt = SB_BFE(nds_io_read32(nds,cpu,GBA_DMA0CNT_L+12*i),0,cnt_bits);
 
         if(mode==0x7&&cpu==NDS_ARM9){
           nds->dma_wait_gx = true;
@@ -6927,8 +6932,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           }
           fast_forward_ticks =i;
         }
-        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full));
-        else if(fast_forward_ticks>ticks)fast_forward_ticks=ticks;
+        if(!((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full)&&fast_forward_ticks>ticks)
+          fast_forward_ticks=ticks;
         nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(nds->gpu.cmd_busy_cycles){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
