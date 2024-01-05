@@ -6895,7 +6895,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         if(int9_if){
           int9_if &= nds9_io_read32(nds,NDS9_IE);
           uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
+          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9);
         }
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
           nds->arm9.i_cycles=0;
@@ -6910,7 +6910,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
           uint32_t ie = nds7_io_read32(nds,NDS7_IE);
           uint32_t ime = nds7_io_read32(nds,NDS7_IME);
           int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
+          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7);
         }
         arm7_exec_instruction(&nds->arm7);
       }
@@ -6919,10 +6919,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     nds->mem.slow_bus_cycles = 0; 
     
     while(ticks){
-      int ppu_fast_forward = nds->ppu_fast_forward_ticks;
-      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
-      int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
-      int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+      int fast_forward_ticks = nds->next_timer_clock-nds->current_clock;
+      if(fast_forward_ticks>nds->ppu_fast_forward_ticks)fast_forward_ticks=nds->ppu_fast_forward_ticks;
+      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=fast_forward_ticks)fast_forward_ticks=nds->gpu.cmd_busy_cycles; 
       if(SB_LIKELY(fast_forward_ticks)){
         if(SB_UNLIKELY(nds->active_if_pipe_stages)){
           int i=0;

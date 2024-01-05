@@ -129,7 +129,7 @@ static void arm7_exec_instruction(arm7_t* cpu);
 // Write the dissassembled opcode from mem_address into the out_disasm string up to out_size characters
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size);
 // Used to send an interrupt to the emulated CPU. The n'th set bit triggers the n'th interrupt
-static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts);
+static void arm7_process_interrupts(arm7_t* cpu);
 ///////////////////////////////////////////
 // Functions for Internal Implementation //
 ///////////////////////////////////////////
@@ -593,12 +593,12 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   cpu->registers[CPSR] &= ~(1<<5);
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
-static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu){
   cpu->wait_for_interrupt=false;
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
   if(I==0&&cpu->phased_op_id==0){
-    if(SB_UNLIKELY(cpu->log_cmp_file||interrupts==0))return; //Log drives interrupts when enabled
+    if(SB_UNLIKELY(cpu->log_cmp_file))return;
     //Interrupts are enabled when I ==0
     bool thumb = arm7_get_thumb_bit(cpu);
     cpu->registers[R14_irq] = cpu->registers[PC]+4;
