@@ -24,6 +24,7 @@
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
 #include "localization.h"
+#include "https.hpp"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -7554,7 +7555,7 @@ static void se_init(){
   }
 }
 static void init(void) {
-  cloud_drive_init();
+  https_initialize();
   gui_state.overlay_open= true;
 #ifdef USE_SDL
   SDL_SetMainReady();
@@ -7637,7 +7638,7 @@ static void cleanup(void) {
 #ifdef USE_SDL
   SDL_Quit();
 #endif
-  cloud_drive_cleanup();
+  https_shutdown();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {
