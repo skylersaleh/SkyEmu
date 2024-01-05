@@ -37,9 +37,6 @@ void cloud_drive_sync(cloud_drive_t* cloud_drive, void(*callback)());
 // Has lifetime equal to the cloud drive instance.
 cloud_user_info_t cloud_drive_get_user_info(cloud_drive_t* cloud_drive);
 
-void cloud_drive_init();
-void cloud_drive_cleanup();
-
 bool cloud_drive_pending_login();
 bool cloud_drive_pending_logout();
 

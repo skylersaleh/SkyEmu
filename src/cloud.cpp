@@ -26,15 +26,10 @@ const char* se_get_pref_path();
 #define XXH_IMPLEMENTATION
 #define XXH_STATIC_LINKING_ONLY
 #include "xxhash.h"
+#include "https.hpp"
 
 #ifndef EMSCRIPTEN
 #include "httplib.h" // for server only
-#include <curl/curl.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-extern "C" {
-#include "res.h"
-}
 #else
 #include <emscripten.h>
 #endif
@@ -50,8 +45,8 @@ extern "C" {
 }
 #endif
 
-bool pending_login = false;
-bool pending_logout = false;
+static bool pending_login = false;
+static bool pending_logout = false;
 
 struct file_metadata_t
 {
@@ -102,6 +97,8 @@ struct cloud_drive_t
     }
 };
 
+void google_cloud_drive_init(cloud_drive_t*);
+
 #define GOOGLE_CLIENT_ID "617320710875-o9ev86s5ad18bmmgb98p0dkbqlfufekr.apps.googleusercontent.com"
 #define GOOGLE_CLIENT_ID_WEB "617320710875-dakb2f10lgnnn3a97bgva18l83221pc3.apps.googleusercontent.com"
 
@@ -144,53 +141,7 @@ static void em_flush_fs()
 #endif
 }
 
-#ifndef EMSCRIPTEN
-size_t curl_write_data(void* buffer, size_t size, size_t nmemb, void* d)
-{
-    std::vector<uint8_t>* data = (std::vector<uint8_t>*)d;
-    data->insert(data->end(), (uint8_t*)buffer, (uint8_t*)buffer + size * nmemb);
-    return size * nmemb;
-}
-#else
-EM_JS(void, em_https_request, (const char* type, const char* url, const char* body, size_t body_size, const char* headers, void* callback), {
-        var xhr = new XMLHttpRequest();
-        var method = UTF8ToString(type);
-        var url_str = UTF8ToString(url);
-        var body_arr = new Uint8Array(Module.HEAPU8.buffer, body, body_size);
-        xhr.open(method, url_str);
-        xhr.responseType = "arraybuffer";
-
-        var headers_str = UTF8ToString(headers);
-        if (headers_str.length > 0) {
-            var headers_arr = headers_str.split('\n');
-            for (var i = 0; i < headers_arr.length; i++) {
-                var header = headers_arr[i].split(':');
-                if (header.length == 2) {
-                    xhr.setRequestHeader(header[0], header[1]);
-                } else {
-                    console.log('Invalid header: ' + headers_arr[i]);
-                }
-            }
-        }
-
-        xhr.onload = function() {
-            if (xhr.status >= 200 && xhr.status < 300) {
-                var response_size = xhr.response.byteLength;
-                var response_buffer = Module._malloc(response_size);
-                var response_view = new Uint8Array(xhr.response);
-                Module.HEAPU8.set(response_view, response_buffer);
-                Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, response_buffer, response_size]);
-                Module._free(response_buffer);
-            } else {
-                console.log('The request failed: ' + xhr.status + ' ' + xhr.statusText);
-            }
-        };
-        xhr.onerror = function() {
-            console.log('The request failed!');
-        };
-        xhr.send(body_arr);
-    });
-
+#ifdef EMSCRIPTEN
 EM_JS(void, em_oath_sign_in, (void* drive, const char* client_id), {
         var client_id_str = UTF8ToString(client_id);
         var redirect_uri = window.location.origin + '/authorized.html';
@@ -251,16 +202,6 @@ EM_JS(void, em_oath_sign_in, (void* drive, const char* client_id), {
         }, 500);
     });
 
-extern "C" void em_https_request_callback_wrapper(void* callback, void* data, int size)
-{
-    std::vector<uint8_t> result((uint8_t*)data, (uint8_t*)data + (size_t)size);
-    std::function<void(const std::vector<uint8_t>&)>* fcallback =
-        (std::function<void(const std::vector<uint8_t>&)>*)callback;
-    (*fcallback)(result);
-    delete fcallback;
-}
-
-void cloud_drive_init(cloud_drive_t*);
 extern "C" void em_oath_sign_in_callback(cloud_drive_t* drive, const char* refresh_token,
                                          const char* access_token)
 {
@@ -279,7 +220,7 @@ extern "C" void em_oath_sign_in_callback(cloud_drive_t* drive, const char* refre
         sb_save_file_data(refresh_path.c_str(), (uint8_t*)drive->refresh_token.c_str(),
                           drive->refresh_token.size() + 1);
         em_flush_fs();
-        cloud_drive_init(drive);
+        google_cloud_drive_init(drive);
     }
     else
     {
@@ -289,166 +230,7 @@ extern "C" void em_oath_sign_in_callback(cloud_drive_t* drive, const char* refre
 }
 #endif
 
-enum class http_request_e
-{
-    GET,
-    POST,
-    PATCH,
-};
-
-#ifndef EMSCRIPTEN
-// See cacertinmem.c example from libcurl
-CURLcode sslctx_function(CURL *curl, void *sslctx, void *parm)
-{
-    CURLcode rv = CURLE_ABORTED_BY_CALLBACK;
-    
-    uint64_t cacert_pem_len;
-    const uint8_t* cacert_pem = se_get_resource(SE_CACERT_PEM, &cacert_pem_len);
-
-    BIO *cbio = BIO_new_mem_buf(cacert_pem, cacert_pem_len);
-    X509_STORE  *cts = SSL_CTX_get_cert_store((SSL_CTX *)sslctx);
-    int i;
-    STACK_OF(X509_INFO) *inf;
-    (void)curl;
-    (void)parm;
-
-    if(!cts || !cbio) {
-        return rv;
-    }
-
-    inf = PEM_X509_INFO_read_bio(cbio, NULL, NULL, NULL);
-
-    if(!inf) {
-        BIO_free(cbio);
-        return rv;
-    }
-
-    for(i = 0; i < sk_X509_INFO_num(inf); i++) {
-        X509_INFO *itmp = sk_X509_INFO_value(inf, i);
-        if(itmp->x509) {
-        X509_STORE_add_cert(cts, itmp->x509);
-        }
-        if(itmp->crl) {
-        X509_STORE_add_crl(cts, itmp->crl);
-        }
-    }
-
-    sk_X509_INFO_pop_free(inf, X509_INFO_free);
-    BIO_free(cbio);
-
-    rv = CURLE_OK;
-    return rv;
-}
-#endif
-
-// Abstraction layer for http requests
-void https_request(http_request_e type, const std::string& url, const std::string& body,
-                   const std::vector<std::pair<std::string, std::string>>& headers,
-                   std::function<void(const std::vector<uint8_t>&)> callback)
-{
-#ifndef EMSCRIPTEN
-    CURL* curl = curl_easy_init();
-    if (!curl)
-    {
-        printf("[cloud] failed to initialize curl\n");
-        return;
-    }
-
-    std::vector<uint8_t> result;
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_data);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&result);
-
-    /* Turn off the default CA locations, otherwise libcurl will load CA
-     * certificates from the locations that were detected/specified at
-     * build-time
-     */
-    curl_easy_setopt(curl, CURLOPT_CAINFO, NULL);
-    curl_easy_setopt(curl, CURLOPT_CAPATH, NULL);
-
-    curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslctx_function);
-
-    switch (type)
-    {
-        case http_request_e::GET:
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-            break;
-        case http_request_e::POST:
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_POST, 1L);
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
-            break;
-        case http_request_e::PATCH:
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
-            break;
-        default:
-            printf("[cloud] invalid request type\n");
-            return;
-    }
-
-    struct curl_slist* chunk = NULL;
-    for (auto& header : headers)
-    {
-        std::string header_string = header.first + ": " + header.second;
-        chunk = curl_slist_append(chunk, header_string.c_str());
-    }
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
-
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK)
-    {
-        printf("[cloud] curl failed: %s\n", curl_easy_strerror(res));
-        callback({});
-    }
-    else
-    {
-        callback(result);
-    }
-
-    curl_slist_free_all(chunk);
-    curl_easy_cleanup(curl);
-#else
-    std::string method;
-    switch (type)
-    {
-        case http_request_e::GET:
-            method = "GET";
-            break;
-        case http_request_e::POST:
-            method = "POST";
-            break;
-        case http_request_e::PATCH:
-            method = "PATCH";
-            break;
-        default:
-            return;
-    }
-
-    std::string hstring;
-    for (auto& header : headers)
-    {
-        hstring += header.first + ":" + header.second;
-        if (header != headers.back())
-        {
-            hstring += "\n";
-        }
-    }
-
-    // Deleted when the callback is called
-    std::function<void(const std::vector<uint8_t>&)>* fcallback =
-        new std::function<void(const std::vector<uint8_t>&)>(callback);
-    return em_https_request(method.c_str(), url.c_str(), body.c_str(), body.size(), hstring.c_str(),
-                            (void*)fcallback);
-#endif
-}
-
-void cloud_drive_refresh(cloud_drive_t* drive, std::function<void(cloud_drive_t*)> callback)
+void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_drive_t*)> callback)
 {
 #ifdef EMSCRIPTEN
     std::string client_id = GOOGLE_CLIENT_ID_WEB;
@@ -463,6 +245,13 @@ void cloud_drive_refresh(cloud_drive_t* drive, std::function<void(cloud_drive_t*
     return https_request(
         http_request_e::POST, "https://oauth2.googleapis.com/token?" + query, "", {},
         [drive, callback](const std::vector<uint8_t>& token) {
+            if (!nlohmann::json::accept(token))
+            {
+                printf("[cloud] failed to refresh token: invalid response\n");
+                callback(drive);
+                drive->dec();
+                return;
+            }
             nlohmann::json json = nlohmann::json::parse(token);
             if (json.find("error") != json.end())
             {
@@ -526,7 +315,7 @@ std::string create_multipart_body(cloud_drive_t* drive, const std::string& filen
     return body;
 }
 
-void cloud_drive_upload_impl(cloud_drive_t* drive, const std::string& filename, const std::string& parent,
+void google_cloud_drive_upload(cloud_drive_t* drive, const std::string& filename, const std::string& parent,
                                const std::string& mime_type, void* data, size_t size,
                                std::function<void(cloud_drive_t*)> callback)
 {
@@ -548,13 +337,13 @@ void cloud_drive_upload_impl(cloud_drive_t* drive, const std::string& filename, 
     if (!id.empty())
     {
         return https_request(http_request_e::PATCH,
-                            "https://www.googleapis.com/upload/drive/v3/files/" + id + "?uploadType=media",
-                            std::string((char*)data, size),
-                            {{"Authorization", "Bearer " + drive->access_token}},
-                            [drive, callback](const std::vector<uint8_t>& data) {
+                             "https://www.googleapis.com/upload/drive/v3/files/" + id + "?uploadType=media",
+                             std::string((char*)data, size),
+                             {{"Authorization", "Bearer " + drive->access_token}},
+                             [drive, callback](const std::vector<uint8_t>& data) {
                                 callback(drive);
                                 drive->dec();
-                            });
+                             });
     }
     else
     {
@@ -568,6 +357,13 @@ void cloud_drive_upload_impl(cloud_drive_t* drive, const std::string& filename, 
                 {"Content-Type", "multipart/related; boundary=" + boundary},
             },
             [drive, callback, filename, mime_type](const std::vector<uint8_t>& data) {
+                if (!nlohmann::json::accept(data))
+                {
+                    printf("[cloud] failed to upload file: invalid response\n");
+                    callback(drive);
+                    drive->dec();
+                    return;
+                }
                 nlohmann::json json = nlohmann::json::parse(data);
                 if (json.find("error") != json.end())
                 {
@@ -595,13 +391,58 @@ void cloud_drive_upload_impl(cloud_drive_t* drive, const std::string& filename, 
     }
 }
 
-void cloud_drive_get_files(cloud_drive_t* drive,
+void google_cloud_drive_download(cloud_drive_t* drive, const std::string& filename,
+                                 std::function<void(void*, void*, size_t)> callback, void* userdata)
+{
+    if (drive->access_token.empty())
+    {
+        printf("[cloud] access token is empty\n");
+        return;
+    }
+
+    std::string id;
+    {
+        std::lock_guard<std::mutex> lock(drive->file_mutex);
+        if (drive->files.find(filename) == drive->files.end())
+        {
+            printf("[cloud] file not found %s\n", filename.c_str());
+            return callback(userdata, nullptr, 0);
+        }
+        id = drive->files[filename].id;
+    }
+
+    drive->inc();
+    return https_request(http_request_e::GET,
+                         "https://www.googleapis.com/drive/v3/files/" + id +
+                             "?alt=media",
+                         "", {{"Authorization", "Bearer " + drive->access_token}},
+                         [drive, callback, userdata](const std::vector<uint8_t>& data) {
+                            if (!data.empty())
+                            {
+                                callback(userdata, (void*)data.data(), data.size());
+                            }
+                            else
+                            {
+                                callback(userdata, nullptr, 0);
+                            }
+                            drive->dec();
+                         });
+}
+
+void google_cloud_drive_get_files(cloud_drive_t* drive,
                                   std::function<void(cloud_drive_t*)> callback)
 {
     drive->inc();
     return https_request(http_request_e::GET, "https://www.googleapis.com/drive/v3/files", "",
                          {{"Authorization", "Bearer " + drive->access_token}},
                          [drive, callback](const std::vector<uint8_t>& data) {
+                            if (!nlohmann::json::accept(data))
+                            {
+                                printf("[cloud] failed to get file map: invalid response\n");
+                                callback(drive);
+                                drive->dec();
+                                return;
+                            }
                              nlohmann::json response = nlohmann::json::parse(data);
                              if (response.find("error") != response.end())
                              {
@@ -634,7 +475,7 @@ void cloud_drive_get_files(cloud_drive_t* drive,
                          });
 }
 
-bool check_avatar_exists(cloud_drive_t* drive)
+bool google_check_avatar_exists(cloud_drive_t* drive)
 {
     if (sb_file_exists((drive->save_directory + "profile_picture").c_str()))
     {
@@ -657,7 +498,7 @@ bool check_avatar_exists(cloud_drive_t* drive)
     return false;
 }
 
-bool check_username_exists(cloud_drive_t* drive)
+bool google_check_username_exists(cloud_drive_t* drive)
 {
     std::string path = drive->save_directory + "cloud_username.txt";
     if (sb_file_exists(path.c_str()))
@@ -680,10 +521,10 @@ bool check_username_exists(cloud_drive_t* drive)
     return false;
 }
 
-void get_user_data(cloud_drive_t* drive)
+void google_get_user_data(cloud_drive_t* drive)
 {
-    bool avatar_exists = check_avatar_exists(drive);
-    bool username_exists = check_username_exists(drive);
+    bool avatar_exists = google_check_avatar_exists(drive);
+    bool username_exists = google_check_username_exists(drive);
     if (avatar_exists && username_exists)
     {
         drive->ready_callback(drive);
@@ -695,6 +536,13 @@ void get_user_data(cloud_drive_t* drive)
                   {{"Authorization", "Bearer " + drive->access_token}},
                   [drive, avatar_exists](const std::vector<uint8_t>& data) {
                         std::string path = drive->save_directory + "cloud_username.txt";
+                        if (!nlohmann::json::accept(data))
+                        {
+                            printf("[cloud] failed to get username: invalid response\n");
+                            drive->dec();
+                            drive->ready_callback(nullptr);
+                            return;
+                        }
                         nlohmann::json json = nlohmann::json::parse(data);
                         if (json.find("error") != json.end())
                         {
@@ -718,7 +566,7 @@ void get_user_data(cloud_drive_t* drive)
                                                 (drive->save_directory + "profile_picture").c_str(),
                                                 data.data(), data.size());
                                             em_flush_fs();
-                                            check_avatar_exists(drive);
+                                            google_check_avatar_exists(drive);
                                             drive->dec();
                                             drive->ready_callback(drive);
                                         });
@@ -732,9 +580,17 @@ void get_user_data(cloud_drive_t* drive)
                   });
 }
 
-void cloud_drive_init(cloud_drive_t* drive)
+void google_cloud_drive_mkdir(cloud_drive_t* drive, const std::string& name, const std::string& parent, std::function<void(cloud_drive_t*)> callback)
 {
-    cloud_drive_get_files(drive, [](cloud_drive_t* drive) {
+    google_cloud_drive_upload(drive, name, parent, "application/vnd.google-apps.folder", NULL,
+                                0, [callback](cloud_drive_t* drive) {
+                                            callback(drive);
+                                });
+}
+
+void google_cloud_drive_init(cloud_drive_t* drive)
+{
+    google_cloud_drive_get_files(drive, [](cloud_drive_t* drive) {
         bool folders_exist;
         {
             std::lock_guard<std::mutex> lock(drive->file_mutex);
@@ -743,49 +599,20 @@ void cloud_drive_init(cloud_drive_t* drive)
 
         if (!folders_exist)
         {
-            cloud_drive_upload_impl(drive, "SkyEmu", "", "application/vnd.google-apps.folder", NULL, 0, [](cloud_drive_t* drive) {
-                cloud_drive_upload_impl(drive, "save_states", "SkyEmu", "application/vnd.google-apps.folder", NULL, 0, [](cloud_drive_t* drive) {
-                    get_user_data(drive);
-                });
+            google_cloud_drive_mkdir(drive, "SkyEmu", "", [](cloud_drive_t* drive) {
+                google_cloud_drive_mkdir(drive, "save_states", "SkyEmu", [](cloud_drive_t* drive) {
+                            google_cloud_drive_get_files(
+                                drive, [](cloud_drive_t* drive) {
+                                    google_get_user_data(drive);
+                                });
+                        });
             });
         }
         else
         {
-            get_user_data(drive);
+            google_get_user_data(drive);
         }
     });
-}
-
-void cloud_drive_do(cloud_drive_t* drive, std::function<void(cloud_drive_t*)> callback)
-{
-    if (drive->scheduled_deletion)
-    {
-        return;
-    }
-#ifndef EMSCRIPTEN
-    std::thread do_thread([drive, callback] {
-#endif
-        if (time(NULL) > drive->expire_timestamp - 60)
-        {
-            cloud_drive_refresh(drive, [callback](cloud_drive_t* drive) {
-                if (!drive->access_token.empty())
-                {
-                    callback(drive);
-                }
-                else
-                {
-                    printf("[cloud] failed to refresh token\n");
-                }
-            });
-        }
-        else
-        {
-            callback(drive);
-        }
-#ifndef EMSCRIPTEN
-    });
-    do_thread.detach();
-#endif
 }
 
 void cloud_drive_authenticate(cloud_drive_t* drive)
@@ -864,6 +691,12 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
             https_request(
                 http_request_e::POST, "https://oauth2.googleapis.com/token?" + query, "", {},
                 [drive, &refresh_path](const std::vector<uint8_t>& data) {
+                    if (!nlohmann::json::accept(data))
+                    {
+                        printf("[cloud] failed to authenticate: invalid response\n");
+                        drive->ready_callback(nullptr);
+                        return;
+                    }
                     nlohmann::json json = nlohmann::json::parse(data);
                     if (json.find("error") != json.end())
                     {
@@ -882,7 +715,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                     sb_save_file_data(refresh_path.c_str(), (uint8_t*)drive->refresh_token.c_str(),
                                       drive->refresh_token.size() + 1);
                     em_flush_fs();
-                    cloud_drive_init(drive);
+                    google_cloud_drive_init(drive);
                 });
 
             #ifdef SE_PLATFORM_ANDROID
@@ -946,7 +779,7 @@ void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
             drive->refresh_token = std::string((char*)refresh_token_data, refresh_token_size - 1);
             free(refresh_token_data);
 
-            cloud_drive_refresh(drive, [refresh_path](cloud_drive_t* drive) {
+            google_use_refresh_token(drive, [refresh_path](cloud_drive_t* drive) {
                 if (drive->access_token.empty())
                 {
                     printf("[cloud] failed to use refresh token\n");
@@ -955,7 +788,7 @@ void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
                 }
                 else
                 {
-                    cloud_drive_init(drive);
+                    google_cloud_drive_init(drive);
                 }
             });
             return;
@@ -998,61 +831,94 @@ void cloud_drive_upload(cloud_drive_t* drive, const char* filename, const char* 
                         void* data, size_t size, void (*cleanup_callback)(void*, void*),
                         void* userdata)
 {
+    if (drive->scheduled_deletion)
+    {
+        return;
+    }
     std::string name(filename);
     std::string sparent(parent);
     std::string mime(mime_type);
-    cloud_drive_do(drive, [name, sparent, mime, data, size, cleanup_callback, userdata](cloud_drive_t* drive) {
-        cloud_drive_upload_impl(drive, name, sparent, mime, data, size,
-            [cleanup_callback, data, userdata](cloud_drive_t*) {
-                cleanup_callback(userdata, data);
-        });
+#ifndef EMSCRIPTEN
+    std::thread upload_thread([drive, name, sparent, mime, data, size, cleanup_callback, userdata] {
+#endif
+        if (time(NULL) > drive->expire_timestamp - 60)
+        {
+            if (drive->access_token.empty())
+            {
+                printf("[cloud] failed to use refresh token\n");
+                return;
+            }
+            google_use_refresh_token(
+                drive, [name, sparent, mime, data, size, cleanup_callback, userdata](cloud_drive_t* drive) {
+                    google_cloud_drive_upload(drive, name, sparent, mime, data, size,
+                                              [cleanup_callback, data, userdata](cloud_drive_t*) {
+                                                  cleanup_callback(userdata, data);
+                                              });
+                });
+        }
+        else
+        {
+            google_cloud_drive_upload(drive, name, sparent, mime, data, size,
+                                      [cleanup_callback, data, userdata](cloud_drive_t*) {
+                                          cleanup_callback(userdata, data);
+                                      });
+        }
+#ifndef EMSCRIPTEN
     });
+    upload_thread.detach();
+#endif
 }
 
 void cloud_drive_download(cloud_drive_t* drive, const char* filename,
                           void (*callback)(void* userdata, void* data, size_t size), void* userdata)
 {
+    if (drive->scheduled_deletion)
+    {
+        return;
+    }
     std::string name(filename);
     std::function<void(void*, void*, size_t)> fcallback = callback;
-    cloud_drive_do(drive, [name, fcallback, userdata](cloud_drive_t* drive) {
-        std::string id;
+#ifndef EMSCRIPTEN
+    std::thread download_thread([drive, name, fcallback, userdata] {
+#endif
+        if (time(NULL) > drive->expire_timestamp - 60)
         {
-            std::lock_guard<std::mutex> lock(drive->file_mutex);
-            if (drive->files.find(name) == drive->files.end())
+            if (drive->access_token.empty())
             {
-                printf("[cloud] file not found %s\n", name.c_str());
-                return fcallback(userdata, nullptr, 0);
+                printf("[cloud] failed to use refresh token\n");
+                return;
             }
-            id = drive->files[name].id;
+            google_use_refresh_token(drive, [name, fcallback, userdata](cloud_drive_t* drive) {
+                google_cloud_drive_download(drive, name, fcallback, userdata);
+            });
         }
-
-        drive->inc();
-        return https_request(http_request_e::GET,
-                            "https://www.googleapis.com/drive/v3/files/" + id +
-                                "?alt=media",
-                            "", {{"Authorization", "Bearer " + drive->access_token}},
-                            [drive, fcallback, userdata](const std::vector<uint8_t>& data) {
-                                if (!data.empty())
-                                {
-                                    fcallback(userdata, (void*)data.data(), data.size());
-                                }
-                                else
-                                {
-                                    fcallback(userdata, nullptr, 0);
-                                }
-                                drive->dec();
-                            });
+        else
+        {
+            google_cloud_drive_download(drive, name, fcallback, userdata);
+        }
+#ifndef EMSCRIPTEN
     });
+    download_thread.detach();
+#endif
 }
 
 void cloud_drive_sync(cloud_drive_t* drive, void(*callback)())
 {
+    if (drive->scheduled_deletion)
+    {
+        return;
+    }
     std::function<void()> fcallback = callback;
-    cloud_drive_do(drive, [drive, fcallback](cloud_drive_t*) {
-        cloud_drive_get_files(drive, [fcallback](cloud_drive_t*) {
+#ifndef EMSCRIPTEN
+    std::thread sync_thread([drive, fcallback] {
+#endif
+        google_cloud_drive_get_files(drive, [fcallback](cloud_drive_t*) {
             fcallback();
         });
+#ifndef EMSCRIPTEN
     });
+    sync_thread.detach();
+#endif
 }
 
 cloud_user_info_t cloud_drive_get_user_info(cloud_drive_t* drive)
@@ -1068,20 +934,6 @@ cloud_user_info_t cloud_drive_get_user_info(cloud_drive_t* drive)
     info.avatar_width = drive->avatar_data_width;
     info.avatar_height = drive->avatar_data_height;
     return info;
-}
-
-void cloud_drive_init()
-{
-#ifndef EMSCRIPTEN
-    curl_global_init(CURL_GLOBAL_ALL);
-#endif
-}
-
-void cloud_drive_cleanup()
-{
-#ifndef EMSCRIPTEN
-    curl_global_cleanup();
-#endif
 }
 
 uint64_t cloud_drive_hash(const char* input, size_t input_size)

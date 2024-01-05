@@ -290,7 +290,7 @@ if(ENABLE_HTTP_CONTROL_SERVER)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
 endif()
 
-set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp)
+set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp src/https.cpp)
 
 if(UNICODE_GUI)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
