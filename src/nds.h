@@ -2223,6 +2223,8 @@ typedef struct{
   // This array acts as a FIFO to keep track of that. 
   uint32_t nds9_pipelined_if[5];
   uint32_t nds7_pipelined_if[5];
+  bool nds7_interrupt_line;
+  bool nds9_interrupt_line;
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
 
@@ -2263,6 +2265,7 @@ static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
 static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size);
 static FORCE_INLINE void nds_update_gx_irq(nds_t* nds);
+static FORCE_INLINE void nds_update_interrupt_lines(nds_t* nds);
 
 //Returns offset into savestate where bess info can be found
 static uint32_t nds_save_best_effort_state(nds_t* nds){
@@ -4637,6 +4640,7 @@ static FORCE_INLINE void nds_update_gx_irq(nds_t* nds){
       case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
     }
     nds9_io_store32(nds,NDS9_IF,if9);
+    nds_update_interrupt_lines(nds);
   }
 }
 static FORCE_INLINE void nds_tick_gx(nds_t* nds){
@@ -5322,6 +5326,11 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   }else if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
 
   switch(addr){
+    case NDS9_IF:  //alias case NDS7_IF:
+    case NDS9_IME: //alias case NDS7_IME:
+    case NDS9_IE:  //alias case NDS7_IE:
+      nds_update_interrupt_lines(nds);
+      break;
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
@@ -6637,6 +6646,17 @@ static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float
   y += nds_polyblep(t2,dt);
   return y;
 }
+static FORCE_INLINE void nds_update_interrupt_lines(nds_t* nds){
+  uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
+  int9_if &= nds9_io_read32(nds,NDS9_IE);
+  uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+  nds->nds9_interrupt_line =((ime&0x1)&&int9_if)!=0;
+
+  uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+  int7_if &= nds7_io_read32(nds,NDS7_IE);
+  ime = nds7_io_read32(nds,NDS7_IME);
+  nds->nds7_interrupt_line =((ime&0x1)&&int7_if)!=0;
+}
 static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
   if(SB_UNLIKELY(nds->active_if_pipe_stages)){
     uint32_t if_bit = nds->nds9_pipelined_if[0];
@@ -6664,6 +6684,7 @@ static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
     nds->nds7_pipelined_if[4]=0;
 
     nds->active_if_pipe_stages>>=1;
+    nds_update_interrupt_lines(nds);
   }
 }
 static uint8_t nds_bin_to_bcd(uint8_t bin){
@@ -6891,12 +6912,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
       if(SB_LIKELY(!nds->dma_processed[1])){
-        uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
-        if(int9_if){
-          int9_if &= nds9_io_read32(nds,NDS9_IE);
-          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9);
-        }
+        if(SB_UNLIKELY(nds->nds9_interrupt_line))arm7_process_interrupts(&nds->arm9);
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
           nds->arm9.i_cycles=0;
           arm9_exec_instruction(&nds->arm9);
@@ -6905,13 +6921,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         }
       }
       if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
-        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-        if(int7_if){
-          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-          int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7);
-        }
+        if(SB_UNLIKELY(nds->nds7_interrupt_line))arm7_process_interrupts(&nds->arm7);
         arm7_exec_instruction(&nds->arm7);
       }
     }      
