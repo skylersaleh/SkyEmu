@@ -2114,6 +2114,7 @@ typedef struct{
   int16_t curr_tex_coord[2];
   int16_t last_vertex_pos[3];
   float transformed_normal[4];
+  float normal[4];
   int matrix_mode; 
   int mv_matrix_stack_ptr;
   int proj_matrix_stack_ptr;
@@ -3335,7 +3336,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   if(rom_entry&&rom_entry->GameCode==game_code){
     nds->backup.backup_type = rom_entry->SaveMemType;
   }else{
-    printf("Save type could not be looked up in the database. A default will be assumed");
+    printf("Save type could not be looked up in the database. A default will be assumed\n");
     nds->backup.backup_type = NDS_BACKUP_EEPROM_128KB;
   } 
   printf("NDS Save Type: %d\n",nds->backup.backup_type);
@@ -4277,14 +4278,19 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         case 2: //Toon mode
         {
           int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
-          //printf("toon entry: %d\n",toon_highlight_entry);
-          uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-          col_v[0]= SB_BFE(color,0,5)/31.;
-          col_v[1]= SB_BFE(color,5,5)/31.;
-          col_v[2]= SB_BFE(color,10,5)/31.;
-          SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
-          // Highlight shading
-          if(shade_mode)SE_RPT3 output_col[r]+= col_v[r];
+          if(shade_mode){
+            col_v[1]=col_v[2]=col_v[0];
+            uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+ SB_BFE(color,5*r,5)/31.;
+          }else{
+            int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
+            //printf("toon entry: %d\n",toon_highlight_entry);
+            uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+            col_v[0]= SB_BFE(color,0,5)/31.;
+            col_v[1]= SB_BFE(color,5,5)/31.;
+            col_v[2]= SB_BFE(color,10,5)/31.;
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
+          }
           output_col[3]= col_v[3]*tex_color[3];
         }break;
       }
@@ -4420,8 +4426,23 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       nds_mult_matrix_vector(uv,nds->gpu.tex_matrix,tex_p2,4);
     }break;
     case 2:{
-      SE_RPT4 uv[r]=nds->gpu.transformed_normal[r]; 
+      float tex_p2[4]={nds->gpu.normal[0],nds->gpu.normal[1],nds->gpu.normal[2],1.};
+      float m2[16];
+      for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
+      m2[12]=uv[0];
+      m2[13]=uv[1];
+      m2[14]=0.;
+      m2[15]=0.;
+      nds_mult_matrix_vector(uv,m2,tex_p2,4);
     }break;
+    case 3:{
+      float tex_p2[4]={v[0],v[1],v[2],1.};
+      float m2[16];
+      for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
+      m2[12]=uv[0];
+      m2[13]=uv[1];
+      nds_mult_matrix_vector(uv,m2,tex_p2,4);
+    }
     default:
       //printf("Unknown Tex Coord XForm mode:%d\n",coord_xform_mode);
       break;
@@ -4594,8 +4615,12 @@ static float nds_point_plane_distance(float * point, float * plane){
   return dist; 
 }
 static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t nzi){
-  float normal_object[4] = {nxi/32768.,nyi/32768.,nzi/32768.,0.};
   nds_gpu_t* gpu = &nds->gpu;
+  gpu->normal[0]=nxi/32768.;
+  gpu->normal[1]=nyi/32768.;
+  gpu->normal[2]=nzi/32768.;
+  gpu->normal[3]=0.;
+  float* normal_object = gpu->normal;
   float *normal= gpu->transformed_normal;
   nds_mult_matrix_vector(normal,gpu->direction_matrix,normal_object,4);
 
