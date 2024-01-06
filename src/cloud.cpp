@@ -690,7 +690,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                 "&redirect_uri=http%3A//127.0.0.1%3A5000";
             https_request(
                 http_request_e::POST, "https://oauth2.googleapis.com/token?" + query, "", {},
-                [drive, &refresh_path](const std::vector<uint8_t>& data) {
+                [drive, refresh_path](const std::vector<uint8_t>& data) {
                     if (!nlohmann::json::accept(data))
                     {
                         printf("[cloud] failed to authenticate: invalid response\n");
