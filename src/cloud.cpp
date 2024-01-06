@@ -248,8 +248,8 @@ void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_dri
             if (!nlohmann::json::accept(token))
             {
                 printf("[cloud] failed to refresh token: invalid response\n");
-                callback(drive);
                 drive->dec();
+                callback(drive);
                 return;
             }
             nlohmann::json json = nlohmann::json::parse(token);
@@ -260,16 +260,16 @@ void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_dri
                 printf("[cloud] got response with error while refreshing token: %s: %s\n",
                        error.c_str(), error_description.c_str());
                 ::remove((drive->save_directory + "refresh_token.txt").c_str());
-                callback(drive);
                 drive->dec();
+                callback(drive);
                 return;
             }
 
             if (json.find("access_token") == json.end())
             {
                 printf("[cloud] failed to refresh token: no access token in response\n");
-                callback(drive);
                 drive->dec();
+                callback(drive);
                 return;
             }
 
