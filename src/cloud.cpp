@@ -259,6 +259,7 @@ void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_dri
                 std::string error_description = json["error_description"];
                 printf("[cloud] got response with error while refreshing token: %s: %s\n",
                        error.c_str(), error_description.c_str());
+                ::remove((drive->save_directory + "refresh_token.txt").c_str());
                 callback(drive);
                 drive->dec();
                 return;
@@ -783,7 +784,6 @@ void cloud_drive_create(void (*ready_callback)(cloud_drive_t*))
                 if (drive->access_token.empty())
                 {
                     printf("[cloud] failed to use refresh token\n");
-                    ::remove(refresh_path.c_str());
                     drive->ready_callback(nullptr);
                 }
                 else
