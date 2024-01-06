@@ -2125,6 +2125,7 @@ typedef struct{
   uint32_t tex_image_param;
   uint32_t tex_plt_base;
   uint32_t poly_attr;
+  uint32_t pending_poly_attr;
   uint32_t poly_ram_offset;
   bool pending_swap;
   bool box_test_result;
@@ -4611,8 +4612,8 @@ static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t n
     SE_RPT4 half_vector[r]=gpu->light_vector[i*4+r]*0.5;
     half_vector[2] -= 0.5; 
     SE_RPT3 specular-=normal[r]*half_vector[r];
-    diffuse = fmax(0,diffuse);
-    specular= fmax(0,specular); 
+    diffuse = fmaxf(0,diffuse);
+    specular= fmaxf(0,specular); 
     specular*=specular; 
     if(gpu->use_shininess_table){
       int entry = specular*127;
@@ -4899,7 +4900,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
                                           (((int16_t)(SB_BFE(p[0],20,10)<<6))>>6)+nds->gpu.last_vertex_pos[2]);
                                           break;
     
-    case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
+    case 0x29: /*POLYGON_ATTR*/ nds->gpu.pending_poly_attr=p[0];break;
     case 0x30: /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
       {
         nds->gpu.curr_diffuse_color[0] = SB_BFE(p[0],0,5)<<3;
@@ -4949,6 +4950,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
 
     case 0x40: /*BEGIN_VTXS*/ 
       nds->gpu.prim_type = SB_BFE(p[0],0,2);
+      nds->gpu.poly_attr=nds->gpu.pending_poly_attr;
       nds->gpu.curr_draw_vert =0; 
       break;
     case 0x41: /*END_VTXS  */  nds->gpu.curr_draw_vert =0; break;
