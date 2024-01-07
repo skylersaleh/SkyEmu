@@ -2931,7 +2931,10 @@ static FORCE_INLINE uint16_t nds9_debug_read16(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
 static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  uint32_t old_slow_bus_cycles =nds->mem.slow_bus_cycles;
+  uint32_t result = nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  nds->mem.slow_bus_cycles = old_slow_bus_cycles; 
+  return result; 
 }
 static FORCE_INLINE uint8_t nds7_debug_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
@@ -3336,7 +3339,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   if(rom_entry&&rom_entry->GameCode==game_code){
     nds->backup.backup_type = rom_entry->SaveMemType;
   }else{
-    printf("Save type could not be looked up in the database. A default will be assumed\n");
+    printf("Save type for %08x could not be looked up in the database. A default will be assumed\n",game_code);
     nds->backup.backup_type = NDS_BACKUP_EEPROM_128KB;
   } 
   printf("NDS Save Type: %d\n",nds->backup.backup_type);
@@ -4308,6 +4311,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
       }else{
         SE_RPT3 nds->framebuffer_3d[p*4+r]=output_col[r]*255;
+        nds->framebuffer_3d_depth[p]=z;
         nds->framebuffer_3d[p*4+3]=255;
       }
     }
