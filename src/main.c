@@ -2628,6 +2628,7 @@ static void se_draw_emulated_system_screen(bool preview){
       if(emu_state.system==SYSTEM_GBA){
         se_draw_lcd_defer(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
       }else if (emu_state.system==SYSTEM_NDS){
+        bool masked_touchscreen = !gui_state.block_touchscreen&&!preview;
         if(hybrid_nds){
           float p[6]={
             0.3333*lcd_render_w,-lcd_render_h*0.25,
@@ -2642,7 +2643,7 @@ static void se_draw_emulated_system_screen(bool preview){
             p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
           }
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w/3, lcd_render_h*0.5,rotation,false);
-          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,true);
+          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,masked_touchscreen);
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[4],lcd_render_y+p[5], lcd_render_w*2/3, lcd_render_h,rotation,false);
         }else{
           float p[4]={
@@ -2656,7 +2657,7 @@ static void se_draw_emulated_system_screen(bool preview){
             p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
           }
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
-          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,true);
+          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,masked_touchscreen);
         }
       }else if (emu_state.system==SYSTEM_GB){
         se_draw_lcd_defer(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
