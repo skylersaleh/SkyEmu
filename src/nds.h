@@ -4431,7 +4431,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       nds_mult_matrix_vector(uv,nds->gpu.tex_matrix,tex_p2,4);
     }break;
     case 2:{
-      float tex_p2[4]={nds->gpu.normal[0],nds->gpu.normal[1],nds->gpu.normal[2],1.};
+      //Double check is the 16 divide correct
+      float tex_p2[4]={nds->gpu.normal[0]/16.0,nds->gpu.normal[1]/16.0,nds->gpu.normal[2]/16.0,1.};
       float m2[16];
       for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
       m2[12]=uv[0];
@@ -4441,7 +4442,8 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       nds_mult_matrix_vector(uv,m2,tex_p2,4);
     }break;
     case 3:{
-      float tex_p2[4]={v[0],v[1],v[2],1.};
+      //Double check is the 16 divide correct
+      float tex_p2[4]={v[0]/16.0,v[1]/16.0,v[2]/16.0,1.};
       float m2[16];
       for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
       m2[12]=uv[0];
