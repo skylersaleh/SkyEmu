@@ -2087,7 +2087,6 @@ void gb_tile_data_debugger(){
 void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write, emu_mmio_access_type access_type){
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
-    uint32_t data = se_read32(read, addr);
     bool has_fields = false;
     igPushIDInt(i);
     char lab[80];
@@ -2099,6 +2098,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     }
     snprintf(lab,80,"0x%08x: %s %s%s",addr,mmios[i].name,access.write_in_tick?ICON_FK_PENCIL_SQUARE_O:"",access.read_in_tick?ICON_FK_SEARCH:"");
     if (igTreeNodeStrStr(mmios[i].name,lab)){
+      uint32_t data = se_read32(read, addr);
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
         igPushIDInt(f);
         uint32_t start = mmios[i].bits[f].start; 
