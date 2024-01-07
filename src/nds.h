@@ -2238,6 +2238,7 @@ typedef struct{
   uint64_t current_clock;
   float ghosting_strength;
   int ppu_fast_forward_ticks;
+  bool sleep_mode;
   FILE * gx_log;
   FILE * io9_log;
   FILE * io7_log;
@@ -2258,7 +2259,7 @@ typedef struct{
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
   nds_vert_t vert_buffer[NDS_MAX_VERTS];
 }nds_scratch_t; 
-static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
+static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
@@ -5365,8 +5366,13 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
-        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)>=2;
+        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)==2;
+        bool sleep = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)==3;
         if(halt) nds->arm7.wait_for_interrupt=true;
+        if(sleep){
+          nds->sleep_mode = true;
+          nds->frame_in_progress=false;
+        }
       }
       break;
     case NDS_IPCSYNC:{
@@ -6275,7 +6281,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     }
   }
 }
-static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
+static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds){
+  sb_joy_t* joy = &emu->joy;
   for(int cpu=0;cpu<2;++cpu){
     uint16_t reg_value = 0;
     //Null joy updates are used to tick the joypad when mmios are set
@@ -6308,6 +6315,7 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
         if(cpu)nds9_send_interrupt(nds,4,if_bit);
         else nds7_send_interrupt(nds,4,if_bit);
         nds->prev_key_interrupt = true;
+        nds->sleep_mode=false;
       }else nds->prev_key_interrupt = false;
 
     }
@@ -6317,7 +6325,16 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
     ext_key|= !(joy->inputs[SE_KEY_X]>0.3) <<0;
     ext_key|= !(joy->inputs[SE_KEY_Y]>0.3) <<1;
     ext_key|= !(joy->inputs[SE_KEY_PEN_DOWN]>0.3)<<6;
-    ext_key|= (joy->inputs[SE_KEY_FOLD_SCREEN]>0.3) <<7;
+    uint16_t prev_ext_key = nds7_io_read16(nds,NDS7_EXTKEYIN);
+    int fold_state =  SB_BFE(prev_ext_key,7,1);
+    if(!(joy->inputs[SE_KEY_FOLD_SCREEN]>0.3)&&emu->prev_frame_joy.inputs[SE_KEY_FOLD_SCREEN]>0.3){
+      fold_state = !fold_state; 
+      if(!fold_state){
+        nds7_send_interrupt(nds,4,(1<<NDS7_INT_SCREEN_FOLD));
+        nds->sleep_mode=false;
+      }
+    }
+    if(fold_state)ext_key|= 1 <<7;
     ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
@@ -6929,8 +6946,9 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds->gpu.vert_buffer=scratch->vert_buffer;
   nds_tick_rtc(nds);
-  nds_tick_keypad(&emu->joy,nds);
+  nds_tick_keypad(emu,nds);
   nds_tick_touch(&emu->joy,nds);
+  
   bool prev_vblank=true;
 
   uint64_t* d = (uint64_t*)nds->mem.mmio_debug_access_buffer;
@@ -6938,6 +6956,11 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     d[i]&=0x9191919191919191ULL;
   }
   nds->frame_in_progress=true;
+  if(nds->sleep_mode){
+    nds->frame_in_progress=false;
+    memset(scratch->framebuffer_top,0,sizeof(scratch->framebuffer_top));
+    memset(scratch->framebuffer_bottom,0,sizeof(scratch->framebuffer_bottom));
+  }
   while(nds->frame_in_progress){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
