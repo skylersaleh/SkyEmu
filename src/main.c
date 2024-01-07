@@ -6523,11 +6523,6 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
-#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
-  static bool last_toggle_fullscreen=false;
-  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
-  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
-#endif
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -6567,11 +6562,14 @@ static void frame(void) {
   se_android_poll_events(igGetIO()->WantTextInput);
 #endif
   sb_poll_controller_input(&emu_state.joy);
+  
 
   if(gui_state.ui_type==SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS){
       style->ScrollbarSize=4;
   }
-
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
+  if(!emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&emu_state.prev_frame_joy.inputs[SE_KEY_TOGGLE_FULLSCREEN])sapp_toggle_fullscreen();
+#endif
   se_bring_text_field_into_view();
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
