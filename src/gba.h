@@ -3807,7 +3807,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
           int_if &= gba_io_read16(gba,GBA_IE);
           uint32_t ime = gba_io_read32(gba,GBA_IME);
           int_if *= SB_BFE(ime,0,1);
-          arm7_process_interrupts(&gba->cpu);
+          if(int_if)arm7_process_interrupts(&gba->cpu);
         }
       }
       arm7_exec_instruction(&gba->cpu);
