@@ -204,8 +204,9 @@ typedef struct{
   float gui_scale_factor;
   uint32_t only_one_notification;
   uint32_t enable_download_cache;
-  uint32_t padding[221];
-}persistent_settings_t; 
+  uint32_t nds_layout; 
+  uint32_t padding[220];
+};
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
 typedef struct{
@@ -358,6 +359,16 @@ typedef struct{
 #define SE_THEME_DREW_BACKGROUND 0x1
 #define SE_THEME_DREW_SCREEN     0x2  
 #define SE_THEME_DREW_CONTROLLER 0x4
+
+#define SE_NDS_LAYOUT_AUTO 0 
+#define SE_NDS_LAYOUT_VERTICAL 1
+#define SE_NDS_LAYOUT_HORIZONTAL 2
+#define SE_NDS_LAYOUT_HYBRID_LARGE_TOP 3
+#define SE_NDS_LAYOUT_HYBRID_LARGE_BOTTOM 4
+#define SE_NDS_LAYOUT_VERTICAL_LARGE_TOP 5
+#define SE_NDS_LAYOUT_VERTICAL_LARGE_BOTTOM 6
+#define SE_NDS_LAYOUT_HORIZONTAL_LARGE_TOP 7
+#define SE_NDS_LAYOUT_HORIZONTAL_LARGE_BOTTOM 8
 
 typedef struct{
   uint16_t start_pixel;
@@ -569,8 +580,9 @@ void se_pop_disabled();
 static int se_draw_theme_region(int region, float x, float y, float w, float h);
 static int se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static int se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
-static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds);
-static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lcd_render_w, float lcd_render_h, bool hybrid_nds);
+
+static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, int* nds_layout);
+static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lcd_render_w, float lcd_render_h, int nds_layout);
 
 const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
@@ -2745,7 +2757,7 @@ static void se_draw_emulated_system_screen(bool preview){
     scr_w *=se_dpi_scale();
     scr_h *=se_dpi_scale();
   }
-  bool hybrid_nds=false; 
+  int nds_layout=gui_state.settings.nds_layout; 
   float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
   //Don't hide menubar if it doesn't make the screen smaller
   if(!gui_state.touch_controls.request_taller_region){
@@ -2759,7 +2771,7 @@ static void se_draw_emulated_system_screen(bool preview){
   if(!touch_controller_active)min_dim = 0;
 
   float native_w = dims[0], native_h = dims[1];
-  se_compute_draw_lcd_rect(&native_w, &native_h, &hybrid_nds);
+  se_compute_draw_lcd_rect(&native_w, &native_h, &nds_layout);
   
   bool portrait= (dims[0]-min_dim)/native_w<(dims[1]-min_dim)/native_h;
   ImVec2 win_pos;
@@ -2768,8 +2780,8 @@ static void se_draw_emulated_system_screen(bool preview){
   int result = se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,dims[0],dims[1]);
   if(!result){ 
     float render_w = dims[0], render_h = dims[1];
-    se_compute_draw_lcd_rect(&render_w, &render_h, &hybrid_nds);
-    se_draw_lcd_in_rect(win_pos.x+dims[0]*0.5,win_pos.y+dims[1]*0.5,render_w,render_h,hybrid_nds);
+    se_compute_draw_lcd_rect(&render_w, &render_h, &nds_layout);
+    se_draw_lcd_in_rect(win_pos.x+dims[0]*0.5,win_pos.y+dims[1]*0.5,render_w,render_h,nds_layout);
   }
   float pad_x = scr_h/se_dpi_scale()*0.025;
   if(!(result&SE_THEME_DREW_CONTROLLER)&&(!gui_state.block_touchscreen||preview))se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_BOTH,win_pos.x+pad_x,win_pos.y+pad_x, scr_w/se_dpi_scale()-pad_x*2, scr_h/se_dpi_scale()-pad_x*2, preview);
@@ -6304,7 +6316,6 @@ void se_draw_menu_panel(){
   int color_correct = gui_state.settings.gba_color_correction_mode;
   se_text("GBA Color Correction Type");igSameLine(180,0);
   se_combo_str("##ColorAlgorithm",&color_correct,"SkyEmu\0Higan\0",0);
-  igPopItemWidth();
   gui_state.settings.gba_color_correction_mode=color_correct;
   {
     bool b = gui_state.settings.ghosting;
@@ -6321,6 +6332,14 @@ void se_draw_menu_panel(){
     se_checkbox("Stretch Screen to Fit", &b);
     gui_state.settings.stretch_to_fit = b;
   }
+  {
+    se_text("NDS Screen Layout");
+    int layout = gui_state.settings.nds_layout;
+    igSameLine(SE_FIELD_INDENT,0);
+    se_combo_str("##NDSLayout",&layout,"Auto\0Vertical\0Horizontal\0Hybrid Large Top\0Hybrid Large Bottom\0Vertical Large Top\0Vertical Large Bottom\0Horizontal Large Top\0Horizontal Large Bottom\0\0",0);
+    gui_state.settings.nds_layout=layout; 
+  }
+  igPopItemWidth();
   se_text("Game Boy Color Palette");
   for(int i=0;i<4;++i){
     igPushIDInt(i);
@@ -7552,15 +7571,18 @@ void se_load_settings(){
       gui_state.settings.draw_progress_indicators=1;
       gui_state.settings.draw_leaderboard_trackers=1;
       gui_state.settings.draw_notifications=1;
+
       bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
       if(is_mobile){
         gui_state.settings.only_one_notification=1;
       }
       gui_state.settings.enable_download_cache=1;
       https_set_cache_enabled(gui_state.settings.enable_download_cache);
+      gui_state.settings.nds_layout = 0; 
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
+
     if(gui_state.settings.custom_font_scale<0.5)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.custom_font_scale>2.0)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
@@ -7583,8 +7605,7 @@ void se_load_settings(){
   retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode);
 #endif
 }
-static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){
-  *hybrid_nds = false; 
+static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, int* nds_layout){
   float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
   if(!gui_state.settings.stretch_to_fit){
     float scr_w = *lcd_render_w;
@@ -7592,13 +7613,36 @@ static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, b
     float native_w = SB_LCD_W;
     float native_h = SB_LCD_H;
     bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
+    *nds_layout= gui_state.settings.nds_layout;
     if(emu_state.system==SYSTEM_GBA){native_w = GBA_LCD_W; native_h = GBA_LCD_H;}
     else if(emu_state.system==SYSTEM_NDS){
-      native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;
-      if(scr_w/scr_h>1&&!touch_controller_active){
-        native_w = NDS_LCD_W+NDS_LCD_W*0.5;
-        native_h = NDS_LCD_H;
-        *hybrid_nds=true;
+      if(*nds_layout==SE_NDS_LAYOUT_AUTO){
+        *nds_layout = SE_NDS_LAYOUT_VERTICAL;
+        if(scr_w/scr_h>1&&!touch_controller_active)*nds_layout = SE_NDS_LAYOUT_HYBRID_LARGE_TOP;
+      }
+      switch(*nds_layout){
+        case SE_NDS_LAYOUT_VERTICAL: 
+          native_w = NDS_LCD_W; native_h = NDS_LCD_H*2;
+          break; 
+        case SE_NDS_LAYOUT_HORIZONTAL: 
+          native_w = NDS_LCD_W*2; native_h = NDS_LCD_H;
+          break; 
+        case SE_NDS_LAYOUT_HYBRID_LARGE_TOP:  
+        case SE_NDS_LAYOUT_HYBRID_LARGE_BOTTOM: 
+         native_w = NDS_LCD_W+NDS_LCD_W*0.5;
+         native_h = NDS_LCD_H;
+          break; 
+        case SE_NDS_LAYOUT_VERTICAL_LARGE_BOTTOM: 
+        case SE_NDS_LAYOUT_VERTICAL_LARGE_TOP: 
+          native_w = NDS_LCD_W; native_h = NDS_LCD_H*1.5;
+          break;
+        case SE_NDS_LAYOUT_HORIZONTAL_LARGE_BOTTOM: 
+        case SE_NDS_LAYOUT_HORIZONTAL_LARGE_TOP: 
+          native_w = NDS_LCD_W*1.5; native_h = NDS_LCD_H;
+          break; 
+        default:
+          gui_state.settings.nds_layout = SE_NDS_LAYOUT_AUTO;
+          break;
       }
     }
     float lcd_aspect= native_h/native_w;
@@ -7638,7 +7682,7 @@ static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, b
     }
   }
 }
-static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lcd_render_w, float lcd_render_h, bool hybrid_nds){
+static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lcd_render_w, float lcd_render_h, int nds_layout){
   float dpi_scale = se_dpi_scale();
   float lx = lcd_render_x*dpi_scale;
   float ly = lcd_render_y*dpi_scale;
@@ -7655,7 +7699,7 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
   if(emu_state.system==SYSTEM_GBA){
     se_draw_lcd_defer(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lx,ly, lw, lh,rotation,false);
   }else if (emu_state.system==SYSTEM_NDS){
-    if(hybrid_nds){
+    if(nds_layout==SE_NDS_LAYOUT_HYBRID_LARGE_TOP){
       float p[6]={
         0.3333* lw,- lh*0.25,
         0.3333* lw, lh*0.25,
@@ -7670,6 +7714,86 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
       se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw/3, lh*0.5,rotation,false);
       se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw/3, lh*0.5,rotation,true);
       se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[4],ly+p[5], lw*2/3, lh,rotation,false);
+    }else if(nds_layout==SE_NDS_LAYOUT_HYBRID_LARGE_BOTTOM){
+      float p[6]={
+        0.3333* lw,- lh*0.25,
+        0.3333* lw, lh*0.25,
+        -0.1666* lw,0,
+      };
+      for(int i=0;i<3;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw/3, lh*0.5,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw/3, lh*0.5,rotation,true);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[4],ly+p[5], lw*2/3, lh,rotation,true);
+    }else if(nds_layout==SE_NDS_LAYOUT_HORIZONTAL){
+      float p[4]={
+        0.25* lw,0,
+        -0.25* lw,0,
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw/2, lh,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw/2, lh,rotation,true);
+    }else if(nds_layout==SE_NDS_LAYOUT_HORIZONTAL_LARGE_TOP){
+      float p[4]={
+        -0.166666* lw,0,
+        0.3333333* lw,0,
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw*2/3, lh,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw/3, lh*0.5,rotation,true);
+    }else if(nds_layout==SE_NDS_LAYOUT_HORIZONTAL_LARGE_BOTTOM){
+      float p[4]={
+        -0.3333333* lw,0,
+        0.166666* lw,0,
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw/3, lh*0.5,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw*2/3, lh,rotation,true);
+    }else if(nds_layout==SE_NDS_LAYOUT_VERTICAL_LARGE_TOP){
+      float p[4]={
+        0,-0.1666666*lh,
+        0, 0.33333333*lh,
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw, lh*2/3,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw*0.5, lh/3,rotation,true);
+    }else if(nds_layout==SE_NDS_LAYOUT_VERTICAL_LARGE_BOTTOM){
+      float p[4]={
+        0,-0.333333*lh,
+        0,0.16666666*lh,
+      };
+      for(int i=0;i<2;++i){
+        float x = p[i*2+0];
+        float y = p[i*2+1];
+        p[i*2+0] = x*cos(-rotation)+y*sin(-rotation);
+        p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
+      }
+      se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lx+p[0],ly+p[1], lw*0.5, lh/3,rotation,false);
+      se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lx+p[2],ly+p[3], lw, lh*2/3,rotation,true);
     }else{
       float p[4]={
         0,- lh*0.25,
@@ -7753,8 +7877,9 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
     }
   }
 
-  bool hybrid_nds = false;
-  se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&hybrid_nds);
+  int nds_layout = gui_state.settings.nds_layout;
+  se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
+
   float lcd_non_fixed_scale[2];
   SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
 
@@ -7812,7 +7937,7 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
         first_screen = false; 
         float dpi_scale = se_dpi_scale();
         float lcd_pos[2] = {ceil((pmin.x+lcd_dims[0]*0.5)*dpi_scale)/dpi_scale,ceil((pmin.y+lcd_dims[1]*0.5)*dpi_scale)/dpi_scale};
-        se_draw_lcd_in_rect(lcd_pos[0],lcd_pos[1],lcd_dims[0],lcd_dims[1],hybrid_nds);
+        se_draw_lcd_in_rect(lcd_pos[0],lcd_pos[1],lcd_dims[0],lcd_dims[1],nds_layout);
       }
 
       int t = 0xff000000; 
