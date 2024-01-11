@@ -407,19 +407,8 @@ typedef enum{
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
-#define NDS_MAX(x, y)       \
-  ({                    \
-    typeof(x) _x = (x); \
-    typeof(y) _y = (y); \
-    _x > _y ? _x : _y;  \
-  })
-
-#define NDS_MIN(x, y)       \
-  ({                    \
-    typeof(x) _x = (x); \
-    typeof(y) _y = (y); \
-    _x < _y ? _x : _y;  \
-  })
+#define NDS_MAX(x, y) ( x > y ? x : y ) 
+#define NDS_MIN(x, y) ( x < y ? x : y )
 
 #define NDS_MATRIX_FRACTION_BITS 12
 #define NDS_MATRIX_MULTIPLY(A,B) (((int64_t)(A)*(B) + (1<<(NDS_MATRIX_FRACTION_BITS-1)))>>NDS_MATRIX_FRACTION_BITS)
