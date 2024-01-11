@@ -245,7 +245,6 @@ typedef struct{
   uint32_t hold_toggle; 
   bool turbo_modifier;
   bool hold_modifier;
-  bool request_taller_region;
 }se_touch_controls_t; 
 
 typedef struct{
@@ -2759,10 +2758,6 @@ static void se_draw_emulated_system_screen(bool preview){
   }
   int nds_layout=gui_state.settings.nds_layout; 
   float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
-  //Don't hide menubar if it doesn't make the screen smaller
-  if(!gui_state.touch_controls.request_taller_region){
-      gui_state.menubar_hide_timer=se_time();
-  }
 
   float dims[2]={scr_w/se_dpi_scale(),scr_h/se_dpi_scale()};
 
@@ -3919,14 +3914,11 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   }
   float row_h = 0.32*size_scalar ;
   float rect_width_scalar = 1;
-  gui_state.touch_controls.request_taller_region=false;
   float lr_y = 0*full_h;
   float start_sel_row_y = full_h-row_h;
   if(full_h<row_h*2+1.0){
     rect_width_scalar = 0.3;
   }
-  if(full_h<row_h*2+1-0.05)gui_state.touch_controls.request_taller_region=true;
-  if(full_h>row_h*2+1+0.05)gui_state.touch_controls.request_taller_region=false;
   float full_row_w = rect_width_scalar*0.99;
   float start_sel_row_w = (ht_en?0.66:0.99);
   float hold_turbo_w = 0.3;
