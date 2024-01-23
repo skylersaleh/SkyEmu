@@ -44,6 +44,7 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
 retro_video_refresh_t video_refresh_cb = NULL;
 retro_input_poll_t input_poll_cb = NULL;
 retro_input_state_t input_state_cb = NULL;
+retro_audio_sample_t audio_sample_cb = NULL;
 
 void retro_set_environment(retro_environment_t env) {
   enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -54,7 +55,9 @@ void retro_set_video_refresh(retro_video_refresh_t refresh) {
   video_refresh_cb = refresh;
 }
 
-void retro_set_audio_sample(retro_audio_sample_t _sample) {}
+void retro_set_audio_sample(retro_audio_sample_t sample) {
+  audio_sample_cb = sample;
+}
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t _batch) {}
 
@@ -162,9 +165,10 @@ void retro_run(void) {
   }
 
   do {
+    // video
     void* data;
     int width, height;
-
+    
     switch (lr_state.emu_state.system) {
     case SYSTEM_GB:
       data = lr_state.scratch.gb.framebuffer;      
@@ -178,6 +182,14 @@ void retro_run(void) {
     int pitch = width * 4;
     video_refresh_cb(data, width, height, pitch);
   } while (false);
+  
+  for (uint32_t audio_buffer_size; audio_buffer_size = sb_ring_buffer_size(&lr_state.emu_state.audio_ring_buff), audio_buffer_size > 2;) {
+    uint32_t read0 = lr_state.emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
+    uint32_t read1 = lr_state.emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
+    int16_t sample0 = lr_state.emu_state.audio_ring_buff.data[read0];
+    int16_t sample1 = lr_state.emu_state.audio_ring_buff.data[read1];
+    audio_sample_cb(sample0, sample1);
+  }
 }
 
 size_t retro_serialize_size(void) {

@@ -24,6 +24,7 @@
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
 #include "localization.h"
+#include "https.hpp"
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
@@ -2086,7 +2087,6 @@ void gb_tile_data_debugger(){
 void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu_byte_read_t read, emu_byte_write_t write, emu_mmio_access_type access_type){
   for(int i = 0; i<mmios_size;++i){
     uint32_t addr = mmios[i].addr;
-    uint32_t data = se_read32(read, addr);
     bool has_fields = false;
     igPushIDInt(i);
     char lab[80];
@@ -2098,6 +2098,7 @@ void se_draw_io_state(const char * label, mmio_reg_t* mmios, int mmios_size, emu
     }
     snprintf(lab,80,"0x%08x: %s %s%s",addr,mmios[i].name,access.write_in_tick?ICON_FK_PENCIL_SQUARE_O:"",access.read_in_tick?ICON_FK_SEARCH:"");
     if (igTreeNodeStrStr(mmios[i].name,lab)){
+      uint32_t data = se_read32(read, addr);
       for(int f = 0; f<sizeof(mmios[i].bits)/sizeof(mmios[i].bits[0]);++f){
         igPushIDInt(f);
         uint32_t start = mmios[i].bits[f].start; 
@@ -2627,6 +2628,7 @@ static void se_draw_emulated_system_screen(bool preview){
       if(emu_state.system==SYSTEM_GBA){
         se_draw_lcd_defer(core.gba.framebuffer,GBA_LCD_W,GBA_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
       }else if (emu_state.system==SYSTEM_NDS){
+        bool masked_touchscreen = !gui_state.block_touchscreen&&!preview;
         if(hybrid_nds){
           float p[6]={
             0.3333*lcd_render_w,-lcd_render_h*0.25,
@@ -2641,7 +2643,7 @@ static void se_draw_emulated_system_screen(bool preview){
             p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
           }
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w/3, lcd_render_h*0.5,rotation,false);
-          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,true);
+          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w/3, lcd_render_h*0.5,rotation,masked_touchscreen);
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[4],lcd_render_y+p[5], lcd_render_w*2/3, lcd_render_h,rotation,false);
         }else{
           float p[4]={
@@ -2655,7 +2657,7 @@ static void se_draw_emulated_system_screen(bool preview){
             p[i*2+1] = x*-sin(-rotation)+y*cos(-rotation);
           }
           se_draw_lcd_defer(core.nds.framebuffer_top,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[0],lcd_render_y+p[1], lcd_render_w, lcd_render_h*0.5,rotation,false);
-          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,true);
+          se_draw_lcd_defer(core.nds.framebuffer_bottom,NDS_LCD_W,NDS_LCD_H,lcd_render_x+p[2],lcd_render_y+p[3], lcd_render_w, lcd_render_h*0.5,rotation,masked_touchscreen);
         }
       }else if (emu_state.system==SYSTEM_GB){
         se_draw_lcd_defer(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lcd_render_x,lcd_render_y, lcd_render_w, lcd_render_h,rotation,false);
@@ -6522,11 +6524,6 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
-#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
-  static bool last_toggle_fullscreen=false;
-  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
-  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
-#endif
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -6566,11 +6563,14 @@ static void frame(void) {
   se_android_poll_events(igGetIO()->WantTextInput);
 #endif
   sb_poll_controller_input(&emu_state.joy);
+  
 
   if(gui_state.ui_type==SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS){
       style->ScrollbarSize=4;
   }
-
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
+  if(!emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&emu_state.prev_frame_joy.inputs[SE_KEY_TOGGLE_FULLSCREEN])sapp_toggle_fullscreen();
+#endif
   se_bring_text_field_into_view();
 
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
@@ -7554,7 +7554,7 @@ static void se_init(){
   }
 }
 static void init(void) {
-  cloud_drive_init();
+  https_initialize();
   gui_state.overlay_open= true;
 #ifdef USE_SDL
   SDL_SetMainReady();
@@ -7637,7 +7637,7 @@ static void cleanup(void) {
 #ifdef USE_SDL
   SDL_Quit();
 #endif
-  cloud_drive_cleanup();
+  https_shutdown();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {

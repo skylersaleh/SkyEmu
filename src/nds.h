@@ -407,6 +407,13 @@ typedef enum{
 #define NDS_IO_MAP_SPLIT_OFFSET  0x2000
 #define NDS_IO_MAP_041_OFFSET    0x4000
 
+#define NDS_MAX(x, y) ( x > y ? x : y ) 
+#define NDS_MIN(x, y) ( x < y ? x : y )
+
+#define NDS_MATRIX_FRACTION_BITS 12
+#define NDS_MATRIX_MULTIPLY(A,B) (((int64_t)(A)*(B) + (1<<(NDS_MATRIX_FRACTION_BITS-1)))>>NDS_MATRIX_FRACTION_BITS)
+#define NDS_MATRIX_ADD(A,B) NDS_MAX(NDS_MIN(((int64_t)(A)+(B)),(int32_t)0x7FFFFFFF),(int32_t)0x80000000)
+
 
 
 mmio_reg_t nds9_io_reg_desc[]={
@@ -616,6 +623,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA0DAD  , "DMA0DAD", { 0 } },   /* W    DMA 0 Destination Address */
   { GBA_DMA0CNT_L, "DMA0CNT_L", { 0 } },   /* W    DMA 0 Word Count */
   { GBA_DMA0CNT_H, "DMA0CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -628,6 +636,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA1DAD  , "DMA1DAD", { 0 } },   /* W    DMA 1 Destination Address */
   { GBA_DMA1CNT_L, "DMA1CNT_L", { 0 } },   /* W    DMA 1 Word Count */
   { GBA_DMA1CNT_H, "DMA1CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -640,6 +649,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA2DAD  , "DMA2DAD", { 0 } },   /* W    DMA 2 Destination Address */
   { GBA_DMA2CNT_L, "DMA2CNT_L", { 0 } },   /* W    DMA 2 Word Count */
   { GBA_DMA2CNT_H, "DMA2CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -652,6 +662,7 @@ mmio_reg_t nds9_io_reg_desc[]={
   { GBA_DMA3DAD  , "DMA3DAD", { 0 } },   /* W    DMA 3 Destination Address */
   { GBA_DMA3CNT_L, "DMA3CNT_L", { 0 } },   /* W    DMA 3 Word Count */
   { GBA_DMA3CNT_H, "DMA3CNT_H", {
+    { 0,  5,  "DMA word count high bits [16:20]" },
     { 5,  2,  "Dest Addr Control (0=Incr,1=Decr,2=Fixed,3=Incr/Reload)" },
     { 7,  2,  "Source Adr Control (0=Incr,1=Decr,2=Fixed,3=Prohibited)" },
     { 9,  1,  "DMA Repeat (0=Off, 1=On) (Must be zero if Bit 11 set)" },
@@ -1991,7 +2002,6 @@ typedef struct{
   uint8_t window[NDS_LCD_W];
   uint32_t bg_vram_base;
   uint32_t obj_vram_base; 
-  bool new_frame;
 }nds_ppu_t;
 typedef struct{
   bool last_enable; 
@@ -2088,15 +2098,15 @@ typedef struct{
   uint32_t curr_draw_vert; 
   uint32_t prim_type;
 
-  float proj_matrix[16];
-  float tex_matrix[16];
-  float mv_matrix[16];
-  float direction_matrix[16];
+  int32_t proj_matrix[16];
+  int32_t tex_matrix[16];
+  int32_t mv_matrix[16];
+  int32_t direction_matrix[16];
 
-  float proj_matrix_stack[16*2];
-  float tex_matrix_stack[16*2];
-  float mv_matrix_stack[16*32];
-  float direction_matrix_stack[16*32];
+  int32_t proj_matrix_stack[16*2];
+  int32_t tex_matrix_stack[16*2];
+  int32_t mv_matrix_stack[16*32];
+  int32_t direction_matrix_stack[16*32];
   uint8_t curr_color[4];
   uint8_t curr_ambient_color[3];
   uint8_t curr_diffuse_color[3];
@@ -2111,6 +2121,7 @@ typedef struct{
   int16_t curr_tex_coord[2];
   int16_t last_vertex_pos[3];
   float transformed_normal[4];
+  float normal[4];
   int matrix_mode; 
   int mv_matrix_stack_ptr;
   int proj_matrix_stack_ptr;
@@ -2122,6 +2133,7 @@ typedef struct{
   uint32_t tex_image_param;
   uint32_t tex_plt_base;
   uint32_t poly_attr;
+  uint32_t pending_poly_attr;
   uint32_t poly_ram_offset;
   bool pending_swap;
   bool box_test_result;
@@ -2210,6 +2222,8 @@ typedef struct{
   bool dma_wait_ppu;
   bool dma_processed[2];
   bool display_flip;
+  bool frame_in_progress;
+  bool pause_after_frame; 
   nds_timer_t timers[2][4];
   uint32_t next_timer_clock;
   uint64_t last_timer_clock;
@@ -2218,6 +2232,8 @@ typedef struct{
   // This array acts as a FIFO to keep track of that. 
   uint32_t nds9_pipelined_if[5];
   uint32_t nds7_pipelined_if[5];
+  bool nds7_interrupt_line;
+  bool nds9_interrupt_line;
   int active_if_pipe_stages; 
   char save_file_path[SB_FILE_PATH_SIZE];
 
@@ -2229,6 +2245,7 @@ typedef struct{
   uint64_t current_clock;
   float ghosting_strength;
   int ppu_fast_forward_ticks;
+  bool sleep_mode;
   FILE * gx_log;
   FILE * io9_log;
   FILE * io7_log;
@@ -2249,7 +2266,7 @@ typedef struct{
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
   nds_vert_t vert_buffer[NDS_MAX_VERTS];
 }nds_scratch_t; 
-static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds); 
+static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
 static FORCE_INLINE void nds_tick_timers(nds_t* nds);
 static FORCE_INLINE int nds_cycles_till_vblank(nds_t*nds);
@@ -2258,6 +2275,7 @@ static uint32_t nds_get_save_size(nds_t*nds);
 static uint8_t nds_process_flash_write(nds_t *nds, uint8_t write_data, nds_flash_t* flash, uint8_t *flash_data, uint32_t flash_size);
 static bool nds_run_ar_cheat(nds_t* nds, const uint32_t* buffer, uint32_t size);
 static FORCE_INLINE void nds_update_gx_irq(nds_t* nds);
+static FORCE_INLINE void nds_update_interrupt_lines(nds_t* nds);
 
 //Returns offset into savestate where bess info can be found
 static uint32_t nds_save_best_effort_state(nds_t* nds){
@@ -2674,7 +2692,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
-          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
+          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm9.trigger_breakpoint(nds);
         }
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
@@ -2815,7 +2833,7 @@ static FORCE_INLINE uint32_t nds7_process_memory_transaction(nds_t * nds, uint32
         if(process_write)*ret = nds_apply_mem_op(nds->mem.io, baddr, data, transaction_type); 
         if(!(transaction_type&NDS_MEM_DEBUG)){
           nds->mem.mmio_debug_access_buffer[baddr/4]|=(transaction_type&NDS_MEM_WRITE)?0x70:0xf;
-          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint =true;
+          if(nds->mem.mmio_debug_access_buffer[baddr/4]&0x80)nds->arm7.trigger_breakpoint(nds);
         }
         if((transaction_type&NDS_MEM_WRITE)){
           nds_postprocess_mmio_write(nds,addr,data,transaction_type);
@@ -2921,7 +2939,10 @@ static FORCE_INLINE uint16_t nds9_debug_read16(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
 }
 static FORCE_INLINE uint8_t nds9_debug_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  uint32_t old_slow_bus_cycles =nds->mem.slow_bus_cycles;
+  uint32_t result = nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_DEBUG);
+  nds->mem.slow_bus_cycles = old_slow_bus_cycles; 
+  return result; 
 }
 static FORCE_INLINE uint8_t nds7_debug_read8(nds_t*nds, unsigned baddr){
   return nds7_process_memory_transaction(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM7|NDS_MEM_DEBUG);
@@ -2957,6 +2978,18 @@ void nds7_arm_write8(void* user_data, uint32_t address, uint8_t data){nds7_write
 
 uint32_t nds_coprocessor_read(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp,uint32_t data);
+void nds7_cpu_breakpoint(void* user_data){
+  nds_t * nds = (nds_t*)user_data;
+  nds->frame_in_progress=false; 
+  nds->pause_after_frame=true;
+  printf("Hit ARM7 Breakpoint\n");
+}
+void nds9_cpu_breakpoint(void* user_data){
+  nds_t * nds = (nds_t*)user_data;
+  nds->pause_after_frame=true;
+  nds->frame_in_progress=false; 
+  printf("Hit ARM9 Breakpoint\n");
+}
 
 
 static FORCE_INLINE uint32_t nds_compute_access_cycles_dma(nds_t *nds, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
@@ -3314,7 +3347,7 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   if(rom_entry&&rom_entry->GameCode==game_code){
     nds->backup.backup_type = rom_entry->SaveMemType;
   }else{
-    printf("Save type could not be looked up in the database. A default will be assumed");
+    printf("Save type for %08x could not be looked up in the database. A default will be assumed\n",game_code);
     nds->backup.backup_type = NDS_BACKUP_EEPROM_128KB;
   } 
   printf("NDS Save Type: %d\n",nds->backup.backup_type);
@@ -3817,7 +3850,7 @@ static void nds_deselect_spi(nds_t *nds){
   nds->firmware.state = NDS_FLASH_RECV_CMD; 
   nds->spi.last_device = -1;
 }
-static float * nds_gpu_get_active_matrix(nds_t*nds){
+static int32_t * nds_gpu_get_active_matrix(nds_t*nds){
   switch(nds->gpu.matrix_mode){
     case NDS_MATRIX_PROJ: return nds->gpu.proj_matrix;
     case NDS_MATRIX_DIR:case NDS_MATRIX_MV: return nds->gpu.mv_matrix;
@@ -3828,8 +3861,8 @@ static float * nds_gpu_get_active_matrix(nds_t*nds){
   }
   return nds->gpu.mv_matrix;
 }
-static void nds_identity_matrix(float* m){
-  for(int i=0;i<16;++i)m[i]=(i%5)==0?1.0:0.0;;
+static void nds_identity_matrix(int32_t* m){
+  for(int i=0;i<16;++i)m[i]=(i%5)==0?(1<<NDS_MATRIX_FRACTION_BITS):0;
 }
 static void nds_reset_gpu(nds_t*nds){
   printf("Reset GPU\n");
@@ -3869,35 +3902,35 @@ static void nds_gpu_swap_buffers(nds_t*nds){
   nds->gpu.poly_ram_offset=0;
 }
 //res=res*m2
-void nds_mult_matrix4(float * res, float *m2){
+void nds_mult_matrix4(int32_t * res, int32_t *m2){
   //printf("Mult Matrix:\n");
   //for(int y=0;y<4;++y)printf("%f %f %f %f\n",m2[0+y*4],m2[1+y*4],m2[2+y*4],m2[3+y*4]);
-  float t[16];
+  int32_t t[16];
   for(int i=0;i<16;++i)t[i]=res[i];
 
   for(int y=0;y<4;++y) 
     for(int x=0;x<4;++x){
-      res[x+y*4] = m2[0+y*4]*t[x+0*4]
-                  +m2[1+y*4]*t[x+1*4]
-                  +m2[2+y*4]*t[x+2*4]
-                  +m2[3+y*4]*t[x+3*4];
+      res[x+y*4] = NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m2[0+y*4],t[x+0*4]),
+                   NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m2[1+y*4],t[x+1*4]),
+                   NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m2[2+y*4],t[x+2*4]),
+                                  NDS_MATRIX_MULTIPLY(m2[3+y*4],t[x+3*4]))));
   }
 }
-void nds_translate_matrix(float * m, float x, float y, float z){
-  m[12]+=m[0]*x+m[4]*y+m[8]*z;
-  m[13]+=m[1]*x+m[5]*y+m[9]*z;
-  m[14]+=m[2]*x+m[6]*y+m[10]*z;
-  m[15]+=m[3]*x+m[7]*y+m[11]*z;
+void nds_translate_matrix(int32_t * m, int32_t x, int32_t y, int32_t z){
+  m[12]=NDS_MATRIX_ADD(m[12],NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[0],x),NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[4],y),NDS_MATRIX_MULTIPLY(m[8],z))));
+  m[13]=NDS_MATRIX_ADD(m[13],NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[1],x),NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[5],y),NDS_MATRIX_MULTIPLY(m[9],z))));
+  m[14]=NDS_MATRIX_ADD(m[14],NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[2],x),NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[6],y),NDS_MATRIX_MULTIPLY(m[10],z))));
+  m[15]=NDS_MATRIX_ADD(m[15],NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[3],x),NDS_MATRIX_ADD(NDS_MATRIX_MULTIPLY(m[7],y),NDS_MATRIX_MULTIPLY(m[11],z))));
 }
-void nds_scale_matrix(float * m, float x, float y, float z){
-  SE_RPT4 m[0*4+r] *=x;
-  SE_RPT4 m[1*4+r] *=y;
-  SE_RPT4 m[2*4+r] *=z;
+void nds_scale_matrix(int32_t * m, int32_t x, int32_t y, int32_t z){
+  SE_RPT4 m[0*4+r] =NDS_MATRIX_MULTIPLY(m[0*4+r],x);
+  SE_RPT4 m[1*4+r] =NDS_MATRIX_MULTIPLY(m[1*4+r],y);
+  SE_RPT4 m[2*4+r] =NDS_MATRIX_MULTIPLY(m[2*4+r],z);
 }
-void nds_mult_matrix_vector(float * result, float * m, float *v,int dims){
+void nds_mult_matrix_vector(float * result, int32_t * m, float *v,int dims){
   for(int x=0;x<dims;++x){
     result[x]=0;
-    for(int y = 0;y<dims;++y)result[x]+=m[x+y*dims]*v[y];
+    for(int y = 0;y<dims;++y)result[x]+=m[x+y*dims]/(float)(1<<NDS_MATRIX_FRACTION_BITS)*v[y];
   }
 }
 static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
@@ -4256,14 +4289,19 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         case 2: //Toon mode
         {
           int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
-          //printf("toon entry: %d\n",toon_highlight_entry);
-          uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-          col_v[0]= SB_BFE(color,0,5)/31.;
-          col_v[1]= SB_BFE(color,5,5)/31.;
-          col_v[2]= SB_BFE(color,10,5)/31.;
-          SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
-          // Highlight shading
-          if(shade_mode)SE_RPT3 output_col[r]+= col_v[r];
+          if(shade_mode){
+            col_v[1]=col_v[2]=col_v[0];
+            uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+ SB_BFE(color,5*r,5)/31.;
+          }else{
+            int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
+            //printf("toon entry: %d\n",toon_highlight_entry);
+            uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
+            col_v[0]= SB_BFE(color,0,5)/31.;
+            col_v[1]= SB_BFE(color,5,5)/31.;
+            col_v[2]= SB_BFE(color,10,5)/31.;
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
+          }
           output_col[3]= col_v[3]*tex_color[3];
         }break;
       }
@@ -4281,6 +4319,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
         if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
       }else{
         SE_RPT3 nds->framebuffer_3d[p*4+r]=output_col[r]*255;
+        nds->framebuffer_3d_depth[p]=z;
         nds->framebuffer_3d[p*4+3]=255;
       }
     }
@@ -4399,8 +4438,25 @@ static void nds_gpu_process_vertex(nds_t*nds, int16_t vx,int16_t vy, int16_t vz)
       nds_mult_matrix_vector(uv,nds->gpu.tex_matrix,tex_p2,4);
     }break;
     case 2:{
-      SE_RPT4 uv[r]=nds->gpu.transformed_normal[r]; 
+      //Double check is the 16 divide correct
+      float tex_p2[4]={nds->gpu.normal[0]/16.0,nds->gpu.normal[1]/16.0,nds->gpu.normal[2]/16.0,1.};
+      int32_t m2[16];
+      for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
+      m2[12]=uv[0];
+      m2[13]=uv[1];
+      m2[14]=0.;
+      m2[15]=0.;
+      nds_mult_matrix_vector(uv,m2,tex_p2,4);
     }break;
+    case 3:{
+      //Double check is the 16 divide correct
+      float tex_p2[4]={v[0]/16.0,v[1]/16.0,v[2]/16.0,1.};
+      int32_t m2[16];
+      for(int i=0;i<16;++i)m2[i]=nds->gpu.tex_matrix[i];
+      m2[12]=uv[0];
+      m2[13]=uv[1];
+      nds_mult_matrix_vector(uv,m2,tex_p2,4);
+    }
     default:
       //printf("Unknown Tex Coord XForm mode:%d\n",coord_xform_mode);
       break;
@@ -4510,7 +4566,9 @@ static int nds_gpu_cmd_params(int cmd){
 
 static int nds_gpu_cmd_cycles(int cmd){
   //https://melonds.kuribo64.net/board/thread.php?id=141
-  return 3; 
+  int params = nds_gpu_cmd_params(cmd); 
+  if(params==0)params=1;
+  return params;
   switch(cmd){
     case 0x10:return   1 ; /*MTX_MODE - Set Matrix Mode (W)*/
     case 0x11:return  17 ; /*MTX_PUSH - Push Current Matrix on Stack (W)*/
@@ -4565,14 +4623,18 @@ static FORCE_INLINE void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data)
   nds->gpu.fifo_data[nds->gpu.fifo_write_ptr%NDS_GXFIFO_STORAGE]=data;
   nds->gpu.fifo_write_ptr++;
 }
-static float nds_point_plane_distance(float * point, float * plane){
-  float dist = plane[3];
-  SE_RPT3 dist+=point[r]*plane[r];
+static float nds_point_plane_distance(int32_t * point, int32_t * plane){
+  int32_t dist = plane[3];
+  SE_RPT3 dist=NDS_MATRIX_ADD(dist,NDS_MATRIX_MULTIPLY(point[r],plane[r]));
   return dist; 
 }
 static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t nzi){
-  float normal_object[4] = {nxi/32768.,nyi/32768.,nzi/32768.,0.};
   nds_gpu_t* gpu = &nds->gpu;
+  gpu->normal[0]=nxi/32768.;
+  gpu->normal[1]=nyi/32768.;
+  gpu->normal[2]=nzi/32768.;
+  gpu->normal[3]=0.;
+  float* normal_object = gpu->normal;
   float *normal= gpu->transformed_normal;
   nds_mult_matrix_vector(normal,gpu->direction_matrix,normal_object,4);
 
@@ -4589,8 +4651,8 @@ static void nds_vertex_lighting(nds_t * nds, int16_t nxi, int16_t nyi, int16_t n
     SE_RPT4 half_vector[r]=gpu->light_vector[i*4+r]*0.5;
     half_vector[2] -= 0.5; 
     SE_RPT3 specular-=normal[r]*half_vector[r];
-    diffuse = fmax(0,diffuse);
-    specular= fmax(0,specular); 
+    diffuse = fmaxf(0,diffuse);
+    specular= fmaxf(0,specular); 
     specular*=specular; 
     if(gpu->use_shininess_table){
       int entry = specular*127;
@@ -4618,6 +4680,7 @@ static FORCE_INLINE void nds_update_gx_irq(nds_t* nds){
       case 2: if(empty)if9|=(1<<NDS9_INT_GX_FIFO); break;
     }
     nds9_io_store32(nds,NDS9_IF,if9);
+    nds_update_interrupt_lines(nds);
   }
 }
 static FORCE_INLINE void nds_tick_gx(nds_t* nds){
@@ -4640,7 +4703,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
   for(int i=0;i<cmd_params;++i)printf("%08x ",p[i]);
   printf("\n");
   //*/
-  float fixed_to_float = 1.0/(1<<12);
+  float fixed_to_float = 1.0/(1<<NDS_MATRIX_FRACTION_BITS);
   gpu->cmd_busy_cycles= nds_gpu_cmd_cycles(cmd);
 
   if(SB_UNLIKELY(nds->gx_log)){
@@ -4648,9 +4711,9 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       fprintf(nds->gx_log,"GPU CMD: %02x\n",cmd);
       fprintf(nds->gx_log,"mv_stack: %d proj_stack: %d\n",gpu->mv_matrix_stack_ptr, gpu->proj_matrix_stack_ptr);
       fprintf(nds->gx_log,"proj: ");
-      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->proj_matrix[i]);
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%lld ",(long long)gpu->proj_matrix[i]);
       fprintf(nds->gx_log,"\nmv: ");
-      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%f ",gpu->mv_matrix[i]);
+      for(int i=0;i<16;++i)fprintf(nds->gx_log,"%lld ",(long long)gpu->mv_matrix[i]);
       fprintf(nds->gx_log,"\n");
     }
   }
@@ -4715,7 +4778,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       break;
     }
     case 0x13: {/*MTX_STORE*/
-      float * m = nds_gpu_get_active_matrix(nds);
+      int32_t * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
       switch (gpu->matrix_mode){
         case NDS_MATRIX_MV:
@@ -4733,7 +4796,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       break;
     }
     case 0x14: {/*MTX_RESTORE*/
-      float * m = nds_gpu_get_active_matrix(nds);
+      int32_t * m = nds_gpu_get_active_matrix(nds);
       int new_stack = SB_BFE(p[0],0,5)*16;
       switch (gpu->matrix_mode){
         case NDS_MATRIX_MV:
@@ -4755,19 +4818,19 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       if(gpu->matrix_mode==NDS_MATRIX_DIR)nds_identity_matrix(gpu->direction_matrix);
       break;
     case 0x16: /*MTX_LOAD_4x4 - Load 4x4 Matrix to Current Matrix (W)*/
-      for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i]*fixed_to_float;
+      for(int i=0;i<16;++i)nds_gpu_get_active_matrix(nds)[i]=p[i];
       if(gpu->matrix_mode==NDS_MATRIX_DIR){
-        for(int i=0;i<16;++i) gpu->direction_matrix[i]=p[i]*fixed_to_float;
+        for(int i=0;i<16;++i) gpu->direction_matrix[i]=p[i];
       }
       break;
     case 0x17:{ /*MTX_LOAD_4x3 - Load 4x3 Matrix to Current Matrix (W)*/
-      float m2[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
-        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
-        p[6]*fixed_to_float ,p[7]*fixed_to_float, p[8]*fixed_to_float,0,
-        p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
+      int32_t m2[16]={
+        p[0], p[1], p[2],0,
+        p[3], p[4], p[5],0,
+        p[6], p[7], p[8],0,
+        p[9], p[10],p[11],(1<<NDS_MATRIX_FRACTION_BITS),
       };
-      float*m = nds_gpu_get_active_matrix(nds);
+      int32_t*m = nds_gpu_get_active_matrix(nds);
       for(int i=0;i<16;++i)m[i]=m2[i];
       if(gpu->matrix_mode==NDS_MATRIX_DIR){
         for(int i=0;i<16;++i) gpu->direction_matrix[i]=m2[i];
@@ -4775,11 +4838,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       break;
     }
     case 0x18:{ /*MTX_MULT_4x4 - Multiply Current Matrix by 4x4 Matrix (W)*/
-      float m[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,p[3]*fixed_to_float, 
-        p[4]*fixed_to_float, p[5]*fixed_to_float, p[6]*fixed_to_float,p[7]*fixed_to_float,
-        p[8]*fixed_to_float, p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,
-        p[12]*fixed_to_float, p[13]*fixed_to_float, p[14]*fixed_to_float,p[15]*fixed_to_float
+      int32_t m[16]={
+        p[0], p[1], p[2],p[3], 
+        p[4], p[5], p[6],p[7],
+        p[8], p[9], p[10],p[11],
+        p[12], p[13], p[14],p[15]
       };
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
       if(gpu->matrix_mode==NDS_MATRIX_DIR){
@@ -4789,11 +4852,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       break;
     }
     case 0x19:{ /*MTX_MULT_4x3 - Multiply Current Matrix by 4x3 Matrix (W)*/
-      float m[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
-        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
-        p[6]*fixed_to_float,p[7]*fixed_to_float, p[8]*fixed_to_float,0,
-        p[9]*fixed_to_float, p[10]*fixed_to_float,p[11]*fixed_to_float,1.,
+      int32_t m[16]={
+        p[0], p[1], p[2],0,
+        p[3], p[4], p[5],0,
+        p[6],p[7], p[8],0,
+        p[9], p[10],p[11],(1<<NDS_MATRIX_FRACTION_BITS),
       };
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
       if(gpu->matrix_mode==NDS_MATRIX_DIR){
@@ -4804,11 +4867,11 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
     }
     
     case 0x1a: { /*MTX_MULT_3x3 - Multiply Current Matrix by 3x3 Matrix (W)*/
-      float m[16]={
-        p[0]*fixed_to_float, p[1]*fixed_to_float, p[2]*fixed_to_float,0,
-        p[3]*fixed_to_float, p[4]*fixed_to_float, p[5]*fixed_to_float,0,
-        p[6]*fixed_to_float, p[7]*fixed_to_float, p[8]*fixed_to_float,0,
-        0,0,0,1.,
+      int32_t m[16]={
+        p[0], p[1], p[2],0,
+        p[3], p[4], p[5],0,
+        p[6], p[7], p[8],0,
+        0,0,0,(1<<NDS_MATRIX_FRACTION_BITS),
       };
       nds_mult_matrix4(nds_gpu_get_active_matrix(nds),m);
       if(gpu->matrix_mode==NDS_MATRIX_DIR){
@@ -4820,19 +4883,13 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
     case 0x1c: /*MTX_TRAN*/
       if(nds->gpu.matrix_mode==NDS_MATRIX_DIR){
         gpu->cmd_busy_cycles+=30;
-        nds_translate_matrix(gpu->direction_matrix,p[0]*fixed_to_float,
-                                                   p[1]*fixed_to_float,
-                                                   p[2]*fixed_to_float); 
+        nds_translate_matrix(gpu->direction_matrix,p[0], p[1],p[2]); 
       }
-      nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
-                                                                    p[1]*fixed_to_float,
-                                                                    p[2]*fixed_to_float);break; /*MTX_TRAN*/
+      nds_translate_matrix(nds_gpu_get_active_matrix(nds),p[0],p[1], p[2]);break; /*MTX_TRAN*/
       
     case 0x1b: 
       if(nds->gpu.matrix_mode==NDS_MATRIX_DIR)gpu->cmd_busy_cycles+=30;
-      nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0]*fixed_to_float,
-                                                                p[1]*fixed_to_float,
-                                                                p[2]*fixed_to_float);break; /*MTX_SCALE*/
+      nds_scale_matrix(nds_gpu_get_active_matrix(nds),p[0],p[1],p[2]);break; /*MTX_SCALE*/
     case 0x20: /*COLOR - Directly Set Vertex Color (W)*/
       nds->gpu.curr_color[0]=SB_BFE(p[0],0,5)<<3;
       nds->gpu.curr_color[1]=SB_BFE(p[0],5,5)<<3;
@@ -4876,7 +4933,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
                                           (((int16_t)(SB_BFE(p[0],20,10)<<6))>>6)+nds->gpu.last_vertex_pos[2]);
                                           break;
     
-    case 0x29: /*POLYGON_ATTR*/ nds->gpu.poly_attr=p[0];break;
+    case 0x29: /*POLYGON_ATTR*/ nds->gpu.pending_poly_attr=p[0];break;
     case 0x30: /*DIF_AMB - MaterialColor0 - Diffuse/Ambient Reflect. (W)*/
       {
         nds->gpu.curr_diffuse_color[0] = SB_BFE(p[0],0,5)<<3;
@@ -4926,6 +4983,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
 
     case 0x40: /*BEGIN_VTXS*/ 
       nds->gpu.prim_type = SB_BFE(p[0],0,2);
+      nds->gpu.poly_attr=nds->gpu.pending_poly_attr;
       nds->gpu.curr_draw_vert =0; 
       break;
     case 0x41: /*END_VTXS  */  nds->gpu.curr_draw_vert =0; break;
@@ -4943,7 +5001,7 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       break;
     }
     case 0x70:/*BOX_TEST*/{
-      float m[16];
+      int32_t m[16];
       for(int i=0;i<16;++i)m[i] = nds->gpu.proj_matrix[i];
       nds_mult_matrix4(m, nds->gpu.mv_matrix);
       int16_t x_min = SB_BFE(p[0],0,16);
@@ -4953,22 +5011,22 @@ static FORCE_INLINE void nds_tick_gx(nds_t* nds){
       int16_t y_max = y_min+SB_BFE(p[2],0,16);
       int16_t z_max = z_min+SB_BFE(p[2],16,16);
       //Extract the view frustum planes from the camera
-      float planes[6*4];
+      int32_t planes[6*4];
       for(int p=0;p<3;++p){
-        for (int i = 4; i--; ) planes[p*2*4+i]      = m[i*4+3] + m[i*4+p];
-        for (int i = 4; i--; ) planes[(p*2+1)*4+i]  = m[i*4+3] - m[i*4+p];
+        for (int i = 4; i--; ) planes[p*2*4+i]      = NDS_MATRIX_ADD(m[i*4+3], m[i*4+p]);
+        for (int i = 4; i--; ) planes[(p*2+1)*4+i]  = NDS_MATRIX_ADD(m[i*4+3],-m[i*4+p]);
       }      
       int box_position = 0; //0 =inside, 1=outside, 2=collides
       for(int p=0;p<6;++p){
-        float pos_vert[3]={
-          (planes[p*4+0]<0? x_min: x_max)*fixed_to_float,
-          (planes[p*4+1]<0? y_min: y_max)*fixed_to_float,
-          (planes[p*4+2]<0? z_min: z_max)*fixed_to_float,
+        int32_t pos_vert[3]={
+          (planes[p*4+0]<0? x_min: x_max),
+          (planes[p*4+1]<0? y_min: y_max),
+          (planes[p*4+2]<0? z_min: z_max),
         };
-        float neg_vert[3]={
-          (planes[p*4+0]>0? x_min: x_max)*fixed_to_float,
-          (planes[p*4+1]>0? y_min: y_max)*fixed_to_float,
-          (planes[p*4+2]>0? z_min: z_max)*fixed_to_float,
+        int32_t neg_vert[3]={
+          (planes[p*4+0]>0? x_min: x_max),
+          (planes[p*4+1]>0? y_min: y_max),
+          (planes[p*4+2]>0? z_min: z_max),
         };
         if(nds_point_plane_distance(pos_vert,planes+p*4)<0.){box_position=1;break;}//outside
         if(nds_point_plane_distance(neg_vert,planes+p*4)<0.)box_position=2;//collides
@@ -5064,13 +5122,13 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
   if(addr>= GBA_TM0CNT_L&&addr<=GBA_TM3CNT_H)nds_compute_timers(nds);
   //Reading ClipMTX
   else if(addr>=NDS9_CLIPMTX_RESULT&&addr<=NDS9_CLIPMTX_RESULT+0x40&&cpu==NDS_ARM9){
-    float clipmtx[16];
+    int32_t clipmtx[16];
     for(int i=0;i<16;++i)clipmtx[i] = nds->gpu.mv_matrix[i];
     nds_mult_matrix4(clipmtx, nds->gpu.proj_matrix);
 
     for(int i=0;i<16;++i){
       float val = clipmtx[i];
-      int32_t fixed_val = val*(1<<12);
+      int32_t fixed_val = val;
       nds9_io_store32(nds,NDS9_CLIPMTX_RESULT+i*4,fixed_val);
     }
   }
@@ -5303,11 +5361,21 @@ static void nds_postprocess_mmio_write(nds_t * nds, uint32_t baddr, uint32_t dat
   }else if(addr>=NDS9_VRAMCNT_A&&addr<=NDS9_VRAMCNT_I)nds_update_vram_mapping(nds);
 
   switch(addr){
+    case NDS9_IF:  //alias case NDS7_IF:
+    case NDS9_IME: //alias case NDS7_IME:
+    case NDS9_IE:  //alias case NDS7_IE:
+      nds_update_interrupt_lines(nds);
+      break;
     case NDS7_HALTCNT&~3:
       {
         if(cpu!=NDS_ARM7)return; 
-        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)>=2;
+        bool halt = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)==2;
+        bool sleep = SB_BFE(mmio,(NDS7_HALTCNT&3)*8+6,2)==3;
         if(halt) nds->arm7.wait_for_interrupt=true;
+        if(sleep){
+          nds->sleep_mode = true;
+          nds->frame_in_progress=false;
+        }
       }
       break;
     case NDS_IPCSYNC:{
@@ -5543,6 +5611,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           bool vblank_irq_en7 = SB_BFE(disp_stat7,3,1);
           if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
           if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
+          nds->frame_in_progress=false;
         }
         if(new_if)nds9_send_interrupt(nds,3,new_if);
         if(new_if7)nds7_send_interrupt(nds,3,new_if7);
@@ -5588,7 +5657,6 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           //Done with capture
           dispcapcnt&=~(1<<31);
           nds9_io_store32(nds,NDS_DISPCAPCNT,dispcapcnt);
-          ppu->new_frame=true;
         }else{
           for(int aff=0;aff<2;++aff){
             ppu->aff[aff].internal_bgx=nds9_io_read32(nds,GBA_BG2X+(aff)*0x10+reg_offset);
@@ -5820,7 +5888,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         uint32_t backdrop_col = (*(uint16_t*)(nds->mem.palette + GBA_BG_PALETTE+0*2+ppu_id*1024))|(backdrop_type<<17);
         for(int x=0;x<NDS_LCD_W;++x){
           uint8_t window_control = ppu->window[x];
-          if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;
+          if(SB_BFE(window_control,4,1)==0)ppu->first_target_buffer[x]=backdrop_col;  
         }
       }
     }
@@ -5874,24 +5942,25 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           uint32_t col =0;         
           bool bg_en = SB_BFE(dispcnt,8+bg,1)&&SB_BFE(ppu->dispcnt_pipeline[0],8+bg,1)&&bg_type!=NDS_BG_INVALID;
           if(!bg_en || SB_BFE(window_control,bg,1)==0)continue;
-
-          bool rot_scale = bg_type!=NDS_BG_TEXT;
           uint16_t bgcnt = nds9_io_read16(nds, GBA_BG0CNT+bg*2+reg_offset);
           int priority = SB_BFE(bgcnt,0,2);
-          int character_base = SB_BFE(bgcnt,2,4);
-          bool mosaic = SB_BFE(bgcnt,6,1);
-          bool colors = SB_BFE(bgcnt,7,1);
-          int screen_base = SB_BFE(bgcnt,8,5);
-          bool display_overflow =SB_BFE(bgcnt,13,1);
-          int screen_size = SB_BFE(bgcnt,14,2); 
-
           if(SB_UNLIKELY(enable_3d&&bg==0)){
             int p = lcd_x+lcd_y*NDS_LCD_W;
             if(SB_BFE(nds->framebuffer_3d_disp[p*4+3],3,5)==0)continue;
             col  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
             col |= SB_BFE(nds->framebuffer_3d_disp[p*4+2],3,5)<<10;
+            // Treat 3d as semitransparent (needed for Soul Silver particle effects)
+            col|=1<<16;
           }else{
+            bool rot_scale = bg_type!=NDS_BG_TEXT;
+            int character_base = SB_BFE(bgcnt,2,4);
+            bool mosaic = SB_BFE(bgcnt,6,1);
+            bool colors = SB_BFE(bgcnt,7,1);
+            int screen_base = SB_BFE(bgcnt,8,5);
+            bool display_overflow =SB_BFE(bgcnt,13,1);
+            int screen_size = SB_BFE(bgcnt,14,2); 
+
             bool bitmap_mode = SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             bool extended_bgmap=!SB_BFE(bgcnt,7,1)&&(bg_type==NDS_BG_BITMAP||bg_type==NDS_BG_LARGE_BITMAP);
             //NDS can have an affine "bitmap" that is really a large affine tile map
@@ -6122,7 +6191,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           int write_block = SB_BFE(dispcapcnt, 16,2);
           int write_offset = SB_BFE(dispcapcnt, 18,2);
           bool source_a = SB_BFE(dispcapcnt,24,1);
-          if(source_a&&lcd_x<NDS_LCD_W&&lcd_y<NDS_LCD_H){
+          if(source_a){
             int p = lcd_x+lcd_y*NDS_LCD_W;
             color  = SB_BFE(nds->framebuffer_3d_disp[p*4+0],3,5);
             color |= SB_BFE(nds->framebuffer_3d_disp[p*4+1],3,5)<<5;
@@ -6195,7 +6264,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         }
       }
       int p = (lcd_x+lcd_y*NDS_LCD_W)*4;
-      float screen_blend_factor = 0.3*nds->ghosting_strength;
+      float screen_blend_factor = nds->ghosting_strength;
       
       uint8_t *framebuffer = (ppu_id==0)^nds->display_flip?nds->framebuffer_bottom: nds->framebuffer_top;
       framebuffer[p+0] = disp_r*7+(framebuffer[p+0]-disp_r*7)*screen_blend_factor;
@@ -6215,7 +6284,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
     }
   }
 }
-static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
+static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds){
+  sb_joy_t* joy = &emu->joy;
   for(int cpu=0;cpu<2;++cpu){
     uint16_t reg_value = 0;
     //Null joy updates are used to tick the joypad when mmios are set
@@ -6248,6 +6318,7 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
         if(cpu)nds9_send_interrupt(nds,4,if_bit);
         else nds7_send_interrupt(nds,4,if_bit);
         nds->prev_key_interrupt = true;
+        nds->sleep_mode=false;
       }else nds->prev_key_interrupt = false;
 
     }
@@ -6257,7 +6328,16 @@ static void nds_tick_keypad(sb_joy_t*joy, nds_t* nds){
     ext_key|= !(joy->inputs[SE_KEY_X]>0.3) <<0;
     ext_key|= !(joy->inputs[SE_KEY_Y]>0.3) <<1;
     ext_key|= !(joy->inputs[SE_KEY_PEN_DOWN]>0.3)<<6;
-    ext_key|= (joy->inputs[SE_KEY_FOLD_SCREEN]>0.3) <<7;
+    uint16_t prev_ext_key = nds7_io_read16(nds,NDS7_EXTKEYIN);
+    int fold_state =  SB_BFE(prev_ext_key,7,1);
+    if(!(joy->inputs[SE_KEY_FOLD_SCREEN]>0.3)&&emu->prev_frame_joy.inputs[SE_KEY_FOLD_SCREEN]>0.3){
+      fold_state = !fold_state; 
+      if(!fold_state){
+        nds7_send_interrupt(nds,4,(1<<NDS7_INT_SCREEN_FOLD));
+        nds->sleep_mode=false;
+      }
+    }
+    if(fold_state)ext_key|= 1 <<7;
     ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
@@ -6289,6 +6369,9 @@ static void nds_tick_touch(sb_joy_t*joy, nds_t* nds){
     scr_y2 = tsc_data[11];
   }
   if(is_touched){
+    // Prevent divide by zero on NULL calibration data
+    if(scr_x2==scr_x1)scr_x2++;
+    if(scr_y2==scr_y1)scr_y1++;
     nds->touch.x_reg = ((x - scr_x1 + 1) * (adc_x2 - adc_x1) / (scr_x2 - scr_x1) + adc_x1)<<3;
     nds->touch.y_reg = ((y - scr_y1 + 1) * (adc_y2 - adc_y1) / (scr_y2 - scr_y1) + adc_y1)<<3;
   }else{
@@ -6415,7 +6498,8 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
 
         uint32_t src = nds->dma[cpu][i].source_addr;
         uint32_t dst = nds->dma[cpu][i].dest_addr;
-        uint32_t cnt = nds_io_read16(nds,cpu,GBA_DMA0CNT_L+12*i);
+        int cnt_bits = cpu==NDS_ARM7?16:21;
+        uint32_t cnt = SB_BFE(nds_io_read32(nds,cpu,GBA_DMA0CNT_L+12*i),0,cnt_bits);
 
         if(mode==0x7&&cpu==NDS_ARM9){
           nds->dma_wait_gx = true;
@@ -6613,6 +6697,17 @@ static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float
   y += nds_polyblep(t2,dt);
   return y;
 }
+static FORCE_INLINE void nds_update_interrupt_lines(nds_t* nds){
+  uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
+  int9_if &= nds9_io_read32(nds,NDS9_IE);
+  uint32_t ime = nds9_io_read32(nds,NDS9_IME);
+  nds->nds9_interrupt_line =((ime&0x1)&&int9_if)!=0;
+
+  uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
+  int7_if &= nds7_io_read32(nds,NDS7_IE);
+  ime = nds7_io_read32(nds,NDS7_IME);
+  nds->nds7_interrupt_line =((ime&0x1)&&int7_if)!=0;
+}
 static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
   if(SB_UNLIKELY(nds->active_if_pipe_stages)){
     uint32_t if_bit = nds->nds9_pipelined_if[0];
@@ -6640,6 +6735,7 @@ static FORCE_INLINE void nds_tick_interrupts(nds_t*nds){
     nds->nds7_pipelined_if[4]=0;
 
     nds->active_if_pipe_stages>>=1;
+    nds_update_interrupt_lines(nds);
   }
 }
 static uint8_t nds_bin_to_bcd(uint8_t bin){
@@ -6814,7 +6910,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   //printf("#####New Frame#####\n");
-  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f);
+  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f)*0.3;
 
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
@@ -6834,6 +6930,8 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->arm9.write32    = nds9_arm_write32;
   nds->arm9.coprocessor_read =  nds->arm7.coprocessor_read =nds_coprocessor_read;
   nds->arm9.coprocessor_write=  nds->arm7.coprocessor_write=nds_coprocessor_write;
+  nds->arm7.trigger_breakpoint = nds7_cpu_breakpoint;
+  nds->arm9.trigger_breakpoint = nds9_cpu_breakpoint;
 
   nds->arm7.user_data = (void*)nds;
   nds->arm9.user_data = (void*)nds;
@@ -6851,26 +6949,27 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds->gpu.vert_buffer=scratch->vert_buffer;
   nds_tick_rtc(nds);
-  nds_tick_keypad(&emu->joy,nds);
+  nds_tick_keypad(emu,nds);
   nds_tick_touch(&emu->joy,nds);
+  
   bool prev_vblank=true;
 
   uint64_t* d = (uint64_t*)nds->mem.mmio_debug_access_buffer;
   for(int i=0;i<sizeof(nds->mem.mmio_debug_access_buffer)/8;++i){
     d[i]&=0x9191919191919191ULL;
   }
-  nds->ppu[0].new_frame=false;
-  while(!nds->ppu[0].new_frame){
+  nds->frame_in_progress=true;
+  if(nds->sleep_mode){
+    nds->frame_in_progress=false;
+    memset(scratch->framebuffer_top,0,sizeof(scratch->framebuffer_top));
+    memset(scratch->framebuffer_bottom,0,sizeof(scratch->framebuffer_bottom));
+  }
+  while(nds->frame_in_progress){
     bool gx_fifo_full = nds_gxfifo_size(nds)>=NDS_GXFIFO_SIZE;
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
       if(SB_LIKELY(!nds->dma_processed[1])){
-        uint32_t int9_if = nds9_io_read32(nds,NDS9_IF);
-        if(int9_if){
-          int9_if &= nds9_io_read32(nds,NDS9_IE);
-          uint32_t ime = nds9_io_read32(nds,NDS9_IME);
-          if((ime&0x1)&&int9_if) arm7_process_interrupts(&nds->arm9, int9_if);
-        }
+        if(SB_UNLIKELY(nds->nds9_interrupt_line))arm7_process_interrupts(&nds->arm9);
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
           nds->arm9.i_cycles=0;
           arm9_exec_instruction(&nds->arm9);
@@ -6879,37 +6978,29 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         }
       }
       if(SB_LIKELY(!nds->dma_processed[0] &&!nds->mem.slow_bus_cycles)){
-        uint32_t int7_if = nds7_io_read32(nds,NDS7_IF);
-        if(int7_if){
-          uint32_t ie = nds7_io_read32(nds,NDS7_IE);
-          uint32_t ime = nds7_io_read32(nds,NDS7_IME);
-          int7_if&=ie;
-          if((ime&0x1)&&int7_if) arm7_process_interrupts(&nds->arm7, int7_if);
-        }
+        if(SB_UNLIKELY(nds->nds7_interrupt_line))arm7_process_interrupts(&nds->arm7);
         arm7_exec_instruction(&nds->arm7);
-      }
-      if(SB_UNLIKELY(nds->arm7.trigger_breakpoint||nds->arm9.trigger_breakpoint)){
-        emu->run_mode = SB_MODE_PAUSE;
-        nds->arm7.trigger_breakpoint=false;
-        nds->arm9.trigger_breakpoint=false;
-        break;
       }
     }      
     int ticks = (nds->mem.slow_bus_cycles==0)+nds->mem.slow_bus_cycles;
     nds->mem.slow_bus_cycles = 0; 
     
     while(ticks){
-      int ppu_fast_forward = nds->ppu_fast_forward_ticks;
-      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=ppu_fast_forward)ppu_fast_forward=nds->gpu.cmd_busy_cycles; 
-      int timer_fast_forward = nds->next_timer_clock-nds->current_clock;
-      int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
+      int fast_forward_ticks = nds->next_timer_clock-nds->current_clock;
+      if(fast_forward_ticks>nds->ppu_fast_forward_ticks)fast_forward_ticks=nds->ppu_fast_forward_ticks;
+      if(nds->gpu.cmd_busy_cycles&&nds->gpu.cmd_busy_cycles<=fast_forward_ticks)fast_forward_ticks=nds->gpu.cmd_busy_cycles; 
       if(SB_LIKELY(fast_forward_ticks)){
-        if(SB_LIKELY((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full))ticks=fast_forward_ticks;
-        else if(fast_forward_ticks>ticks)fast_forward_ticks=ticks;
-        nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(SB_UNLIKELY(nds->active_if_pipe_stages)){
-          for(int i=0;i<fast_forward_ticks&&nds->active_if_pipe_stages;++i)nds_tick_interrupts(nds);
+          int i=0;
+          while(i<fast_forward_ticks&&nds->active_if_pipe_stages){
+            nds_tick_interrupts(nds);
+            ++i;
+          }
+          fast_forward_ticks =i;
         }
+        if(!((nds->arm9.wait_for_interrupt&&nds->arm7.wait_for_interrupt)||gx_fifo_full)&&fast_forward_ticks>ticks)
+          fast_forward_ticks=ticks;
+        nds->ppu_fast_forward_ticks-=fast_forward_ticks;
         if(nds->gpu.cmd_busy_cycles){
           nds->gpu.cmd_busy_cycles-=fast_forward_ticks-1;
         }
@@ -6927,6 +7018,10 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
         ticks--;
       }
     }
+  }
+  if(nds->pause_after_frame){
+    emu->run_mode=SB_MODE_PAUSE;
+    nds->pause_after_frame=false;
   }
 }
 // See: http://merry.usamimi.org/archex/SysReg_v84A_xml-00bet7/enc_index.xml#mcr_mrc_32
@@ -6960,22 +7055,22 @@ void nds_coprocessor_write(void* user_data, int coproc,int opcode,int Cn, int Cm
     bool cache_policy = SB_BFE(data,14,1);
     printf("C1,C0,0 write I$: %d D$: %d policy:%d\n",icache_enable, dcache_enable,cache_policy);
   }else if(Cn==2&&Cm==0){
-    printf("Cache ability for cache %d:",Cp, data);
+    printf("Cache ability for cache %d:",Cp);
     for(int i=0;i<8;++i)if(SB_BFE(data,i,1))printf("R%d,",i);
     printf("\n");
   }else if(Cn==3&&Cm==0){
-    printf("Cache write behavior cache %d Write Through: ",Cp, data);
+    printf("Cache write behavior cache %d Write Through: ",Cp);
     for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==0)printf("R%d,",i);
     printf(" Write Back: ");
     for(int i=0;i<8;++i)if(SB_BFE(data,i,1)==1)printf("R%d,",i);
     printf("\n");
   }else if(Cn==3&&Cm==0&&(Cp==0||Cp==1)){
     printf("Access permissions for cache %d ",Cp);
-    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*2,2));
+    for(int i=0;i<8;++i)printf("R%d=%lld,",i,SB_BFE(data,i*2,2));
     printf("\n");
   }else if(Cn==5&&Cm==0&&(Cp==2||Cp==3)){
     printf("Extended Access permissions for cache %d ",Cp-2);
-    for(int i=0;i<8;++i)printf("R%d=%d,",i,SB_BFE(data,i*4,4));
+    for(int i=0;i<8;++i)printf("R%d=%lld,",i,SB_BFE(data,i*4,4));
     printf("\n");
   }else if(Cn==6){
     int region = Cm; 

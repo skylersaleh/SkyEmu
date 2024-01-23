@@ -283,7 +283,7 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/cloud.cpp src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
+set(SKYEMU_SRC src/main.c src/cloud.cpp src/https.cpp src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)

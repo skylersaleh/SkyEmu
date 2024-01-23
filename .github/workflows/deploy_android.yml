@@ -17,6 +17,8 @@ jobs:
         with:
           project-path: tools/android_project
           output-path: SkyEmu.apk
+          ruby-version: "2.7.5"
+          bundler-version: "2.3.26"
           gradle-task: assemble
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
