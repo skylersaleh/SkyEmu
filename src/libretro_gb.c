@@ -31,7 +31,7 @@ void impl_get_system_av_info(struct retro_system_av_info* info) {
     info->timing.sample_rate = 44100; // TODO: set to something more appropriate?
 }
 
-void reset(sb_emu_state_t* emu_state) {  
+void impl_reset(sb_emu_state_t* emu_state) {  
     sb_load_rom(emu_state, &gb, &gb_scratch);
 }
 
