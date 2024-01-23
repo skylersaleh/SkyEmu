@@ -1,9 +1,6 @@
-#include "SDL2/include/SDL_joystick.h"
-#include "SDL2/include/SDL_video.h"
-#include "mutex.h"
-#include "sb_types.h"
-#include <stdio.h>
-#include <stdint.h>
+#include "libretro_common.h"
+
+#include <cstdint>
 #include <stdbool.h>
 #include <assert.h>
 
@@ -15,21 +12,9 @@
 
 #define SE_TRANSPARENT_BG_ALPHA
 
-#include "gba.h"
-#include "nds.h"
-#include "gb.h"
-
 // global emu state
 
-struct lr_scratch_t {
-  gb_scratch_t gb;
-};
-
-static struct lr_state_t {  
-  struct lr_scratch_t scratch;
-  sb_emu_state_t emu_state;
-  sb_gb_t gb_state;
-} lr_state;
+sb_emu_state_t emu_state;
 
 // SE implementations
 
@@ -38,8 +23,6 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
 }
 
 // Retro Arch implementation
-
-#include "libretro.h"
 
 retro_video_refresh_t video_refresh_cb = NULL;
 retro_input_poll_t input_poll_cb = NULL;
@@ -70,25 +53,13 @@ void retro_set_input_state(retro_input_state_t state) {
 }
 
 void retro_init(void) {
-  lr_state.gb_state.dmg_palette[0] = 0xff;
-  lr_state.gb_state.dmg_palette[1] = 0xcc;
-  lr_state.gb_state.dmg_palette[2] = 0x66;
-  lr_state.gb_state.dmg_palette[3] = 0x00;
-  lr_state.gb_state.dmg_palette[4] = 0xff;
-  lr_state.gb_state.dmg_palette[5] = 0xcc;
-  lr_state.gb_state.dmg_palette[6] = 0x66;
-  lr_state.gb_state.dmg_palette[7] = 0x00;
-  lr_state.gb_state.dmg_palette[8] = 0xff;
-  lr_state.gb_state.dmg_palette[9] = 0xcc;
-  lr_state.gb_state.dmg_palette[10] = 0x66;
-  lr_state.gb_state.dmg_palette[11] = 0x00;
-
-  lr_state.emu_state.render_frame = true;
+  impl_init();
+  emu_state.render_frame = true;
 }
 
 void retro_deinit(void) {
-  if (lr_state.emu_state.rom_loaded) {
-    free(lr_state.emu_state.rom_data);
+  if (emu_state.rom_loaded) {
+    free(emu_state.rom_data);
   }
 }
 
@@ -97,97 +68,40 @@ unsigned retro_api_version(void) {
 }
 
 void retro_get_system_info(struct retro_system_info* info){
-    static const char* name = "SkyEmu"; 
-    info->library_name = name;
-    info->library_version = "tmp";
+    info->library_name = impl_library_name();
+    info->library_version = impl_library_version();
     info->block_extract = false;
     info->need_fullpath = false;
     info->valid_extensions = NULL;
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-  switch (lr_state.emu_state.system) {
-  case SYSTEM_GB:
-    info->geometry.aspect_ratio = 0.0;
-    info->geometry.max_height = SB_LCD_H;
-    info->geometry.max_width = SB_LCD_W;
-    info->geometry.base_height = info->geometry.max_height;
-    info->geometry.base_width = info->geometry.max_width;
-    info->timing.fps = 60;
-    info->timing.sample_rate = 44100; // TODO: set to something more appropriate?
-    break;
-
-  case SYSTEM_GBA: assert(false); // TODO: add GBA core
-  case SYSTEM_NDS: assert(false); // TODO: add NDS core
-    
-  default: assert(false); // should never happen?
-  }
+  impl_get_system_av_info(info);
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {}
 
 void retro_reset(void) {
-  switch (lr_state.emu_state.system) {
-  case SYSTEM_GB:
-    sb_load_rom(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);
-    break;
-
-  case SYSTEM_NONE:
-  default:;
-  }
-
+  impl_reset(&emu_state);
 }
 
 void retro_run(void) {
   input_poll_cb();
 
-  lr_state.emu_state.joy.inputs[SE_KEY_A] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_a);
-  lr_state.emu_state.joy.inputs[SE_KEY_B] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_b);
-  lr_state.emu_state.joy.inputs[SE_KEY_L] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_l);
-  lr_state.emu_state.joy.inputs[SE_KEY_R] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_r);
-  lr_state.emu_state.joy.inputs[SE_KEY_DOWN] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_DOWN);
-  lr_state.emu_state.joy.inputs[SE_KEY_RIGHT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RIGHT);
-  lr_state.emu_state.joy.inputs[SE_KEY_LEFT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LEFT);
-  lr_state.emu_state.joy.inputs[SE_KEY_UP] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_UP);
-  lr_state.emu_state.joy.inputs[SE_KEY_X] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_x);
-  lr_state.emu_state.joy.inputs[SE_KEY_Y] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_y);
-  lr_state.emu_state.joy.inputs[SE_KEY_SELECT] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RETURN);
-  lr_state.emu_state.joy.inputs[SE_KEY_START] = input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_ESCAPE);
+  impl_input_poll(&emu_state, input_state_cb);
 
+  impl_tick(&emu_state);
     
-  switch (lr_state.emu_state.system) {
-  case SYSTEM_GB:
-    sb_tick(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb);  
-    break;
+  uint32_t width, height;
+  void* data = impl_frame(&width, &height);
+  int pitch = width * 4;
+  video_refresh_cb(data, width, height, pitch);
 
-  case SYSTEM_NONE:
-  default:;
-  }
-
-  do {
-    // video
-    void* data;
-    int width, height;
-    
-    switch (lr_state.emu_state.system) {
-    case SYSTEM_GB:
-      data = lr_state.scratch.gb.framebuffer;      
-      width = SB_LCD_W;
-      height = SB_LCD_H;
-      break;    
-
-    default: break;
-    }
-
-    int pitch = width * 4;
-    video_refresh_cb(data, width, height, pitch);
-  } while (false);
-  
-  for (uint32_t audio_buffer_size; audio_buffer_size = sb_ring_buffer_size(&lr_state.emu_state.audio_ring_buff), audio_buffer_size > 2;) {
-    uint32_t read0 = lr_state.emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
-    uint32_t read1 = lr_state.emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
-    int16_t sample0 = lr_state.emu_state.audio_ring_buff.data[read0];
-    int16_t sample1 = lr_state.emu_state.audio_ring_buff.data[read1];
+  for (uint32_t audio_buffer_size; audio_buffer_size = sb_ring_buffer_size(&emu_state.audio_ring_buff), audio_buffer_size > 2;) {
+    uint32_t read0 = emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
+    uint32_t read1 = emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
+    int16_t sample0 = emu_state.audio_ring_buff.data[read0];
+    int16_t sample1 = emu_state.audio_ring_buff.data[read1];
     audio_sample_cb(sample0, sample1);
   }
 }
