@@ -1,25 +1,24 @@
 #include "libretro_common.h"
+#include "sb_types.h"
+
+// these headers are necessary for gb.h
+#include <time.h>
+#include <math.h>
 
 #include "gb.h"
-#include "sb_types.h"
-#include <cstdint>
 
 gb_scratch_t gb_scratch;
 sb_gb_t gb;
 
-void impl_init(){
-  gb.dmg_palette[0] = 0xff;
-  gb.dmg_palette[1] = 0xcc;
-  gb.dmg_palette[2] = 0x66;
-  gb.dmg_palette[3] = 0x00;
-  gb.dmg_palette[4] = 0xff;
-  gb.dmg_palette[5] = 0xcc;
-  gb.dmg_palette[6] = 0x66;
-  gb.dmg_palette[7] = 0x00;
-  gb.dmg_palette[8] = 0xff;
-  gb.dmg_palette[9] = 0xcc;
-  gb.dmg_palette[10] = 0x66;
-  gb.dmg_palette[11] = 0x00;
+void impl_init(sb_emu_state_t* emu_state){
+  emu_state->system = SYSTEM_GB;
+
+  uint8_t palette[4*3] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
+  for(int i = 0; i < 12; ++i) gb.dmg_palette[0] = palette[i];
+}
+
+bool impl_load_rom(sb_emu_state_t* emu_state){
+  return sb_load_rom(emu_state, &gb, &gb_scratch);
 }
 
 void impl_get_system_av_info(struct retro_system_av_info* info) {  

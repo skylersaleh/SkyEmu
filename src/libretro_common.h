@@ -3,9 +3,16 @@
 
 #include "libretro.h"
 #include "sb_types.h"
-#include <cstdint>
 
-void impl_init();
+#define SE_AUDIO_SAMPLE_RATE 48000
+#define SE_AUDIO_BUFF_CHANNELS 2
+#define SE_REBIND_TIMER_LENGTH 5.0
+
+#define SE_TRANSPARENT_BG_ALPHA
+
+void impl_init(sb_emu_state_t* emu_state);
+
+bool impl_load_rom(sb_emu_state_t* emu_state);
 
 void impl_get_system_av_info(struct retro_system_av_info* info);
 

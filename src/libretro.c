@@ -1,16 +1,7 @@
 #include "libretro_common.h"
 
-#include <cstdint>
 #include <stdbool.h>
 #include <assert.h>
-
-// include core headers
-
-#define SE_AUDIO_SAMPLE_RATE 48000
-#define SE_AUDIO_BUFF_CHANNELS 2
-#define SE_REBIND_TIMER_LENGTH 5.0
-
-#define SE_TRANSPARENT_BG_ALPHA
 
 // global emu state
 
@@ -53,7 +44,7 @@ void retro_set_input_state(retro_input_state_t state) {
 }
 
 void retro_init(void) {
-  impl_init();
+  impl_init(&emu_state);
   emu_state.render_frame = true;
 }
 
@@ -92,7 +83,7 @@ void retro_run(void) {
 
   impl_tick(&emu_state);
     
-  uint32_t width, height;
+  uint32_t width = 0, height = 0;
   void* data = impl_frame(&width, &height);
   int pitch = width * 4;
   video_refresh_cb(data, width, height, pitch);
@@ -123,22 +114,21 @@ void retro_cheat_reset(void) {}
 void retro_cheat_set(unsigned _index, bool _enabled, const char* _code) {}
 
 bool retro_load_game(const struct retro_game_info* game) {  
-  if (lr_state.emu_state.rom_loaded) {
-    free(lr_state.emu_state.rom_data);
+  if (emu_state.rom_loaded) {
+    free(emu_state.rom_data);
   }
-  lr_state.emu_state.rom_loaded = true;
-  strncpy(lr_state.emu_state.rom_path, game->path, SB_FILE_PATH_SIZE);
-  lr_state.emu_state.rom_data = malloc(game->size);
-  memcpy(lr_state.emu_state.rom_data, game->data, game->size);
-  lr_state.emu_state.rom_size = game->size;
+  emu_state.rom_loaded = true;
+  strncpy(emu_state.rom_path, game->path, SB_FILE_PATH_SIZE);
+  emu_state.rom_data = malloc(game->size);
+  memcpy(emu_state.rom_data, game->data, game->size);
+  emu_state.rom_size = game->size;
   
-  if (sb_load_rom(&lr_state.emu_state, &lr_state.gb_state, &lr_state.scratch.gb)) {
-    lr_state.emu_state.system = SYSTEM_GB;
+  if (impl_load_rom(&emu_state)) {
     return true;
   }
 
-  lr_state.emu_state.rom_loaded = false;
-  free(lr_state.emu_state.rom_data);
+  emu_state.rom_loaded = false;
+  free(emu_state.rom_data);
   return false;
 }
 
@@ -146,9 +136,7 @@ bool retro_load_game_special(unsigned game_type, const struct retro_game_info* _
   return false;
 }
 
-void retro_unload_game(void) {
-  lr_state.emu_state.system = SYSTEM_NONE;
-}
+void retro_unload_game(void) {}
 
 unsigned retro_get_region(void) {
   return 0;
