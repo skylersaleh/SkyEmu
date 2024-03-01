@@ -1853,7 +1853,7 @@ static char* pl_localization_array[]={
     "Theme", "Motyw",
     "Solar Sensor", "Czujnik światła",
     "Brightness: %.2f", "Jasność: %.2f",
-    "Dark\0Light\0Black\0", "Ciemny\0Jasny\0Czarny\0",
+    "Dark\0Light\0Black\0Custom\0", "Ciemny\0Jasny\0Czarny\0Niestandardowy\0",
     "Always Show Menu/Nav Bar", "Zawsze pokazuj menu i pasek nawigacyjny",
     "Language", "Język",
     "SPACE", "Spacja",
@@ -1900,6 +1900,11 @@ static char* pl_localization_array[]={
     "Cheat Code Path", "Katalog oszustw",
     // extra added
     "Hardcore Mode", "Tryb hardkorowy",
+    "Theme Path","Katalog motywów",
+    "Custom Font","Niest. czcionka",
+    "Font Scale","Rozmiar czcionki",
+    "Custom Theme Name","Nazwa niestandardowego motywu",
+    "Custom Theme Author","Autor niestandardowego motywu",
     NULL,NULL
 };
 
