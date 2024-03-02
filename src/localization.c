@@ -1836,7 +1836,7 @@ static char* pl_localization_array[]={
     ICON_FK_FOLDER_OPEN " Open File From Disk", ICON_FK_FOLDER_OPEN " Otwórz plik z dysku",
     "Exit File Browser", "Wyjdź z eksploratora plików",
     "Go back to recently loaded games", "Wróć do ostatnio ładowanych gier",
-    "Go to parent directory", "Գնացեք վերին գրացուցակ",
+    "Go to parent directory", "Idż do katalogu nadrzędnego",
     "UP", "Góra",
     "DOWN", "Dół",
     "LEFT", "Lewo",
