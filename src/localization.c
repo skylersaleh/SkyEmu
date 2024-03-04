@@ -1836,7 +1836,7 @@ static char* pl_localization_array[]={
     ICON_FK_FOLDER_OPEN " Open File From Disk", ICON_FK_FOLDER_OPEN " Otwórz plik z dysku",
     "Exit File Browser", "Wyjdź z eksploratora plików",
     "Go back to recently loaded games", "Wróć do ostatnio ładowanych gier",
-    "Go to parent directory", "Idż do katalogu nadrzędnego",
+    "Go to parent directory", "Przejdź do katalogu nadrzędnego",
     "UP", "Góra",
     "DOWN", "Dół",
     "LEFT", "Lewo",
@@ -1905,6 +1905,8 @@ static char* pl_localization_array[]={
     "Font Scale","Rozmiar czcionki",
     "Custom Theme Name","Nazwa niestandardowego motywu",
     "Custom Theme Author","Autor niestandardowego motywu",
+    ICON_FK_FILE_O " File Browser", ICON_FK_FILE_O " Eksplorator plików",
+    "Go to home directory","Przejdź do katalogu domowego",
     NULL,NULL
 };
 
