@@ -7,15 +7,15 @@
 <a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)</a>
 <a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield)</a> 
 
-![SkyEmu](https://github.com/skylersaleh/SkyEmu/assets/7118296/367de77a-d370-40f7-a8b5-f387bd3a6218)
+![SkyEmu](https://github.com/skylersaleh/SkyEmu/assets/7118296/0ba4b6f2-0ef4-46c1-8901-ca55e94429e0)
 
-SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and Nintendo DS emulator. Its primary focus is to provide a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
+SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and DS emulator. Its primary focus is to preserve these great systems for future generations while providing a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.
 
 # Features
 
 - [Highly accurate Game Boy Advance emulation](docs/Accuracy.md)
 - Game Boy and Game Boy Color Emulation
-- Nintendo DS Emulation (Beta Quality)
+- DS Emulation (Beta Quality)
 - High Quality Upscaling Shaders, Color Correction, and Screen Ghosting
 - Cross Platform: Windows, MacOS, Linux, FreeBSD, iOS, Android, and Web
 - Game Controller and Rumble Support with configureable keybinds
@@ -97,7 +97,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - 100% Passes all ArmWrestler Tests
 - 100% Passes all FuzzARM tests
 - 100% Passes arm.gba and thumb.gba
-- Passes 2020/2020 GBA Suite timing tests when utilizing the official Nintendo GBA BIOS (SkyEmu is one of the few emulators capable of passing this test).
+- Passes 2020/2020 GBA Suite timing tests when utilizing the official GBA BIOS (SkyEmu is one of the few emulators capable of passing this test).
 - Full instruction pipeline and prefetch emulation
 
 **GB**: 
@@ -109,7 +109,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 
 ## Birds of a Feather
 - [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games. 
-- [**Panda3DS**](https://github.com/wheremyfoodat/Panda3DS): Panda themed HLE Nintendo 3DS emulator
+- [**Panda3DS**](https://github.com/wheremyfoodat/Panda3DS): Panda themed HLE 3DS emulator
 - [**NanoBoyAdvance**](https://github.com/nba-emu/NanoBoyAdvance): A Game Boy Advance emulator focusing on hardware research and cycle-accurate emulation
-- [**Dust**](https://github.com/kelpsyberry/dust): Nintendo DS emulator for desktop devices and the web
+- [**Dust**](https://github.com/kelpsyberry/dust): DS emulator for desktop devices and the web
 - [**Kaizen**](https://github.com/SimoneN64/Kaizen): Experimental work-in-progress low-level N64 emulator
