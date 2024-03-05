@@ -206,7 +206,7 @@ typedef struct{
   uint32_t enable_download_cache;
   uint32_t nds_layout; 
   uint32_t padding[220];
-};
+}persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
 typedef struct{
@@ -3924,7 +3924,6 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   float hold_turbo_w = 0.3;
   if(hold_turbo_w>full_row_w)hold_turbo_w = full_row_w; 
   if(start_sel_row_w>full_row_w)start_sel_row_w = full_row_w;
-  printf("hold_turbo_w %f start_sel_row_w %f\n", hold_turbo_w,start_sel_row_w);
   se_button_info_t buttons[]={
     {SE_KEY_L      ,SE_REGION_KEY_L,      SE_GAMEPAD_LEFT, lr_en,RECT, {0,lr_y}, {full_row_w,row_h}}, 
     {SE_KEY_UP     ,SE_REGION_DPAD_CENTER,SE_GAMEPAD_LEFT, true, DPAD, {0.5,dpad_y}, {dpad_r,0.8}},
@@ -7821,6 +7820,7 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   float gamepad_stretch[2]={0,0};
   float screen_gamepad_pixels[2]={0,0};
   float screen_no_gamepad_pixels[2]={0,0};
+  float non_screen[2]={0,0};
   //Categorize pixels
   for(int axis=0;axis<2;++axis)
     for(int i=0;i<SE_MAX_CONTROL_POINTS;++i){
@@ -7831,6 +7831,8 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
       float pixels = cp->end_pixel-cp->start_pixel;
       if(fixed&& cp->screen_control==0)fixed_pixels[axis] +=pixels;
       if(screen) screen_pixels[axis]+=pixels;
+      if(!screen) non_screen[axis]+=pixels;
+
       if(screen&&!gamepad&&!fixed)screen_no_gamepad_pixels[axis]+=pixels;
       if(fixed&&screen) fixed_screen_pixels[axis]+=pixels;
       if(gamepad){
@@ -7849,37 +7851,77 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
     gamepad_screen_stretch[r]*=uniform_scale_factor; 
     gamepad_stretch[r]*=uniform_scale_factor; 
     screen_no_gamepad_pixels[r]*=uniform_scale_factor;
+    non_screen[r]*=uniform_scale_factor;
   }
 
   float dims[2]={w,h};
-  float gamepad_stretch_scale[2] ={1,1};
-  float screen_no_gamepad_scale[2]={1,1};
-
-  float min_dim = (dims[0]<dims[1]?dims[0]:dims[1])*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
-  bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
-  if(!touch_controller_active)min_dim = 0;
-  
+  float lcd_non_fixed_scale[2]={1,1};
+  float non_fixed_pixels_scale[2]={1,1};
   float lcd_dims[2];
   SE_RPT2 lcd_dims[r]=screen_pixels[r]? dims[r]-fixed_pixels[r]:0;
-
-  for(int i=0;i<2;++i){
-    float gamepad_size = (gamepad_screen_stretch[i]+gamepad_fixed[i])/(gamepad_stretch[i]/(dims[i]-fixed_pixels[i]-screen_pixels[i]));
-    if(min_dim>gamepad_size&&lcd_dims[i]){
-      lcd_dims[i]-=min_dim-gamepad_size;
-    }
-  }
-
   int nds_layout = gui_state.settings.nds_layout;
-  se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
+  bool disallow_controller_overlap = !screen_pixels[0]||true;
 
-  float lcd_non_fixed_scale[2];
-  SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
+  if(disallow_controller_overlap){
+    float min_dim = (dims[0]<dims[1]?dims[0]:dims[1])*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
+    bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
+    if(!touch_controller_active)min_dim = 0;
 
-  float non_fixed_pixels[2];
-  SE_RPT2 non_fixed_pixels[r]= dims[r]-fixed_pixels[r]-lcd_dims[r];
-  float non_fixed_pixels_scale[2];
-  int rdims[2]={r->w,r->h};
-  SE_RPT2 non_fixed_pixels_scale[r]= (non_fixed_pixels[r])/(rdims[r]*uniform_scale_factor-fixed_pixels[r]-screen_pixels[r]);
+    for(int i=0;i<2;++i){
+      float gamepad_size = (gamepad_screen_stretch[i]+gamepad_fixed[i])/(gamepad_stretch[i]/(dims[i]-fixed_pixels[i]-screen_pixels[i]));
+      if(min_dim>gamepad_size&&lcd_dims[i]&&disallow_controller_overlap){
+        lcd_dims[i]-=min_dim-gamepad_size;
+      }
+    }
+
+    se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
+
+    SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
+
+    float non_fixed_pixels[2];
+    SE_RPT2 non_fixed_pixels[r]= dims[r]-fixed_pixels[r]-lcd_dims[r];
+    int rdims[2]={r->w,r->h};
+    SE_RPT2 non_fixed_pixels_scale[r]= (non_fixed_pixels[r])/(rdims[r]*uniform_scale_factor-fixed_pixels[r]-screen_pixels[r]);
+  }else{
+    lcd_dims[0]=w;
+    lcd_dims[1]=h;
+    if(region==SE_REGION_BEZEL_LANDSCAPE)lcd_dims[1]=h-non_screen[1];
+    else lcd_dims[0]=w-non_screen[0];
+    se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
+    SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
+
+    float lcd_pos[2] = {0.0f,0.0f};
+    float bezel_dims[2]={0,0};
+    for(int ax=0;ax<2;++ax){
+      float off =0;
+      for(int c = 0;c<SE_MAX_CONTROL_POINTS;++c){
+        se_control_point_t *cp = ax==0? &r->control_points_x[c] :&r->control_points_y[c];
+        if(cp->start_pixel>=cp->end_pixel)continue;
+        float rh = (cp->end_pixel-cp->start_pixel)*uniform_scale_factor;
+        if(cp->screen_control){
+          if(cp->resize_control!=SE_RESIZE_FIXED){
+            rh*=lcd_non_fixed_scale[ax];
+          }
+        }else if(cp->resize_control!=SE_RESIZE_FIXED){
+          rh*=non_fixed_pixels_scale[ax];
+        }
+        if(cp->screen_control&&lcd_pos[ax]==0.0f){
+          lcd_pos[ax]=off;
+        }
+        off += rh;
+      }      
+      bezel_dims[ax]=off;
+    }
+
+    //When bezel is larger than window, center emulated screen
+    x+=fmin(0,(dims[0]-lcd_dims[0])/2-lcd_pos[0]);
+    y+=fmin(0,(dims[1]-lcd_dims[1])/2-lcd_pos[1]);
+    //When bezel is smaller than window, center bezel
+    x+=fmax(0,(dims[0]-bezel_dims[0])/2);
+    y+=fmax(0,(dims[1]-bezel_dims[1])/2);
+    w_ratio=100;
+    h_ratio=100;
+  }
 
   float x_clamp = x+w*w_ratio;
   float y_clamp = y+h*h_ratio; 
