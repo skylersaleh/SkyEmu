@@ -1997,13 +1997,13 @@ const char* se_language_string(int language_enum){
         case SE_LANG_DANISH: return "Dansk";
         case SE_LANG_GERMAN: return "Deutsch";
         case SE_LANG_ITALIAN: return "Italiano";
-        case SE_LANG_POLISH: return "Polski"; // TODO: Does Polish need Unicode for things to work right?
         // These languages require unicode support to represent correctly
 #ifdef UNICODE_GUI
         case SE_LANG_CHINESE: return "中文";
         case SE_LANG_ARMENIAN: return "Հայերեն";
         case SE_LANG_GREEK: return "Ελληνικά";
         case SE_LANG_RUSSIAN: return "Русский";
+        case SE_LANG_POLISH: return "Polski";
 #endif 
     }
     return "";
