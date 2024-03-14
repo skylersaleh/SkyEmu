@@ -6,8 +6,8 @@
  *
 **/
 
+#include "rc_client.h"
 #include <stdbool.h>
-#include <assert.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
 #define SE_AUDIO_BUFF_CHANNELS 2
@@ -143,6 +143,7 @@ const static char* se_analog_bind_names[]={
 //a users settings.
 #define SE_NUM_BINDS_ALLOC 64
 
+#define GUI_MAX_IMAGES_PER_FRAME 16
 #define SE_NUM_RECENT_PATHS 32
 #define SE_FONT_CACHE_PAGE_SIZE 16
 #define SE_MAX_UNICODE_CODE_POINT 0xffff
@@ -525,11 +526,13 @@ typedef struct{
   int x, y;
 }se_ra_atlas_offset_t;
 typedef struct{
+  rc_client_t* client;
   char username[256];
   char password[256];
   sg_image image;
   se_ra_atlas_offset_t** achievement_images;
   // TODO: make widgets that use these lists and progress indicator
+  rc_client_achievement_list_t* achievement_list;
   se_ra_tracker_node_t* tracker_list;
   se_ra_challenge_indicator_node_t* challenge_indicator_list;
   sg_image progress_indicator_image;
@@ -1390,7 +1393,7 @@ static void se_ra_keep_alive(){
       last_time = stm_now();
       // Needs to be called once every few seconds if the emulator is paused
       // to keep the session alive or retrying failed unlocks
-      rc_client_idle(ra_get_client());
+      rc_client_idle(ra_info.client);
     }
   }
 #endif
@@ -1742,7 +1745,7 @@ static void se_ra_game_cleanup(){
     sg_destroy_image((sg_image){ra_info.image.id});
     ra_info.image.id = SG_INVALID_ID;
   }
-  rc_client_achievement_list_t* list = ra_get_achievements();
+  rc_client_achievement_list_t* list = ra_info.achievement_list;
   if (list){
     for (int i = 0; i < list->num_buckets; i++)
     {
@@ -1781,14 +1784,20 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
   }
 
   char url[512];
-  const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
+  const rc_client_game_t* game = rc_client_get_game_info(ra_info.client);
   if (rc_client_game_get_image_url(game, url, sizeof(url)) == RC_OK){
     ra_get_image(url, &ra_info.image);
   }
 
   mutex_lock(ra_get_mutex());
-  ra_invalidate_achievements();
-  rc_client_achievement_list_t* list = ra_get_achievements();
+  if(ra_info.achievement_list) // TODO: deduplicate this code
+  {
+    rc_client_destroy_achievement_list(ra_info.achievement_list);
+  }
+  ra_info.achievement_list = rc_client_create_achievement_list(ra_info.client,
+    RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
+    RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
+  rc_client_achievement_list_t* list = ra_info.achievement_list;
   ra_info.achievement_images = (se_ra_atlas_offset_t**)malloc(sizeof(se_ra_atlas_offset_t*)*list->num_buckets);
   for (int i = 0; i < list->num_buckets; i++)
   {
@@ -1819,13 +1828,13 @@ static void se_ra_load_game(){
   if(!emu_state.rom_loaded)return;
   switch(emu_state.system){
     case SYSTEM_GB:
-      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_GAMEBOY,se_ra_load_game_callback);
+      rc_client_begin_identify_and_load_game(ra_info.client,RC_CONSOLE_GAMEBOY,NULL,emu_state.rom_data,emu_state.rom_size,se_ra_load_game_callback,NULL);
       break;
     case SYSTEM_GBA:
-      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_GAMEBOY_ADVANCE,se_ra_load_game_callback);
+      rc_client_begin_identify_and_load_game(ra_info.client,RC_CONSOLE_GAMEBOY_ADVANCE,NULL,emu_state.rom_data,emu_state.rom_size,se_ra_load_game_callback,NULL);
       break;
     case SYSTEM_NDS:
-      ra_load_game(emu_state.rom_data,emu_state.rom_size,RC_CONSOLE_NINTENDO_DS,se_ra_load_game_callback);
+      rc_client_begin_identify_and_load_game(ra_info.client,RC_CONSOLE_NINTENDO_DS,NULL,emu_state.rom_data,emu_state.rom_size,se_ra_load_game_callback,NULL);
       break;
   }
 }
@@ -1888,7 +1897,7 @@ static void se_ra_leaderboard_tracker_hide(const rc_client_leaderboard_tracker_t
 }
 static void se_ra_game_mastered()
 {
-  rc_client_t* client = ra_get_client();
+  rc_client_t* client = ra_info.client;
   char message[128];
   char submessage[128];
   const rc_client_game_t* game = rc_client_get_game_info(client);
@@ -1991,7 +2000,13 @@ static void se_ra_event_handler(const rc_client_event_t* event, rc_client_t* cli
   {
     case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
       printf("[rcheevos]: Achievement unlocked: %s\n", event->achievement->title);
-      ra_invalidate_achievements(); // TODO: what about "almost there" achievements
+      if(ra_info.achievement_list)
+      {
+        rc_client_destroy_achievement_list(ra_info.achievement_list);
+      }
+      ra_info.achievement_list = rc_client_create_achievement_list(ra_info.client,
+        RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
+        RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
       // TODO: notification?
       break;
     case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
@@ -2043,8 +2058,23 @@ static void se_ra_event_handler(const rc_client_event_t* event, rc_client_t* cli
 }
 static void se_ra_initialize() {
   memset(&ra_info, 0, sizeof(ra_info));
-  ra_initialize_client(se_ra_read_memory_callback);
-  rc_client_set_event_handler(ra_get_client(),se_ra_event_handler);
+  if(ra_info.client)
+  {
+    printf("[rcheevos]: client already initialized?\n");
+  }
+  else
+  {
+    ra_info.client = rc_client_create(se_ra_read_memory_callback, ra_server_callback);
+    // RetroAchievements doesn't enable CORS, so we use a reverse proxy
+    rc_api_set_host("https://api.achieve.skyemoo.pandasemi.co");
+    rc_api_set_image_host("https://media.retroachievements.org");
+    #ifndef NDEBUG
+    rc_client_enable_logging(ra_info.client, RC_CLIENT_LOG_LEVEL_VERBOSE, ra_log_callback);
+    #endif
+    // TODO: should probably be an option after we're finished testing
+    rc_client_set_hardcore_enabled(ra_info.client, 0);
+  }
+  rc_client_set_event_handler(ra_info.client,se_ra_event_handler);
 
   // Check if we have a token saved
   char login_info_path[SB_FILE_PATH_SIZE];
@@ -2760,7 +2790,7 @@ void se_load_rom(const char *filename){
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  rc_client_reset(ra_get_client());
+  rc_client_reset(ra_info.client);
   se_ra_load_game();
   #endif
 }
@@ -2903,7 +2933,7 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  rc_client_do_frame(ra_get_client());
+  rc_client_do_frame(ra_info.client);
 #endif
   se_run_all_ar_cheats();
 }
@@ -6337,7 +6367,7 @@ void se_draw_menu_panel(){
   }
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
   se_section(ICON_FK_TROPHY " Retro Achievements");
-  const rc_client_user_t* user = rc_client_get_user_info(ra_get_client());
+  const rc_client_user_t* user = rc_client_get_user_info(ra_info.client);
   if(!user){
     igPushIDStr("RetroAchievementsLogin");
     bool pending_login = ra_info.pending_login;
@@ -6357,7 +6387,7 @@ void se_draw_menu_panel(){
     if(pending_login)se_pop_disabled();
     igPopID();
   }else {
-    const rc_client_game_t* game = rc_client_get_game_info(ra_get_client());
+    const rc_client_game_t* game = rc_client_get_game_info(ra_info.client);
     ImVec2 pos;
     sg_image image;
     const char* play_string = "No Game Loaded";
@@ -6373,10 +6403,10 @@ void se_draw_menu_panel(){
       char login_info_path[SB_FILE_PATH_SIZE];
       snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_token.txt",se_get_pref_path());
       remove(login_info_path);
-      rc_client_logout(ra_get_client());
+      rc_client_logout(ra_info.client);
     }
     mutex_lock(ra_get_mutex());
-    rc_client_achievement_list_t* list = ra_get_achievements();
+    rc_client_achievement_list_t* list = ra_info.achievement_list;
     if (list){
       for (int i = 0; i < list->num_buckets; i++){
         se_text(ICON_FK_LOCK " %s",list->buckets[i].label);
@@ -6385,7 +6415,7 @@ void se_draw_menu_panel(){
           ImVec2 uv0, uv1;
           if(ra_info.achievement_images && ra_info.achievement_images[i]){
             image = ra_info.atlas;
-            ImVec2* tile = &ra_info.achievement_images[i][j];
+            se_ra_atlas_offset_t* tile = &ra_info.achievement_images[i][j];
             uv0 = (ImVec2){ tile->x / atlas_pixel_stride, tile->y / atlas_pixel_stride };
             uv1 = (ImVec2){ (tile->x + atlas_tile_size) / atlas_pixel_stride, (tile->y + atlas_tile_size) / atlas_pixel_stride };
           }
@@ -7371,7 +7401,6 @@ static void frame(void) {
     screen_x = left_padding;
     screen_width-=(left_padding+right_padding)*se_dpi_scale();
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-    ra_update_atlas();
     ra_run_pending_callbacks();
 #endif
     if(gui_state.sidebar_open){

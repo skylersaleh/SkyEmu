@@ -1,4 +1,5 @@
 #include "mutex.h"
+#include "sokol_gfx.h"
 #include <cstdint>
 extern "C" {
   #include "retro_achievements.h"
@@ -17,22 +18,49 @@ extern "C" {
 
 #include <fstream>
 
-const int atlas_pixel_stride = 2048;
-const int atlas_tile_size = 64; // all images in the atlas will be 64x64
+// Access to some parts such as the atlas and the pending callbacks can happen from multiple threads
+// so we need to synchronize access to them
 std::mutex* synchronization_mutex = new std::mutex();
 
-static rc_client_t* ra_client = nullptr;
-static rc_client_achievement_list_t* achievements = nullptr;
-static bool atlas_needs_update = false;
+static const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
 
-static std::vector<uint8_t> atlas_data;
-static const int atlas_spacing = 4;
-static int atlas_offset_x = 0; // to keep track of where next tile needs to be placed, in pixels
-static int atlas_offset_y = 0;
-static std::map<std::string, std::vector<uint8_t>> image_cache; // TODO: cache of ra_image is bad - refactor to use data only
+// Atlases are always square and power of two
+// This always starts as a single tile image, but if a new tile needs to be added, it's resized
+// to the next power of two
+struct atlas_t {
+  atlas_t(uint32_t tile_width, uint32_t tile_height) : tile_width(tile_width), tile_height(tile_height) {}
+  ~atlas_t() = default;
+  atlas_t(const atlas_t&) = delete;
+  atlas_t& operator=(const atlas_t&) = delete;
+  atlas_t(atlas_t&&) = default;
+  atlas_t& operator=(atlas_t&&) = default;
+
+  sg_image image = {};
+  std::vector<uint8_t> data; // we construct the atlas here before uploading it to the GPU
+  int pixel_stride;
+  int offset_x = 0, offset_y = 0; // to keep track of where next tile needs to be placed, in pixels
+  int tile_width, tile_height;
+  bool resized = false;
+  bool dirty = false; // needs the data to be reuploaded to the GPU
+};
+
+struct downloaded_image_t {
+  uint8_t* data; // always RGBA
+  int width;
+  int height;
+};
+
+// We store the atlases we have for the current game so we can expand them if needed
+static std::vector<atlas_t*> atlases;
+
+// Caches downloads of images so we don't have to redownload them if the game is reloaded
+static std::map<std::string, downloaded_image_t*> image_cache;
+
+// Some stuff needs to run on the UI thread, such as sg_make_image, so we queue it up
 static std::vector<std::function<void()>> pending_callbacks;
 
-static void server_callback(const rc_api_request_t* request,
+// Used by rcheevos to make http requests
+extern "C" void ra_server_callback(const rc_api_request_t* request,
     rc_client_server_callback_t callback, void* callback_data, rc_client_t* client)
 {
   std::string url = request->url;
@@ -49,7 +77,7 @@ static void server_callback(const rc_api_request_t* request,
   url += "?" + post_data;
 
 #ifndef EMSCRIPTEN
-std::thread thread([type, url, post_data, callback, callback_data](){
+std::thread thread([type, url, post_data, callback, callback_data](){ // TODO: remove this thread?
 #endif
   std::vector<std::pair<std::string, std::string>> headers;
   #ifndef EMSCRIPTEN
@@ -81,146 +109,157 @@ thread.detach();
 #endif
 }
 
-static void log_message(const char* message, const rc_client_t* client)
+extern "C" void ra_log_callback(const char* message, const rc_client_t* client)
 {
   printf("[rcheevos - internal]: %s\n", message);
 }
 
-void ra_initialize_client(rc_client_read_memory_func_t memory_read_func)
-{
-  if(ra_client)
-  {
-    printf("[rcheevos]: client already initialized\n");
+// We got some data (either by downloading it, or from the cache), let's handle it
+void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image) {
+  std::lock_guard<std::mutex> lock(*synchronization_mutex); // no access to the atlases or the image cache without locking
+
+  atlas_t* atlas = nullptr;
+
+  // Check if we already have an atlas for this exact tile size
+  for (atlas_t* a : atlases) {
+    if (a->tile_width == image->width && a->tile_height == image->height) {
+      atlas = a;
+      break;
+    }
   }
-  else
-  {
-    ra_client = rc_client_create(memory_read_func, server_callback);
-    // RetroAchievements doesn't enable CORS, so we use a reverse proxy
-    rc_api_set_host("https://api.achieve.skyemoo.pandasemi.co");
-    rc_api_set_image_host("https://media.retroachievements.org");
-    #ifndef NDEBUG
-    rc_client_enable_logging(ra_client, RC_CLIENT_LOG_LEVEL_VERBOSE, log_message);
-    #endif
-    // TODO: should probably be an option after we're finished testing
-    rc_client_set_hardcore_enabled(ra_client, 0);
+
+  if (!atlas) {
+    atlas_t* new_atlas = new atlas_t(image->width, image->height);
+    atlases.push_back(new_atlas);
+    atlas = new_atlas;
   }
-}
 
-void ra_add_image(ra_image image, ra_image* out_image) {
-  sg_image_data im_data = {0};
-  im_data.subimage[0][0].ptr = image.pixel_data;
-  im_data.subimage[0][0].size = image.width * image.height * 4;
-  sg_image_desc desc={
-    .type=              SG_IMAGETYPE_2D,
-    .render_target=     false,
-    .width=             image.width,
-    .height=            image.height,
-    .num_slices=        1,
-    .num_mipmaps=       1,
-    .usage=             SG_USAGE_IMMUTABLE,
-    .pixel_format=      SG_PIXELFORMAT_RGBA8,
-    .sample_count=      1,
-    .min_filter=        SG_FILTER_LINEAR,
-    .mag_filter=        SG_FILTER_LINEAR,
-    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
-    .border_color=      SG_BORDERCOLOR_TRANSPARENT_BLACK,
-    .max_anisotropy=    1,
-    .min_lod=           0.0f,
-    .max_lod=           1e9f,
-    .data=              im_data,
-  };
+  // Check if we need to resize the atlas
+  uint32_t minimum_width = atlas->offset_x + atlas->tile_width + atlas_spacing;
+  uint32_t minimum_height = atlas->offset_y + atlas->tile_height + atlas_spacing;
+  if (minimum_width > atlas->pixel_stride || minimum_height > atlas->pixel_stride) {
+    // We need to resize and upload the atlas later
+    atlas->resized = true;
 
-  image.id = sg_make_image(&desc).id;
-  stbi_image_free(image.pixel_data);
-  image.pixel_data = nullptr;
+    // Find a sufficient power of two
+    uint32_t power = 256;
+    uint32_t max = std::max(minimum_width, minimum_height);
+    while (power < max) {
+      power *= 2;
 
-  *out_image = image;
-}
+      if (power > 4096) {
+        printf("[rcheevos]: making atlas too big (%dx%d), this shouldn't happen\n", power, power);
+      }
+    }
 
-void ra_load_game(const uint8_t *rom, size_t rom_size, int console_id, rc_client_callback_t callback)
-{
-  // Make a copy of the ROM as the original may be destroyed before the thread finishes
-  std::vector<uint8_t> rom_copy(rom, rom + rom_size);
-#ifndef EMSCRIPTEN
-  std::thread load_thread([rom_copy, console_id, callback](){
-#endif
-  rc_client_begin_identify_and_load_game(ra_client, console_id, 
-    NULL, rom_copy.data(), rom_copy.size(), callback, NULL);
-#ifndef EMSCRIPTEN
+    uint32_t old_stride = atlas->pixel_stride;
+    atlas->pixel_stride = power;
+
+    // Copy the old images to the new atlas
+    uint32_t old_offset_x = atlas->offset_x;
+    uint32_t old_offset_y = atlas->offset_y;
+
+    atlas->offset_x = 0;
+    atlas->offset_y = 0;
+
+    std::vector<uint8_t> new_data;
+    new_data.resize(power * power * 4);
+
+    // Copying the old data isn't enough, they also need to be placed to appropriate
+    // places in the new atlas since the width of the atlas has been changed
+    for (uint32_t y = 0; y < old_offset_y; y += atlas->tile_height + atlas_spacing) {
+      for (uint32_t x = 0; x < old_offset_x; x += atlas->tile_width + atlas_spacing) {
+        uint32_t old_offset = (x * 4) + (y * old_stride * 4);
+        uint32_t new_offset = (atlas->offset_x * 4) + (atlas->offset_y * atlas->pixel_stride * 4);
+        new_data[new_offset + 0] = atlas->data[old_offset + 0];
+        new_data[new_offset + 1] = atlas->data[old_offset + 1];
+        new_data[new_offset + 2] = atlas->data[old_offset + 2];
+        new_data[new_offset + 3] = atlas->data[old_offset + 3];
+
+        atlas->offset_x += atlas->tile_width + atlas_spacing;
+        if (atlas->offset_x + atlas->tile_width > atlas->pixel_stride) {
+          atlas->offset_x = 0;
+          atlas->offset_y += atlas->tile_height + atlas_spacing;
+        }
+      }
+    }
+
+    atlas->data.swap(new_data);
+    // TODO: maybe we can use TLS to immediately create the atlas if this is the UI thread
+  }
+
+  // At this point we should have an atlas that has enough room for our incoming tile
+
+  // Prepare offsets for next tile
+  atlas->offset_x += atlas->tile_width + atlas_spacing;
+  if (atlas->offset_x + atlas->tile_width > atlas->pixel_stride) {
+    atlas->offset_x = 0;
+    atlas->offset_y += atlas->tile_width + atlas_spacing;
+  }
+
+  // Copy tile to atlas
+  for (int y = 0; y < atlas->tile_height; y++) {
+    for (int x = 0; x < atlas->tile_width; x++) {
+      uint32_t atlas_offset = ((atlas->offset_x + x) * 4) + (((atlas->offset_y + y) * atlas->pixel_stride) * 4);
+      atlas->data[atlas_offset + 0] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 0];
+      atlas->data[atlas_offset + 1] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 1];
+      atlas->data[atlas_offset + 2] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 2];
+      atlas->data[atlas_offset + 3] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 3];
+    }
+  }
+
+  out_image->offset_x = atlas->offset_x;
+  out_image->offset_y = atlas->offset_y;
+  out_image->width = image->width;
+  out_image->height = image->height;
+
+  // Note: at this point atlas->dirty might be true and we can't be certain we are on the UI thread
+  // (this might be called from the UI thread if the image is cached,
+  // but it might also be called from a worker thread if the image is being downloaded)
+  // Pending callbacks are always ran from the UI thread and only after the atlases have been updated
+  // so we push it there
+  pending_callbacks.push_back([out_image, atlas](){
+    out_image->atlas_id = atlas->image.id;
   });
-  load_thread.detach();
-#endif
 }
 
-void ra_get_image(const char* url, ra_image* out_image)
+// This should be getting called from the UI thread only, either from the load game callback
+// or from the retro achievements event handler
+void ra_get_image(const char* url, atlas_tile_t* out_image)
 {
-  std::lock_guard<std::mutex> lock(*synchronization_mutex);
+  // Images might be getting downloaded and added to the cache asynchronously
+  // so let's lock it here
+  std::unique_lock<std::mutex> lock(*synchronization_mutex);
   if (image_cache.find(url) != image_cache.end())
   {
-    auto& image = image_cache[url];
-    pending_callbacks.push_back([out_image, image](){
-      // callback(image, user_data);
-    });
+    // Great, image was already downloaded in the past and is in the cache
+    // let's just handle it immediately from this current thread as it is the UI thread
+    handle_downloaded_image(image_cache[url], out_image);
     return;
   }
 
+  // When this function returns, the const char* will be invalid, so we need to copy the contents
   std::string url_str = url;
   #ifndef EMSCRIPTEN
-  std::thread thread([url_str, out_image](){
+  std::thread thread([url_str, out_image](){ // TODO: again is this really needed?
   #endif
   https_request(http_request_e::GET, url_str, {}, {}, [out_image, url_str](const std::vector<uint8_t>& result) {
-      std::lock_guard<std::mutex> lock(*synchronization_mutex);
       rc_api_server_response_t response;
       response.body = (const char*)result.data();
       response.body_length = result.size();
       response.http_status_code = 200;
-      auto& image = image_cache[url_str];
-      image.pixel_data = stbi_load_from_memory((const uint8_t*)response.body, response.body_length, &image.width, &image.height, NULL, 4);
 
-      bool is_atlas_tile = image.width == atlas_tile_size && image.height == atlas_tile_size;
-      if (is_atlas_tile) {
-        image.offset_x = atlas_offset_x;
-        image.offset_y = atlas_offset_y;
-
-        // Prepare offsets for next tile
-        atlas_offset_x += atlas_tile_size + atlas_spacing;
-        if (atlas_offset_x + atlas_tile_size > atlas_pixel_stride) {
-          atlas_offset_x = 0;
-          atlas_offset_y += atlas_tile_size + atlas_spacing;
-        }
-
-        image.id = atlas.id;
-        int offset_x = image.offset_x;
-        int offset_y = image.offset_y;
-
-        if (atlas_data.empty()) {
-          atlas_data.resize(atlas_pixel_stride * atlas_pixel_stride * 4);
-        }
-
-        // Copy tile to atlas
-        for (int y = 0; y < atlas_tile_size; y++) {
-          for (int x = 0; x < atlas_tile_size; x++) {
-            uint32_t atlas_offset = ((offset_x + x) * 4) + (((offset_y + y) * atlas_pixel_stride) * 4);
-            atlas_data[atlas_offset + 0] = image.pixel_data[x * 4 + (y * 4 * atlas_tile_size) + 0];
-            atlas_data[atlas_offset + 1] = image.pixel_data[x * 4 + (y * 4 * atlas_tile_size) + 1];
-            atlas_data[atlas_offset + 2] = image.pixel_data[x * 4 + (y * 4 * atlas_tile_size) + 2];
-            atlas_data[atlas_offset + 3] = image.pixel_data[x * 4 + (y * 4 * atlas_tile_size) + 3];
-          }
-        }
-        std::ofstream file("atlas_data.bin", std::ios::binary);
-        file.write((const char*)atlas_data.data(), atlas_data.size());
-        file.close();
-        stbi_image_free(image.pixel_data);
-        image.pixel_data = nullptr;
-        atlas_needs_update = true;
-        *out_image = image;
-      } else {
-        // pending_callbacks.push_back([callback, user_data, image](){
-        //   ra_add_image(image, callback, user_data);
-        // });
+      downloaded_image_t* image = new downloaded_image_t();
+      image->data = stbi_load_from_memory((const uint8_t*)response.body, response.body_length, &image->width, &image->height, NULL, 4);
+      if (!image->data) {
+        printf("[rcheevos]: failed to load image from memory\n");
+        return;
       }
+      image_cache[url_str] = image;
+
+      pending_callbacks.push_back([image, out_image](){
+        handle_downloaded_image(image, out_image);
+      });
   });
   #ifndef EMSCRIPTEN
   });
@@ -230,54 +269,66 @@ void ra_get_image(const char* url, ra_image* out_image)
 
 void ra_run_pending_callbacks()
 {
-  // std::lock_guard<std::mutex> lock(image_cache_mutex);
-  // if(pending_callbacks.empty())
-  //   return;
-
-  // for (auto& callback : pending_callbacks)
-  // {
-  //   callback();
-  // }
-  // pending_callbacks.clear();
-}
-
-rc_client_t* ra_get_client()
-{
-  return ra_client;
-}
-
-rc_client_achievement_list_t* ra_get_achievements()
-{
-  return achievements;
-}
-
-void ra_invalidate_achievements()
-{
-  if(achievements)
-  {
-    rc_client_destroy_achievement_list(achievements);
-  }
-  achievements = rc_client_create_achievement_list(ra_client,
-    RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
-    RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
-}
-
-int ra_get_atlas_size() {
-  return atlas_pixel_stride;
-}
-
-void ra_update_atlas() { // TODO: move to main
+  // Pending callbacks is always added to from non-UI threads, so before we run them
+  // we need to lock the mutex
   std::lock_guard<std::mutex> lock(*synchronization_mutex);
-  if (atlas_needs_update) {
-      if (atlas.id == SG_INVALID_ID) {
-        printf("[rcheevos]: atlas not created\n");
-        return;
+  if(pending_callbacks.empty())
+    return;
+
+  for (auto& callback : pending_callbacks)
+  {
+    callback();
+  }
+  pending_callbacks.clear();
+}
+
+void ra_update_atlases() {
+  std::lock_guard<std::mutex> lock(*synchronization_mutex);
+  for (atlas_t* atlas : atlases) {
+    if (atlas->resized) {
+      if (atlas->image.id != SG_INVALID_ID) {
+        sg_destroy_image(atlas->image);
       }
+      atlas->image.id = SG_INVALID_ID;
+    }
+
+    if (atlas->image.id == SG_INVALID_ID) {
+      sg_image_data im_data = {0};
+      im_data.subimage[0][0].ptr = atlas->data.data();
+      im_data.subimage[0][0].size = atlas->data.size();
+
+      sg_image_desc desc = {
+        .type=              SG_IMAGETYPE_2D,
+        .render_target=     false,
+        .width=             atlas->pixel_stride,
+        .height=            atlas->pixel_stride,
+        .num_slices=        1,
+        .num_mipmaps=       1,
+        .usage=             SG_USAGE_IMMUTABLE,
+        .pixel_format=      SG_PIXELFORMAT_RGBA8,
+        .sample_count=      1,
+        .min_filter=        SG_FILTER_LINEAR,
+        .mag_filter=        SG_FILTER_LINEAR,
+        .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+        .border_color=      SG_BORDERCOLOR_TRANSPARENT_BLACK,
+        .max_anisotropy=    1,
+        .min_lod=           0.0f,
+        .max_lod=           1e9f,
+        .data=              im_data,
+      };
+
+      atlas->image = sg_make_image(&desc);
+    } else if (atlas->dirty) {
       sg_image_data data = {0};
-      data.subimage[0][0].ptr = atlas_data.data();
-      data.subimage[0][0].size = atlas_data.size();
-      sg_update_image(atlas, data);
-      atlas_needs_update = false;
+      data.subimage[0][0].ptr = atlas->data.data();
+      data.subimage[0][0].size = atlas->data.size();
+      sg_update_image(atlas->image, data);
+    }
+
+    atlas->dirty = false;
+    atlas->resized = false;
   }
 }
 
