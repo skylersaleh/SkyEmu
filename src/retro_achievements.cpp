@@ -16,8 +16,6 @@ extern "C" {
 #define STBI_ONLY_PNG
 #include "stb_image.h"
 
-#include <fstream>
-
 // Access to some parts such as the atlas and the pending callbacks can happen from multiple threads
 // so we need to synchronize access to them
 std::mutex* synchronization_mutex = new std::mutex();
@@ -37,7 +35,7 @@ struct atlas_t {
 
   sg_image image = {};
   std::vector<uint8_t> data; // we construct the atlas here before uploading it to the GPU
-  int pixel_stride;
+  int pixel_stride = 0;
   int offset_x = 0, offset_y = 0; // to keep track of where next tile needs to be placed, in pixels
   int tile_width, tile_height;
   bool resized = false;
@@ -94,7 +92,7 @@ std::thread thread([type, url, post_data, callback, callback_data](){ // TODO: r
 
     // Heavy work (http request) is done, do rest of the work in the ui thread to avoid
     // potential synchronization issues
-    std::lock_guard<std::mutex> lock(*synchronization_mutex);
+    std::unique_lock<std::mutex> lock(*synchronization_mutex);
     pending_callbacks.push_back([result, callback, callback_data]() { // TODO: std::move?
       rc_api_server_response_t response;
       response.body = (const char*)result.data();
@@ -116,8 +114,7 @@ extern "C" void ra_log_callback(const char* message, const rc_client_t* client)
 
 // We got some data (either by downloading it, or from the cache), let's handle it
 void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image) {
-  std::lock_guard<std::mutex> lock(*synchronization_mutex); // no access to the atlases or the image cache without locking
-
+  printf("[rcheevos]: handling downloaded image\n");
   atlas_t* atlas = nullptr;
 
   // Check if we already have an atlas for this exact tile size
@@ -142,7 +139,7 @@ void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image)
     atlas->resized = true;
 
     // Find a sufficient power of two
-    uint32_t power = 256;
+    uint32_t power = 2048; // TODO: reduce to 256x256
     uint32_t max = std::max(minimum_width, minimum_height);
     while (power < max) {
       power *= 2;
@@ -185,10 +182,12 @@ void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image)
     }
 
     atlas->data.swap(new_data);
-    // TODO: maybe we can use TLS to immediately create the atlas if this is the UI thread
   }
 
   // At this point we should have an atlas that has enough room for our incoming tile
+
+  int offset_x = atlas->offset_x;
+  int offset_y = atlas->offset_y;
 
   // Prepare offsets for next tile
   atlas->offset_x += atlas->tile_width + atlas_spacing;
@@ -197,10 +196,12 @@ void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image)
     atlas->offset_y += atlas->tile_width + atlas_spacing;
   }
 
+  printf("atlas size: %dx%d\n", atlas->pixel_stride, atlas->pixel_stride);
+
   // Copy tile to atlas
   for (int y = 0; y < atlas->tile_height; y++) {
     for (int x = 0; x < atlas->tile_width; x++) {
-      uint32_t atlas_offset = ((atlas->offset_x + x) * 4) + (((atlas->offset_y + y) * atlas->pixel_stride) * 4);
+      uint32_t atlas_offset = ((offset_x + x) * 4) + (((offset_y + y) * atlas->pixel_stride) * 4);
       atlas->data[atlas_offset + 0] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 0];
       atlas->data[atlas_offset + 1] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 1];
       atlas->data[atlas_offset + 2] = image->data[x * 4 + (y * 4 * atlas->tile_width) + 2];
@@ -208,10 +209,13 @@ void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image)
     }
   }
 
-  out_image->offset_x = atlas->offset_x;
-  out_image->offset_y = atlas->offset_y;
-  out_image->width = image->width;
-  out_image->height = image->height;
+  out_image->x1 = (float)offset_x/ atlas->pixel_stride;
+  out_image->y1 = (float)offset_y / atlas->pixel_stride;
+  out_image->x2 = (float)(offset_x + image->width) / atlas->pixel_stride;
+  out_image->y2 = (float)(offset_y + image->height) / atlas->pixel_stride;
+
+  printf("%d %d %d %d\n", atlas->offset_x, atlas->offset_y, image->width, image->height);
+  printf("atlas tile: %f %f %f %f\n", out_image->x1, out_image->y1, out_image->x2, out_image->y2);
 
   // Note: at this point atlas->dirty might be true and we can't be certain we are on the UI thread
   // (this might be called from the UI thread if the image is cached,
@@ -227,9 +231,8 @@ void handle_downloaded_image(downloaded_image_t* image, atlas_tile_t* out_image)
 // or from the retro achievements event handler
 void ra_get_image(const char* url, atlas_tile_t* out_image)
 {
-  // Images might be getting downloaded and added to the cache asynchronously
-  // so let's lock it here
   std::unique_lock<std::mutex> lock(*synchronization_mutex);
+
   if (image_cache.find(url) != image_cache.end())
   {
     // Great, image was already downloaded in the past and is in the cache
@@ -240,10 +243,9 @@ void ra_get_image(const char* url, atlas_tile_t* out_image)
 
   // When this function returns, the const char* will be invalid, so we need to copy the contents
   std::string url_str = url;
-  #ifndef EMSCRIPTEN
-  std::thread thread([url_str, out_image](){ // TODO: again is this really needed?
-  #endif
   https_request(http_request_e::GET, url_str, {}, {}, [out_image, url_str](const std::vector<uint8_t>& result) {
+      printf("downloaded: %s\n", url_str.c_str());
+      std::unique_lock<std::mutex> lock(*synchronization_mutex);
       rc_api_server_response_t response;
       response.body = (const char*)result.data();
       response.body_length = result.size();
@@ -261,29 +263,39 @@ void ra_get_image(const char* url, atlas_tile_t* out_image)
         handle_downloaded_image(image, out_image);
       });
   });
-  #ifndef EMSCRIPTEN
-  });
-  thread.detach();
-  #endif
 }
 
 void ra_run_pending_callbacks()
 {
   // Pending callbacks is always added to from non-UI threads, so before we run them
   // we need to lock the mutex
-  std::lock_guard<std::mutex> lock(*synchronization_mutex);
+  std::unique_lock<std::mutex> lock(*synchronization_mutex);
   if(pending_callbacks.empty())
     return;
+  std::vector<std::function<void()>> callbacks;
+  callbacks.swap(pending_callbacks);
+  lock.unlock();
 
-  for (auto& callback : pending_callbacks)
+  for (auto& callback : callbacks)
   {
     callback();
   }
+}
+
+void ra_reset() {
+  std::unique_lock<std::mutex> lock(*synchronization_mutex);
+  for (auto& atlas : atlases) {
+    if (atlas->image.id != SG_INVALID_ID) {
+      sg_destroy_image(atlas->image);
+    }
+    delete atlas;
+  }
+  atlases.clear();
   pending_callbacks.clear();
 }
 
 void ra_update_atlases() {
-  std::lock_guard<std::mutex> lock(*synchronization_mutex);
+  std::unique_lock<std::mutex> lock(*synchronization_mutex);
   for (atlas_t* atlas : atlases) {
     if (atlas->resized) {
       if (atlas->image.id != SG_INVALID_ID) {
@@ -334,4 +346,18 @@ void ra_update_atlases() {
 
 mutex_t ra_get_mutex() {
   return synchronization_mutex;
+}
+
+void ra_cleanup() {
+  ra_reset();
+  delete synchronization_mutex;
+  for (auto& image : image_cache) {
+    stbi_image_free(image.second->data);
+    delete image.second;
+  }
+  image_cache.clear();
+}
+
+void ra_dump_atlases() {
+  printf("todo\n");
 }

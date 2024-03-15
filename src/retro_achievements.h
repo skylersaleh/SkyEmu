@@ -15,8 +15,8 @@
 // This is because there's a lot of them and they are of similar sizes
 typedef struct {
     uint32_t atlas_id;
-    int offset_x, offset_y;
-    int width, height;
+    float x1, y1;
+    float x2, y2;
 } atlas_tile_t;
 
 void ra_server_callback(const rc_api_request_t* request,
@@ -27,11 +27,10 @@ void ra_log_callback(const char* message, const rc_client_t* client);
 // and creates a pending callback so out_image is set on the UI thread
 void ra_get_image(const char* url, atlas_tile_t* out_image);
 void ra_run_pending_callbacks();
+void ra_reset();
+void ra_cleanup();
 void ra_update_atlases();
 mutex_t ra_get_mutex(); // TODO: can we delete this and only lock mutex stuff from .cpp file
-
-#ifndef NDEBUG
 void ra_dump_atlases();
-#endif
 
 #endif

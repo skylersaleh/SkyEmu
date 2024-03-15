@@ -519,26 +519,22 @@ typedef struct se_ra_tracker_node{
 }se_ra_tracker_node_t;
 typedef struct se_ra_challenge_indicator_node{
   uint32_t id;
-  sg_image image;
+  atlas_tile_t image;
   struct se_ra_challenge_indicator_node* next;
 } se_ra_challenge_indicator_node_t;
-typedef struct{
-  int x, y;
-}se_ra_atlas_offset_t;
 typedef struct{
   rc_client_t* client;
   char username[256];
   char password[256];
-  sg_image image;
-  se_ra_atlas_offset_t** achievement_images;
+  atlas_tile_t image;
+  atlas_tile_t** achievement_images;
   // TODO: make widgets that use these lists and progress indicator
   rc_client_achievement_list_t* achievement_list;
   se_ra_tracker_node_t* tracker_list;
   se_ra_challenge_indicator_node_t* challenge_indicator_list;
-  sg_image progress_indicator_image;
+  atlas_tile_t progress_indicator_image;
   bool progress_indicator_shown;
   char measured_progress[24];
-  sg_image atlas; // for achievement images
   bool pending_login;
 }se_ra_info_t;
 #endif
@@ -1741,10 +1737,7 @@ static uint32_t se_ra_read_memory_callback(uint32_t address, uint8_t* buffer, ui
   return 0;
 }
 static void se_ra_game_cleanup(){
-  if(ra_info.image.id != SG_INVALID_ID){
-    sg_destroy_image((sg_image){ra_info.image.id});
-    ra_info.image.id = SG_INVALID_ID;
-  }
+  ra_reset();
   rc_client_achievement_list_t* list = ra_info.achievement_list;
   if (list){
     for (int i = 0; i < list->num_buckets; i++)
@@ -1789,7 +1782,6 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     ra_get_image(url, &ra_info.image);
   }
 
-  mutex_lock(ra_get_mutex());
   if(ra_info.achievement_list) // TODO: deduplicate this code
   {
     rc_client_destroy_achievement_list(ra_info.achievement_list);
@@ -1798,12 +1790,12 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
     RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE_AND_UNOFFICIAL,
     RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
   rc_client_achievement_list_t* list = ra_info.achievement_list;
-  ra_info.achievement_images = (se_ra_atlas_offset_t**)malloc(sizeof(se_ra_atlas_offset_t*)*list->num_buckets);
+  ra_info.achievement_images = (atlas_tile_t**)malloc(sizeof(atlas_tile_t*)*list->num_buckets);
   for (int i = 0; i < list->num_buckets; i++)
   {
     uint32_t num_achievements=list->buckets[i].num_achievements;
-    ra_info.achievement_images[i] = (se_ra_atlas_offset_t*)malloc(sizeof(se_ra_atlas_offset_t)*num_achievements);
-    memset(ra_info.achievement_images[i], 0, sizeof(se_ra_atlas_offset_t)*num_achievements);
+    ra_info.achievement_images[i] = (atlas_tile_t*)malloc(sizeof(atlas_tile_t)*num_achievements);
+    memset(ra_info.achievement_images[i], 0, sizeof(atlas_tile_t)*num_achievements);
     for (int j = 0; j < num_achievements; j++)
     {
       char url[512];
@@ -1822,7 +1814,6 @@ static void se_ra_load_game_callback(int result, const char* error_message, rc_c
         printf("locked\n");
     }
   }
-  mutex_unlock(ra_get_mutex());
 }
 static void se_ra_load_game(){
   if(!emu_state.rom_loaded)return;
@@ -1947,7 +1938,7 @@ static void se_ra_challenge_indicator_show(const rc_client_achievement_t* achiev
   char url[128];
   if (rc_client_achievement_get_image_url(achievement, RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED, url, sizeof(url)) == RC_OK)
   {
-    ra_get_image(url, &new_indicator->image);
+    // ra_get_image(url, &new_indicator->image);
   }
 }
 static void se_ra_challenge_indicator_hide(const rc_client_achievement_t* achievement)
@@ -1979,7 +1970,7 @@ static void se_ra_progress_indicator_update(const rc_client_achievement_t* achie
 
   if (rc_client_achievement_get_image_url(achievement, RC_CLIENT_ACHIEVEMENT_STATE_ACTIVE, url, sizeof(url)) == RC_OK)
   {
-    ra_get_image(url, &ra_info.progress_indicator_image);
+    // ra_get_image(url, &ra_info.progress_indicator_image);
   }
 
   strncpy(ra_info.measured_progress, achievement->measured_progress, sizeof(ra_info.measured_progress));
@@ -2101,30 +2092,6 @@ static void se_ra_initialize() {
       free(text);
     }
   }
-
-  // Create the texture
-  sg_image_desc desc={
-    .type=              SG_IMAGETYPE_2D,
-    .render_target=     false,
-    .width=             atlas_pixel_stride,
-    .height=            atlas_pixel_stride,
-    .num_slices=        1,
-    .num_mipmaps=       1,
-    .usage=             SG_USAGE_STREAM,
-    .pixel_format=      SG_PIXELFORMAT_RGBA8,
-    .sample_count=      1,
-    .min_filter=        SG_FILTER_LINEAR,
-    .mag_filter=        SG_FILTER_LINEAR,
-    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
-    .border_color=      SG_BORDERCOLOR_TRANSPARENT_BLACK,
-    .max_anisotropy=    1,
-    .min_lod=           0.0f,
-    .max_lod=           1e9f,
-  };
-  
-  ra_info.atlas = sg_make_image(&desc);
 }
 #endif
 
@@ -6374,13 +6341,13 @@ void se_draw_menu_panel(){
     se_text("Username");
     igSameLine(win_w-150,0);
     if(pending_login)se_push_disabled();
-    igInputText("##Username",ra_info.username,sizeof(ra_info.username),ImGuiInputTextFlags_None,NULL,NULL);
+    bool enter = igInputText("##Username",ra_info.username,sizeof(ra_info.username),ImGuiInputTextFlags_EnterReturnsTrue,NULL,NULL);
     if(pending_login)se_pop_disabled();
     se_text("Password");
     igSameLine(win_w-150,0);
     if(pending_login)se_push_disabled();
-    igInputText("##Password",ra_info.password,sizeof(ra_info.password),ImGuiInputTextFlags_Password,NULL,NULL);
-    if(se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0,0})){
+    enter |= igInputText("##Password",ra_info.password,sizeof(ra_info.password),ImGuiInputTextFlags_Password|ImGuiInputTextFlags_EnterReturnsTrue,NULL,NULL);
+    if(se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0,0}) || enter){
       ra_info.pending_login = true;
       rc_client_begin_login_with_password(ra_info.client, ra_info.username, ra_info.password, se_ra_login_callback, NULL);
     }
@@ -6389,22 +6356,27 @@ void se_draw_menu_panel(){
   }else {
     const rc_client_game_t* game = rc_client_get_game_info(ra_info.client);
     ImVec2 pos;
-    sg_image image;
+    sg_image image = {0};
     const char* play_string = "No Game Loaded";
     char line1[256];
     char line2[256];
     snprintf(line1,256,se_localize_and_cache("Logged in as %s"),user->display_name);
     if(game){
-      image.id=ra_info.image.id;
+      image.id=ra_info.image.atlas_id;
       snprintf(line2,256,se_localize_and_cache("Playing: %s"),game->title);
     }else snprintf(line2,256,"%s",se_localize_and_cache("No Game Loaded"));
-    se_boxed_image_dual_label(line1,line2, ICON_FK_TROPHY, image, 0, (ImVec2){0,0}, (ImVec2){1,1});
+    se_boxed_image_dual_label(line1,line2, ICON_FK_TROPHY, image, 0, (ImVec2){ra_info.image.x1,ra_info.image.y1}, (ImVec2){ra_info.image.x2,ra_info.image.y2});
     if(se_button(ICON_FK_SIGN_OUT " Logout", (ImVec2){0,0})){
       char login_info_path[SB_FILE_PATH_SIZE];
       snprintf(login_info_path,SB_FILE_PATH_SIZE,"%sra_token.txt",se_get_pref_path());
       remove(login_info_path);
       rc_client_logout(ra_info.client);
     }
+#ifndef NDEBUG
+    if (se_button("Dump atlases", (ImVec2){0,0})){
+      ra_dump_atlases();
+    }
+#endif
     mutex_lock(ra_get_mutex());
     rc_client_achievement_list_t* list = ra_info.achievement_list;
     if (list){
@@ -6414,10 +6386,10 @@ void se_draw_menu_panel(){
           sg_image image;
           ImVec2 uv0, uv1;
           if(ra_info.achievement_images && ra_info.achievement_images[i]){
-            image = ra_info.atlas;
-            se_ra_atlas_offset_t* tile = &ra_info.achievement_images[i][j];
-            uv0 = (ImVec2){ tile->x / atlas_pixel_stride, tile->y / atlas_pixel_stride };
-            uv1 = (ImVec2){ (tile->x + atlas_tile_size) / atlas_pixel_stride, (tile->y + atlas_tile_size) / atlas_pixel_stride };
+            atlas_tile_t* tile = &ra_info.achievement_images[i][j];
+            uv0 = (ImVec2){ tile->x1, tile->y1 };
+            uv1 = (ImVec2){ tile->x2, tile->y2 };
+            image.id = tile->atlas_id;
           }
           se_boxed_image_dual_label(list->buckets[i].achievements[j]->title,
                                    list->buckets[i].achievements[j]->description, ICON_FK_SPINNER, image, 0, uv0, uv1);
@@ -7401,6 +7373,7 @@ static void frame(void) {
     screen_x = left_padding;
     screen_width-=(left_padding+right_padding)*se_dpi_scale();
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    ra_update_atlases();
     ra_run_pending_callbacks();
 #endif
     if(gui_state.sidebar_open){
@@ -8240,6 +8213,7 @@ static void cleanup(void) {
   SDL_Quit();
 #endif
   https_shutdown();
+  ra_cleanup();
 }
 #ifdef EMSCRIPTEN
 static void emsc_load_callback(const sapp_html5_fetch_response* response) {
