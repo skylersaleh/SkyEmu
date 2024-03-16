@@ -67,10 +67,10 @@ void* impl_frame(uint32_t* width, uint32_t* height) {
 }
 
 const char* impl_library_name() {  
-  return "SkyEmuGba";
+  return "SkyEmuNds";
 }
 
 const char* impl_library_version() {
-  return "TODO";
+  return SKYEMO_LIBRETRO_VERSION;
 }
 

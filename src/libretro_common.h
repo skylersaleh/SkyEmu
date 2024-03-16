@@ -5,6 +5,8 @@
 #include "libretro.h"
 #include "sb_types.h"
 
+#define SKYEMO_LIBRETRO_VERSION "0.1.0"
+
 void impl_init(sb_emu_state_t* emu_state);
 
 bool impl_load_rom(sb_emu_state_t* emu_state);

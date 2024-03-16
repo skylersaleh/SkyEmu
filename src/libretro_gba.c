@@ -70,6 +70,6 @@ const char* impl_library_name() {
 }
 
 const char* impl_library_version() {
-  return "TODO";
+  return SKYEMO_LIBRETRO_VERSION;
 }
 
