@@ -1,20 +1,17 @@
 #ifndef LIBRETRO_COMMON
 #define LIBRETRO_COMMON 
 
+#include "common_defs.h"
 #include "libretro.h"
 #include "sb_types.h"
-
-#define SE_AUDIO_SAMPLE_RATE 48000
-#define SE_AUDIO_BUFF_CHANNELS 2
-#define SE_REBIND_TIMER_LENGTH 5.0
-
-#define SE_TRANSPARENT_BG_ALPHA
 
 void impl_init(sb_emu_state_t* emu_state);
 
 bool impl_load_rom(sb_emu_state_t* emu_state);
 
 void impl_get_system_av_info(struct retro_system_av_info* info);
+
+int impl_get_pixel_format();
 
 void impl_reset(sb_emu_state_t* emu_state);
 

@@ -1,3 +1,4 @@
+#include "libretro.h"
 #include "libretro_common.h"
 #include "sb_types.h"
 
@@ -7,8 +8,8 @@
 
 #include "gb.h"
 
-gb_scratch_t gb_scratch;
-sb_gb_t gb;
+static gb_scratch_t gb_scratch;
+static sb_gb_t gb;
 
 void impl_init(sb_emu_state_t* emu_state){
   emu_state->system = SYSTEM_GB;
@@ -28,7 +29,11 @@ void impl_get_system_av_info(struct retro_system_av_info* info) {
     info->geometry.base_height = info->geometry.max_height;
     info->geometry.base_width = info->geometry.max_width;
     info->timing.fps = 60;
-    info->timing.sample_rate = 44100; // TODO: set to something more appropriate?
+    info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
+}
+
+int impl_get_pixel_format() {
+  return RETRO_PIXEL_FORMAT_XRGB8888;
 }
 
 void impl_reset(sb_emu_state_t* emu_state) {  
@@ -54,10 +59,20 @@ void impl_tick(sb_emu_state_t* emu_state) {
     sb_tick(emu_state, &gb, &gb_scratch);  
 }
 
-void* impl_frame(uint32_t* width, uint32_t* height){  
-      *width = SB_LCD_W;
-      *height = SB_LCD_H;
-      return gb_scratch.framebuffer;      
+
+static uint8_t flipped_frame[sizeof gb_scratch.framebuffer];
+
+void* impl_frame(uint32_t* width, uint32_t* height) {
+  *width = SB_LCD_W;
+  *height = SB_LCD_H;  
+  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
+    // NOTE: assume little endian
+    flipped_frame[i + 0] = gb_scratch.framebuffer[i + 2]; // blue
+    flipped_frame[i + 1] = gb_scratch.framebuffer[i + 1]; // green
+    flipped_frame[i + 2] = gb_scratch.framebuffer[i + 0]; // red
+    flipped_frame[i + 3] = 0; // ignored
+  }
+  return flipped_frame;
 }
 
 const char* impl_library_name() {

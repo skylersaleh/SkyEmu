@@ -21,7 +21,7 @@ retro_input_state_t input_state_cb = NULL;
 retro_audio_sample_t audio_sample_cb = NULL;
 
 void retro_set_environment(retro_environment_t env) {
-  enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
+  enum retro_pixel_format pixel_format = impl_get_pixel_format();
   env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_format);
 }
 
