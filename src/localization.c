@@ -1994,7 +1994,6 @@ const char* se_language_string(int language_enum){
         case SE_LANG_DEFAULT: return se_localize("Default");
         case SE_LANG_ENGLISH: return "English";
         case SE_LANG_DUTCH: return "Nederlands";
-        case SE_LANG_DANISH: return "Dansk";
         case SE_LANG_GERMAN: return "Deutsch";
         case SE_LANG_ITALIAN: return "Italiano";
         // These languages require unicode support to represent correctly
@@ -2004,6 +2003,7 @@ const char* se_language_string(int language_enum){
         case SE_LANG_GREEK: return "Ελληνικά";
         case SE_LANG_RUSSIAN: return "Русский";
         case SE_LANG_POLISH: return "Polski";
+        case SE_LANG_DANISH: return "Dansk";
 #endif 
     }
     return "";
