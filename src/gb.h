@@ -1446,13 +1446,14 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
     total_cylces+=delta_cycles_after_speed;
     sb_tick_components(emu,gb,delta_cycles_after_speed);
 
-    if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
+    if (gb->cpu.trigger_breakpoint){
       gb->cpu.trigger_breakpoint = false;
       emu->run_mode = SB_MODE_PAUSE;
       break;
     }
     if(gb->lcd.finished_frame){break;}
     if(total_cylces>=70224&&emu->step_instructions==0)break;
+    emu->step_instructions=0;
   }
   emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
 }

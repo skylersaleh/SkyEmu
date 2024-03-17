@@ -1,6 +1,10 @@
 package com.sky.SkyEmu;
 
 
+import static android.view.InputDevice.SOURCE_GAMEPAD;
+import static android.view.InputDevice.SOURCE_JOYSTICK;
+import static android.view.KeyEvent.*;
+
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -13,10 +17,12 @@ import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
-import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
@@ -24,11 +30,14 @@ import android.app.NativeActivity;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
+import androidx.browser.customtabs.CustomTabsIntent;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.Key;
 import java.util.Locale;
 import java.util.Vector;
 
@@ -39,7 +48,11 @@ public class EnhancedNativeActivity extends NativeActivity {
     final static String TAG="SkyEmu"; // Any value
     public Rect visibleRect;
     public EditText invisibleEditText;
+    public View mRootView;
     private Vector<Integer> keyboardEvents;
+    private boolean first_event;
+    CustomTabsIntent authIntent;
+
     static {
         System.loadLibrary("SkyEmu");
     }
@@ -50,7 +63,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         return metrics.xdpi/120.0f;
     }
-    public String getLanguage() {
+    public static String getLanguage() {
         return Locale.getDefault().toString();
     }
     /*Handle permission request results*/
@@ -74,6 +87,7 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         }
     }
+
     public float getVisibleBottom(){
         return visibleRect.bottom;
     }
@@ -81,6 +95,14 @@ public class EnhancedNativeActivity extends NativeActivity {
         return visibleRect.top;
     }
     public int getEvent(){
+        if(first_event){
+            Intent intent = getIntent();
+            Uri data = intent.getData();
+            if (intent.getAction()==Intent.ACTION_VIEW&&data != null) {
+                loadURI(data,true);
+            }
+            first_event=false;
+        }
         if(keyboardEvents.isEmpty())return -1;
         int val = keyboardEvents.get(0);
         keyboardEvents.remove(0);
@@ -88,10 +110,27 @@ public class EnhancedNativeActivity extends NativeActivity {
     }
     public void showKeyboard(){
         Window win =this.getWindow();
+        NativeActivity activity = this;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                win.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+                if(invisibleEditText==null){
+                    FrameLayout.LayoutParams mRparams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+                    invisibleEditText = new EditText(activity);
+                    invisibleEditText.setLayoutParams(mRparams);
+                    invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
+                    invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                    // Set an OnKeyListener to intercept key events
+                    invisibleEditText.setOnKeyListener(new View.OnKeyListener() {
+                        @Override
+                        public boolean onKey(View v, int keyCode, KeyEvent event) {
+                            // Consume the key event to prevent it from reaching the EditText
+                            // So, that we don not duplicate the inputs relayed through the C code for onKey.
+                            return true;
+                        }
+                    });
+                    ((FrameLayout)mRootView).addView(invisibleEditText);
+                }
                 invisibleEditText.requestFocus();
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                 imm.showSoftInput(invisibleEditText, InputMethodManager.SHOW_IMPLICIT);
@@ -105,11 +144,8 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                win.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-                InputMethodManager imm = ( InputMethodManager )getSystemService( Context.INPUT_METHOD_SERVICE );
-                imm.hideSoftInputFromWindow( win.getDecorView().getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
-                //win.setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+                ((FrameLayout)mRootView).removeView(invisibleEditText);
+                invisibleEditText = null;
             }
         });
     }
@@ -117,7 +153,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                keyboardEvents.add(-2);
+                if(invisibleEditText==null)return;
                 int pre = 0;
                 boolean inserted = false;
                 if(invisibleEditText.getSelectionEnd()!= invisibleEditText.getText().length()-8){
@@ -197,18 +233,12 @@ public class EnhancedNativeActivity extends NativeActivity {
         }
     }
     protected void onCreate(Bundle savedInstanceState) {
+        first_event=true;
         super.onCreate(savedInstanceState);
         Window mRootWindow = getWindow();
-        FrameLayout.LayoutParams mRparams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        invisibleEditText = new EditText(this);
-        invisibleEditText.setLayoutParams(mRparams);
-        invisibleEditText.setRawInputType(InputType.TYPE_CLASS_TEXT);
-        invisibleEditText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
+        invisibleEditText=null;
         keyboardEvents = new Vector<Integer>(5);
-        mRootWindow.setFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-        View mRootView = mRootWindow.getDecorView().findViewById(android.R.id.content);
-        ((FrameLayout)mRootView).addView(invisibleEditText);
 
         EnhancedNativeActivity activity = this;
         mRootView.getViewTreeObserver().addOnGlobalLayoutListener(
@@ -221,7 +251,7 @@ public class EnhancedNativeActivity extends NativeActivity {
                 }
             });
 
-        int currentApiVersion = android.os.Build.VERSION.SDK_INT;
+        int currentApiVersion = Build.VERSION.SDK_INT;
 
         final int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -229,7 +259,22 @@ public class EnhancedNativeActivity extends NativeActivity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-
+        mRootWindow.getDecorView().setOnGenericMotionListener(new View.OnGenericMotionListener() {
+            @Override
+            public boolean onGenericMotion(View view, MotionEvent event) {
+                for(int i=0;i<event.getPointerCount();++i){
+                    for (InputDevice.MotionRange range: event.getDevice().getMotionRanges()) {
+                        int ax = range.getAxis();
+                        float v = event.getAxisValue(ax,i);
+                        int int_val = (int)(v*32767.);
+                        int skyemu_event = 0x10000000|(ax<<16)|(int_val&0xffff);
+                        keyboardEvents.add(skyemu_event);
+                    }
+                }
+                // If the event is not the back button press, let it propagate as usual
+                return false;
+            }
+        });
         // This work only for android 4.4+
         if(currentApiVersion >= Build.VERSION_CODES.KITKAT){
             getWindow().getDecorView().setSystemUiVisibility(flags);
@@ -251,7 +296,6 @@ public class EnhancedNativeActivity extends NativeActivity {
                         }
                     });
         }
-
     }
     public void openFile(){
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -284,6 +328,62 @@ public class EnhancedNativeActivity extends NativeActivity {
         return result;
     }
     @Override
+    public boolean onKeyDown(int keycode, KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            return true;
+        }
+        int gamepad_keycode = event.getKeyCode()&0xffff;
+
+        if((event.getSource() & SOURCE_JOYSTICK)!=SOURCE_JOYSTICK){
+            int skyemu_event = gamepad_keycode | 0x20000000;
+            if(event.getAction()==ACTION_DOWN)skyemu_event|=(1<<16);
+            keyboardEvents.add(skyemu_event);
+            if((event.getSource() & SOURCE_GAMEPAD)==SOURCE_GAMEPAD)return true;
+        }
+        // If the event is not the back button press, let it propagate as usual
+        return false;
+    }
+    @Override
+    public boolean onKeyUp(int keycode, KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            return true;
+        }
+        int gamepad_keycode = event.getKeyCode()&0xffff;
+
+        if((event.getSource() & SOURCE_JOYSTICK)!=SOURCE_JOYSTICK){
+            int skyemu_event = gamepad_keycode | 0x20000000;
+            if(event.getAction()==ACTION_DOWN)skyemu_event|=(1<<16);
+            keyboardEvents.add(skyemu_event);
+            if((event.getSource() & SOURCE_GAMEPAD)==SOURCE_GAMEPAD)return true;
+        }
+        // If the event is not the back button press, let it propagate as usual
+        return false;
+    }
+    public void loadURI(Uri selectedFileUri, boolean is_rom){
+        String filename = getFileName(selectedFileUri);
+        File file = new File(selectedFileUri.getPath());//create path from uri
+        Log.i("SkyEmu", "Selected file path: " + filename);
+
+        if (selectedFileUri != null) {
+            // Get the original file's path using its URI
+            // Copy the file to the external directory
+            String externalDirectoryPath = getExternalFilesDir(null).getAbsolutePath();
+            File copiedFile = copyFileToExternalDirectory(selectedFileUri, externalDirectoryPath,filename);
+
+            if (copiedFile != null) {
+                String copiedFilePath = copiedFile.getAbsolutePath();
+                if(is_rom)se_android_load_rom(copiedFilePath);
+                se_android_load_file(copiedFilePath);
+                Log.i("SkyEmu", "Copied file path: " + copiedFilePath);
+            }
+        }
+    }
+    public void openCustomTab(String url){
+        authIntent = new CustomTabsIntent.Builder().build();
+        authIntent.intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        authIntent.launchUrl(EnhancedNativeActivity.this, Uri.parse(url));
+    }
+    @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         // If the selection didn't work
         if (resultCode != RESULT_OK) {
@@ -292,24 +392,10 @@ public class EnhancedNativeActivity extends NativeActivity {
         } else {
             if (requestCode == FILE_PICKER_REQUEST_CODE && data != null) {
                 Uri selectedFileUri = data.getData();
-                String filename = getFileName(selectedFileUri);
-                File file = new File(selectedFileUri.getPath());//create path from uri
-                Log.i("FilePicker", "Selected file path: " + filename);
-
-                if (selectedFileUri != null) {
-                    // Get the original file's path using its URI
-                    // Copy the file to the external directory
-                    String externalDirectoryPath = getExternalFilesDir(null).getAbsolutePath();
-                    File copiedFile = copyFileToExternalDirectory(selectedFileUri, externalDirectoryPath,filename);
-
-                    if (copiedFile != null) {
-                        String copiedFilePath = copiedFile.getAbsolutePath();
-                        se_android_load_file(copiedFilePath);
-                        Log.i("FilePicker", "Copied file path: " + copiedFilePath);
-                    }
-                }
+                loadURI(selectedFileUri,false);
             }
         }
     }
     public native void se_android_load_file(String filePath);
+    public native void se_android_load_rom(String filePath);
 }

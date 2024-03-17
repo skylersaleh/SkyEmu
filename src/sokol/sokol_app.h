@@ -7708,6 +7708,9 @@ _SOKOL_PRIVATE bool _sapp_android_touch_event(const AInputEvent* e) {
     if (!_sapp_events_enabled()) {
         return false;
     }
+    if((AInputEvent_getSource(e) & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD)return false;
+    if((AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK)return false;
+
     int32_t action_idx = AMotionEvent_getAction(e);
     int32_t action = action_idx & AMOTION_EVENT_ACTION_MASK;
     sapp_event_type type = SAPP_EVENTTYPE_INVALID;
@@ -7867,7 +7870,8 @@ _SOKOL_PRIVATE sapp_keycode _sapp_android_translate_key(int scancode) {
         case AKEYCODE_COMMA:          return SAPP_KEYCODE_COMMA;
         case AKEYCODE_PERIOD:         return SAPP_KEYCODE_PERIOD;
         case AKEYCODE_SLASH:          return SAPP_KEYCODE_SLASH;
-        case AKEYCODE_BACK:           return SAPP_KEYCODE_BACK; /* Navigation back button */
+        /* Android Buttons */
+        case AKEYCODE_BACK:           return SAPP_KEYCODE_BACK;
         default:              return SAPP_KEYCODE_INVALID;
     }
     return SAPP_KEYCODE_INVALID;
@@ -7938,16 +7942,19 @@ _SOKOL_PRIVATE bool _sapp_android_key_event(const AInputEvent* e) {
     }
     int32_t action = AKeyEvent_getAction(e);
     // Don't process soft keyboard commands as they are not reliable through this interface.
-    if(AKeyEvent_getFlags(e)&AKEY_EVENT_FLAG_SOFT_KEYBOARD)return false;
+    if((AKeyEvent_getFlags(e)&AKEY_EVENT_FLAG_SOFT_KEYBOARD)==AKEY_EVENT_FLAG_SOFT_KEYBOARD)return true;
+    // Don't relay key press events from joysticks or game pads as Sokol key down events
+    if ((AInputEvent_getSource(e) & AINPUT_SOURCE_GAMEPAD)  == AINPUT_SOURCE_GAMEPAD  ||
+       (AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK) {
+        return false;
+    }
     sapp_event_type type = SAPP_EVENTTYPE_INVALID;
     switch (action) {
 
         case AKEY_EVENT_ACTION_DOWN :
-            SOKOL_LOG("Key: down");
             type = SAPP_EVENTTYPE_KEY_DOWN;
             break;
         case AKEY_EVENT_ACTION_UP:
-            SOKOL_LOG("Key: up");
             type = SAPP_EVENTTYPE_KEY_UP;
             break;
         default:
@@ -7974,7 +7981,7 @@ _SOKOL_PRIVATE bool _sapp_android_key_event(const AInputEvent* e) {
         _sapp_init_event(SAPP_EVENTTYPE_CLIPBOARD_PASTED);
         _sapp_call_event(&_sapp.event);
     }
-    return true;
+    return _sapp.event.key_code != SAPP_KEYCODE_INVALID;
 }
 
 _SOKOL_PRIVATE int _sapp_android_input_cb(int fd, int events, void* data) {

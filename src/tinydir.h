@@ -86,6 +86,21 @@ extern "C" {
 # define _tinydir_strncmp strncmp
 #endif
 
+#ifndef _MSC_VER
+#ifdef __MINGW32__
+#define _tinydir_lstat _tstat
+#define _tinydir_stat _tstat
+#elif defined _BSD_SOURCE || defined _DEFAULT_SOURCE || defined BSD || \
+	(defined _XOPEN_SOURCE && _XOPEN_SOURCE >= 500) || (defined _POSIX_C_SOURCE && _POSIX_C_SOURCE >= 200112L) || \
+	(defined __APPLE__ && defined __MACH__)
+#define _tinydir_lstat lstat
+#define _tinydir_stat stat
+#else
+#define _tinydir_lstat stat
+#define _tinydir_stat stat
+#endif
+#endif
+
 #if (defined _MSC_VER || defined __MINGW32__)
 # include <windows.h>
 # define _TINYDIR_PATH_MAX MAX_PATH
@@ -202,6 +217,7 @@ typedef struct tinydir_file
 	_tinydir_char_t *extension;
 	int is_dir;
 	int is_reg;
+	int is_link;
 
 #ifndef _MSC_VER
 #ifdef __MINGW32__
@@ -504,6 +520,8 @@ _TINYDIR_FUNC
 int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 {
 	const _tinydir_char_t *filename;
+	int filenameLen;
+
 	if (dir == NULL || file == NULL)
 	{
 		errno = EINVAL;
@@ -524,15 +542,15 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 #else
 		dir->_e->d_name;
 #endif
-	if (_tinydir_strlen(dir->path) +
-		_tinydir_strlen(filename) + 1 + _TINYDIR_PATH_EXTRA >=
-		_TINYDIR_PATH_MAX)
+	filenameLen = _tinydir_strlen(filename);
+
+	if (_tinydir_strlen(dir->path) + filenameLen + 1 + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX)
 	{
 		/* the path for the file will be too long */
 		errno = ENAMETOOLONG;
 		return -1;
 	}
-	if (_tinydir_strlen(filename) >= _TINYDIR_FILENAME_MAX)
+	if (filenameLen >= _TINYDIR_FILENAME_MAX)
 	{
 		errno = ENAMETOOLONG;
 		return -1;
@@ -544,22 +562,23 @@ int tinydir_readfile(const tinydir_dir *dir, tinydir_file *file)
 	_tinydir_strcpy(file->name, filename);
 	_tinydir_strcat(file->path, filename);
 #ifndef _MSC_VER
-#ifdef __MINGW32__
-	if (_tstat(
-#elif (defined _BSD_SOURCE) || (defined _DEFAULT_SOURCE)	\
-	|| ((defined _XOPEN_SOURCE) && (_XOPEN_SOURCE >= 500))	\
-	|| ((defined _POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200112L)) \
-	|| ((defined __APPLE__) && (defined __MACH__)) \
-	|| (defined BSD)
-	if (lstat(
-#else
-	if (stat(
-#endif
-		file->path, &file->_s) == -1)
-	{
+	if (_tinydir_lstat(file->path, &file->_s) == -1)
 		return -1;
-	}
 #endif
+
+	file->is_link =
+#ifdef _MSC_VER
+		!!(dir->_f.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+		S_ISLNK(file->_s.st_mode);
+#endif
+	if (file->is_link) { // stat the linked file
+#ifndef _MSC_VER
+	if (_tinydir_stat(file->path, &file->_s) == -1)
+        	return -1;
+#endif
+    }
+
 	_tinydir_get_ext(file);
 
 	file->is_dir =
@@ -722,6 +741,7 @@ int tinydir_file_open(tinydir_file *file, const _tinydir_char_t *path)
 		memset(file, 0, sizeof * file);
 		file->is_dir = 1;
 		file->is_reg = 0;
+		file->is_link = 0;
 		_tinydir_strcpy(file->path, dir_name);
 		file->extension = file->path + _tinydir_strlen(file->path);
 		return 0;

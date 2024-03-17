@@ -9,13 +9,16 @@ jobs:
       - name: Setup Ninja 
         uses: seanmiddleditch/gha-setup-ninja@master
       - name: Setup Java
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v3
         with:
-          java-version: '8'
-      - uses: sparkfabrik/android-build-action@v1.4.0
+          distribution: 'temurin' # See 'Supported distributions' for available options
+          java-version: '17'
+      - uses: sparkfabrik/android-build-action@v1.5.0
         with:
           project-path: tools/android_project
           output-path: SkyEmu.apk
+          ruby-version: "2.7.5"
+          bundler-version: "2.3.26"
           gradle-task: assemble
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.

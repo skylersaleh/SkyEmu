@@ -38,7 +38,7 @@ struct HCSServer{
             return httplib::Server::HandlerResponse::Unhandled;
         });
         std::cout<<"Starting HCS: http://localhost:"<<server->port<<std::endl;
-        server->svr.listen("localhost",server->port);
+        server->svr.listen("0.0.0.0",server->port);
         std::cout<<"Terminating HCS: http://localhost:"<<server->port<<std::endl;
     }
     HCSServer(int64_t port, hcs_callback call){

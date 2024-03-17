@@ -116,3 +116,31 @@ void se_ios_get_safe_ui_padding(float *top, float* bottom,float* left, float *ri
     if(right)*right = window.safeAreaInsets.right;
   }
 }
+UIViewController* webViewController = nil;
+void se_ios_open_modal(const char * url){
+  NSDictionary *dictionary = @{@"UserAgent": @"SkyEmu Browser"};
+  [[NSUserDefaults standardUserDefaults] registerDefaults:dictionary];
+  [[NSUserDefaults standardUserDefaults] synchronize];
+  
+  [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
+    UIViewController* view = (UIViewController*)sapp_ios_get_view_ctrl();
+    UIWebView* webView = [[UIWebView alloc] initWithFrame:view.view.frame];
+        
+    // Create a UIViewController to present modally
+    webViewController = [[UIViewController alloc] init];
+    [webViewController.view addSubview:webView];
+        
+    // Load a URL
+    NSURL* nsurl = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
+    NSURLRequest* request = [NSURLRequest requestWithURL:nsurl];
+    [webView loadRequest:request];
+        
+    // Present the UIViewController modally
+    [view presentViewController:webViewController animated:YES completion:nil];
+   }];
+}
+void se_ios_close_modal(){
+  [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
+    [webViewController dismissViewControllerAnimated:YES completion:nil];
+  }];
+}
