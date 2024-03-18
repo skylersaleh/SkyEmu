@@ -2259,8 +2259,13 @@ typedef struct{
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[NDS_FIRMWARE_SIZE];
   uint8_t save_data[8*1024*1024];
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+  union {
+    struct {
+      uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
+      uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+    };
+    uint8_t framebuffer_full[NDS_LCD_W*NDS_LCD_H*8];
+  };
   float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H];
   uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];

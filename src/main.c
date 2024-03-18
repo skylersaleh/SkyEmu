@@ -8,11 +8,9 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#define SE_AUDIO_SAMPLE_RATE 48000
-#define SE_AUDIO_BUFF_CHANNELS 2
-#define SE_REBIND_TIMER_LENGTH 5.0
 
-#define SE_TRANSPARENT_BG_ALPHA 0.9
+#include "common_defs.h"
+#define SE_REBIND_TIMER_LENGTH 5.0
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
 #include "http_control_server.h"
