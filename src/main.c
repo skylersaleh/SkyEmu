@@ -2242,7 +2242,7 @@ void se_load_rom(const char *filename){
   printf("Loading ROM: %s\n", filename); 
 
   if(sb_path_has_file_ext(filename,".zip")){
-    printf("Loading Zip:%s \n",filename);
+    printf("Reading zip\n");
     mz_zip_archive zip = {0};
     mz_zip_zero_struct(&zip);
     if(mz_zip_reader_init_file(&zip, filename, 0)){
@@ -2268,7 +2268,7 @@ void se_load_rom(const char *filename){
         if(emu_state.rom_loaded)break;
       }
       mz_zip_reader_end(&zip);
-    }else printf("Failed to load zip: %s\n",filename);
+    }else printf("Failed to read zip\n");
 
   }else{
     emu_state.rom_data = sb_load_file_data(emu_state.rom_path, &emu_state.rom_size);
