@@ -2249,23 +2249,24 @@ void se_load_rom(const char *filename){
       size_t total_files = mz_zip_reader_get_num_files(&zip);
       for(size_t i=0;i<total_files;++i){
         char file_name_buff[SB_FILE_PATH_SIZE];
+        uint8_t *file_data = NULL;
         bool success= true;
         mz_zip_reader_get_filename(&zip, i, file_name_buff, SB_FILE_PATH_SIZE);
         file_name_buff[SB_FILE_PATH_SIZE-1]=0;
         mz_zip_archive_file_stat stat={0};
         success&= mz_zip_reader_file_stat(&zip,i, &stat);
         success&= !stat.m_is_directory;
-        emu_state.rom_data = NULL;
-        emu_state.rom_size = 0; 
         snprintf(emu_state.rom_path,sizeof(emu_state.rom_path),"%s/%s",filename,file_name_buff);
         if(success){
-          emu_state.rom_size = stat.m_uncomp_size;
-          emu_state.rom_data = (uint8_t*)malloc(emu_state.rom_size);
-          success&= mz_zip_reader_extract_to_mem(&zip,i,emu_state.rom_data, emu_state.rom_size,0);
+          file_data = (uint8_t *)malloc(stat.m_uncomp_size);
+          success&= mz_zip_reader_extract_to_mem(&zip,i,file_data, stat.m_uncomp_size,0);
           if(!success){
               if(zip.m_last_error==MZ_ZIP_UNSUPPORTED_METHOD)
                   printf("Unsupported compression method, supported: deflate\n");
-              free(emu_state.rom_data);
+              free(file_data);
+          }else{
+              emu_state.rom_size = stat.m_uncomp_size;
+              emu_state.rom_data = file_data;
           }
         }
         if(success)se_load_rom_from_emu_state(&emu_state);
