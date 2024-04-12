@@ -2262,7 +2262,11 @@ void se_load_rom(const char *filename){
           emu_state.rom_size = stat.m_uncomp_size;
           emu_state.rom_data = (uint8_t*)malloc(emu_state.rom_size);
           success&= mz_zip_reader_extract_to_mem(&zip,i,emu_state.rom_data, emu_state.rom_size,0);
-          if(!success)free(emu_state.rom_data);
+          if(!success){
+              if(zip.m_last_error==MZ_ZIP_UNSUPPORTED_METHOD)
+                  printf("Unsupported compression method, supported: deflate\n");
+              free(emu_state.rom_data);
+          }
         }
         if(success)se_load_rom_from_emu_state(&emu_state);
         if(emu_state.rom_loaded)break;
@@ -2275,7 +2279,7 @@ void se_load_rom(const char *filename){
     se_load_rom_from_emu_state(&emu_state);
   }
   if(emu_state.rom_loaded==false){
-    printf("ERROR: Unknown ROM type: %s\n", filename);
+    printf("ERROR: failed to load ROM: %s\n", filename);
     emu_state.run_mode= SB_MODE_PAUSE;
   }else{
     emu_state.run_mode= SB_MODE_RUN;
