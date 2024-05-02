@@ -5841,7 +5841,7 @@ void se_draw_menu_panel(){
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
       se_section(ICON_FK_CROSSHAIRS " Located Files");
-      const char* wildcard_types[]={NULL};
+      static const char* wildcard_types[]={NULL};
       if(sb_file_exists(emu_state.save_file_path)){
         igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
         se_text(ICON_FK_CHECK);
@@ -5982,7 +5982,7 @@ void se_draw_menu_panel(){
   bool load = se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0Custom\0",0);
   igPopItemWidth();
   if(gui_state.settings.theme==SE_THEME_CUSTOM){
-    const char *types[]={"*.png",NULL};
+    static const char *types[]={"*.png",NULL};
     load|= se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
     if(load){
@@ -5990,7 +5990,7 @@ void se_draw_menu_panel(){
         se_save_search_paths();
     }
     load=false; 
-    const char *font_types[]={"*.ttf",NULL};
+    static const char *font_types[]={"*.ttf",NULL};
 
     load|= se_input_file("Custom Font", gui_state.paths.custom_font,font_types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE)!=0;
