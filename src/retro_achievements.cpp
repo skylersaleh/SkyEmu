@@ -1434,8 +1434,6 @@ void retro_achievements_draw_progress_indicator(float right, float top)
 
     ra_progress_indicator_t& indicator = game_state->progress_indicator;
 
-    ImDrawList_AddCircle(igGetWindowDrawList(), ImVec2{right, top}, 20, 0xff000000, 32, 2.0f);
-
     float image_width = 64;
     float image_height = 64;
     float wrap_width = 200;
@@ -1593,5 +1591,56 @@ void retro_achievements_draw_challenge_indicators(float right, float bottom)
 
         if (i == 9)
             break; // show up to 9 trackers
+    }
+}
+
+void retro_achievements_capture_state(uint8_t *buffer)
+{
+    if (!ra_state->rc_client)
+        return;
+
+    if (!rc_client_get_user_info(ra_state->rc_client))
+        return;
+
+    uint32_t buffer_size = (uint32_t)rc_client_progress_size(ra_state->rc_client);
+    
+    if (buffer_size + 8 > SE_RC_BUFFER_SIZE) {
+        printf("RetroAchievements state buffer too small. Need %d bytes\n", buffer_size);
+        return;
+    }
+
+    if (rc_client_serialize_progress(ra_state->rc_client, buffer + 8) == RC_OK) {
+        memcpy(buffer, "RCHV", 4);
+        memcpy(buffer + 4, &buffer_size, 4);
+    } else {
+        printf("Failed to serialize RetroAchievements state\n");
+    }
+}
+
+void retro_achievements_restore_state(const uint8_t *buffer)
+{
+    if (!ra_state->rc_client)
+        return;
+
+    if (!rc_client_get_user_info(ra_state->rc_client))
+        return;
+
+    if (memcmp(buffer, "RCHV", 4) != 0) {
+        // When loading a save state that does not have runtime state information,
+        // rc_client_deserialize_progress should be called with NULL to reset the runtime state.
+        rc_client_deserialize_progress(ra_state->rc_client, NULL);
+        return;
+    }
+
+    uint32_t buffer_size;
+    memcpy(&buffer_size, buffer + 4, 4);
+
+    if (buffer_size + 8 > SE_RC_BUFFER_SIZE) {
+        printf("Buffer size mismatch in RetroAchievements state\n");
+        return;
+    }
+
+    if (rc_client_deserialize_progress(ra_state->rc_client, (const uint8_t*)(buffer + 8)) != RC_OK) {
+        printf("Failed to deserialize RetroAchievements state\n");
     }
 }

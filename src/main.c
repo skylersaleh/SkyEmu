@@ -19,9 +19,7 @@
 #include "http_control_server.h"
 #endif 
 
-#ifdef ENABLE_RETRO_ACHIEVEMENTS
 #include "retro_achievements.h"
-#endif
 
 #include "gba.h"
 #include "nds.h"
@@ -458,12 +456,20 @@ typedef struct {
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = { .joy.solar_sensor=0.5};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
+#define SE_RC_BUFFER_SIZE 32768
 typedef union{
-  sb_gb_t gb;
-  gba_t gba;  
-  nds_t nds;
+  struct {
+    union {
+      sb_gb_t gb;
+      gba_t gba;  
+      nds_t nds;
+    };
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+    uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
+#endif
+  };
   // Raw data padded out to 64B to make rewind efficient
-  uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))/SE_REWIND_SEGMENT_SIZE+1];
+  uint64_t raw_data[(SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))+SE_RC_BUFFER_SIZE)/SE_REWIND_SEGMENT_SIZE+1];
 }se_core_state_t;
 typedef union{
   gba_scratch_t gba;
@@ -2830,6 +2836,9 @@ emu_byte_write_t se_write_byte_func(int addr_map){
 ///////////////////////////////
 
 void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_capture_state(save_state->state.rc_buffer);
+#endif
   save_state->state = *core; 
   save_state->valid = true;
   save_state->system = emu_state.system;
@@ -2838,6 +2847,9 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
   if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.ra_config.hardcore_mode)return; 
   *core=save_state->state;
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_restore_state(save_state->state.rc_buffer);
+#endif
   emu_state.render_frame = true;
   se_emulate_single_frame();
 }
@@ -7192,7 +7204,7 @@ void se_load_settings(){
     }
     if(gui_state.settings.settings_file_version<3){
       gui_state.settings.settings_file_version = 3;
-      gui_state.settings.ra_config.hardcore_mode=0;
+      gui_state.settings.ra_config.hardcore_mode=1;
       gui_state.settings.ra_config.draw_challenge_indicators=1;
       gui_state.settings.ra_config.draw_progress_indicators=1;
       gui_state.settings.ra_config.draw_leaderboard_trackers=1;

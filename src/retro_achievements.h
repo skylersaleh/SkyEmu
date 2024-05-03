@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define SE_RC_BUFFER_SIZE 32768
+
 typedef struct {
     bool hardcore_mode;
     bool draw_challenge_indicators;
@@ -50,6 +52,9 @@ void retro_achievements_draw_leaderboard_trackers(float left, float bottom);
 
 void retro_achievements_draw_challenge_indicators(float right, float bottom);
 
+void retro_achievements_capture_state(uint8_t* buffer);
+
+void retro_achievements_restore_state(const uint8_t* buffer);
 #endif
 
 #endif
