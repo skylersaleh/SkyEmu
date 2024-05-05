@@ -828,6 +828,13 @@ void ra_state_t::download(ra_game_state_ptr game_state, const std::string& url,
     // The image is not already downloaded, let's download it
     https_request(http_request_e::GET, url, {}, {},
                   [url, game_state, callback](const std::vector<uint8_t>& result) {
+                      if (result.empty())
+                      {
+                          printf("[rcheevos]: empty response from: %s\n", url.c_str());
+                          game_state->dec();
+                          return;
+                      }
+
                       rc_api_server_response_t response;
                       response.body = (const char*)result.data();
                       response.body_length = result.size();

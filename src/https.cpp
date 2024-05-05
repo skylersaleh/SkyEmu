@@ -51,10 +51,12 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
                 Module._free(response_buffer);
             } else {
                 console.log('The request failed: ' + xhr.status + ' ' + xhr.statusText);
+                Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, 0, 0]);
             }
         };
         xhr.onerror = function() {
             console.log('The request failed!');
+            Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, 0, 0]);
         };
         xhr.send(body_arr);
     });
@@ -62,7 +64,13 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
 
 extern "C" void em_https_request_callback_wrapper(void* callback, void* data, int size)
 {
-    std::vector<uint8_t> result((uint8_t*)data, (uint8_t*)data + (size_t)size);
+    std::vector<uint8_t> result;
+
+    if (size != 0)
+    {
+        result = std::vector<uint8_t>((uint8_t*)data, (uint8_t*)data + (size_t)size);
+    }
+
     std::function<void(const std::vector<uint8_t>&)>* fcallback =
         (std::function<void(const std::vector<uint8_t>&)>*)callback;
     (*fcallback)(result);
