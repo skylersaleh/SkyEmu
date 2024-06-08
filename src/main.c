@@ -2618,7 +2618,9 @@ static void se_draw_emulated_system_screen(bool preview){
   bool portrait = scr_w<scr_h;
   ImVec2 win_pos;
   igGetWindowPos(&win_pos);
-  if(!se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale())){
+  if(se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale()))/*do nothing*/;
+  else if(se_draw_theme_region(SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale())) /*do nothing*/;
+  else{
     ImVec2 v;
     igGetWindowPos(&v);
     lcd_render_x+=v.x*dpi_scale+scr_w*0.5;
