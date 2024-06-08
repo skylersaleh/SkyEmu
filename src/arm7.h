@@ -1311,7 +1311,7 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   if(P) addr += increment;
   // Store before writeback
   if(L==0){ 
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(H==1)cpu->write16(cpu->user_data,addr,data);
     else cpu->write8(cpu->user_data,addr,data);
   }
@@ -2074,7 +2074,7 @@ static FORCE_INLINE void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   if(!B)offset*=4;
   addr += offset;
   if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(B==1)cpu->write8(cpu->user_data,addr,data);
     else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
@@ -2095,7 +2095,7 @@ static FORCE_INLINE void arm9t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   if(!B)offset*=4;
   addr += offset;
   if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(B==1)cpu->write8(cpu->user_data,addr,data);
     else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
@@ -2115,7 +2115,7 @@ static FORCE_INLINE void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
   addr += offset*2;
   uint32_t data=0;
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write16(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read16(cpu->user_data,addr),(addr&0x1)*8);
@@ -2132,7 +2132,7 @@ static FORCE_INLINE void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   addr += offset*4;
   uint32_t data; 
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
@@ -2149,7 +2149,7 @@ static FORCE_INLINE void arm9t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   addr += offset*4;
   uint32_t data; 
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
