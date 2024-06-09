@@ -1,3 +1,5 @@
+import java.util.regex.Pattern
+
 apply plugin: 'com.android.application'
 
 android {
@@ -17,8 +19,8 @@ android {
         applicationId = 'com.sky.SkyEmu'
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 32
-        versionName "v3.2"
+        versionCode getVersionCode()
+        versionName getVersionName()
         setProperty("archivesBaseName", applicationId + "-v" + versionCode)
         externalNativeBuild {
             cmake {
@@ -49,4 +51,30 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.browser:browser:1.5.0'
+}
+
+def getVersionName() {
+    def tag = "1.0"
+    try {
+        def process = "git describe --tags --abbrev=0".execute()
+        tag = process.in.text.trim()
+        if (tag.startsWith("v")) {
+            tag = tag.substring(1)
+        }
+    } catch (Exception e) {
+        println "Failed to get latest Git tag: ${e.message}"
+    }
+    return tag
+}
+
+def getVersionCode() {
+    def versionCode = 1
+    def tag = getVersionName()
+    if (tag && tag[0].isDigit()) {
+        versionCode = tag[0].toString().toInteger()
+    }
+    if (versionCode == 0) {
+        versionCode = 1 // return dummy version code if the version code isn't positive
+    }
+    return versionCode
 }
