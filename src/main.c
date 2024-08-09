@@ -196,7 +196,8 @@ typedef struct{
   uint32_t avoid_overlaping_touchscreen;
   float custom_font_scale;
   ra_config_t ra_config;
-  uint32_t padding[227];
+  float gui_scale_factor;
+  uint32_t padding[226];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -566,14 +567,14 @@ float se_android_get_display_dpi_scale();
 static float se_dpi_scale(){
   if(gui_state.dpi_override)return gui_state.dpi_override/120.;
   static float dpi_scale = -1.0;
-  if(dpi_scale>0.)return dpi_scale;
+  if(dpi_scale>0.)return dpi_scale*gui_state.settings.gui_scale_factor;
   dpi_scale = sapp_dpi_scale();
   if(dpi_scale<=0)dpi_scale=1.;
   dpi_scale*=1.10;
 #ifdef SE_PLATFORM_ANDROID
   dpi_scale = se_android_get_display_dpi_scale();
 #endif
-  return dpi_scale;
+  return dpi_scale*gui_state.settings.gui_scale_factor;
 }
 
 static void se_cache_glyphs(const char* input_string){
@@ -2678,7 +2679,9 @@ static void se_draw_emulated_system_screen(bool preview){
   bool portrait = scr_w<scr_h;
   ImVec2 win_pos;
   igGetWindowPos(&win_pos);
-  if(!se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale())){
+  if(se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale()))/*do nothing*/;
+  else if(se_draw_theme_region(SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,scr_w/se_dpi_scale(),scr_h/se_dpi_scale())) /*do nothing*/;
+  else{
     ImVec2 v;
     igGetWindowPos(&v);
     lcd_render_x+=v.x*dpi_scale+scr_w*0.5;
@@ -5962,7 +5965,7 @@ void se_draw_menu_panel(){
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
       se_section(ICON_FK_CROSSHAIRS " Located Files");
-      const char* wildcard_types[]={NULL};
+      static const char* wildcard_types[]={NULL};
       if(sb_file_exists(emu_state.save_file_path)){
         igPushStyleColorU32(ImGuiCol_Text,0xff00ff00);
         se_text(ICON_FK_CHECK);
@@ -6103,7 +6106,7 @@ void se_draw_menu_panel(){
   bool load = se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0Custom\0",0);
   igPopItemWidth();
   if(gui_state.settings.theme==SE_THEME_CUSTOM){
-    const char *types[]={"*.png",NULL};
+    static const char *types[]={"*.png",NULL};
     load|= se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
     if(load){
@@ -6111,7 +6114,7 @@ void se_draw_menu_panel(){
         se_save_search_paths();
     }
     load=false; 
-    const char *font_types[]={"*.ttf",NULL};
+    static const char *font_types[]={"*.ttf",NULL};
 
     load|= se_input_file("Custom Font", gui_state.paths.custom_font,font_types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_custom_font_path,gui_state.paths.custom_font,SB_FILE_PATH_SIZE)!=0;
@@ -6154,6 +6157,25 @@ void se_draw_menu_panel(){
   }
 
   gui_state.settings.theme = theme;
+
+  {
+    se_text("GUI Scale");igSameLine(SE_FIELD_INDENT,0);
+    static double last_edit_time = 0; 
+    static float curr_slider_scale = -1;
+    if(curr_slider_scale<0)curr_slider_scale = gui_state.settings.gui_scale_factor;
+    float last_slider_scale = curr_slider_scale; 
+    igPushItemWidth(-1);
+    se_slider_float("##GUI Scale",&curr_slider_scale,0.5,2.5,"Scale: %0.2fx");
+    igPopItemWidth();
+    // Changing the GUI scale factor requires reseting the entire GUI, so wait for a little over
+    // a second after the user stops making changes to set the new scale factor
+    if(last_slider_scale!=curr_slider_scale){
+      last_edit_time = se_time();
+    }
+    if(se_time()-last_edit_time>1.5)gui_state.settings.gui_scale_factor=curr_slider_scale;
+  }
+
+
   bool always_show_menubar = gui_state.settings.always_show_menubar;
   se_checkbox("Always Show Menu/Nav Bar",&always_show_menubar);
   gui_state.settings.always_show_menubar = always_show_menubar;
@@ -7203,6 +7225,7 @@ void se_load_settings(){
       gui_state.settings.avoid_overlaping_touchscreen = true;
     }
     if(gui_state.settings.settings_file_version<3){
+      gui_state.settings.gui_scale_factor = 1.0; 
       gui_state.settings.settings_file_version = 3;
       gui_state.settings.ra_config.hardcore_mode=1;
       gui_state.settings.ra_config.draw_challenge_indicators=1;
@@ -7210,6 +7233,8 @@ void se_load_settings(){
       gui_state.settings.ra_config.draw_leaderboard_trackers=1;
       gui_state.settings.ra_config.draw_notifications=1;
     }
+    if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
+    if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.custom_font_scale<0.5)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.custom_font_scale>2.0)gui_state.settings.custom_font_scale=1.0;
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;

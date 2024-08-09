@@ -24,6 +24,7 @@
 // - "Fast Forward"
 // - "Save File"
 // - ICON_FK_CROSSHAIRS " Located Files"
+// - "GUI Scale"
 
 // Strings removed in v4:
 // - "Controller"
