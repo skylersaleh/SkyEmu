@@ -14,11 +14,12 @@
 
 typedef struct {
     bool hardcore_mode;
+    bool needs_reload;
     bool draw_challenge_indicators;
     bool draw_progress_indicators;
     bool draw_leaderboard_trackers;
     bool draw_notifications;
-    uint8_t padding[3];
+    uint8_t padding[2];
 } ra_config_t;
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
@@ -34,7 +35,7 @@ void retro_achievements_initialize(void* emu_state);
 
 void retro_achievements_shutdown();
 
-void retro_achievements_load_game();
+bool retro_achievements_load_game();
 
 void retro_achievements_frame();
 

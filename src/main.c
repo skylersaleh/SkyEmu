@@ -2393,7 +2393,7 @@ void se_load_rom(const char *filename){
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  retro_achievements_load_game();
+  gui_state.settings.ra_config.needs_reload=true;
   #endif
 }
 static void se_reset_core(){
@@ -2535,7 +2535,13 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  retro_achievements_frame();
+  if (gui_state.settings.ra_config.needs_reload) {
+    if (retro_achievements_load_game()) {
+      gui_state.settings.ra_config.needs_reload = false;
+    }
+  } else {
+    retro_achievements_frame();
+  }
 #endif
   se_run_all_ar_cheats();
 }

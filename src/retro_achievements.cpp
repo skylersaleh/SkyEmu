@@ -686,7 +686,11 @@ namespace
                       [callback, callback_data](const std::vector<uint8_t>& result) {
                           if (result.empty())
                           {
-                              printf("[rcheevos]: empty response\n");
+                              rc_api_server_response_t response;
+                              response.body = nullptr;
+                              response.body_length = 0;
+                              response.http_status_code = 500; // set it to some server error code to indicate failure
+                              callback(&response, callback_data);
                           }
                           else
                           {
@@ -1060,19 +1064,17 @@ void retro_achievements_shutdown()
     }
 }
 
-void retro_achievements_load_game()
+bool retro_achievements_load_game()
 {
     if (!ra_state->emu_state->rom_loaded)
-        return;
+        return false;
 
     const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     if (!user)
-        return;
+        return false;
 
-    if (ra_state->game_state) {
-        // We need to wait for any requests to finish
-        while(ra_state->game_state->outstanding_requests.load() != 0) {}
-    }
+    if (ra_state->game_state && ra_state->game_state->outstanding_requests.load() != 0)
+        return false;
 
     // the old one will be destroyed when the last reference is gone
     ra_state->game_state.reset(new ra_game_state_t());
@@ -1102,6 +1104,8 @@ void retro_achievements_load_game()
                 ra_state->emu_state->rom_size, retro_achievements_load_game_callback, game_state);
             break;
     }
+
+    return true;
 }
 
 void retro_achievements_frame()

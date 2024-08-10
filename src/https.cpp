@@ -27,6 +27,7 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
         var body_arr = new Uint8Array(Module.HEAPU8.buffer, body, body_size);
         xhr.open(method, url_str);
         xhr.responseType = "arraybuffer";
+        xhr.timeout = 5000; // set timeout to 5 seconds
 
         var headers_str = UTF8ToString(headers);
         if (headers_str.length > 0) {
@@ -58,6 +59,10 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
             console.log('The request failed!');
             Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, 0, 0]);
         };
+        xhr.ontimeout = function () {
+            console.log('The request timed out!');
+            Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, 0, 0]);
+        }
         xhr.send(body_arr);
     });
 
@@ -151,6 +156,7 @@ void https_request(http_request_e type, const std::string& url, const std::strin
         curl_easy_setopt(curl, CURLOPT_CAPATH, NULL);
 
         curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslctx_function);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5); // 5 second timeout
 
         switch (type)
         {
