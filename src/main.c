@@ -7,6 +7,7 @@
 **/
 
 #include "rc_client.h"
+#include "rc_consoles.h"
 #include <stdbool.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
@@ -1685,20 +1686,40 @@ void se_draw_emu_stats(){
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
   if(emu_state.system==SYSTEM_GB){
-    for(uint32_t i=0;i<num_bytes;++i){
-      buffer[i]=sb_read8(&core.gb,address+i);
+    if (address < 0x010000U) {
+      // 0 - 0x10000 follows the normal gb memory map
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=sb_read8(&core.gb,address+j);
+      }
+    } else if (address <= 0x015FFFU) {
+      // 0x10000 - 0x15FFF is WRAM banks 2-7
+      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 2) + address - 0x010000U];
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=wram[j];
+      }
     }
     return num_bytes;
   }else if(emu_state.system==SYSTEM_GBA){
-    for(uint32_t i=0;i<num_bytes;++i){
-      // RetroAchievements treats address 0x03000000 as address 0
-      buffer[i]=gba_read8(&core.gba,0x03000000+address+i);
+    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_GAMEBOY_ADVANCE);
+    for (int i=0;i<regions->num_regions;i++) {
+      const rc_memory_region_t* region = &regions->region[i];
+      if (address >= region->start_address && address < region->end_address) {
+        for(int j=0;j<num_bytes;j++){
+          buffer[i]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+i);
+        }
+        return num_bytes;
+      }
     }
     return num_bytes;
   }else if(emu_state.system==SYSTEM_NDS){
-    for(uint32_t i=0;i<num_bytes;++i){
-      // RetroAchievements treats address 0x02000000 as address 0
-      buffer[i]=nds9_read8(&core.nds,0x02000000+address+i);
+    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_NINTENDO_DS);
+    for (int i=0;i<regions->num_regions;i++) {
+      const rc_memory_region_t* region = &regions->region[i];
+      if (address >= region->start_address && address < region->end_address) {
+        for(int j=0;j<num_bytes;j++){
+          buffer[i]=nds9_read8(&core.nds,region->real_address+(address-region->start_address)+i);
+        }
+      }
     }
     return num_bytes;
   }
