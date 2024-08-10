@@ -1703,9 +1703,9 @@ uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buff
     const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_GAMEBOY_ADVANCE);
     for (int i=0;i<regions->num_regions;i++) {
       const rc_memory_region_t* region = &regions->region[i];
-      if (address >= region->start_address && address < region->end_address) {
+      if (address >= region->start_address && address <= region->end_address) {
         for(int j=0;j<num_bytes;j++){
-          buffer[i]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+i);
+          buffer[j]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+j);
         }
         return num_bytes;
       }
@@ -1715,9 +1715,9 @@ uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buff
     const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_NINTENDO_DS);
     for (int i=0;i<regions->num_regions;i++) {
       const rc_memory_region_t* region = &regions->region[i];
-      if (address >= region->start_address && address < region->end_address) {
+      if (address >= region->start_address && address <= region->end_address) {
         for(int j=0;j<num_bytes;j++){
-          buffer[i]=nds9_read8(&core.nds,region->real_address+(address-region->start_address)+i);
+          buffer[j]=nds9_read8(&core.nds,region->real_address+(address-region->start_address)+j);
         }
       }
     }
