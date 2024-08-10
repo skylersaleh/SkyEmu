@@ -1686,8 +1686,14 @@ void se_draw_emu_stats(){
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
   if(emu_state.system==SYSTEM_GB){
-    if (address < 0x010000U) {
-      // 0 - 0x10000 follows the normal gb memory map
+    if (address >= 0x00D000U && address <= 0x00DFFFU) {
+      // this region is always mapped to WRAM bank 1 (unlike during normal gbc operation)
+      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 1) + address - 0x00D000U];
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=wram[j];
+      }
+    } else if (address < 0x010000U) {
+      // these follow the normal gb memory map
       for(int j=0;j<num_bytes;j++){
         buffer[j]=sb_read8(&core.gb,address+j);
       }

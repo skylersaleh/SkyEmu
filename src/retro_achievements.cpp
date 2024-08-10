@@ -165,6 +165,7 @@ struct ra_state_t
     ra_state_t& operator=(ra_state_t&&) = delete;
 
     std::string username;
+    std::atomic<const char*> error_message;
     sb_emu_state_t* emu_state = nullptr;
     rc_client_t* rc_client = nullptr;
 
@@ -481,6 +482,7 @@ namespace
     void retro_achievements_login_callback(int result, const char* error_message,
                                            rc_client_t* client, void* userdata)
     {
+        static char buffer[256];
         // TODO: show cool "logged in" banner or something
         ra_state_t* state = (ra_state_t*)userdata;
         const rc_client_user_t* user = rc_client_get_user_info(client);
@@ -498,6 +500,10 @@ namespace
             sb_save_file_data(path.c_str(), (const uint8_t*)data.data(), data.size());
             retro_achievements_load_game();
             se_emscripten_flush_fs();
+            ra_state->error_message.store(nullptr);
+        } else {
+            snprintf(buffer, sizeof(buffer), "Login failed: %s", error_message);
+            ra_state->error_message.store(buffer);
         }
 
         state->pending_login = false;
@@ -1250,6 +1256,12 @@ void retro_achievements_draw_panel(int win_w)
         enter |= igInputText("##Password", password, sizeof(password),
                              ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                              NULL, NULL);
+        const char* error_message = ra_state->error_message.load();
+        if (error_message) {
+            igPushStyleColorVec4(ImGuiCol_Text, ImVec4{1.0f, 0.0f, 0.0f, 1.0f});
+            se_text("%s", error_message);
+            igPopStyleColor(1);
+        }
         if (se_button(ICON_FK_SIGN_IN " Login", ImVec2{0, 0}) || enter)
         {
             retro_achievements_login(username, password);
