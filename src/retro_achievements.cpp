@@ -29,7 +29,6 @@ ra_config_t* se_get_ra_config();
 #include <atomic>
 #include <cassert>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -141,7 +140,6 @@ struct ra_game_state_t
     ra_progress_indicator_t progress_indicator;
     std::vector<ra_notification_t> notifications;
     std::atomic_int outstanding_requests;
-    std::condition_variable cv;
     std::mutex mutex;
 
     void inc()
@@ -154,10 +152,6 @@ struct ra_game_state_t
     {
         outstanding_requests--;
         printf("outstanding requests: %d\n", outstanding_requests.load());
-        if (outstanding_requests == 0)
-        {
-            cv.notify_all();
-        }
     }
 };
 
@@ -1070,6 +1064,15 @@ void retro_achievements_load_game()
 {
     if (!ra_state->emu_state->rom_loaded)
         return;
+
+    const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
+    if (!user)
+        return;
+
+    if (ra_state->game_state) {
+        // We need to wait for any requests to finish
+        while(ra_state->game_state->outstanding_requests.load() != 0) {}
+    }
 
     // the old one will be destroyed when the last reference is gone
     ra_state->game_state.reset(new ra_game_state_t());
