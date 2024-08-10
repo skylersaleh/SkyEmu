@@ -2821,7 +2821,7 @@ se_debug_tool_desc_t gb_debug_tools[]={
   {ICON_FK_VOLUME_UP, ICON_FK_VOLUME_UP " PSG",se_psg_debugger},
   {ICON_FK_DELICIOUS, ICON_FK_DELICIOUS " Tile Map",gb_tile_map_debugger},
   {ICON_FK_TH, ICON_FK_TH " Tile Data",gb_tile_data_debugger},
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true}, // TODO: why does emerald unlock an achievement on boot
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
   {NULL,NULL,NULL}
 };
 se_debug_tool_desc_t nds_debug_tools[]={
@@ -2833,7 +2833,7 @@ se_debug_tool_desc_t nds_debug_tools[]={
   {ICON_FK_PENCIL_SQUARE_O " 9", ICON_FK_PENCIL_SQUARE_O " ARM9 Memory",nds9_mem_debugger},
   {ICON_FK_INFO_CIRCLE, ICON_FK_INFO_CIRCLE " NDS IO",nds_io_debugger},
 
-  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true}, // TODO: probably should not allow hardcore. ig Pokemon Black unlocks 6 achievements on boot
+  {ICON_FK_AREA_CHART, ICON_FK_AREA_CHART " Emulator Stats",se_draw_emu_stats, .allow_hardcore=true},
   {NULL,NULL,NULL}
 };
 static se_debug_tool_desc_t* se_get_debug_description(){
@@ -4328,10 +4328,10 @@ void se_boxed_image_dual_label(const char * first_label, const char* second_labe
 
   igSetCursorPosX(curr_pos.x+box_w+padding);
   igSetCursorPosY(curr_pos.y-padding);
-  se_text(first_label);
+  se_text("%s", first_label);
   igSetCursorPosX(curr_pos.x+box_w+padding);
   igSetCursorPosY(igGetCursorPosY()-5);
-  se_text_disabled(second_label);
+  se_text_disabled("%s", second_label);
   igSetCursorPos(curr_pos);
   if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
   else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);

@@ -723,7 +723,7 @@ namespace
             ra_bucket_t* bucket = &ra_state->game_state->achievement_list.buckets[i];
             std::string label = category_to_icon(bucket->bucket_id) + " " +
                                 se_localize_and_cache(bucket->label.c_str());
-            se_text(label.c_str());
+            se_text("%s", label.c_str());
             for (int j = 0; j < bucket->achievements.size(); j++)
             {
                 sg_image image = {SG_INVALID_ID};
