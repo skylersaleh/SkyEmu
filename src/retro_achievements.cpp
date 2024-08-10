@@ -256,6 +256,7 @@ namespace
 {
     void retro_achievements_game_image_loaded(ra_game_state_ptr game_state)
     {
+        printf("Func: retro_achievements_game_image_loaded\n");
         const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
         rc_client_user_game_summary_t summary;
         rc_client_get_user_game_summary(ra_state->rc_client, &summary);
@@ -1067,11 +1068,12 @@ void retro_achievements_shutdown()
 bool retro_achievements_load_game()
 {
     if (!ra_state->emu_state->rom_loaded)
-        return false;
+        return true;
 
     const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     if (!user)
-        return false;
+        return true; // not logged in or login in progress, in which case the game will be loaded
+                     // when the login is done
 
     if (ra_state->game_state && ra_state->game_state->outstanding_requests.load() != 0)
         return false;
