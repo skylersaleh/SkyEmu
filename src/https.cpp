@@ -62,7 +62,7 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
         xhr.ontimeout = function () {
             console.log('The request timed out!');
             Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number'], [callback, 0, 0]);
-        }
+        };
         xhr.send(body_arr);
     });
 
