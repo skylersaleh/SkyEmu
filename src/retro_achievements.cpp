@@ -389,6 +389,7 @@ namespace
             uint8_t bucket = rc_achievement->bucket;
             std::unique_lock<std::mutex> lock(game_state->mutex);
             ra_achievement_t* achievement = retro_achievements_move_bucket(game_state, id, bucket);
+            notification->start_time = se_time();
             game_state->notifications.push_back(*notification);
             ra_state->download(game_state, url, [game_state, notification, url, id, bucket, achievement]() {
                 if (achievement)
