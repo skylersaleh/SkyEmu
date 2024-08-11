@@ -42,8 +42,10 @@ void se_emscripten_flush_fs();
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-const uint32_t notification_end_frame = 60 * 4;
-const uint32_t notification_fade_frame = 60 * 3;
+const uint32_t notification_start_frame = 45;
+const uint32_t notification_start_secondary_text_frame = notification_start_frame + 60 * 5;
+const uint32_t notification_end_frame = 60 * 10;
+const uint32_t notification_fade_frame = notification_end_frame - notification_start_frame;
 bool only_one_notification = false;
 const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
 const float padding = 7;
@@ -255,7 +257,7 @@ namespace
         rc_client_get_user_game_summary(ra_state->rc_client, &summary);
 
         ra_notification_t notification;
-        notification.title = "Loaded " + std::string(game->title);
+        notification.title = "Loaded " + std::string(game->title) + "!";
 
         int achievement_count = summary.num_core_achievements + summary.num_unofficial_achievements;
 
@@ -1323,6 +1325,14 @@ void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5])
     igPopID();
 }
 
+// https://easings.net/#easeOutBack
+float easeOutBack(float t) {
+    const float c1 = 1.30158;
+    const float c3 = c1 + 1;
+    const float t1 = t - 1;
+    return 1 + c3 * (t1 * t1 * t1) + c1 * (t1 * t1);
+}
+
 void retro_achievements_draw_notifications(float left, float top)
 {
     ra_game_state_ptr game_state = ra_state->game_state;
@@ -1356,90 +1366,114 @@ void retro_achievements_draw_notifications(float left, float top)
             ++it;
         }
 
-        float multiplier;
+        float multiplier = 1.0f;
         if (time > notification_fade_frame)
         {
             multiplier = (1.0f - (float)(time - notification_fade_frame) /
                                      (notification_end_frame - notification_fade_frame));
         }
-        else
+        else if (time < notification_start_frame)
         {
-            multiplier = 1.0f;
+            multiplier = (float)time / notification_start_frame;
         }
+
+        float easing = easeOutBack(multiplier);
+        if (easing < 0.97f)
+            continue;
+
+        float padding_adj = padding * easing;
 
 #define ALPHA(x) ((uint32_t)(multiplier * x) << 24)
 
-        float image_width = 64;
-        float image_height = 64;
+        float image_width = 64 * easing;
+        float image_height = 64 * easing;
         float placard_width =
-            padding + 350 + padding; // notifications that have the same width are more appealing
-        float wrap_width = placard_width - padding * 2 - image_width;
+            padding_adj + 300 * easing + padding_adj; // notifications that have the same width are more appealing
+        float wrap_width = placard_width - padding_adj * 2 - image_width;
 
-        float title_height = 0, submessage_height = 0, submessage2_height = 0;
+        float title_height = 0, submessage_height = 0;
 
         ImVec2 out;
         ImFont* font = igGetFont();
-        ImFont_CalcTextSizeA(&out, font, 22.0f, std::numeric_limits<float>::max(), wrap_width,
-                             notification.title.c_str(), NULL, NULL);
+        ImFont_CalcTextSizeA(&out, font, 22.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+                             notification.submessage.c_str(), NULL, NULL);
         title_height = out.y;
 
-        float placard_height = padding + title_height + padding;
+        ImFont_CalcTextSizeA(&out, font, 18.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+                             notification.submessage2.c_str(), NULL, NULL);
+        submessage_height = out.y;
 
-        if (!notification.submessage.empty())
-        {
-            ImFont_CalcTextSizeA(&out, font, 18.0f, std::numeric_limits<float>::max(), wrap_width,
-                                 notification.submessage.c_str(), NULL, NULL);
-            submessage_height = out.y;
-            placard_height += submessage_height + padding;
-        }
+        float all_text_height = padding_adj + title_height + padding_adj + submessage_height + padding_adj;
+        float image_height_with_padding = padding_adj + image_height + padding_adj;
 
-        if (!notification.submessage2.empty())
-        {
-            ImFont_CalcTextSizeA(&out, font, 18.0f, std::numeric_limits<float>::max(), wrap_width,
-                                 notification.submessage2.c_str(), NULL, NULL);
-            submessage2_height = out.y;
-            placard_height += submessage2_height + padding;
-        }
+        float placard_height = std::max(all_text_height, image_height_with_padding);
 
-        ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{x, y},
-                                 ImVec2{x + placard_width, y + placard_height},
-                                 0x515151 | ALPHA(180), 8.0f, ImDrawCornerFlags_All);
+        auto ig = igGetWindowDrawList();
 
-        ImDrawList_AddRect(
-            igGetWindowDrawList(), ImVec2{x + (padding / 2), y + (padding / 2)},
-            ImVec2{x + placard_width - (padding / 2), y + placard_height - (padding / 2)},
-            0x000000 | ALPHA(180), 8.0f, ImDrawCornerFlags_All, 2.0f);
+        // Main box
+        ImVec2 top_left = {x, y};
+        ImVec2 bottom_right = {x + placard_width, y + placard_height};
+        float width = bottom_right.x - top_left.x;
+        float height = bottom_right.y - top_left.y;
+        top_left.x += (width / 2) * (1 - easing);
+        bottom_right.x -= (width / 2) * (1 - easing);
+        top_left.y += (height / 2) * (1 - easing);
+        bottom_right.y -= (height / 2) * (1 - easing);
+        ImDrawList_AddRectFilled(ig, top_left, bottom_right, 0x515151 | ALPHA(180), 8.0f, ImDrawCornerFlags_All);
 
+        // Border
+        ImDrawList_AddRect(ig, top_left, bottom_right, 0xffffff | ALPHA(180), 8.0f, ImDrawCornerFlags_All, 2.0f);
+
+        // Image, or a gray square if it's still loading
+        ImVec2 img_top_left = {top_left.x + padding_adj, top_left.y + padding_adj};
+        ImVec2 img_bottom_right = {img_top_left.x + image_width - padding_adj, img_top_left.y + image_height - padding_adj};
         if (notification.tile && notification.tile->atlas_id != SG_INVALID_ID)
         {
             ImVec2 uv0 = {notification.tile->x1, notification.tile->y1};
             ImVec2 uv1 = {notification.tile->x2, notification.tile->y2};
-            ImDrawList_AddImageRounded(
-                igGetWindowDrawList(), (ImTextureID)(intptr_t)notification.tile->atlas_id,
-                ImVec2{x + padding, y + padding},
-                ImVec2{x + padding + image_width, y + padding + image_height}, uv0, uv1,
-                0xffffff | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
+            ImDrawList_AddImageRounded(ig, (ImTextureID)(intptr_t)notification.tile->atlas_id, img_top_left, img_bottom_right, uv0, uv1, 0xffffff | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
         }
         else
         {
-            ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{x + 15, y + 15},
-                                     ImVec2{x + padding + image_width, y + padding + image_height},
-                                     0x242424 | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
+            ImDrawList_AddRectFilled(ig, img_top_left, img_bottom_right, 0x242424 | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
         }
 
-        ImDrawList_AddTextFontPtr(igGetWindowDrawList(), igGetFont(), 22.0f,
-                                  ImVec2{x + image_width + padding * 2, y + padding},
-                                  0xffffff | ALPHA(255), notification.title.c_str(), NULL,
-                                  wrap_width, NULL);
-        ImDrawList_AddTextFontPtr(
-            igGetWindowDrawList(), igGetFont(), 18.0f,
-            ImVec2{x + image_width + padding * 2, y + padding + title_height + padding},
-            0x00aaaa | ALPHA(255), notification.submessage.c_str(), NULL, wrap_width, NULL);
-        ImDrawList_AddTextFontPtr(
-            igGetWindowDrawList(), igGetFont(), 18.0f,
-            ImVec2{x + image_width + padding * 2,
-                   y + padding + title_height + padding + submessage_height + padding},
-            0xaaaa00 | ALPHA(255), notification.submessage2.c_str(), NULL, wrap_width, NULL);
+        if (time > notification_start_secondary_text_frame) 
+        {
+            float text_time = time - notification_start_secondary_text_frame;
+            float text_half_time = (notification_end_frame - notification_start_secondary_text_frame) / 2.0f;
+            float text_alpha = 255;
+            if (text_time < text_half_time)
+            {
+                text_alpha = (255 * text_time) / text_half_time;
+            }
+            text_alpha *= easing;
+
+            ImDrawList_AddTextFontPtr(
+                ig, igGetFont(), 22.0f * easing,
+                ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + padding_adj},
+                0xffffff | ALPHA(text_alpha), notification.submessage.c_str(), NULL, wrap_width, NULL);
+            ImDrawList_AddTextFontPtr(
+                ig, igGetFont(), 18.0f * easing,
+                ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + padding_adj + title_height + padding_adj},
+                0xc0c0c0 | ALPHA(text_alpha), notification.submessage2.c_str(), NULL, wrap_width, NULL);
+        } else {
+            float text_time = notification_start_secondary_text_frame - time;
+            float text_half_time = (notification_start_secondary_text_frame - notification_start_frame) / 2.0f;
+            float text_alpha = 255;
+            if (text_time < text_half_time)
+            {
+                text_alpha = (255 * text_time) / text_half_time;
+            }
+            text_alpha *= easing;
+            ImFont_CalcTextSizeA(&out, font, 22.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+                             notification.title.c_str(), NULL, NULL);
+            title_height = out.y;
+            ImDrawList_AddTextFontPtr(ig, igGetFont(), 22.0f * easing,
+                ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + image_height / 2 - title_height / 2},
+                0xffffff | ALPHA(text_alpha), notification.title.c_str(), NULL,
+                wrap_width, NULL);
+        }
 
         y += placard_height + padding;
 
