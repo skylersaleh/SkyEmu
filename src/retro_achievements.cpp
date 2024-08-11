@@ -140,13 +140,11 @@ struct ra_game_state_t
     void inc()
     {
         outstanding_requests++;
-        printf("outstanding requests: %d\n", outstanding_requests.load());
     }
 
     void dec()
     {
         outstanding_requests--;
-        printf("outstanding requests: %d\n", outstanding_requests.load());
     }
 };
 
@@ -1143,11 +1141,6 @@ void retro_achievements_keep_alive()
     }
 }
 
-void retro_achievements_logout()
-{
-    rc_client_logout(ra_state->rc_client);
-}
-
 atlas_tile_t* retro_achievements_get_game_image()
 {
     if (!ra_state->game_state)
@@ -1220,7 +1213,6 @@ void retro_achievements_update_atlases()
             sg_image_data data = {0};
             data.subimage[0][0].ptr = atlas->data.data();
             data.subimage[0][0].size = atlas->data.size();
-            printf("updating image %d\n", atlas->image.id);
             sg_update_image(atlas->image, data);
         }
 

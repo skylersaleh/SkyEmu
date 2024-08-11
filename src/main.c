@@ -6,8 +6,6 @@
  *
 **/
 
-#include "rc_client.h"
-#include "rc_consoles.h"
 #include <stdbool.h>
 #include <stdio.h>
 #define SE_AUDIO_SAMPLE_RATE 48000
@@ -20,7 +18,11 @@
 #include "http_control_server.h"
 #endif 
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "rc_client.h"
+#include "rc_consoles.h"
 #include "retro_achievements.h"
+#endif
 
 #include "gba.h"
 #include "nds.h"
@@ -6710,7 +6712,9 @@ static void frame(void) {
   if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
   last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
 #endif
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_keep_alive();
+#endif
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
