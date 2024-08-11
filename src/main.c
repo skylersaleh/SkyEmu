@@ -201,8 +201,9 @@ typedef struct{
   uint32_t draw_progress_indicators;
   uint32_t draw_leaderboard_trackers;
   uint32_t draw_notifications;
+  uint32_t ra_needs_reload;
   float gui_scale_factor;
-  uint32_t padding[223];
+  uint32_t padding[222];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -2397,7 +2398,7 @@ void se_load_rom(const char *filename){
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  gui_state.settings.ra_config.needs_reload=true;
+  gui_state.settings.ra_needs_reload=true;
   #endif
 }
 static void se_reset_core(){
@@ -2539,9 +2540,9 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  if (gui_state.settings.ra_config.needs_reload) {
+  if (gui_state.settings.ra_needs_reload) {
     if (retro_achievements_load_game()) {
-      gui_state.settings.ra_config.needs_reload = false;
+      gui_state.settings.ra_needs_reload = false;
     }
   } else {
     retro_achievements_frame();
@@ -7298,7 +7299,8 @@ void se_load_settings(){
     }
   }
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode);
+  bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
+  retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode,is_mobile);
 #endif
 }
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){

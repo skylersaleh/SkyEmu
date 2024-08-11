@@ -21,7 +21,7 @@ typedef struct {
     float x2, y2;
 } atlas_tile_t;
 
-void retro_achievements_initialize(void* emu_state, bool hardcore);
+void retro_achievements_initialize(void* emu_state, bool hardcore, bool is_mobile);
 
 void retro_achievements_shutdown();
 

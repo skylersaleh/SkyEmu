@@ -44,11 +44,7 @@ void se_emscripten_flush_fs();
 
 const uint32_t notification_end_frame = 60 * 4;
 const uint32_t notification_fade_frame = 60 * 3;
-#if defined(SE_PLATFORM_IOS) || defined(SE_PLATFORM_ANDROID)
-const bool only_one_notification = true;
-#else
-const bool only_one_notification = false;
-#endif
+bool only_one_notification = false;
 const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
 const float padding = 7;
 
@@ -256,7 +252,6 @@ namespace
 {
     void retro_achievements_game_image_loaded(ra_game_state_ptr game_state)
     {
-        printf("Func: retro_achievements_game_image_loaded\n");
         const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
         rc_client_user_game_summary_t summary;
         rc_client_get_user_game_summary(ra_state->rc_client, &summary);
@@ -982,8 +977,11 @@ extern "C" uint32_t retro_achievements_read_memory_callback(uint32_t address, ui
                                                             uint32_t num_bytes,
                                                             rc_client_t* client);
 
-void retro_achievements_initialize(void* state, bool hardcore)
+void retro_achievements_initialize(void* state, bool hardcore, bool is_mobile)
 {
+    if (is_mobile)
+        only_one_notification = true;
+
     ra_state = new ra_state_t((sb_emu_state_t*)state);
     ra_state->rc_client = rc_client_create(retro_achievements_read_memory_callback,
                                            retro_achievements_server_callback);
@@ -1452,6 +1450,9 @@ void retro_achievements_draw_notifications(float left, float top)
             0xaaaa00 | ALPHA(255), notification.submessage2.c_str(), NULL, wrap_width, NULL);
 
         y += placard_height + padding;
+
+        if (only_one_notification)
+            break;
     }
 }
 
@@ -1663,7 +1664,7 @@ void retro_achievements_restore_state(const uint8_t *buffer)
     memcpy(&buffer_size, buffer + 4, 4);
 
     if (buffer_size + 8 > SE_RC_BUFFER_SIZE) {
-        printf("Buffer size mismatch in RetroAchievements state\n");
+        printf("RetroAchievements state buffer too small. Need %d bytes\n", buffer_size);
         return;
     }
 
