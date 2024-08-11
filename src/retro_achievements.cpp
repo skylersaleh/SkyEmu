@@ -719,6 +719,9 @@ namespace
         std::unique_lock<std::mutex> lock(ra_state->game_state->mutex);
         for (int i = 0; i < ra_state->game_state->achievement_list.buckets.size(); i++)
         {
+            if (ra_state->game_state->achievement_list.buckets[i].achievements.empty())
+                continue;
+
             ra_bucket_t* bucket = &ra_state->game_state->achievement_list.buckets[i];
             std::string label = category_to_icon(bucket->bucket_id) + " " +
                                 se_localize_and_cache(bucket->label.c_str());
