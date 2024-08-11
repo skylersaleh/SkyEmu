@@ -15,6 +15,7 @@ bool se_button(const char* label, ImVec2 size);
 const char* se_localize_and_cache(const char* input_str);
 ImFont* se_get_mono_font();
 void se_emscripten_flush_fs();
+double se_time();
 #include "retro_achievements.h"
 }
 
@@ -42,10 +43,10 @@ void se_emscripten_flush_fs();
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-const uint32_t notification_start_frame = 45;
-const uint32_t notification_start_secondary_text_frame = notification_start_frame + 60 * 5;
-const uint32_t notification_end_frame = 60 * 10;
-const uint32_t notification_fade_frame = notification_end_frame - notification_start_frame;
+const float notification_start_seconds = 0.75f;
+const float notification_start_secondary_text_seconds = notification_start_seconds + 3.0f;
+const float notification_end_seconds = 6.0f;
+const float notification_fade_seconds = notification_end_seconds - notification_start_seconds;
 bool only_one_notification = false;
 const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
 const float padding = 7;
@@ -117,7 +118,7 @@ struct ra_notification_t
     std::string title{};
     std::string submessage{};
     std::string submessage2{};
-    uint32_t time = 0;
+    float start_time = 0;
 };
 
 static std::mutex global_cache_mutex;
@@ -275,6 +276,7 @@ namespace
         }
 
         notification.tile = game_state->game_image;
+        notification.start_time = se_time();
 
         game_state->notifications.push_back(notification);
     }
@@ -1357,9 +1359,9 @@ void retro_achievements_draw_notifications(float left, float top)
     {
         ra_notification_t& notification = *it;
 
-        uint32_t time = notification.time++;
+        float time = se_time() - notification.start_time;
 
-        if (time >= notification_end_frame)
+        if (time >= notification_end_seconds)
         {
             it = game_state->notifications.erase(it);
             continue;
@@ -1370,14 +1372,14 @@ void retro_achievements_draw_notifications(float left, float top)
         }
 
         float multiplier = 1.0f;
-        if (time > notification_fade_frame)
+        if (time > notification_fade_seconds)
         {
-            multiplier = (1.0f - (float)(time - notification_fade_frame) /
-                                     (notification_end_frame - notification_fade_frame));
+            multiplier = (1.0f - (time - notification_fade_seconds) /
+                                     (notification_end_seconds - notification_fade_seconds));
         }
-        else if (time < notification_start_frame)
+        else if (time < notification_start_seconds)
         {
-            multiplier = (float)time / notification_start_frame;
+            multiplier = time / notification_start_seconds;
         }
 
         float easing = easeOutBack(multiplier);
@@ -1441,10 +1443,10 @@ void retro_achievements_draw_notifications(float left, float top)
             ImDrawList_AddRectFilled(ig, img_top_left, img_bottom_right, 0x242424 | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
         }
 
-        if (time > notification_start_secondary_text_frame) 
+        if (time > notification_start_secondary_text_seconds) 
         {
-            float text_time = time - notification_start_secondary_text_frame;
-            float text_half_time = (notification_end_frame - notification_start_secondary_text_frame) / 2.0f;
+            float text_time = time - notification_start_secondary_text_seconds;
+            float text_half_time = (notification_end_seconds - notification_start_secondary_text_seconds) / 2.0f;
             float text_alpha = 255;
             if (text_time < text_half_time)
             {
@@ -1461,8 +1463,8 @@ void retro_achievements_draw_notifications(float left, float top)
                 ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + padding_adj + title_height + padding_adj},
                 0xc0c0c0 | ALPHA(text_alpha), notification.submessage2.c_str(), NULL, wrap_width, NULL);
         } else {
-            float text_time = notification_start_secondary_text_frame - time;
-            float text_half_time = (notification_start_secondary_text_frame - notification_start_frame) / 2.0f;
+            float text_time = notification_start_secondary_text_seconds - time;
+            float text_half_time = (notification_start_secondary_text_seconds - notification_start_seconds) / 2.0f;
             float text_alpha = 255;
             if (text_time < text_half_time)
             {
