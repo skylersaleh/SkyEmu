@@ -465,17 +465,18 @@ typedef struct {
 //TODO: Clean this up to use unions...
 sb_emu_state_t emu_state = { .joy.solar_sensor=0.5};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
-#define SE_RC_BUFFER_SIZE 32768
 typedef union{
   struct {
+    #ifdef ENABLE_RETRO_ACHIEVEMENTS
+      //This buffer needs to be before the union as the front end doesn't read the entire se_core_state_t structure
+      //just the first chunk of it. 
+      uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
+    #endif
     union {
       sb_gb_t gb;
       gba_t gba;  
       nds_t nds;
     };
-#ifdef ENABLE_RETRO_ACHIEVEMENTS
-    uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
-#endif
   };
   // Raw data padded out to 64B to make rewind efficient
   uint64_t raw_data[(SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))+SE_RC_BUFFER_SIZE)/SE_REWIND_SEGMENT_SIZE+1];
@@ -1053,6 +1054,9 @@ bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
 }
 void se_push_rewind_state(se_core_state_t* core, se_core_rewind_buffer_t* rewind){
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_capture_state(core->rc_buffer);
+  #endif
   if(!rewind->first_push){
     rewind->first_push=true;
     rewind->last_core= *core;
@@ -1107,6 +1111,9 @@ void se_rewind_state_single_tick(se_core_state_t* core, se_core_rewind_buffer_t*
   }
   rewind->index= rewind->index%SE_REWIND_BUFFER_SIZE;
   *core = rewind->last_core;
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_restore_state(core->rc_buffer);
+  #endif
 }
 void se_reset_rewind_buffer(se_core_rewind_buffer_t* rewind){
   rewind->index = rewind->size = 0; 
@@ -2470,9 +2477,9 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static size_t se_get_core_size(){
-  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb);
-  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba);
-  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds);
+  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb)+SE_RC_BUFFER_SIZE;
+  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba)+SE_RC_BUFFER_SIZE;
+  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds)+SE_RC_BUFFER_SIZE;
   return 0; 
 }
 typedef struct{

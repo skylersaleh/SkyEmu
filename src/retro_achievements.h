@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SE_RC_BUFFER_SIZE 32768
+#define SE_RC_BUFFER_SIZE (256*1024)
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 
