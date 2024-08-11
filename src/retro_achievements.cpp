@@ -44,8 +44,8 @@ double se_time();
 #include "stb_image_write.h"
 
 const float notification_start_seconds = 0.75f;
-const float notification_start_secondary_text_seconds = notification_start_seconds + 3.0f;
-const float notification_end_seconds = 6.0f;
+const float notification_start_secondary_text_seconds = notification_start_seconds + 1.25f;
+const float notification_end_seconds = 4.0f;
 const float notification_fade_seconds = notification_end_seconds - notification_start_seconds;
 bool only_one_notification = false;
 const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
