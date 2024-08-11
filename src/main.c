@@ -18,6 +18,12 @@
 #include "http_control_server.h"
 #endif 
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "rc_client.h"
+#include "rc_consoles.h"
+#include "retro_achievements.h"
+#endif
+
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
@@ -192,9 +198,14 @@ typedef struct{
   uint32_t http_control_server_enable;
   uint32_t avoid_overlaping_touchscreen;
   float custom_font_scale;
-  uint32_t hardcore_mode; 
+  uint32_t hardcore_mode;
+  uint32_t draw_challenge_indicators;
+  uint32_t draw_progress_indicators;
+  uint32_t draw_leaderboard_trackers;
+  uint32_t draw_notifications;
+  uint32_t ra_needs_reload;
   float gui_scale_factor;
-  uint32_t padding[227];
+  uint32_t padding[222];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -364,11 +375,14 @@ typedef struct{
   uint8_t palettes[5*4];
   se_theme_region_t regions[SE_TOTAL_REGIONS];
 }se_custom_theme_t;
+typedef struct se_deferred_image_free_t{
+  sg_image image; 
+  struct se_deferred_image_free_t * next; 
+}se_deferred_image_free_t;
 typedef struct {
     uint64_t laptime;
     sg_pass_action pass_action;
-    sg_image image_stack[GUI_MAX_IMAGES_PER_FRAME];
-    int current_image; 
+    se_deferred_image_free_t * image_free_list;
     int screen_width;
     int screen_height;
     float dpi_override;
@@ -452,11 +466,20 @@ typedef struct {
 sb_emu_state_t emu_state = { .joy.solar_sensor=0.5};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
 typedef union{
-  sb_gb_t gb;
-  gba_t gba;  
-  nds_t nds;
+  struct {
+    #ifdef ENABLE_RETRO_ACHIEVEMENTS
+      //This buffer needs to be before the union as the front end doesn't read the entire se_core_state_t structure
+      //just the first chunk of it. 
+      uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
+    #endif
+    union {
+      sb_gb_t gb;
+      gba_t gba;  
+      nds_t nds;
+    };
+  };
   // Raw data padded out to 64B to make rewind efficient
-  uint64_t raw_data[SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))/SE_REWIND_SEGMENT_SIZE+1];
+  uint64_t raw_data[(SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))+SE_RC_BUFFER_SIZE)/SE_REWIND_SEGMENT_SIZE+1];
 }se_core_state_t;
 typedef union{
   gba_scratch_t gba;
@@ -514,7 +537,7 @@ void se_reset_save_states();
 void se_reset_cheats();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
-static void se_emscripten_flush_fs();
+void se_emscripten_flush_fs();
 static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
@@ -530,6 +553,10 @@ static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
 static bool se_draw_theme_region_tint(int region, float x, float y, float w, float h,uint32_t tint);
 static bool se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint);
+double se_time();
+void se_push_disabled();
+void se_pop_disabled();
+
 const char* se_get_pref_path(){
 #if defined(EMSCRIPTEN)
   return "/offline/";
@@ -588,7 +615,7 @@ char* se_replace_fake_path(char * new_path){
   }
   return new_path;
 }
-static inline const char* se_localize_and_cache(const char* input_str){
+const char* se_localize_and_cache(const char* input_str){
   const char * localized_string = se_localize(input_str);
   se_cache_glyphs(localized_string);
   return localized_string;
@@ -596,16 +623,18 @@ static inline const char* se_localize_and_cache(const char* input_str){
 static inline bool se_checkbox(const char* label, bool * v){
   return igCheckbox(se_localize_and_cache(label),v);
 }
-static void se_text(const char* label,...){
+void se_text(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextV(se_localize_and_cache(label),args);
+  igTextWrappedV(se_localize_and_cache(label),args);
   va_end(args);
 }
 static void se_text_disabled(const char* label,...){
   va_list args;
   va_start(args, label);
-  igTextDisabledV(se_localize_and_cache(label),args);
+  se_push_disabled();
+  igTextWrappedV(se_localize_and_cache(label),args);
+  se_pop_disabled();
   va_end(args);
 }
 static bool se_combo_str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items){
@@ -750,7 +779,7 @@ bool se_slider_int_themed(const char* label, int* v, float v_min, float v_max, c
   return ret;
 }
 
-static bool se_button(const char* label, ImVec2 size){
+bool se_button(const char* label, ImVec2 size){
   return se_button_themed(SE_REGION_BLANK,se_localize_and_cache(label),size,true);
 }
 static bool se_input_path(const char* label, char* new_path, ImGuiInputTextFlags flags){
@@ -1025,6 +1054,9 @@ bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
   return (rewind->deltas[index%SE_REWIND_BUFFER_SIZE].offset&SE_LAST_DELTA_IN_TX)==0;
 }
 void se_push_rewind_state(se_core_state_t* core, se_core_rewind_buffer_t* rewind){
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_capture_state(core->rc_buffer);
+  #endif
   if(!rewind->first_push){
     rewind->first_push=true;
     rewind->last_core= *core;
@@ -1079,6 +1111,9 @@ void se_rewind_state_single_tick(se_core_state_t* core, se_core_rewind_buffer_t*
   }
   rewind->index= rewind->index%SE_REWIND_BUFFER_SIZE;
   *core = rewind->last_core;
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_restore_state(core->rc_buffer);
+  #endif
 }
 void se_reset_rewind_buffer(se_core_rewind_buffer_t* rewind){
   rewind->index = rewind->size = 0; 
@@ -1338,7 +1373,7 @@ double se_fps_counter(int tick){
   return 1.0/fps; 
 }
 
-static void se_emscripten_flush_fs(){
+void se_emscripten_flush_fs(){
 #if defined(EMSCRIPTEN)
     EM_ASM( FS.syncfs(function (err) {}););
 #endif
@@ -1498,17 +1533,24 @@ bool se_key_is_pressed(int keycode){
   return gui_state.button_state[keycode];
 }
 static sg_image* se_get_image(){
-  if(gui_state.current_image<GUI_MAX_IMAGES_PER_FRAME){
-    gui_state.current_image++;
-    return gui_state.image_stack + gui_state.current_image-1; 
-  }
-  return NULL;
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  gui_state.image_free_list = tmp_image;
+  return &tmp_image->image;
+}
+static void se_free_image_deferred(sg_image image){
+  se_deferred_image_free_t * tmp_image = (se_deferred_image_free_t*)calloc(1,sizeof(se_deferred_image_free_t));
+  tmp_image->next = gui_state.image_free_list;
+  tmp_image->image=image;
+  gui_state.image_free_list = tmp_image;
 }
 static void se_free_all_images(){
-  for(int i=0;i<gui_state.current_image;++i){
-    sg_destroy_image(gui_state.image_stack[i]);
+  while(gui_state.image_free_list){
+    se_deferred_image_free_t * tmp = gui_state.image_free_list;
+    sg_destroy_image(tmp->image);
+    gui_state.image_free_list=tmp->next;
+    free(tmp);
   }
-  gui_state.current_image=0;
 }
 typedef uint8_t (*emu_byte_read_t)(uint64_t address);
 typedef void (*emu_byte_write_t)(uint64_t address,uint8_t data);
@@ -1652,7 +1694,55 @@ void se_draw_emu_stats(){
   igPopItemWidth();
 
 }
-
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  if(emu_state.system==SYSTEM_GB){
+    if (address >= 0x00D000U && address <= 0x00DFFFU) {
+      // this region is always mapped to WRAM bank 1 (unlike during normal gbc operation)
+      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 1) + address - 0x00D000U];
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=wram[j];
+      }
+    } else if (address < 0x010000U) {
+      // these follow the normal gb memory map
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=sb_read8(&core.gb,address+j);
+      }
+    } else if (address <= 0x015FFFU) {
+      // 0x10000 - 0x15FFF is WRAM banks 2-7
+      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 2) + address - 0x010000U];
+      for(int j=0;j<num_bytes;j++){
+        buffer[j]=wram[j];
+      }
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_GBA){
+    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_GAMEBOY_ADVANCE);
+    for (int i=0;i<regions->num_regions;i++) {
+      const rc_memory_region_t* region = &regions->region[i];
+      if (address >= region->start_address && address <= region->end_address) {
+        for(int j=0;j<num_bytes;j++){
+          buffer[j]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+j);
+        }
+        return num_bytes;
+      }
+    }
+    return num_bytes;
+  }else if(emu_state.system==SYSTEM_NDS){
+    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_NINTENDO_DS);
+    for (int i=0;i<regions->num_regions;i++) {
+      const rc_memory_region_t* region = &regions->region[i];
+      if (address >= region->start_address && address <= region->end_address) {
+        for(int j=0;j<num_bytes;j++){
+          buffer[j]=nds9_read8(&core.nds,region->real_address+(address-region->start_address)+j);
+        }
+      }
+    }
+    return num_bytes;
+  }
+  return 0;
+}
+#endif
 void se_psg_debugger(){
 
   // NOTE: GB and GBA framesequencer should each contain the same struct data
@@ -2316,7 +2406,9 @@ void se_load_rom(const char *filename){
   }
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
-  return; 
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  gui_state.settings.ra_needs_reload=true;
+  #endif
 }
 static void se_reset_core(){
   if(emu_state.rom_loaded==false)return; 
@@ -2385,9 +2477,9 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static size_t se_get_core_size(){
-  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb);
-  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba);
-  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds);
+  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb)+SE_RC_BUFFER_SIZE;
+  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba)+SE_RC_BUFFER_SIZE;
+  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds)+SE_RC_BUFFER_SIZE;
   return 0; 
 }
 typedef struct{
@@ -2456,6 +2548,15 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_GBA)gba_tick(&emu_state, &core.gba, &scratch.gba);
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  if (gui_state.settings.ra_needs_reload) {
+    if (retro_achievements_load_game()) {
+      gui_state.settings.ra_needs_reload = false;
+    }
+  } else {
+    retro_achievements_frame();
+  }
+#endif
   se_run_all_ar_cheats();
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
@@ -2779,6 +2880,9 @@ emu_byte_write_t se_write_byte_func(int addr_map){
 ///////////////////////////////
 
 void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_capture_state(save_state->state.rc_buffer);
+#endif
   save_state->state = *core; 
   save_state->valid = true;
   save_state->system = emu_state.system;
@@ -2787,6 +2891,9 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
   if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.hardcore_mode)return; 
   *core=save_state->state;
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_restore_state(save_state->state.rc_buffer);
+#endif
   emu_state.render_frame = true;
   se_emulate_single_frame();
 }
@@ -2853,6 +2960,9 @@ static void se_drive_ready_callback(cloud_drive_t* drive){
   }else{
     printf("Something went wrong during cloud login\n");
   }
+}
+ImFont* se_get_mono_font(){
+  return gui_state.mono_font;
 }
 void se_login_cloud(){
   cloud_drive_create(se_drive_ready_callback);
@@ -4205,6 +4315,49 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   free((void*)second_label);
 #endif
   return clicked; 
+}
+
+void se_boxed_image_dual_label(const char * first_label, const char* second_label, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1){
+  ImVec2 win_min,win_sz,win_max;
+  win_min.x=0;
+  win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
+  igGetWindowSize(&win_sz);
+  win_min.y+=igGetScrollY();
+  win_max.x = win_min.x+win_sz.x; 
+  win_max.y = win_min.y+win_sz.y;
+
+  int item_height = 50; 
+  int padding = 4; 
+
+  float disp_y_min = igGetCursorPosY();
+  float disp_y_max = disp_y_min+item_height+padding*2;
+  //Early out if not visible (helps for long lists)
+  if(disp_y_max<win_min.y||disp_y_min>win_max.y){
+    igSetCursorPosY(disp_y_max);
+    return;
+  }
+  int box_h = item_height-padding*2;
+  int box_w = box_h;
+  igPushIDStr(second_label);
+  ImVec2 curr_pos; 
+  igGetCursorPos(&curr_pos);
+  ImVec2 next_pos=curr_pos;
+  next_pos.y+=box_h+padding*2;
+  curr_pos.y+=padding; 
+  igSetCursorPos(curr_pos);
+
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(curr_pos.y-padding);
+  se_text("%s", first_label);
+  igSetCursorPosX(curr_pos.x+box_w+padding);
+  igSetCursorPosY(igGetCursorPosY()-5);
+  se_text_disabled("%s", second_label);
+  igSetCursorPos(curr_pos);
+  if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+  else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
+  igDummy((ImVec2){1,1});
+  igSetCursorPos(next_pos);
+  igPopID();
 }
 #ifdef SE_PLATFORM_ANDROID
 #include <android/log.h>
@@ -5845,6 +5998,17 @@ void se_draw_menu_panel(){
       }
     }
   }
+  #ifdef ENABLE_RETRO_ACHIEVEMENTS
+  se_section(ICON_FK_TROPHY " Retro Achievements");
+  uint32_t* checkboxes[5] = {
+    [0] = &gui_state.settings.hardcore_mode,
+    [1] = &gui_state.settings.draw_notifications,
+    [2] = &gui_state.settings.draw_progress_indicators,
+    [3] = &gui_state.settings.draw_leaderboard_trackers,
+    [4] = &gui_state.settings.draw_challenge_indicators,
+  };
+  retro_achievements_draw_panel(win_w, checkboxes);
+  #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
     if(emu_state.rom_loaded){
@@ -6091,7 +6255,6 @@ void se_draw_menu_panel(){
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
   bool hardcore_mode = gui_state.settings.hardcore_mode;
-  se_checkbox("Hardcore Mode",&hardcore_mode);
   if(gui_state.settings.hardcore_mode!=hardcore_mode){
     gui_state.settings.hardcore_mode = hardcore_mode;
     se_reset_core();
@@ -6551,6 +6714,14 @@ static void frame(void) {
   se_poll_sdl();
 #endif
   se_set_language(gui_state.settings.language);
+#if !defined(EMSCRIPTEN) && !defined(SE_PLATFORM_ANDROID) &&!defined(SE_PLATFORM_IOS)
+  static bool last_toggle_fullscreen=false;
+  if(emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN]&&last_toggle_fullscreen==false)sapp_toggle_fullscreen();
+  last_toggle_fullscreen = emu_state.joy.inputs[SE_KEY_TOGGLE_FULLSCREEN];
+#endif
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_keep_alive();
+#endif
 
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -6866,6 +7037,29 @@ static void frame(void) {
     se_update_frame();
 
     se_draw_emulated_system_screen(false);
+
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+    retro_achievements_update_atlases();
+
+    float left = screen_x;
+    float top = menu_height;
+    float right = screen_x+screen_width/se_dpi_scale();
+    float bottom = height/se_dpi_scale();
+    float padding = 30;
+
+    if (gui_state.settings.draw_notifications)
+      retro_achievements_draw_notifications(left+padding,top+padding);
+
+    if (gui_state.settings.draw_progress_indicators)
+      retro_achievements_draw_progress_indicator(right-padding,top+padding);
+
+    if (gui_state.settings.draw_leaderboard_trackers)
+      retro_achievements_draw_leaderboard_trackers(left+padding,bottom-padding);
+
+    if (gui_state.settings.draw_challenge_indicators)
+      retro_achievements_draw_challenge_indicators(right-padding,bottom-padding);
+#endif
+
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
       if(gui_state.touch_points[i].active)gui_state.last_touch_time = se_time();
     }
@@ -7090,7 +7284,11 @@ void se_load_settings(){
     if(gui_state.settings.settings_file_version<3){
       gui_state.settings.gui_scale_factor = 1.0; 
       gui_state.settings.settings_file_version = 3;
-      gui_state.settings.hardcore_mode=0;
+      gui_state.settings.hardcore_mode=1;
+      gui_state.settings.draw_challenge_indicators=1;
+      gui_state.settings.draw_progress_indicators=1;
+      gui_state.settings.draw_leaderboard_trackers=1;
+      gui_state.settings.draw_notifications=1;
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
@@ -7111,6 +7309,10 @@ void se_load_settings(){
       cloud_drive_create(se_drive_ready_callback);
     }
   }
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
+  retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode,is_mobile);
+#endif
 }
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){
   *hybrid_nds = false; 
@@ -7662,6 +7864,9 @@ static void init(void) {
 static void cleanup(void) {
   simgui_shutdown();
   se_free_all_images();
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+  retro_achievements_shutdown();
+#endif
   sg_shutdown();
   saudio_shutdown();
 #ifdef USE_SDL

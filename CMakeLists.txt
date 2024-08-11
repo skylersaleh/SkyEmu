@@ -22,6 +22,8 @@ set(LINK_LIBS "")
 # Set compile_commands.json generation for clangd on by default
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_RETRO_ACHIEVEMENTS "Enable Retro Achievements" ON)
+
 if (EMSCRIPTEN)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=0 ")
@@ -302,6 +304,44 @@ endif()
 
 if(USE_SDL)
     include_directories(${SDL2_INCLUDE_DIRS})
+endif()
+
+if(ENABLE_RETRO_ACHIEVEMENTS)
+  add_definitions(-DENABLE_RETRO_ACHIEVEMENTS=1)
+  add_definitions(-DRC_DISABLE_LUA)
+  add_definitions(-DRC_CLIENT_SUPPORTS_HASH)
+  set(RCHEEVOS_SRC src/rcheevos/src/rapi/rc_api_common.c
+    src/rcheevos/src/rapi/rc_api_editor.c
+    src/rcheevos/src/rapi/rc_api_info.c
+    src/rcheevos/src/rapi/rc_api_runtime.c
+    src/rcheevos/src/rapi/rc_api_user.c
+    src/rcheevos/src/rapi/rc_api_common.c
+    src/rcheevos/src/rcheevos/alloc.c
+    src/rcheevos/src/rcheevos/condition.c
+    src/rcheevos/src/rcheevos/condset.c
+    src/rcheevos/src/rcheevos/consoleinfo.c
+    src/rcheevos/src/rcheevos/format.c
+    src/rcheevos/src/rcheevos/lboard.c
+    src/rcheevos/src/rcheevos/memref.c
+    src/rcheevos/src/rcheevos/operand.c
+    src/rcheevos/src/rc_compat.c
+    src/rcheevos/src/rc_client.c
+    src/rcheevos/src/rc_util.c
+    src/rcheevos/src/rc_client_raintegration.c
+    src/rcheevos/src/rcheevos/rc_validate.c
+    src/rcheevos/src/rcheevos/richpresence.c
+    src/rcheevos/src/rcheevos/runtime.c
+    src/rcheevos/src/rcheevos/runtime_progress.c
+    src/rcheevos/src/rcheevos/trigger.c
+    src/rcheevos/src/rcheevos/value.c
+    src/rcheevos/src/rhash/cdreader.c
+    src/rcheevos/src/rhash/hash.c
+    src/rcheevos/src/rhash/md5.c
+    src/rcheevos/src/rhash/aes.c
+    src/rcheevos/src/rurl/url.c
+  )
+  set(SKYEMU_SRC ${SKYEMU_SRC} ${RCHEEVOS_SRC} src/retro_achievements.cpp)
+  include_directories(src/rcheevos/include)
 endif()
 
 if(IOS)
