@@ -12,16 +12,6 @@
 
 #define SE_RC_BUFFER_SIZE 32768
 
-typedef struct {
-    bool hardcore_mode;
-    bool needs_reload;
-    bool draw_challenge_indicators;
-    bool draw_progress_indicators;
-    bool draw_leaderboard_trackers;
-    bool draw_notifications;
-    uint8_t padding[2];
-} ra_config_t;
-
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 
 typedef struct {
@@ -31,7 +21,7 @@ typedef struct {
     float x2, y2;
 } atlas_tile_t;
 
-void retro_achievements_initialize(void* emu_state);
+void retro_achievements_initialize(void* emu_state, bool hardcore);
 
 void retro_achievements_shutdown();
 
@@ -39,7 +29,7 @@ bool retro_achievements_load_game();
 
 void retro_achievements_frame();
 
-void retro_achievements_draw_panel(int win_w);
+void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5]);
 
 void retro_achievements_update_atlases();
 

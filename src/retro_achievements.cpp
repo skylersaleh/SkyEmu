@@ -16,7 +16,6 @@ const char* se_localize_and_cache(const char* input_str);
 ImFont* se_get_mono_font();
 void se_emscripten_flush_fs();
 #include "retro_achievements.h"
-ra_config_t* se_get_ra_config();
 }
 
 #include "https.hpp"
@@ -983,7 +982,7 @@ extern "C" uint32_t retro_achievements_read_memory_callback(uint32_t address, ui
                                                             uint32_t num_bytes,
                                                             rc_client_t* client);
 
-void retro_achievements_initialize(void* state)
+void retro_achievements_initialize(void* state, bool hardcore)
 {
     ra_state = new ra_state_t((sb_emu_state_t*)state);
     ra_state->rc_client = rc_client_create(retro_achievements_read_memory_callback,
@@ -992,7 +991,7 @@ void retro_achievements_initialize(void* state)
     rc_client_enable_logging(ra_state->rc_client, RC_CLIENT_LOG_LEVEL_VERBOSE,
                              retro_achievements_log_callback);
 
-    rc_client_set_hardcore_enabled(ra_state->rc_client, se_get_ra_config()->hardcore_mode);
+    rc_client_set_hardcore_enabled(ra_state->rc_client, hardcore);
     rc_client_set_event_handler(ra_state->rc_client, retro_achievements_event_handler);
 
     // RetroAchievements doesn't enable CORS, so we use a reverse proxy
@@ -1232,7 +1231,7 @@ void retro_achievements_update_atlases()
     }
 }
 
-void retro_achievements_draw_panel(int win_w)
+void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5])
 {
     const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     igPushIDStr("RetroAchievements");
@@ -1303,19 +1302,31 @@ void retro_achievements_draw_panel(int win_w)
         std::string settings = ICON_FK_WRENCH " " + std::string(se_localize_and_cache("Settings"));
         se_text(settings.c_str());
 
-        ra_config_t* config = se_get_ra_config();
-        if (igCheckbox(se_localize_and_cache("Enable Hardcore Mode"), &config->hardcore_mode))
+        // This is done this way to be able to only use uint32_t on persistent_settings_t, while also using
+        // bool for imgui stuff since that's what it needs and not resorting to type punning
+        bool draw_checkboxes_bool[5];
+        for (int i = 0; i < 5; i++)
         {
-            rc_client_set_hardcore_enabled(ra_state->rc_client, se_get_ra_config()->hardcore_mode);
+            draw_checkboxes_bool[i] = *draw_checkboxes[i];
         }
 
-        igCheckbox(se_localize_and_cache("Enable Notifications"), &config->draw_notifications);
+        if (igCheckbox(se_localize_and_cache("Enable Hardcore Mode"), &draw_checkboxes_bool[0]))
+        {
+            rc_client_set_hardcore_enabled(ra_state->rc_client, draw_checkboxes_bool[0]);
+        }
+
+        igCheckbox(se_localize_and_cache("Enable Notifications"), &draw_checkboxes_bool[1]);
         igCheckbox(se_localize_and_cache("Enable Progress Indicators"),
-                   &config->draw_progress_indicators);
+                   &draw_checkboxes_bool[2]);
         igCheckbox(se_localize_and_cache("Enable Leaderboard Trackers"),
-                   &config->draw_leaderboard_trackers);
+                   &draw_checkboxes_bool[3]);
         igCheckbox(se_localize_and_cache("Enable Challenge Indicators"),
-                   &config->draw_challenge_indicators);
+                   &draw_checkboxes_bool[4]);
+
+        for (int i = 0; i < 5; i++)
+        {
+            *draw_checkboxes[i] = draw_checkboxes_bool[i];
+        }
 
         retro_achievements_draw_achievements();
     }
@@ -1324,9 +1335,6 @@ void retro_achievements_draw_panel(int win_w)
 
 void retro_achievements_draw_notifications(float left, float top)
 {
-    if (!se_get_ra_config()->draw_notifications)
-        return;
-
     ra_game_state_ptr game_state = ra_state->game_state;
 
     if (!game_state)
@@ -1449,9 +1457,6 @@ void retro_achievements_draw_notifications(float left, float top)
 
 void retro_achievements_draw_progress_indicator(float right, float top)
 {
-    if (!se_get_ra_config()->draw_progress_indicators)
-        return;
-
     ra_game_state_ptr game_state = ra_state->game_state;
 
     if (!game_state)
@@ -1519,9 +1524,6 @@ void retro_achievements_draw_progress_indicator(float right, float top)
 
 void retro_achievements_draw_leaderboard_trackers(float left, float bottom)
 {
-    if (!se_get_ra_config()->draw_leaderboard_trackers)
-        return;
-
     ra_game_state_ptr game_state = ra_state->game_state;
 
     if (!game_state)
@@ -1577,9 +1579,6 @@ void retro_achievements_draw_leaderboard_trackers(float left, float bottom)
 
 void retro_achievements_draw_challenge_indicators(float right, float bottom)
 {
-    if (!se_get_ra_config()->draw_challenge_indicators)
-        return;
-
     ra_game_state_ptr game_state = ra_state->game_state;
 
     if (!game_state)
