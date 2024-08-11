@@ -160,7 +160,7 @@ struct ra_state_t
     ra_state_t& operator=(ra_state_t&&) = delete;
 
     std::string username;
-    std::atomic<const char*> error_message;
+    std::atomic<const char*> error_message = { nullptr };
     sb_emu_state_t* emu_state = nullptr;
     rc_client_t* rc_client = nullptr;
 
