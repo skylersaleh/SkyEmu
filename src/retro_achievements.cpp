@@ -9,8 +9,8 @@ const char* se_get_pref_path();
 void se_push_disabled();
 void se_pop_disabled();
 void se_text(const char* fmt, ...);
-void se_boxed_image_dual_label(const char* title, const char* description, const char* icon,
-                               sg_image image, int flags, ImVec2 uv0, ImVec2 uv1);
+void se_boxed_image_triple_label(const char* first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* icon,
+                               sg_image image, int flags, ImVec2 uv0, ImVec2 uv1, bool glow);
 bool se_button(const char* label, ImVec2 size);
 bool se_checkbox(const char* label, bool * v);
 void se_section(const char* label,...);
@@ -31,9 +31,11 @@ double se_time();
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -80,6 +82,9 @@ struct ra_achievement_t
     uint32_t id;
     std::string title;
     std::string description;
+    float percentage;
+    float rarity;
+    float rarity_hardcore;
 };
 
 struct ra_bucket_t
@@ -131,7 +136,7 @@ struct ra_game_state_t
 {
     ~ra_game_state_t();
 
-    atlas_tile_t* game_image;
+    atlas_tile_t* game_image = nullptr;
     std::vector<atlas_t*> atlases{};
     std::unordered_map<std::string, atlas_tile_t> image_cache{};
     ra_achievement_list_t achievement_list;
@@ -167,7 +172,7 @@ struct ra_state_t
     sb_emu_state_t* emu_state = nullptr;
     rc_client_t* rc_client = nullptr;
 
-    bool pending_login = false;
+    std::atomic_bool pending_login = { false };
 
     // Game state is a shared_ptr. This is because there's a lot of asynchronous http requests
     // referring to it so every time we need to create such a request, we make a copy of the
@@ -478,11 +483,15 @@ namespace
         delete game_state_ptr; // delete the pointer that was allocated to pass through ffi
     }
 
+    void retro_achievements_download_user_image(const std::string& url)
+    {
+        // TODO: implement me, requires generalizing atlas stuff
+    }
+
     void retro_achievements_login_callback(int result, const char* error_message,
                                            rc_client_t* client, void* userdata)
     {
         static char buffer[256];
-        // TODO: show cool "logged in" banner or something
         ra_state_t* state = (ra_state_t*)userdata;
         const rc_client_user_t* user = rc_client_get_user_info(client);
 
@@ -497,9 +506,15 @@ namespace
             path += "ra_token.txt";
 
             sb_save_file_data(path.c_str(), (const uint8_t*)data.data(), data.size());
-            retro_achievements_load_game();
             se_emscripten_flush_fs();
             ra_state->error_message.store(nullptr);
+
+            std::string url;
+            url.resize(256);
+            if (rc_client_user_get_image_url(user, &url[0], url.size()) == RC_OK)
+            {
+                retro_achievements_download_user_image(url);
+            }
         } else {
             snprintf(buffer, sizeof(buffer), "Login failed: %s", error_message);
             ra_state->error_message.store(buffer);
@@ -528,6 +543,7 @@ namespace
                     std::string("Leaderboard attempt started: ") + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
+                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -541,6 +557,7 @@ namespace
                     std::string("Leaderboard attempt failed: ") + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
+                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -554,6 +571,7 @@ namespace
                 notification.submessage = std::string(event->leaderboard->tracker_value) + " for " +
                                           event->leaderboard->title;
                 notification.tile = game_state->game_image;
+                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -646,6 +664,7 @@ namespace
                                           std::to_string(summary.num_core_achievements) +
                                           " achievements unlocked";
                 notification.tile = game_state->game_image;
+                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -680,15 +699,16 @@ namespace
             type = http_request_e::POST;
         }
 
-        url += "?" + post_data;
         std::vector<std::pair<std::string, std::string>> headers;
 #ifndef EMSCRIPTEN
         // TODO(paris): When setting User-Agent from browser side, it sends a CORS
         // preflight request which is makes the request fail.
         headers.push_back({"User-Agent", "SkyEmu/4.0"});
 #endif
+        headers.push_back({"Content-Type", "application/x-www-form-urlencoded"});
+        headers.push_back({"Content-Length", std::to_string(post_data.size())});
 
-        https_request(type, url, {}, headers,
+        https_request(type, url, post_data, headers,
                       [callback, callback_data](const std::vector<uint8_t>& result) {
                           if (result.empty())
                           {
@@ -718,16 +738,44 @@ namespace
 
     void retro_achievements_draw_achievements()
     {
-        if (!ra_state->game_state)
+        ra_game_state_ptr game_state = ra_state->game_state;
+        if (!game_state)
             return;
 
-        std::unique_lock<std::mutex> lock(ra_state->game_state->mutex);
-        for (int i = 0; i < ra_state->game_state->achievement_list.buckets.size(); i++)
+        std::unique_lock<std::mutex> lock(game_state->mutex);
+        const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
+        if (game)
         {
-            if (ra_state->game_state->achievement_list.buckets[i].achievements.empty())
+            rc_client_user_game_summary_t summary;
+            rc_client_get_user_game_summary(ra_state->rc_client, &summary);
+            auto title = std::string("Playing ") + game->title;
+            auto description = std::to_string(summary.points_unlocked) + "/" +
+                            std::to_string(summary.points_core) + " points, " +
+                            std::to_string(summary.num_unlocked_achievements) + "/" +
+                            std::to_string(summary.num_core_achievements) + " achievements";
+            bool hardcore = rc_client_get_hardcore_enabled(ra_state->rc_client);
+            auto hardcore_str = hardcore ? "Hardcore mode" : "Softcore mode";
+            uint32_t hardcore_color = hardcore ? 0xff0000ff : 0xff00ff00; // TODO: make me nicer
+            sg_image image = {SG_INVALID_ID};
+            atlas_tile_t* tile = game_state->game_image;
+            ImVec2 uv0 = ImVec2{0, 0};
+            ImVec2 uv1 = ImVec2{1, 1};
+            if (tile)
+            {
+                image.id = tile->atlas_id;
+                uv0 = ImVec2{tile->x1, tile->y1};
+                uv1 = ImVec2{tile->x2, tile->y2};
+            }
+            se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str, hardcore_color,
+                                    ICON_FK_GAMEPAD, image, 0, uv0, uv1, false);
+            igSeparator();
+        }
+        for (int i = 0; i < game_state->achievement_list.buckets.size(); i++)
+        {
+            if (game_state->achievement_list.buckets[i].achievements.empty())
                 continue;
 
-            ra_bucket_t* bucket = &ra_state->game_state->achievement_list.buckets[i];
+            ra_bucket_t* bucket = &game_state->achievement_list.buckets[i];
             std::string label = category_to_icon(bucket->bucket_id) + " " +
                                 se_localize_and_cache(bucket->label.c_str());
             se_section("%s", label.c_str());
@@ -744,9 +792,32 @@ namespace
                 }
 
                 const auto& achievement = bucket->achievements[j];
-                se_boxed_image_dual_label(achievement->title.c_str(),
-                                          achievement->description.c_str(), ICON_FK_SPINNER, image,
-                                          0, uv0, uv1);
+                float rarity = rc_client_get_hardcore_enabled(ra_state->rc_client)
+                                   ? achievement->rarity_hardcore
+                                   : achievement->rarity;
+                bool unlocked = bucket->bucket_id == RC_CLIENT_ACHIEVEMENT_BUCKET_RECENTLY_UNLOCKED ||
+                                bucket->bucket_id == RC_CLIENT_ACHIEVEMENT_BUCKET_UNLOCKED;
+                bool glow = rarity < 10.0f && unlocked; // glow if less than 10% of players have it and you have it too
+                std::stringstream stream;
+                stream << std::fixed << std::setprecision(2) << rarity;
+                std::string players = stream.str() + "% of players have this achievement";
+
+                uint32_t color;
+                if (rarity > 30.0f) {
+                    color = 0xff8fdba4;
+                } else if (rarity > 20.0f) {
+                    color = 0xffd49a8a;
+                } else if (rarity > 5.0f) {
+                    color = 0xffcc85bb;
+                } else if (rarity > 1.5f) {
+                    color = 0xff71b0e3;
+                } else {
+                    color = 0xff000000; // rainbow
+                }
+
+                se_boxed_image_triple_label(achievement->title.c_str(),
+                                          achievement->description.c_str(), players.c_str(), color, ICON_FK_SPINNER, image,
+                                          0, uv0, uv1, glow);
             }
         }
     }
@@ -779,6 +850,9 @@ void ra_achievement_list_t::initialize(ra_game_state_ptr game_state,
             buckets[i].achievements[j]->id = list->buckets[i].achievements[j]->id;
             buckets[i].achievements[j]->title = list->buckets[i].achievements[j]->title;
             buckets[i].achievements[j]->description = list->buckets[i].achievements[j]->description;
+            buckets[i].achievements[j]->percentage = list->buckets[i].achievements[j]->measured_percent;
+            buckets[i].achievements[j]->rarity = list->buckets[i].achievements[j]->rarity;
+            buckets[i].achievements[j]->rarity_hardcore = list->buckets[i].achievements[j]->rarity_hardcore;
 
             const rc_client_achievement_t* achievement = list->buckets[i].achievements[j];
             if (rc_client_achievement_get_image_url(achievement, achievement->state, &url[0],
@@ -1060,12 +1134,13 @@ void retro_achievements_shutdown()
 
     rc_client_destroy(ra_state->rc_client);
 
+    ra_state->game_state.reset();
+
     for (auto& image : images_to_destroy)
     {
         sg_destroy_image(image);
     }
-
-    ra_state->game_state.reset();
+    images_to_destroy.clear();
 
     delete ra_state;
 
@@ -1083,7 +1158,7 @@ bool retro_achievements_load_game()
 
     const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     if (!user)
-        return true; // not logged in or login in progress, in which case the game will be loaded
+        return false; // not logged in or login in progress, in which case the game will be loaded
                      // when the login is done
 
     if (ra_state->game_state && ra_state->game_state->outstanding_requests.load() != 0)
@@ -1134,6 +1209,21 @@ void retro_achievements_login(const char* username, const char* password)
                                         retro_achievements_login_callback, ra_state);
 }
 
+bool retro_achievements_is_pending_login()
+{
+    return ra_state->pending_login;
+}
+
+const char* retro_achievements_get_login_error()
+{
+    return ra_state->error_message.load();
+}
+
+struct rc_client_t* retro_achievements_get_client()
+{
+    return ra_state->rc_client;
+}
+
 void retro_achievements_keep_alive()
 {
     static uint64_t last_time = 0;
@@ -1153,10 +1243,16 @@ void retro_achievements_keep_alive()
 
 atlas_tile_t* retro_achievements_get_game_image()
 {
-    if (!ra_state->game_state)
+    ra_game_state_ptr game_state = ra_state->game_state;
+    if (!game_state)
         return nullptr;
 
-    return ra_state->game_state->game_image;
+    return game_state->game_image;
+}
+
+atlas_tile_t* retro_achievements_get_user_image()
+{
+    return nullptr;
 }
 
 void retro_achievements_update_atlases()
@@ -1168,14 +1264,6 @@ void retro_achievements_update_atlases()
         return; // probably a lot of outstanding requests hold the mutex, let's wait for them to
                 // finish before we try to lock ourselves to prevent stuttering
 
-    {
-        std::unique_lock<std::mutex> lock(global_cache_mutex);
-        for (auto& image : images_to_destroy)
-        {
-            sg_destroy_image(image);
-        }
-    }
-
     std::unique_lock<std::mutex> lock(ra_state->game_state->mutex);
 
     for (atlas_t* atlas : ra_state->game_state->atlases)
@@ -1184,7 +1272,8 @@ void retro_achievements_update_atlases()
         {
             if (atlas->image.id != SG_INVALID_ID)
             {
-                sg_destroy_image(atlas->image);
+                std::unique_lock<std::mutex> glock(global_cache_mutex);
+                images_to_destroy.push_back(atlas->image);
             }
             atlas->image.id = SG_INVALID_ID;
         }
@@ -1230,99 +1319,24 @@ void retro_achievements_update_atlases()
         atlas->resized = false;
     }
 }
-bool retro_achievements_has_game_loaded(){
+
+void retro_achievements_delete_retired_atlases()
+{
+    std::unique_lock<std::mutex> lock(global_cache_mutex);
+    for (auto& image : images_to_destroy)
+    {
+        sg_destroy_image(image);
+    }
+    images_to_destroy.clear();
+}
+
+bool retro_achievements_has_game_loaded()
+{
     return rc_client_get_game_info(ra_state->rc_client)!=NULL;
 }
 
-void retro_achievements_draw_settings(uint32_t* draw_checkboxes[5])
-{
-    int win_w = igGetWindowContentRegionWidth();
-    const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
-    igPushIDStr("RetroAchievements");
-    if (!user)
-    {
-        static char username[256] = {0};
-        static char password[256] = {0};
-        bool pending_login = ra_state->pending_login;
-        se_text("Username");
-        igSameLine(win_w - 150, 0);
-        if (pending_login)
-            se_push_disabled();
-        bool enter = igInputText("##Username", username, sizeof(username),
-                                 ImGuiInputTextFlags_EnterReturnsTrue, NULL, NULL);
-        if (pending_login)
-            se_pop_disabled();
-        se_text("Password");
-        igSameLine(win_w - 150, 0);
-        if (pending_login)
-            se_push_disabled();
-        enter |= igInputText("##Password", password, sizeof(password),
-                             ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
-                             NULL, NULL);
-        const char* error_message = ra_state->error_message.load();
-        if (error_message) {
-            igPushStyleColorVec4(ImGuiCol_Text, ImVec4{1.0f, 0.0f, 0.0f, 1.0f});
-            se_text("%s", error_message);
-            igPopStyleColor(1);
-        }
-        if (se_button(ICON_FK_SIGN_IN " Login", ImVec2{0, 0}) || enter)
-        {
-            retro_achievements_login(username, password);
-        }
-        if (pending_login)
-            se_pop_disabled();
-    }else{
-        const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
-        ImVec2 pos;
-        sg_image image = {SG_INVALID_ID};
-        ImVec2 offset1 = {0, 0};
-        ImVec2 offset2 = {1, 1};
-        const char* play_string = "No Game Loaded";
-        char line1[256];
-        char line2[256];
-        snprintf(line1, 256, se_localize_and_cache("Logged in as %s"), user->display_name);
-        atlas_tile_t* game_image = retro_achievements_get_game_image();
-        if (game && game_image)
-        {
-            image.id = game_image->atlas_id;
-            offset1 = ImVec2{game_image->x1, game_image->y1};
-            offset2 = ImVec2{game_image->x2, game_image->y2};
-            snprintf(line2, 256, se_localize_and_cache("Playing: %s"), game->title);
-        }
-        else
-            snprintf(line2, 256, "%s", se_localize_and_cache("No Game Loaded"));
-        se_boxed_image_dual_label(line1, line2, ICON_FK_TROPHY, image, 0, offset1, offset2);
-        if (se_button(ICON_FK_SIGN_OUT " Logout", ImVec2{0, 0}))
-        {
-            std::string path = se_get_pref_path();
-            path += "ra_token.txt";
-            
-            ::remove(path.c_str());
-            rc_client_logout(ra_state->rc_client);
-        }
-
-        // This is done this way to be able to only use uint32_t on persistent_settings_t, while also using
-        // bool for imgui stuff since that's what it needs and not resorting to type punning
-        bool draw_checkboxes_bool[5];
-        for (int i = 0; i < 5; i++) draw_checkboxes_bool[i] = *draw_checkboxes[i];
-
-        if (se_checkbox("Enable Hardcore Mode", &draw_checkboxes_bool[0]))
-        {
-            rc_client_set_hardcore_enabled(ra_state->rc_client, draw_checkboxes_bool[0]);
-        }
-
-        se_checkbox("Enable Notifications", &draw_checkboxes_bool[1]);
-        se_checkbox("Enable Progress Indicators",&draw_checkboxes_bool[2]);
-        se_checkbox("Enable Leaderboard Trackers",&draw_checkboxes_bool[3]);
-        se_checkbox("Enable Challenge Indicators",&draw_checkboxes_bool[4]);
-
-        for (int i = 0; i < 5; i++)*draw_checkboxes[i] = draw_checkboxes_bool[i];
-    }
-    igPopID();
-}
 void retro_achievements_draw_panel()
 {
-    const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     igPushIDStr("RetroAchievementsPanel");
     retro_achievements_draw_achievements();
     igPopID();
@@ -1336,7 +1350,7 @@ float easeOutBack(float t) {
     return 1 + c3 * (t1 * t1 * t1) + c1 * (t1 * t1);
 }
 
-void retro_achievements_draw_notifications(float left, float top)
+void retro_achievements_draw_notifications(float left, float top, float screen_width)
 {
     ra_game_state_ptr game_state = ra_state->game_state;
 
@@ -1384,25 +1398,26 @@ void retro_achievements_draw_notifications(float left, float top)
         if (easing < 0.97f)
             continue;
 
-        float padding_adj = padding * easing;
-
 #define ALPHA(x) ((uint32_t)(multiplier * x) << 24)
 
-        float image_width = 64 * easing;
-        float image_height = 64 * easing;
+        float padding_adj = 0.01 * screen_width * easing;
+        float image_width = screen_width * 0.05f * easing;
+        float image_height = screen_width * 0.05f * easing;
         float placard_width =
-            padding_adj + 300 * easing + padding_adj; // notifications that have the same width are more appealing
-        float wrap_width = placard_width - padding_adj * 2 - image_width;
+            padding_adj + screen_width * 0.30f * easing + padding_adj; // notifications that have the same width are more appealing
+        float wrap_width = placard_width - padding_adj * 3 - image_width;
+        float title_font_size = 0.02f * screen_width * easing;
+        float submessage_font_size = 0.015f * screen_width * easing;
 
         float title_height = 0, submessage_height = 0;
 
         ImVec2 out;
         ImFont* font = igGetFont();
-        ImFont_CalcTextSizeA(&out, font, 22.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+        ImFont_CalcTextSizeA(&out, font, title_font_size, std::numeric_limits<float>::max(), wrap_width,
                              notification.submessage.c_str(), NULL, NULL);
         title_height = out.y;
 
-        ImFont_CalcTextSizeA(&out, font, 18.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+        ImFont_CalcTextSizeA(&out, font, submessage_font_size, std::numeric_limits<float>::max(), wrap_width,
                              notification.submessage2.c_str(), NULL, NULL);
         submessage_height = out.y;
 
@@ -1453,11 +1468,11 @@ void retro_achievements_draw_notifications(float left, float top)
             text_alpha *= easing;
 
             ImDrawList_AddTextFontPtr(
-                ig, igGetFont(), 22.0f * easing,
+                ig, igGetFont(), title_font_size,
                 ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + padding_adj},
                 0xffffff | ALPHA(text_alpha), notification.submessage.c_str(), NULL, wrap_width, NULL);
             ImDrawList_AddTextFontPtr(
-                ig, igGetFont(), 18.0f * easing,
+                ig, igGetFont(), submessage_font_size,
                 ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + padding_adj + title_height + padding_adj},
                 0xc0c0c0 | ALPHA(text_alpha), notification.submessage2.c_str(), NULL, wrap_width, NULL);
         } else {
@@ -1469,11 +1484,11 @@ void retro_achievements_draw_notifications(float left, float top)
                 text_alpha = (255 * text_time) / text_half_time;
             }
             text_alpha *= easing;
-            ImFont_CalcTextSizeA(&out, font, 22.0f * easing, std::numeric_limits<float>::max(), wrap_width,
+            ImFont_CalcTextSizeA(&out, font, title_font_size, std::numeric_limits<float>::max(), wrap_width,
                              notification.title.c_str(), NULL, NULL);
             title_height = out.y;
-            ImDrawList_AddTextFontPtr(ig, igGetFont(), 22.0f * easing,
-                ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + image_height / 2 - title_height / 2},
+            ImDrawList_AddTextFontPtr(ig, igGetFont(), title_font_size,
+                ImVec2{top_left.x + padding_adj + image_width + padding_adj, top_left.y + + padding_adj},
                 0xffffff | ALPHA(text_alpha), notification.title.c_str(), NULL,
                 wrap_width, NULL);
         }
