@@ -12,6 +12,8 @@ void se_text(const char* fmt, ...);
 void se_boxed_image_dual_label(const char* title, const char* description, const char* icon,
                                sg_image image, int flags, ImVec2 uv0, ImVec2 uv1);
 bool se_button(const char* label, ImVec2 size);
+bool se_checkbox(const char* label, bool * v);
+void se_section(const char* label,...);
 const char* se_localize_and_cache(const char* input_str);
 ImFont* se_get_mono_font();
 void se_emscripten_flush_fs();
@@ -728,7 +730,7 @@ namespace
             ra_bucket_t* bucket = &ra_state->game_state->achievement_list.buckets[i];
             std::string label = category_to_icon(bucket->bucket_id) + " " +
                                 se_localize_and_cache(bucket->label.c_str());
-            se_text("%s", label.c_str());
+            se_section("%s", label.c_str());
             for (int j = 0; j < bucket->achievements.size(); j++)
             {
                 sg_image image = {SG_INVALID_ID};
@@ -1228,9 +1230,13 @@ void retro_achievements_update_atlases()
         atlas->resized = false;
     }
 }
+bool retro_achievements_has_game_loaded(){
+    return rc_client_get_game_info(ra_state->rc_client)!=NULL;
+}
 
-void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5])
+void retro_achievements_draw_settings(uint32_t* draw_checkboxes[5])
 {
+    int win_w = igGetWindowContentRegionWidth();
     const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
     igPushIDStr("RetroAchievements");
     if (!user)
@@ -1265,9 +1271,7 @@ void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5])
         }
         if (pending_login)
             se_pop_disabled();
-    }
-    else
-    {
+    }else{
         const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
         ImVec2 pos;
         sg_image image = {SG_INVALID_ID};
@@ -1297,37 +1301,30 @@ void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5])
             rc_client_logout(ra_state->rc_client);
         }
 
-        std::string settings = ICON_FK_WRENCH " " + std::string(se_localize_and_cache("Settings"));
-        se_text(settings.c_str());
-
         // This is done this way to be able to only use uint32_t on persistent_settings_t, while also using
         // bool for imgui stuff since that's what it needs and not resorting to type punning
         bool draw_checkboxes_bool[5];
-        for (int i = 0; i < 5; i++)
-        {
-            draw_checkboxes_bool[i] = *draw_checkboxes[i];
-        }
+        for (int i = 0; i < 5; i++) draw_checkboxes_bool[i] = *draw_checkboxes[i];
 
-        if (igCheckbox(se_localize_and_cache("Enable Hardcore Mode"), &draw_checkboxes_bool[0]))
+        if (se_checkbox("Enable Hardcore Mode", &draw_checkboxes_bool[0]))
         {
             rc_client_set_hardcore_enabled(ra_state->rc_client, draw_checkboxes_bool[0]);
         }
 
-        igCheckbox(se_localize_and_cache("Enable Notifications"), &draw_checkboxes_bool[1]);
-        igCheckbox(se_localize_and_cache("Enable Progress Indicators"),
-                   &draw_checkboxes_bool[2]);
-        igCheckbox(se_localize_and_cache("Enable Leaderboard Trackers"),
-                   &draw_checkboxes_bool[3]);
-        igCheckbox(se_localize_and_cache("Enable Challenge Indicators"),
-                   &draw_checkboxes_bool[4]);
+        se_checkbox("Enable Notifications", &draw_checkboxes_bool[1]);
+        se_checkbox("Enable Progress Indicators",&draw_checkboxes_bool[2]);
+        se_checkbox("Enable Leaderboard Trackers",&draw_checkboxes_bool[3]);
+        se_checkbox("Enable Challenge Indicators",&draw_checkboxes_bool[4]);
 
-        for (int i = 0; i < 5; i++)
-        {
-            *draw_checkboxes[i] = draw_checkboxes_bool[i];
-        }
-
-        retro_achievements_draw_achievements();
+        for (int i = 0; i < 5; i++)*draw_checkboxes[i] = draw_checkboxes_bool[i];
     }
+    igPopID();
+}
+void retro_achievements_draw_panel()
+{
+    const rc_client_user_t* user = rc_client_get_user_info(ra_state->rc_client);
+    igPushIDStr("RetroAchievementsPanel");
+    retro_achievements_draw_achievements();
     igPopID();
 }
 

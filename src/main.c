@@ -396,6 +396,7 @@ typedef struct {
     int mem_dump_size;
     int mem_dump_start_address;
     bool sidebar_open;
+    bool retro_achievements_sidebar_open; 
     se_keybind_state_t key;
     se_controller_state_t controller;
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
@@ -620,7 +621,7 @@ const char* se_localize_and_cache(const char* input_str){
   se_cache_glyphs(localized_string);
   return localized_string;
 }
-static inline bool se_checkbox(const char* label, bool * v){
+bool se_checkbox(const char* label, bool * v){
   return igCheckbox(se_localize_and_cache(label),v);
 }
 void se_text(const char* label,...){
@@ -663,7 +664,7 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
   *v = val;
   return ret;
 }
-static void se_section(const char* label,...){
+void se_section(const char* label,...){
   ImGuiStyle * style = igGetStyle();
   float height = igGetFontSize() + style->FramePadding.y * 2.0f;
   ImDrawList*dl= igGetWindowDrawList();
@@ -862,6 +863,25 @@ static bool se_input_file_callback(const char* label, char* new_path, const char
 }
 static bool se_input_file(const char* label, char* new_path, const char**types, ImGuiInputTextFlags flags){
   return se_input_file_callback(label,new_path,types,NULL,flags);
+}
+static void se_tooltip(const char * tooltip){
+  if(igGetCurrentContext()->HoveredIdTimer<1.5||gui_state.last_touch_time>0)return;
+  if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
+    igSetTooltip(se_localize_and_cache(tooltip));
+  }
+}
+static void se_panel_toggle(int region, bool * is_open, const char* icon, const char* tooltip ){
+  igPushIDStr(icon);
+  if(*is_open){
+    igPushStyleColorVec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+    if(se_button_themed(region+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){*is_open=!*is_open;}
+    igPopStyleColor(1);
+  }else{
+    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){*is_open=!*is_open;}
+  }
+  igPopID();
+  igSameLine(0,1);
+  se_tooltip(tooltip);
 }
 void se_mkdir(char *path) {
     char *sep = strrchr(path, '/');
@@ -1344,12 +1364,7 @@ double se_time(){
   if(base_time==0) base_time= stm_now();
   return stm_sec(stm_diff(stm_now(),base_time));
 }
-static void se_tooltip(const char * tooltip){
-  if(igGetCurrentContext()->HoveredIdTimer<1.5||gui_state.last_touch_time>0)return;
-  if (igIsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&!igIsItemActive()){
-    igSetTooltip(se_localize_and_cache(tooltip));
-  }
-}
+
 double se_fps_counter(int tick){
   static int call = -1;
   static double last_t = 0;
@@ -5922,9 +5937,7 @@ void se_draw_menu_panel(){
       igSameLine(0,5);
     }
     igBeginGroup();
-    char logged_in[256];
-    snprintf(logged_in,256,se_localize_and_cache("Logged in as %s"),cloud_state.user_info.name);
-    se_text(logged_in);
+    se_text("Logged in as %s",cloud_state.user_info.name);
     bool pending_logout = cloud_drive_pending_logout();
     if (pending_logout) se_push_disabled();
     if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
@@ -6001,13 +6014,13 @@ void se_draw_menu_panel(){
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
   se_section(ICON_FK_TROPHY " Retro Achievements");
   uint32_t* checkboxes[5] = {
-    [0] = &gui_state.settings.hardcore_mode,
-    [1] = &gui_state.settings.draw_notifications,
-    [2] = &gui_state.settings.draw_progress_indicators,
-    [3] = &gui_state.settings.draw_leaderboard_trackers,
-    [4] = &gui_state.settings.draw_challenge_indicators,
+    &gui_state.settings.hardcore_mode,
+    &gui_state.settings.draw_notifications,
+    &gui_state.settings.draw_progress_indicators,
+    &gui_state.settings.draw_leaderboard_trackers,
+    &gui_state.settings.draw_challenge_indicators,
   };
-  retro_achievements_draw_panel(win_w, checkboxes);
+  retro_achievements_draw_settings(checkboxes);
   #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
@@ -6722,12 +6735,12 @@ static void frame(void) {
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_keep_alive();
 #endif
-
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
   static bool last_back_press = false;
   if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
-      if(gui_state.sidebar_open)gui_state.sidebar_open = false;
+      if(gui_state.retro_achievements_sidebar_open)gui_state.retro_achievements_sidebar_open = false;
+      else if(gui_state.sidebar_open)gui_state.sidebar_open = false;
       else if(emu_state.run_mode!=SB_MODE_PAUSE)emu_state.run_mode = SB_MODE_PAUSE;
       else if(emu_state.rom_loaded &&!gui_state.ran_from_launcher)emu_state.run_mode = SB_MODE_RUN;
       else sapp_quit();
@@ -6774,15 +6787,14 @@ static void frame(void) {
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
     float menu_bar_y = igGetCursorPosY();
-    if(gui_state.sidebar_open){
-      igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(se_button_themed(SE_REGION_MENU+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){gui_state.sidebar_open=!gui_state.sidebar_open;}
-      igPopStyleColor(1);
-    }else{
-      if(se_button_themed(SE_REGION_MENU,ICON_FK_BARS,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){gui_state.sidebar_open=!gui_state.sidebar_open;}
+    se_panel_toggle(SE_REGION_MENU,&gui_state.sidebar_open,ICON_FK_BARS,"Show/Hide Menu Panel");
+
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+    if(retro_achievements_has_game_loaded()){
+      se_panel_toggle(SE_REGION_BLANK,&gui_state.retro_achievements_sidebar_open,ICON_FK_TROPHY,"Show/Hide Retro Achievements Panel");
     }
-    igSameLine(0,1);
-    se_tooltip("Show/Hide Menu Panel");
+#endif
+
 
     if(gui_state.settings.draw_debug_menu)se_draw_debug_menu();
     
@@ -6985,7 +6997,7 @@ static void frame(void) {
     float scaled_screen_width = screen_width/se_dpi_scale();
 
     float sidebar_w = 300; 
-    int num_sidebars_open = gui_state.sidebar_open;
+    int num_sidebars_open = gui_state.sidebar_open+gui_state.retro_achievements_sidebar_open;
     if(gui_state.settings.draw_debug_menu){
       se_debug_tool_desc_t* desc=se_get_debug_description();
       while(desc&&desc->label){
@@ -7013,6 +7025,18 @@ static void frame(void) {
       gui_state.key.last_bind_activitiy = -1;
       gui_state.menubar_hide_timer=se_time();
     }
+    #ifdef ENABLE_RETRO_ACHIEVEMENTS
+    if(gui_state.retro_achievements_sidebar_open){
+      igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
+      igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
+      igBegin(se_localize_and_cache(ICON_FK_TROPHY " Retro Achievements"),&gui_state.retro_achievements_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+      retro_achievements_draw_panel();
+      igEnd();
+      screen_x += sidebar_w;
+      screen_width -=sidebar_w*se_dpi_scale();
+      gui_state.menubar_hide_timer=se_time();
+    }
+    #endif
     if(gui_state.settings.draw_debug_menu){
       int orig_screen_x = screen_x;
       screen_x = se_draw_debug_panels(screen_x, sidebar_w,menu_height,(height-menu_height*se_dpi_scale())/se_dpi_scale());

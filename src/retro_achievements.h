@@ -29,7 +29,9 @@ bool retro_achievements_load_game();
 
 void retro_achievements_frame();
 
-void retro_achievements_draw_panel(int win_w, uint32_t* draw_checkboxes[5]);
+void retro_achievements_draw_panel();
+
+void retro_achievements_draw_settings(uint32_t* draw_checkboxes[5]);
 
 void retro_achievements_update_atlases();
 
@@ -46,6 +48,9 @@ void retro_achievements_draw_challenge_indicators(float right, float bottom);
 void retro_achievements_capture_state(uint8_t* buffer);
 
 void retro_achievements_restore_state(const uint8_t* buffer);
+
+bool retro_achievements_has_game_loaded(); 
+
 #endif
 
 #endif
