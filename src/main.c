@@ -350,7 +350,6 @@ typedef struct{
 #define SE_NO_SORT 0
 #define SE_SORT_ALPHA_ASC 1
 #define SE_SORT_ALPHA_DESC 2
-
 typedef struct{
   uint16_t start_pixel;
   uint16_t end_pixel;
@@ -729,6 +728,34 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
 
   *style = restore_style; 
   return button_result;
+}
+uint32_t se_hsv_to_rgb(uint16_t H, uint8_t S, uint8_t V) {
+	float r, g, b;
+	
+	float h = (float)H / 360;
+	float s = (float)S / 100;
+	float v = (float)V / 100;
+	
+	int i = floor(h * 6);
+	float f = h * 6 - i;
+	float p = v * (1 - s);
+	float q = v * (1 - f * s);
+	float t = v * (1 - (1 - f) * s);
+	
+	switch (i % 6) {
+		case 0: r = v, g = t, b = p; break;
+		case 1: r = q, g = v, b = p; break;
+		case 2: r = p, g = v, b = t; break;
+		case 3: r = p, g = q, b = v; break;
+		case 4: r = t, g = p, b = v; break;
+		case 5: r = v, g = p, b = q; break;
+	}
+	
+	uint8_t r8 = r * 255;
+  uint8_t g8 = g * 255;
+  uint8_t b8 = b * 255;
+	
+	return b8 << 16 | g8 << 8 | r8;
 }
 bool se_slider_float_themed(const char* label, float* p_data, float p_min, float p_max, const char* format){
   if(igGetCurrentWindow()->SkipItems)return false;
@@ -1784,31 +1811,39 @@ uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buff
       for(int j=0;j<num_bytes;j++){
         buffer[j]=wram[j];
       }
+      return num_bytes;
     } else if (address < 0x010000U) {
       // these follow the normal gb memory map
       for(int j=0;j<num_bytes;j++){
         buffer[j]=sb_read8(&core.gb,address+j);
       }
+      return num_bytes;
     } else if (address <= 0x015FFFU) {
       // 0x10000 - 0x15FFF is WRAM banks 2-7
       uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 2) + address - 0x010000U];
       for(int j=0;j<num_bytes;j++){
         buffer[j]=wram[j];
       }
+      return num_bytes;
     }
-    return num_bytes;
+    printf("GB address %08x not found\n",address);
   }else if(emu_state.system==SYSTEM_GBA){
     const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_GAMEBOY_ADVANCE);
     for (int i=0;i<regions->num_regions;i++) {
       const rc_memory_region_t* region = &regions->region[i];
-      if (address >= region->start_address && address <= region->end_address) {
+      if (address >= 0x048000U && address <= 0x057FFFU) { // handle eeprom region specially
+        for (int j=0;j<num_bytes;j++){
+          buffer[j]=core.gba.mem.cart_backup[address-0x048000U+j];
+        }
+        return num_bytes;
+      } else if (address >= region->start_address && address <= region->end_address) {
         for(int j=0;j<num_bytes;j++){
           buffer[j]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+j);
         }
         return num_bytes;
       }
     }
-    return num_bytes;
+    printf("GBA address %08x not found\n",address);
   }else if(emu_state.system==SYSTEM_NDS){
     const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_NINTENDO_DS);
     for (int i=0;i<regions->num_regions;i++) {
@@ -1817,9 +1852,10 @@ uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buff
         for(int j=0;j<num_bytes;j++){
           buffer[j]=nds9_read8(&core.nds,region->real_address+(address-region->start_address)+j);
         }
+        return num_bytes;
       }
     }
-    return num_bytes;
+    printf("NDS address %08x not found\n",address);
   }
   return 0;
 }
@@ -4397,8 +4433,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
 #endif
   return clicked; 
 }
-
-void se_boxed_image_dual_label(const char * first_label, const char* second_label, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1){
+void se_boxed_image_triple_label(const char * first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1, bool glow){
   ImVec2 win_min,win_sz,win_max;
   win_min.x=0;
   win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
@@ -4410,29 +4445,79 @@ void se_boxed_image_dual_label(const char * first_label, const char* second_labe
   int item_height = 50; 
   int padding = 4; 
 
+  ImVec2 screen_pos;
+  igGetCursorScreenPos(&screen_pos);
+
   float disp_y_min = igGetCursorPosY();
-  float disp_y_max = disp_y_min+item_height+padding*2;
+  int box_h = item_height-padding*2;
+  int box_w = box_h;
+  ImVec2 curr_pos; 
+  igGetCursorPos(&curr_pos);
+  ImVec2 next_pos=curr_pos;
+  curr_pos.y+=padding; 
+  igSetCursorPos(curr_pos);
+
+  ImGuiStyle* style = igGetStyle();
+  int scrollbar_width = style->ScrollbarSize;
+  int wrap_width = win_sz.x-curr_pos.x-box_w-padding*2-scrollbar_width;
+
+  ImVec2 out;
+  igCalcTextSize(&out,first_label,NULL,false,wrap_width);
+
+  ImVec2 out2;
+  igCalcTextSize(&out2,second_label,NULL,false,wrap_width);
+
+  ImVec2 out3 = {0, 0};
+  if(third_label)igCalcTextSize(&out3,third_label,NULL,false,wrap_width);
+
+  float text_height = out.y + out2.y + out3.y;
+  if (text_height+padding*2 > box_h+padding*2)
+    next_pos.y+=text_height+padding*2;
+  else
+    next_pos.y+=box_h+padding*2;
+
+  float disp_y_max = next_pos.y;
+
   //Early out if not visible (helps for long lists)
   if(disp_y_max<win_min.y||disp_y_min>win_max.y){
     igSetCursorPosY(disp_y_max);
     return;
   }
-  int box_h = item_height-padding*2;
-  int box_w = box_h;
-  igPushIDStr(second_label);
-  ImVec2 curr_pos; 
-  igGetCursorPos(&curr_pos);
-  ImVec2 next_pos=curr_pos;
-  next_pos.y+=box_h+padding*2;
-  curr_pos.y+=padding; 
-  igSetCursorPos(curr_pos);
 
+  // Draw a rectangle to show the text size
+  // ImDrawList* ig = igGetWindowDrawList();
+  // ImVec2 top_left = {screen_pos.x+box_w+padding,screen_pos.y};
+
+  // float max_x = out.x > out2.x ? out.x : out2.x;
+
+  // ImVec2 bottom_right = {screen_pos.x+max_x+box_w,screen_pos.y+out.y+out2.y};
+  // ImDrawList_AddRect(ig, top_left, bottom_right, 0xff0000ff, 0, 0, 1.0f);
+
+  igPushIDStr(second_label);
+  // TODO: if (glow)se_draw_glow((ImVec2){screen_pos.x+box_w*0.5,screen_pos.y+box_h*0.5+padding});
   igSetCursorPosX(curr_pos.x+box_w+padding);
   igSetCursorPosY(curr_pos.y-padding);
   se_text("%s", first_label);
   igSetCursorPosX(curr_pos.x+box_w+padding);
   igSetCursorPosY(igGetCursorPosY()-5);
   se_text_disabled("%s", second_label);
+  if(third_label){
+    igPushStyleColorU32(ImGuiCol_Text,third_label_color);
+    igSetCursorPosX(curr_pos.x+box_w+padding);
+    igSetCursorPosY(igGetCursorPosY()-5);
+    ImDrawList* ig = igGetWindowDrawList();
+    int vert_start = ig->VtxBuffer.Size;
+    se_text("%s", third_label);
+    if (third_label_color == 0xff000000) { // black means rainbow
+      int vert_end = ig->VtxBuffer.Size;
+      int h = (uint64_t)(stm_now() / 10000000.0) % 360;
+      for (int i = vert_start; i < vert_end; i++) {
+        h+=5;
+        ig->VtxBuffer.Data[i].col = 0xff000000 + se_hsv_to_rgb(h, 40, 100);
+      }
+    }
+    igPopStyleColor(1);
+  }
   igSetCursorPos(curr_pos);
   if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
   else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
@@ -6162,15 +6247,101 @@ void se_draw_menu_panel(){
     }
   }
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  se_section(ICON_FK_TROPHY " Retro Achievements");
-  uint32_t* checkboxes[5] = {
-    &gui_state.settings.hardcore_mode,
-    &gui_state.settings.draw_notifications,
-    &gui_state.settings.draw_progress_indicators,
-    &gui_state.settings.draw_leaderboard_trackers,
-    &gui_state.settings.draw_challenge_indicators,
-  };
-  retro_achievements_draw_settings(checkboxes);
+  se_section(ICON_FK_TROPHY " RetroAchievements");
+  const rc_client_user_t* user = rc_client_get_user_info(retro_achievements_get_client());
+  igPushIDStr("RetroAchievements");
+  if (!user)
+  {
+      static char username[256] = {0};
+      static char password[256] = {0};
+      bool pending_login = retro_achievements_is_pending_login();
+      se_text("Username");
+      igSameLine(win_w - 150, 0);
+      if (pending_login)
+          se_push_disabled();
+      bool enter = igInputText("##Username", username, sizeof(username),
+                        ImGuiInputTextFlags_EnterReturnsTrue, NULL, NULL);
+      if (pending_login)
+          se_pop_disabled();
+      se_text("Password");
+      igSameLine(win_w - 150, 0);
+      if (pending_login)
+          se_push_disabled();
+      enter |= igInputText("##Password", password, sizeof(password),
+                        ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
+                        NULL, NULL);
+      const char* error_message = retro_achievements_get_login_error();
+      if (error_message) {
+        igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.0f, 0.0f, 0.0f, 1.0f});
+        se_text("%s", error_message);
+        igPopStyleColor(1);
+      }
+      if (se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0, 0}) || enter)
+      {
+        retro_achievements_login(username, password);
+        gui_state.settings.ra_needs_reload = true;
+      }
+      if (pending_login)
+        se_pop_disabled();
+  }else{
+      const rc_client_game_t* game = rc_client_get_game_info(retro_achievements_get_client());
+      ImVec2 pos;
+      sg_image image = {SG_INVALID_ID};
+      ImVec2 offset1 = {0, 0};
+      ImVec2 offset2 = {1, 1};
+      atlas_tile_t* user_image = retro_achievements_get_user_image();
+      if (user_image)
+      {
+        image.id = user_image->atlas_id;
+        offset1 = (ImVec2){user_image->x1, user_image->y1};
+        offset2 = (ImVec2){user_image->x2, user_image->y2};
+      }
+      static char line1[256];
+      static char line2[256];
+      bool hardcore = gui_state.settings.hardcore_mode;
+      snprintf(line1, 256, se_localize_and_cache("Logged in as %s"), user->display_name);
+      snprintf(line2, 256, se_localize_and_cache("Points: %d"), hardcore ? user->score : user->score_softcore);
+      se_boxed_image_triple_label(line1, line2, NULL, 0, ICON_FK_USER, image, 0, offset1, offset2, false);
+      if (se_button(ICON_FK_SIGN_OUT " Logout", (ImVec2){0, 0}))
+      {
+        char buffer[SB_FILE_PATH_SIZE];
+        snprintf(buffer, SB_FILE_PATH_SIZE, "%sra_token.txt", se_get_pref_path());
+        remove(buffer);
+        rc_client_logout(retro_achievements_get_client());
+      }
+
+      bool draw_checkboxes_bool[5] = {
+        gui_state.settings.hardcore_mode,
+        gui_state.settings.draw_notifications,
+        gui_state.settings.draw_progress_indicators,
+        gui_state.settings.draw_leaderboard_trackers,
+        gui_state.settings.draw_challenge_indicators,
+      };
+
+      if (se_checkbox("Enable Hardcore Mode", &draw_checkboxes_bool[0]))
+      {
+        rc_client_set_hardcore_enabled(retro_achievements_get_client(), draw_checkboxes_bool[0]);
+      }
+
+      se_checkbox("Enable Notifications", &draw_checkboxes_bool[1]);
+      se_checkbox("Enable Progress Indicators",&draw_checkboxes_bool[2]);
+      se_checkbox("Enable Leaderboard Trackers",&draw_checkboxes_bool[3]);
+      se_checkbox("Enable Challenge Indicators",&draw_checkboxes_bool[4]);
+
+      uint32_t* checkboxes[5] = {
+        &gui_state.settings.hardcore_mode,
+        &gui_state.settings.draw_notifications,
+        &gui_state.settings.draw_progress_indicators,
+        &gui_state.settings.draw_leaderboard_trackers,
+        &gui_state.settings.draw_challenge_indicators,
+      };
+
+      for (int i = 0; i < 5; i++)
+      {
+        *checkboxes[i] = draw_checkboxes_bool[i];
+      }
+  }
+  igPopID();
   #endif
   {
     se_bios_info_t * info = &gui_state.bios_info;
@@ -6931,7 +7102,7 @@ static void frame(void) {
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
     if(retro_achievements_has_game_loaded()){
-      se_panel_toggle(SE_REGION_BLANK,&gui_state.retro_achievements_sidebar_open,ICON_FK_TROPHY,"Show/Hide Retro Achievements Panel");
+      se_panel_toggle(SE_REGION_BLANK,&gui_state.retro_achievements_sidebar_open,ICON_FK_TROPHY,"Show/Hide RetroAchievements Panel");
     }
 #endif
 
@@ -7169,7 +7340,7 @@ static void frame(void) {
     if(gui_state.retro_achievements_sidebar_open){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-      igBegin(se_localize_and_cache(ICON_FK_TROPHY " Retro Achievements"),&gui_state.retro_achievements_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+      igBegin(se_localize_and_cache(ICON_FK_TROPHY " RetroAchievements"),&gui_state.retro_achievements_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       retro_achievements_draw_panel();
       igEnd();
       screen_x += sidebar_w;
@@ -7209,10 +7380,10 @@ static void frame(void) {
     float top = menu_height;
     float right = screen_x+screen_width/se_dpi_scale();
     float bottom = height/se_dpi_scale();
-    float padding = 30;
+    float padding = screen_width * 0.02;
 
     if (gui_state.settings.draw_notifications)
-      retro_achievements_draw_notifications(left+padding,top+padding);
+      retro_achievements_draw_notifications(left+padding,top+padding,screen_width);
 
     if (gui_state.settings.draw_progress_indicators)
       retro_achievements_draw_progress_indicator(right-padding,top+padding);
@@ -7394,6 +7565,7 @@ static void frame(void) {
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
   }
+  retro_achievements_delete_retired_atlases();
 }
 void se_load_settings(){
   se_load_recent_games_list();

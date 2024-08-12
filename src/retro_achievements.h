@@ -31,13 +31,25 @@ void retro_achievements_frame();
 
 void retro_achievements_draw_panel();
 
-void retro_achievements_draw_settings(uint32_t* draw_checkboxes[5]);
+atlas_tile_t* retro_achievements_get_game_image();
+
+atlas_tile_t* retro_achievements_get_user_image();
+
+void retro_achievements_login(const char* username, const char* password);
+
+bool retro_achievements_is_pending_login();
+
+struct rc_client_t* retro_achievements_get_client();
+
+const char* retro_achievements_get_login_error();
 
 void retro_achievements_update_atlases();
 
+void retro_achievements_delete_retired_atlases();
+
 void retro_achievements_keep_alive();
 
-void retro_achievements_draw_notifications(float left, float top);
+void retro_achievements_draw_notifications(float left, float top, float screen_width);
 
 void retro_achievements_draw_progress_indicator(float right, float top);
 
