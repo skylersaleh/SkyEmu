@@ -402,6 +402,7 @@ typedef struct {
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
     int sorted_recently_loaded_games[SE_NUM_RECENT_PATHS];
     int recent_games_sort_type;
+    bool allow_deletion_from_game_list;
     persistent_settings_t settings;
     persistent_settings_t last_saved_settings;
     bool overlay_open;
@@ -5028,7 +5029,8 @@ void se_load_rom_overlay(bool visible){
   igSameLine(0,5);
   se_text("%s ",ICON_FK_SEARCH);
   igSameLine(0,5);
-  igPushItemWidth(-55);
+  int button_w = 40-4; 
+  igPushItemWidth(-(button_w+5)*2);
   igInputText("##search",gui_state.search_buffer,sizeof(gui_state.search_buffer),ImGuiInputTextFlags_None, NULL,NULL);
   igPopItemWidth();
   igSameLine(0,5);
@@ -5042,11 +5044,25 @@ void se_load_rom_overlay(bool visible){
       gui_state.recent_games_sort_type = SE_NO_SORT;
       se_sort_recent_games_list();
   }
-  if(se_button(icon,(ImVec2){50,0})){
+  if(se_button(icon,(ImVec2){button_w,0})){
     gui_state.recent_games_sort_type++;
     if(gui_state.recent_games_sort_type>SE_SORT_ALPHA_DESC)gui_state.recent_games_sort_type=SE_NO_SORT;
     se_sort_recent_games_list();
   }
+  igSameLine(0,5);
+  bool pop_style = false;
+  if(gui_state.allow_deletion_from_game_list){
+    ImVec4 c = igGetStyle()->Colors[ImGuiCol_Button];
+    c.x = c.x*0.5+0.5;
+    c.y *=0.5;
+    c.z *=0.5;
+    igPushStyleColorVec4(ImGuiCol_Button, c);
+    pop_style=true;
+  }
+  if(se_button(ICON_FK_TRASH,(ImVec2){button_w,0})){
+    gui_state.allow_deletion_from_game_list = !gui_state.allow_deletion_from_game_list;
+  }
+  if(pop_style)igPopStyleColor(1);
   igSeparator();
   int num_entries=0;
   for(int i=0;i<SE_NUM_RECENT_PATHS;++i){
@@ -5059,7 +5075,8 @@ void se_load_rom_overlay(bool visible){
     char ext_upper[8]={0};
     for(int i=0;i<7&&ext[i];++i)ext_upper[i]=toupper(ext[i]);
     int reduce_width = 0; 
-    int cross_width = 44;
+    int cross_width = 40;
+    if(!gui_state.allow_deletion_from_game_list)cross_width=0;
     #ifdef EMSCRIPTEN
     char save_file_path[SB_FILE_PATH_SIZE];
     snprintf(save_file_path,SB_FILE_PATH_SIZE,"%s/%s.sav",base,file_name);
@@ -5076,9 +5093,13 @@ void se_load_rom_overlay(bool visible){
       if(se_button(ICON_FK_DOWNLOAD " Export Save",(ImVec2){reduce_width-4,40}))se_download_emscripten_file(save_file_path);
     }
     #endif 
-    igSameLine(0, 4);
-    if(se_button(ICON_FK_TIMES, (ImVec2){cross_width-4,40}))se_clear_game_from_recents(i);
-    se_tooltip("Remove from recently played");
+    if(gui_state.allow_deletion_from_game_list){
+      float old_y = igGetCursorPosY();
+      igSameLine(0, 4);
+      if(se_button(ICON_FK_TIMES, (ImVec2){cross_width-4,cross_width-4}))se_clear_game_from_recents(gui_state.sorted_recently_loaded_games[i]);
+      se_tooltip("Remove from recently played");
+      igSetCursorPosY(old_y);
+    }
     igSeparator();
     num_entries++;
     igPopID();
