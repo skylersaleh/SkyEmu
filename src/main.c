@@ -528,6 +528,16 @@ typedef struct{
   bool save_states_busy[SE_NUM_SAVE_STATES];
   cloud_user_info_t user_info;
 } se_cloud_state_t;
+typedef struct{
+  uint8_t* data; 
+  size_t size; 
+}se_png_write_context_t;
+void se_png_write_mem(void *context, void *data, int size){
+  se_png_write_context_t * cont =(se_png_write_context_t*)context;
+  cont->data = realloc(cont->data,size+cont->size);
+  memcpy(cont->data+cont->size,data,size);
+  cont->size+=size; 
+}
 static void se_sync_cloud_save_states();
 gui_state_t gui_state={ .update_font_atlas=true }; 
 
@@ -4652,19 +4662,18 @@ void se_download_emscripten_file(const char * path){
 }
 void se_download_emscripten_save_states()
 {
-  int i=0;
   mz_zip_error zip_error;
   char archive_filename[SB_FILE_PATH_SIZE];
   const char* base, *file_name, *ext;
   sb_breakup_path(emu_state.rom_path,&base,&file_name,&ext);
-  snprintf(archive_filename,SB_FILE_PATH_SIZE,"%s.save_states.zip",file_name,ext);
-  while(true)
+  snprintf(archive_filename,SB_FILE_PATH_SIZE,"%s.save_states.zip",file_name);
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i)
   {
     char save_state_path[SB_FILE_PATH_SIZE];
     char save_state_name[SB_FILE_PATH_SIZE];
     snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
     snprintf(save_state_name,SB_FILE_PATH_SIZE,"slot%d.state.png",i);
-    if(!sb_file_exists(save_state_path))break;
+    if(!sb_file_exists(save_state_path))continue;
     size_t data_size;
     uint8_t* data = sb_load_file_data(save_state_path,&data_size);
     mz_bool status = mz_zip_add_mem_to_archive_file_in_place_v2(archive_filename,save_state_name,data,data_size,NULL,0,MZ_BEST_COMPRESSION,&zip_error);
@@ -4674,12 +4683,33 @@ void se_download_emscripten_save_states()
       printf("mz_zip_add_mem_to_archive_file_in_place_v2 failed: %s\n",mz_zip_get_error_string(zip_error));
       break;
     }
-    i++;
   }
+  mutex_lock(cloud_state.save_states_mutex);
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    if(cloud_state.save_states_busy[i]||cloud_state.save_states[i].valid==false)continue;
+    char save_state_name[SB_FILE_PATH_SIZE];
+    snprintf(save_state_name,SB_FILE_PATH_SIZE,"cloud.slot%d.state.png",i);
+    uint32_t width=0, height=0;
+    uint8_t* imdata = se_save_state_to_image(&cloud_state.save_states[i], &width,&height);
+    se_png_write_context_t cont ={0};
+    stbi_write_png_to_func(se_png_write_mem, &cont,width,height,4, imdata, 0);
+    free(imdata);
+    if(cont.data){
+      mz_bool status = mz_zip_add_mem_to_archive_file_in_place_v2(archive_filename,save_state_name,cont.data,cont.size,NULL,0,MZ_BEST_COMPRESSION,&zip_error);
+      free(cont.data);
+      if (!status){
+        printf("mz_zip_add_mem_to_archive_file_in_place_v2 failed: %s\n",mz_zip_get_error_string(zip_error));
+        break;
+      }
+    }
+  }
+  mutex_unlock(cloud_state.save_states_mutex);
+
   se_download_emscripten_file(archive_filename);
   remove(archive_filename);
 }
 #endif 
+
 
 void se_bring_text_field_into_view(){
   if(igGetIO()->WantTextInput){
@@ -5872,7 +5902,7 @@ void se_draw_save_states(bool cloud){
   for(size_t i=0;i<SE_NUM_SAVE_STATES;++i){
     mutex_lock(cloud_state.save_states_mutex);
     se_save_state_t* states = cloud?cloud_state.save_states:save_states;
-    has_save_states|=save_states[i].valid;
+    has_save_states|=save_states[i].valid||cloud_state.save_states[i].valid;
     int slot_x = 0;
     int slot_y = i;
     int slot_w = (win_w-style->FramePadding.x)*0.5;
@@ -6424,16 +6454,6 @@ void se_end_menu_bar(){
 }
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
-typedef struct{
-  uint8_t* data; 
-  size_t size; 
-}se_png_write_context_t;
-void se_png_write_mem(void *context, void *data, int size){
-  se_png_write_context_t * cont =(se_png_write_context_t*)context;
-  cont->data = realloc(cont->data,size+cont->size);
-  memcpy(cont->data+cont->size,data,size);
-  cont->size+=size; 
-}
 uint64_t se_hex_string_to_int(const char* s){
   uint64_t num = 0; 
   while(*s){
