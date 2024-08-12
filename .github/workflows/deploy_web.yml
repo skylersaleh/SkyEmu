@@ -1,9 +1,5 @@
 name: Build Web & Deploy to GH
 on: [push,pull_request]
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -55,14 +51,5 @@ jobs:
           branch: gh-pages # The branch the action should deploy to.
           folder: build/bin # The folder the action should deploy.
           target-folder: branch/dev
-          force: false
-          clean: false
-      - name: Deploy to rcheevos site 🚀
-        if: github.ref == 'refs/heads/rcheevos'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages # The branch the action should deploy to.
-          folder: build/bin # The folder the action should deploy.
-          target-folder: branch/rcheevos
           force: false
           clean: false
