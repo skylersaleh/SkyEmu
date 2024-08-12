@@ -5083,7 +5083,10 @@ void se_load_rom_overlay(bool visible){
     bool save_exists = sb_file_exists(save_file_path);
     if(save_exists)reduce_width=85; 
     #endif
-    if(!se_string_contains_string_case_insensitive(info->path,gui_state.search_buffer))continue;
+    if(!se_string_contains_string_case_insensitive(info->path,gui_state.search_buffer)){
+      igPopID();
+      continue;
+    }
     if(se_selectable_with_box(file_name,se_replace_fake_path(info->path),ext_upper,false,reduce_width+cross_width)){
       se_load_rom(info->path);
     }
