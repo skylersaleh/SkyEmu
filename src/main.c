@@ -468,17 +468,17 @@ typedef struct {
 sb_emu_state_t emu_state = { .joy.solar_sensor=0.5};
 #define SE_MAX_CONST(A,B) ((A)>(B)? (A) : (B) )
 typedef union{
+  // Do not reorder items in this struct otherwise you may break save states.
+  // Append new data to the end of this structure. 
   struct {
-    #ifdef ENABLE_RETRO_ACHIEVEMENTS
-      //This buffer needs to be before the union as the front end doesn't read the entire se_core_state_t structure
-      //just the first chunk of it. 
-      uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
-    #endif
     union {
       sb_gb_t gb;
       gba_t gba;  
       nds_t nds;
     };
+    #ifdef ENABLE_RETRO_ACHIEVEMENTS
+      uint8_t rc_buffer[SE_RC_BUFFER_SIZE]; // buffer for RetroAchievements state, should be more than enough
+    #endif
   };
   // Raw data padded out to 64B to make rewind efficient
   uint64_t raw_data[(SE_MAX_CONST(SE_MAX_CONST(sizeof(gba_t), sizeof(nds_t)), sizeof(sb_gb_t))+SE_RC_BUFFER_SIZE)/SE_REWIND_SEGMENT_SIZE+1];
@@ -519,7 +519,9 @@ typedef struct{
   char build[41];//Emulator build/commit hash
   uint32_t bess_offset; //Number of bytes after the se_emu_id where the save state descriptor is located. 
   uint32_t system; //SYSTEM_UNKNOWN=0 ,SYSTEM_GB=1, SYSTEM_GBA=2, SYSTEM_NDS 3
-  uint8_t padding[20];//Zero padding
+  uint32_t rcheevos_buffer_offset; // Byte offset of rc_buffer
+  uint32_t rcheevos_buffer_size;   // Size of rc_buffer
+  uint8_t padding[12];//Zero padding
 }se_emu_id;
 typedef struct{
   cloud_drive_t* drive;
@@ -1222,6 +1224,9 @@ se_emu_id se_get_emu_id(){
   se_emu_id emu_id={0};
   snprintf(emu_id.name,sizeof(emu_id.name),"SkyEmu (%s,%s)",se_get_host_platform(),se_get_host_arch());
   strncpy(emu_id.build,GIT_COMMIT_HASH,sizeof(emu_id.build));
+
+  emu_id.rcheevos_buffer_offset = offsetof(se_core_state_t,rc_buffer);
+  emu_id.rcheevos_buffer_size = SE_RC_BUFFER_SIZE;
   return emu_id;
 }
 uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, uint32_t *height){
@@ -1230,7 +1235,7 @@ uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, u
   emu_id.system = save_state->system;
   printf("Bess offset: %d\n",emu_id.bess_offset);
   size_t save_state_size = se_get_core_size();
-  size_t net_save_state_size = sizeof(emu_id)+save_state_size;
+  size_t net_save_state_size = sizeof(emu_id)+save_state_size+SE_RC_BUFFER_SIZE;
   int screenshot_size = save_state->screenshot_width*save_state->screenshot_height;
 
   int scale = 1; 
@@ -1252,6 +1257,7 @@ uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, u
       uint8_t data =0; 
       if(p_out<sizeof(emu_id))data = emu_id_dat[p_out];
       else if(p_out-sizeof(emu_id)<save_state_size) data = save_state_dat[p_out-sizeof(emu_id)];
+      else if(p_out-sizeof(emu_id)-save_state_size<SE_RC_BUFFER_SIZE) data = save_state->state.rc_buffer[p_out-sizeof(emu_id)-save_state_size];
 
       r&=0xfC;
       g&=0xfC;
@@ -1333,19 +1339,55 @@ bool se_load_state_common(se_save_state_t* save_state, const char* filename, uin
     se_emu_id comp_id = *(se_emu_id*)data;
     bool bess= false; 
     if(memcmp(&comp_id.name,&emu_id.name,sizeof(emu_id.name))){
-      printf("ERROR: Save state:%s has non-matching emu-name:%s\n",filename, emu_id.name);
+      printf("ERROR: Save state:%s has non-matching emu-name:%s\n",filename, comp_id.name);
       bess=true; 
     }
     if(memcmp(&comp_id.build,&emu_id.build,sizeof(emu_id.build))){
-      printf("ERROR: Save state:%s has non-matching emu-build:%s\n",filename, emu_id.build);
+      printf("ERROR: Save state:%s has non-matching emu-build:%s\n",filename, comp_id.build);
       bess=true; 
     }
     save_state->system = comp_id.system;
     if(!bess&&se_get_core_size()+sizeof(se_emu_id)<=data_size){
       memcpy(&(save_state->state), data+sizeof(se_emu_id), se_get_core_size());
       save_state->valid = 1; 
-    }else if(se_bess_state_restore(data, data_size,comp_id, save_state)){
-      save_state->valid = 2;
+    }else{
+      // SkyEmu versions after the RetroAchievements merge move the location of the core structure
+      // which messes up bess indexing. This workaround corrects the BESS calculations so it works correctly. 
+      const char * workaround_version_hashes[]={
+        "311eeee4067cd12e15327b5af5db39ccecae70c6",
+        "d220aa73cdd20366692983f566ae3dc0278cfd55",
+        "083a2ef343dfb6da325c19127f5293ad097d8589",
+        "5bac217faa64a64e21b28d8789847e3a10eedd6e",
+        "830b2c0f7f6c718d945e82a465efca49b9257f24",
+        "ece7aa8b3c807e449c110787021c3e0ac77f9ecb",
+        "8a326fec84e0e6cf729ebfc2b1fb53368f46923e",
+        "c5ece1c3c1e6ee354f99855e85e95162baad47f0",
+        "7621a3b80bddb76b35f68027dec6ff8381db3e3b",
+        "ebdfd7451a929fa13506a6c6a3781a8bb6d10c4e",
+        NULL
+      };
+      const char ** curr_str = workaround_version_hashes;
+      bool needs_wrong_rc_buffer_location_workaround = false;
+      while(*curr_str){
+        if(strcmp(*curr_str,comp_id.build)==0){needs_wrong_rc_buffer_location_workaround=true;break;}
+        ++curr_str;
+      }
+      if(needs_wrong_rc_buffer_location_workaround){
+        printf("Applying bad rc_buffer location work around for: %s\n",comp_id.build);
+        comp_id.rcheevos_buffer_offset=0;
+        comp_id.rcheevos_buffer_size=256*1024;
+        if(se_bess_state_restore(data+comp_id.rcheevos_buffer_size, data_size-comp_id.rcheevos_buffer_size,comp_id, save_state)){
+          save_state->valid = 2;
+        }
+      }else if(se_bess_state_restore(data, data_size,comp_id, save_state)){
+        save_state->valid = 2;
+      }
+    }
+    int rc_buffer_bytes = SE_RC_BUFFER_SIZE;
+    if(rc_buffer_bytes>comp_id.rcheevos_buffer_size)rc_buffer_bytes=comp_id.rcheevos_buffer_size;
+    if(comp_id.rcheevos_buffer_offset+comp_id.rcheevos_buffer_size+sizeof(se_emu_id)<=data_size){
+      printf("Restoring RC Buffer %d bytes\n", rc_buffer_bytes);
+      memcpy(save_state->state.rc_buffer,data+sizeof(se_emu_id)+comp_id.rcheevos_buffer_offset,rc_buffer_bytes);
     }
   }
   free(data);
@@ -2516,9 +2558,9 @@ static double se_get_sim_fps(){
   return sim_fps;
 }
 static size_t se_get_core_size(){
-  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb)+SE_RC_BUFFER_SIZE;
-  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba)+SE_RC_BUFFER_SIZE;
-  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds)+SE_RC_BUFFER_SIZE;
+  if(emu_state.system==SYSTEM_GB)return sizeof(core.gb);
+  else if(emu_state.system == SYSTEM_GBA) return sizeof(core.gba);
+  else if(emu_state.system == SYSTEM_NDS) return sizeof(core.nds);
   return 0; 
 }
 typedef struct{
