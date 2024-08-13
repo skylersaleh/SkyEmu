@@ -7448,7 +7448,7 @@ void se_load_settings(){
     if(gui_state.settings.settings_file_version<3){
       gui_state.settings.gui_scale_factor = 1.0; 
       gui_state.settings.settings_file_version = 3;
-      gui_state.settings.hardcore_mode=1;
+      gui_state.settings.hardcore_mode=0;
       gui_state.settings.draw_challenge_indicators=1;
       gui_state.settings.draw_progress_indicators=1;
       gui_state.settings.draw_leaderboard_trackers=1;
