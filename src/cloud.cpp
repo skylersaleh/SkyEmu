@@ -248,6 +248,7 @@ void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_dri
             if (!nlohmann::json::accept(token))
             {
                 printf("[cloud] failed to refresh token: invalid response\n");
+                ::remove((drive->save_directory + "refresh_token.txt").c_str());
                 drive->dec();
                 callback(drive);
                 return;
