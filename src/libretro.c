@@ -1,7 +1,6 @@
 #include "libretro.h"
 
 #include <stdbool.h>
-#include <assert.h>
 #include <time.h>
 #include <string.h>
 #include <math.h>
@@ -24,95 +23,20 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   return false;
 }
 
+static retro_video_refresh_t video_refresh_cb = NULL;
+static retro_input_poll_t input_poll_cb = NULL;
+static retro_input_state_t input_state_cb = NULL;
+static retro_audio_sample_t audio_sample_cb = NULL;
+static retro_environment_t env_cb = NULL;
+
+sb_emu_state_t emu_state;
+
 /* ------------------ RETROARCH GB ----------------- */
 
 static gb_scratch_t gb_scratch;
 static sb_gb_t gb;
 
-void retro_gb_init(sb_emu_state_t* emu_state){
-  emu_state->system = SYSTEM_GB;
-  sb_ptrs_init(&gb, &gb_scratch, emu_state->rom_data);
-}
-
-bool retro_gb_load_rom(sb_emu_state_t* emu_state){
-  return sb_load_rom(emu_state, &gb, &gb_scratch);
-}
-
-void retro_gb_get_system_av_info(struct retro_system_av_info* info) {  
-  info->geometry.aspect_ratio = 0.0;
-  info->geometry.max_height = SB_LCD_H;
-  info->geometry.max_width = SB_LCD_W;
-  info->geometry.base_height = info->geometry.max_height;
-  info->geometry.base_width = info->geometry.max_width;
-  info->timing.fps = 60;
-  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
-}
-
-void retro_gb_reset(sb_emu_state_t* emu_state) {  
-    sb_load_rom(emu_state, &gb, &gb_scratch);
-}
-
-void* retro_gb_step_frame(sb_emu_state_t* emu_state, uint32_t* width, uint32_t* height) {
-  // must be done before each tick.
-  uint8_t palette[12] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
-  for(int i = 0; i < 12; ++i) gb.dmg_palette[i] = palette[i];
-
-  sb_tick(emu_state, &gb, &gb_scratch);
-
-  static uint8_t flipped_frame[sizeof gb_scratch.framebuffer];
-  *width = SB_LCD_W;
-  *height = SB_LCD_H;  
-  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
-    // NOTE: assume little endian
-    flipped_frame[i + 0] = gb_scratch.framebuffer[i + 2]; // blue
-    flipped_frame[i + 1] = gb_scratch.framebuffer[i + 1]; // green
-    flipped_frame[i + 2] = gb_scratch.framebuffer[i + 0]; // red
-    flipped_frame[i + 3] = 0; // ignored
-  }
-  return flipped_frame;
-}
-
-size_t retro_gb_serialize_size() {
-  return sizeof gb;
-}
-
-bool retro_gb_serialize(void* data, size_t size) {
-  assert(size >= sizeof gb);
-  memcpy(data, &gb, sizeof gb);
-  memset((void*)((size_t)data + sizeof gb), 0, size - sizeof gb);
-  return true;
-}
-
-bool retro_gb_unserialize(sb_emu_state_t* emu, const void* data, size_t size) {
-  assert(size >= sizeof gb);
-  memcpy(&gb, data, sizeof gb);
-  sb_ptrs_init(&gb, &gb_scratch, emu->rom_data);
-  return true;
-}
-
-size_t retro_gb_get_memory_size(unsigned id) {
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof gb.cart.ram_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return sizeof gb.mem;
-    case RETRO_MEMORY_RTC: return sizeof gb.rtc;
-    default: return 0;
-  }
-}
-
-void* retro_gb_get_memory_data(unsigned id) {
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return gb.cart.ram_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return &gb.mem;
-    case RETRO_MEMORY_RTC: return &gb.rtc;
-    default: return NULL;
-  }
-}
-
-bool retro_gb_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return sb_run_ar_cheat(&gb, buffer, size);
-}
-
-void retro_gb_setup_env(retro_environment_t env) {
+void retro_gb_init(){
   static struct retro_memory_descriptor mdesc[9];
   // rom
   mdesc[0].ptr = gb.mem.data;
@@ -172,11 +96,89 @@ void retro_gb_setup_env(retro_environment_t env) {
   static struct retro_memory_map mmap;
   mmap.descriptors = mdesc;
   mmap.num_descriptors = sizeof mdesc / sizeof *mdesc;
+  env_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
 
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-  env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
+  env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
 
-  env(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
+  sb_ptrs_init(&gb, &gb_scratch, emu_state.rom_data);  
+}
+
+bool retro_gb_load_rom(){
+  return sb_load_rom(&emu_state, &gb, &gb_scratch);
+}
+
+void retro_gb_get_system_av_info(struct retro_system_av_info* info) {  
+  info->geometry.aspect_ratio = 0.0;
+  info->geometry.max_height = SB_LCD_H;
+  info->geometry.max_width = SB_LCD_W;
+  info->geometry.base_height = info->geometry.max_height;
+  info->geometry.base_width = info->geometry.max_width;
+  info->timing.fps = 60;
+  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
+}
+
+void retro_gb_reset() {  
+    sb_load_rom(&emu_state, &gb, &gb_scratch);
+}
+
+void* retro_gb_step_frame(uint32_t* width, uint32_t* height) {
+  // must be done before each tick.
+  uint8_t palette[12] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
+  for(int i = 0; i < 12; ++i) gb.dmg_palette[i] = palette[i];
+
+  sb_tick(&emu_state, &gb, &gb_scratch);
+
+  static uint8_t flipped_frame[sizeof gb_scratch.framebuffer];
+  *width = SB_LCD_W;
+  *height = SB_LCD_H;  
+  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
+    // NOTE: assume little endian
+    flipped_frame[i + 0] = gb_scratch.framebuffer[i + 2]; // blue
+    flipped_frame[i + 1] = gb_scratch.framebuffer[i + 1]; // green
+    flipped_frame[i + 2] = gb_scratch.framebuffer[i + 0]; // red
+    flipped_frame[i + 3] = 0; // ignored
+  }
+  return flipped_frame;
+}
+
+size_t retro_gb_serialize_size() {
+  return sizeof gb;
+}
+
+bool retro_gb_serialize(void* data, size_t size) {
+  if (size < sizeof gb) return false;
+  memcpy(data, &gb, sizeof gb);
+  return true;
+}
+
+bool retro_gb_unserialize(const void* data, size_t size) {
+  if (size < sizeof gb) return false;
+  memcpy(&gb, data, sizeof gb);
+  sb_ptrs_init(&gb, &gb_scratch, emu_state.rom_data);
+  return true;
+}
+
+size_t retro_gb_get_memory_size(unsigned id) {
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return sizeof gb.cart.ram_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return sizeof gb.mem;
+    case RETRO_MEMORY_RTC: return sizeof gb.rtc;
+    default: return 0;
+  }
+}
+
+void* retro_gb_get_memory_data(unsigned id) {
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return gb.cart.ram_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return &gb.mem;
+    case RETRO_MEMORY_RTC: return &gb.rtc;
+    default: return NULL;
+  }
+}
+
+bool retro_gb_run_cheat(const uint32_t* buffer, uint32_t size) {
+  return sb_run_ar_cheat(&gb, buffer, size);
 }
 
 /* ----------------- RETROARCH GBA ----------------- */
@@ -184,85 +186,7 @@ void retro_gb_setup_env(retro_environment_t env) {
 static gba_scratch_t gba_scratch;
 static gba_t gba;
 
-void retro_gba_init(sb_emu_state_t* emu_state) {
-  emu_state->system = SYSTEM_GBA;
-  gba_ptrs_init(&gba, &gba_scratch, emu_state->rom_data);
-}
-
-bool retro_gba_load_rom(sb_emu_state_t* emu_state) {
-  return gba_load_rom(emu_state, &gba, &gba_scratch);
-}
-
-void retro_gba_get_system_av_info(struct retro_system_av_info* info) {
-  info->geometry.aspect_ratio = 0.0;
-  info->geometry.max_width = GBA_LCD_W;
-  info->geometry.max_height = GBA_LCD_H;
-  info->geometry.base_width = info->geometry.max_width;
-  info->geometry.base_height = info->geometry.max_height; 
-  info->timing.fps = 60;
-  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
-}
-
-void retro_gba_reset(sb_emu_state_t* emu_state) {
-  gba_load_rom(emu_state, &gba, &gba_scratch);
-}
-
-void* retro_gba_step_frame(sb_emu_state_t* emu_state, uint32_t* width, uint32_t* height) {
-  gba_tick(emu_state, &gba, &gba_scratch);
-
-  static uint8_t flipped_frame[sizeof gba_scratch.framebuffer];
-  *width = GBA_LCD_W;
-  *height = GBA_LCD_H;
-  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
-    // NOTE: assume little endian
-    flipped_frame[i + 0] = gba_scratch.framebuffer[i + 2]; // blue
-    flipped_frame[i + 1] = gba_scratch.framebuffer[i + 1]; // green
-    flipped_frame[i + 2] = gba_scratch.framebuffer[i + 0]; // red
-    flipped_frame[i + 3] = 0; // ignored
-  }
-  return flipped_frame;
-}
-
-size_t retro_gba_serialize_size() {
-  return sizeof gba;
-}
-
-bool retro_gba_serialize(void* data, size_t size) {
-  assert(size >= sizeof gba);
-  memcpy(data, &gba, sizeof gba);
-  memset((void*)((size_t)data + sizeof gba), 0, size - sizeof gba);
-  return true;
-}
-
-bool retro_gba_unserialize(sb_emu_state_t* emu, const void* data, size_t size) {
-  assert(size >= sizeof gba);
-  memcpy(&gba, data, sizeof gba);
-  gba_ptrs_init(&gba, &gba_scratch, emu->rom_data);
-  return true;
-}
-
-size_t retro_gba_get_memory_size(unsigned id) {
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof gba.mem.cart_backup;
-    case RETRO_MEMORY_RTC: return sizeof gba.rtc;
-    default: return 0;
-  }
-}
-
-void* retro_gba_get_memory_data(unsigned id) {
-  // isgnoring system memory here as it is not continuous, it does not matter anyway.
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return gba.mem.cart_backup;
-    case RETRO_MEMORY_RTC: return &gba.rtc;
-    default: return NULL;
-  }
-}
-
-bool retro_gba_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return gba_run_ar_cheat(&gba, buffer, size);
-}
-
-void retro_gba_setup_env(retro_environment_t env) {
+void retro_gba_init() {
   // TODO: add external memory (flash/sram)
   static struct retro_memory_descriptor mdesc[11];
   // internal wram
@@ -330,10 +254,84 @@ void retro_gba_setup_env(retro_environment_t env) {
   static struct retro_memory_map mmap;
   mmap.descriptors = mdesc;
   mmap.num_descriptors = sizeof mdesc / sizeof *mdesc;
-  env(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
+  env_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
 
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-  env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);  
+  env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
+
+  gba_ptrs_init(&gba, &gba_scratch, emu_state.rom_data);
+}
+
+bool retro_gba_load_rom() {
+  return gba_load_rom(&emu_state, &gba, &gba_scratch);
+}
+
+void retro_gba_get_system_av_info(struct retro_system_av_info* info) {
+  info->geometry.aspect_ratio = 0.0;
+  info->geometry.max_width = GBA_LCD_W;
+  info->geometry.max_height = GBA_LCD_H;
+  info->geometry.base_width = info->geometry.max_width;
+  info->geometry.base_height = info->geometry.max_height; 
+  info->timing.fps = 60;
+  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
+}
+
+void retro_gba_reset() {
+  gba_load_rom(&emu_state, &gba, &gba_scratch);
+}
+
+void* retro_gba_step_frame(uint32_t* width, uint32_t* height) {
+  gba_tick(&emu_state, &gba, &gba_scratch);
+
+  static uint8_t flipped_frame[sizeof gba_scratch.framebuffer];
+  *width = GBA_LCD_W;
+  *height = GBA_LCD_H;
+  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
+    // NOTE: assume little endian
+    flipped_frame[i + 0] = gba_scratch.framebuffer[i + 2]; // blue
+    flipped_frame[i + 1] = gba_scratch.framebuffer[i + 1]; // green
+    flipped_frame[i + 2] = gba_scratch.framebuffer[i + 0]; // red
+    flipped_frame[i + 3] = 0; // ignored
+  }
+  return flipped_frame;
+}
+
+size_t retro_gba_serialize_size() {
+  return sizeof gba;
+}
+
+bool retro_gba_serialize(void* data, size_t size) {
+  if (size < sizeof gba) return false;
+  memcpy(data, &gba, sizeof gba);
+  return true;
+}
+
+bool retro_gba_unserialize(const void* data, size_t size) {
+  if (size < sizeof gba) return false;
+  memcpy(&gba, data, sizeof gba);
+  gba_ptrs_init(&gba, &gba_scratch, emu_state.rom_data);
+  return true;
+}
+
+size_t retro_gba_get_memory_size(unsigned id) {
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return sizeof gba.mem.cart_backup;
+    case RETRO_MEMORY_RTC: return sizeof gba.rtc;
+    default: return 0;
+  }
+}
+
+void* retro_gba_get_memory_data(unsigned id) {
+  // isgnoring system memory here as it is not continuous, it does not matter anyway.
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return gba.mem.cart_backup;
+    case RETRO_MEMORY_RTC: return &gba.rtc;
+    default: return NULL;
+  }
+}
+
+bool retro_gba_run_cheat(const uint32_t* buffer, uint32_t size) {
+  return gba_run_ar_cheat(&gba, buffer, size);
 }
 
 /* ----------------- RETROARCH NDS ----------------- */
@@ -341,87 +339,7 @@ void retro_gba_setup_env(retro_environment_t env) {
 static nds_scratch_t nds_scratch;
 static nds_t nds;
 
-void retro_nds_init(sb_emu_state_t* emu_state) {
-  emu_state->system = SYSTEM_NDS;
-  nds_ptrs_init(&nds, &nds_scratch, emu_state->rom_data, emu_state->rom_size);
-}
-
-bool retro_nds_load_rom(sb_emu_state_t* emu_state) {
-  return nds_load_rom(emu_state, &nds, &nds_scratch);
-}
-
-void retro_nds_get_system_av_info(struct retro_system_av_info* info) {
-  info->geometry.aspect_ratio = 0.0;
-  info->geometry.max_width = NDS_LCD_W;
-  info->geometry.max_height = NDS_LCD_H * 2; // (bottom and top screen)
-  info->geometry.base_width = info->geometry.max_width;
-  info->geometry.base_height = info->geometry.max_height; 
-  info->timing.fps = 60;
-  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
-}
-
-void retro_nds_reset(sb_emu_state_t* emu_state) {
-  nds_load_rom(emu_state, &nds, &nds_scratch);
-}
-
-void* retro_nds_step_frame(sb_emu_state_t* emu_state, uint32_t* width, uint32_t* height) {
-  nds_tick(emu_state, &nds, &nds_scratch);
-
-  static uint8_t flipped_frame[sizeof nds_scratch.framebuffer_full];
-  *width = NDS_LCD_W;
-  *height = NDS_LCD_H * 2; // we have two screens (bottom and top)
-  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
-    // NOTE: assume little endian
-    flipped_frame[i + 0] = nds_scratch.framebuffer_full[i + 2]; // blue
-    flipped_frame[i + 1] = nds_scratch.framebuffer_full[i + 1]; // green
-    flipped_frame[i + 2] = nds_scratch.framebuffer_full[i + 0]; // red
-    flipped_frame[i + 3] = 0; // ignored
-  }
-  return flipped_frame;
-}
-
-size_t retro_nds_serialize_size() {
-  return sizeof nds;
-}
-
-bool retro_nds_serialize(void* data, size_t size) {
-  assert(size >= sizeof nds);
-  memcpy(data, &nds_scratch, sizeof nds);
-  memset((void*)((size_t)data + sizeof nds), 0, size - sizeof nds);
-  return true;
-}
-
-bool retro_nds_unserialize(sb_emu_state_t* emu, const void* data, size_t size) {
-  (void)emu;
-  assert(size >= sizeof nds);
-  memcpy(&nds, data, sizeof nds);
-  nds_ptrs_init(&nds, &nds_scratch, emu->rom_data, emu->rom_size);
-  return true;
-}
-
-size_t retro_nds_get_memory_size(unsigned id) {
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof nds_scratch.save_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return sizeof nds.mem.ram;
-    case RETRO_MEMORY_RTC: return sizeof nds.rtc;
-    default: return 0;
-  }
-}
-
-void* retro_nds_get_memory_data(unsigned id) {
-  switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return nds_scratch.save_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return nds.mem.ram;
-    case RETRO_MEMORY_RTC: return &nds.rtc;
-    default: return NULL;
-  }
-}
-
-bool retro_nds_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return nds_run_ar_cheat(&nds, buffer, size);
-}
-
-void retro_nds_setup_env(retro_environment_t env) {
+void retro_nds_init() {
   // TODO: there are still memory regions
   // that could be added here. Particularly
   // those that exist for ARM9.
@@ -575,22 +493,88 @@ void retro_nds_setup_env(retro_environment_t env) {
   static struct retro_memory_map mmap; 
   mmap.descriptors = mdesc;
   mmap.num_descriptors = sizeof mdesc / sizeof *mdesc;
+  env_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
 
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-  env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
+  env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
 
-  env(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmap);
+  nds_ptrs_init(&nds, &nds_scratch, emu_state.rom_data, emu_state.rom_size);
+}
+
+bool retro_nds_load_rom() {
+  return nds_load_rom(&emu_state, &nds, &nds_scratch);
+}
+
+void retro_nds_get_system_av_info(struct retro_system_av_info* info) {
+  info->geometry.aspect_ratio = 0.0;
+  info->geometry.max_width = NDS_LCD_W;
+  info->geometry.max_height = NDS_LCD_H * 2; // (bottom and top screen)
+  info->geometry.base_width = info->geometry.max_width;
+  info->geometry.base_height = info->geometry.max_height; 
+  info->timing.fps = 60;
+  info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
+}
+
+void retro_nds_reset() {
+  nds_load_rom(&emu_state, &nds, &nds_scratch);
+}
+
+void* retro_nds_step_frame(uint32_t* width, uint32_t* height) {
+  nds_tick(&emu_state, &nds, &nds_scratch);
+
+  static uint8_t flipped_frame[sizeof nds_scratch.framebuffer_full];
+  *width = NDS_LCD_W;
+  *height = NDS_LCD_H * 2; // we have two screens (bottom and top)
+  for (int i = 0; i < sizeof(flipped_frame); i += 4) {
+    // NOTE: assume little endian
+    flipped_frame[i + 0] = nds_scratch.framebuffer_full[i + 2]; // blue
+    flipped_frame[i + 1] = nds_scratch.framebuffer_full[i + 1]; // green
+    flipped_frame[i + 2] = nds_scratch.framebuffer_full[i + 0]; // red
+    flipped_frame[i + 3] = 0; // ignored
+  }
+  return flipped_frame;
+}
+
+size_t retro_nds_serialize_size() {
+  return sizeof nds;
+}
+
+bool retro_nds_serialize(void* data, size_t size) {
+  if (size < sizeof nds) return false;
+  memcpy(data, &nds, sizeof nds);
+  return true;
+}
+
+bool retro_nds_unserialize(const void* data, size_t size) {
+  if (size < sizeof nds) return false;
+  memcpy(&nds, data, sizeof nds);
+  nds_ptrs_init(&nds, &nds_scratch, emu_state.rom_data, emu_state.rom_size);
+  return true;
+}
+
+size_t retro_nds_get_memory_size(unsigned id) {
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return sizeof nds_scratch.save_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return sizeof nds.mem.ram;
+    case RETRO_MEMORY_RTC: return sizeof nds.rtc;
+    default: return 0;
+  }
+}
+
+void* retro_nds_get_memory_data(unsigned id) {
+  switch (id) {
+    case RETRO_MEMORY_SAVE_RAM: return nds_scratch.save_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return nds.mem.ram;
+    case RETRO_MEMORY_RTC: return &nds.rtc;
+    default: return NULL;
+  }
+}
+
+bool retro_nds_run_cheat(const uint32_t* buffer, uint32_t size) {
+  return nds_run_ar_cheat(&nds, buffer, size);
 }
 
 /* ----------------- RETROARCH IMP ----------------- */
-
-static retro_video_refresh_t video_refresh_cb = NULL;
-static retro_input_poll_t input_poll_cb = NULL;
-static retro_input_state_t input_state_cb = NULL;
-static retro_audio_sample_t audio_sample_cb = NULL;
-static retro_environment_t env_cb = NULL;
-
-sb_emu_state_t emu_state;
 
 static bool load_rom(const struct retro_game_info* game) {
   if (emu_state.rom_loaded) {
@@ -609,16 +593,16 @@ static bool load_rom(const struct retro_game_info* game) {
   ) {
     if (!strcmp(".gb", extension) || !strcmp(".gbc", extension)) {
       emu_state.system = SYSTEM_GB;
-      retro_gb_setup_env(env_cb);
-      return retro_gb_load_rom(&emu_state);
+      retro_gb_init();
+      return retro_gb_load_rom();
     } else if (!strcmp(".gba", extension)) {
       emu_state.system = SYSTEM_GBA;
-      retro_gba_setup_env(env_cb);
-      return retro_gba_load_rom(&emu_state);
+      retro_gba_init();
+      return retro_gba_load_rom();
     } else if (!strcmp(".nds", extension)) {
       emu_state.system = SYSTEM_NDS;
-      retro_nds_setup_env(env_cb);
-      return retro_nds_load_rom(&emu_state);
+      retro_nds_init();
+      return retro_nds_load_rom();
     } 
   }
 
@@ -626,8 +610,6 @@ static bool load_rom(const struct retro_game_info* game) {
   free(emu_state.rom_data);
   return false;
 }
-
-// Retro Arch implementation
 
 unsigned retro_api_version(void) {
   return RETRO_API_VERSION;
@@ -658,8 +640,6 @@ void retro_set_input_state(retro_input_state_t state) {
 }
 
 void retro_init(void) {
-  emu_state.render_frame = true;
-
   // set input descriptors
   static struct retro_input_descriptor input_descriptors[] = {
     { .port = 0, .device = RETRO_DEVICE_JOYPAD, .index = 0, .id = RETRO_DEVICE_ID_JOYPAD_START, .description = "joypad start" },
@@ -681,9 +661,7 @@ void retro_init(void) {
   };
   env_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_descriptors);
 
-  retro_gb_init(&emu_state);
-  retro_gba_init(&emu_state);
-  retro_nds_init(&emu_state);
+  emu_state.render_frame = true;
 }
 
 void retro_deinit(void) {}
@@ -706,16 +684,16 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
-  // TODO: what does this do?
+  // TODO: confirm skyemu does not need this.
   (void)port;
   (void)device;
 }
 
 void retro_reset(void) {
   switch (emu_state.system) {
-    case SYSTEM_GB: retro_gb_reset(&emu_state); break;
-    case SYSTEM_GBA: retro_gba_reset(&emu_state); break;
-    case SYSTEM_NDS: retro_nds_reset(&emu_state); break;
+    case SYSTEM_GB: retro_gb_reset(); break;
+    case SYSTEM_GBA: retro_gba_reset(); break;
+    case SYSTEM_NDS: retro_nds_reset(); break;
     default:;
   }
 }
@@ -751,15 +729,15 @@ void retro_run(void) {
   void* data = NULL;
   switch (emu_state.system) {
     case SYSTEM_GB: { 
-      data = retro_gb_step_frame(&emu_state, &width, &height); 
+      data = retro_gb_step_frame(&width, &height); 
       se_run_all_ar_cheats(retro_gb_run_cheat);
     } break;
     case SYSTEM_GBA: { 
-      data = retro_gba_step_frame(&emu_state, &width, &height);
+      data = retro_gba_step_frame(&width, &height);
       se_run_all_ar_cheats(retro_gba_run_cheat);
     } break;
     case SYSTEM_NDS: {
-      data = retro_nds_step_frame(&emu_state, &width, &height);  
+      data = retro_nds_step_frame(&width, &height);  
       se_run_all_ar_cheats(retro_nds_run_cheat);
     } break;
     default:;
@@ -777,7 +755,11 @@ void retro_run(void) {
 }
 
 size_t retro_serialize_size(void) {
-switch (emu_state.system) {
+  // NOTE: savestate buffer size can never be allowed
+  // to increase from the initial call. But, since
+  // only ever one core can be loaded, that actual
+  // size will never change.
+  switch (emu_state.system) {
     case SYSTEM_GB: return retro_gb_serialize_size();
     case SYSTEM_GBA: return retro_gba_serialize_size();
     case SYSTEM_NDS: return retro_nds_serialize_size(); 
@@ -796,11 +778,12 @@ bool retro_serialize(void* data, size_t size) {
 
 bool retro_unserialize(const void* data, size_t size) {
   switch (emu_state.system) {
-    case SYSTEM_GB: return retro_gb_unserialize(&emu_state, data, size);
-    case SYSTEM_GBA: return retro_gba_unserialize(&emu_state, data, size);
-    case SYSTEM_NDS: return retro_nds_unserialize(&emu_state, data, size);
+    case SYSTEM_GB: return retro_gb_unserialize(data, size);
+    case SYSTEM_GBA: return retro_gba_unserialize(data, size);
+    case SYSTEM_NDS: return retro_nds_unserialize(data, size);
     default: return false;
-  }}
+  }
+}
 
 void retro_cheat_reset(void) {
   se_reset_cheats();
@@ -838,8 +821,7 @@ void retro_unload_game(void) {
 }
 
 unsigned retro_get_region(void) {
-  // TODO: localization?
-  return 0;
+  return RETRO_REGION_NTSC; // TODO: this is a potentially incorrect guess.
 }
 
 void* retro_get_memory_data(unsigned id) {
