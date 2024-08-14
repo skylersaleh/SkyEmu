@@ -3767,11 +3767,10 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
 // END GB REUSE CODE SHIM//
 
-
-void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
+void gba_ptrs_init(gba_t* gba,gba_scratch_t *scratch, uint8_t* rom_data) {
   gba->framebuffer = scratch->framebuffer;
   gba->mem.bios    = scratch->bios;
-  gba->mem.cart_rom= emu->rom_data;
+  gba->mem.cart_rom = rom_data;
   gba->cpu.log_cmp_file = scratch->log_cmp_file;
   gba->cpu.read8 = arm7_read8;
   gba->cpu.read16 = arm7_read16;
@@ -3781,7 +3780,11 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->cpu.write8 = arm7_write8;
   gba->cpu.write16 = arm7_write16;
   gba->cpu.write32 = arm7_write32;
-  gba->cpu.user_data=gba;
+  gba->cpu.user_data=gba;  
+}
+
+void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
+  gba_ptrs_init(gba, scratch, emu->rom_data);
 
   uint64_t* d = (uint64_t*)gba->mem.mmio_debug_access_buffer;
   for(int i=0;i<sizeof(gba->mem.mmio_debug_access_buffer)/8;++i){

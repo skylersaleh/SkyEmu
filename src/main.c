@@ -8,11 +8,9 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#define SE_AUDIO_SAMPLE_RATE 48000
-#define SE_AUDIO_BUFF_CHANNELS 2
-#define SE_REBIND_TIMER_LENGTH 5.0
 
-#define SE_TRANSPARENT_BG_ALPHA 0.9
+#include "shared.h"
+#define SE_REBIND_TIMER_LENGTH 5.0
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
 #include "http_control_server.h"
@@ -450,10 +448,6 @@ typedef struct {
 #define SE_NUM_SAVE_STATES 4
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
 
-#define SE_NUM_CHEATS 32
-#define SE_MAX_CHEAT_NAME_SIZE 32
-#define SE_MAX_CHEAT_CODE_SIZE 256
-
 #define SE_THEME_DARK 0
 #define SE_THEME_LIGHT 1
 #define SE_THEME_BLACK 2
@@ -509,12 +503,6 @@ typedef struct{
   se_core_state_t state;
 }se_save_state_t; 
 typedef struct{
-  char name[SE_MAX_CHEAT_NAME_SIZE];
-  uint32_t buffer[SE_MAX_CHEAT_CODE_SIZE];
-  uint32_t size; //In 32bit words
-  int32_t state; //-1: invalid, 0: inactive, 1: active
-}se_cheat_t;
-typedef struct{
   char name[39]; //Emulator Name
   char build[41];//Emulator build/commit hash
   uint32_t bess_offset; //Number of bytes after the se_emu_id where the save state descriptor is located. 
@@ -548,7 +536,6 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
 void se_load_rom_overlay(bool visible);
 void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview);
 void se_reset_save_states();
-void se_reset_cheats();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
 void se_emscripten_flush_fs();
@@ -558,10 +545,6 @@ static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
 void se_open_file_browser(bool clicked, float x, float y, float w, float h, void (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
 void se_file_browser_accept(const char * path);
-void se_run_all_ar_cheats();
-void se_load_cheats(const char * filename);
-void se_save_cheats(const char* filename);
-void se_convert_cheat_code(char * text_code, int cheat_index);
 static void se_reset_core();
 static bool se_load_theme_from_file(const char * filename);
 static bool se_draw_theme_region(int region, float x, float y, float w, float h);
@@ -1080,7 +1063,6 @@ se_core_state_t core;
 se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
-se_cheat_t cheats[SE_NUM_CHEATS];
 se_cloud_state_t cloud_state;
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
@@ -2348,6 +2330,7 @@ void se_load_rom(const char *filename){
   se_reset_rewind_buffer(&rewind_buffer);
   se_reset_save_states();
   se_reset_cheats();
+  gui_state.editing_cheat_index = -1;
   se_reset_bios_info();
   emu_state.force_dmg_mode=gui_state.settings.force_dmg_mode;
   //Compute Save File Path
@@ -2638,7 +2621,7 @@ static void se_emulate_single_frame(){
     retro_achievements_frame();
   }
 #endif
-  se_run_all_ar_cheats();
+  se_run_all_ar_cheats(se_run_ar_cheat);
 }
 static void se_screenshot(uint8_t * output_buffer, int * out_width, int * out_height){
   *out_height=*out_width=0;
@@ -3109,71 +3092,7 @@ void se_drive_login(bool clicked, int x, int y, int w, int h){
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
 }
-void se_reset_cheats(){
-  memset(cheats,0,sizeof(cheats));
-  for (int i=0;i<SE_NUM_CHEATS;++i){cheats[i].state=-1;}
-  gui_state.editing_cheat_index = -1;
-}
-void se_save_cheats(const char * filename){
-  FILE *f = fopen(filename, "wb");
-  if(!f){
-    printf("Failed to save cheats to %s\n",filename);
-    return; 
-  }
-  for (int i=0;i<SE_NUM_CHEATS;++i){
-    if(cheats[i].state==-1)continue;
-    fprintf(f,"%s ", cheats[i].state==0? "0" : "1" );
-    fprintf(f,"\"%s\" ",cheats[i].name);
-    fprintf(f,"\"");
-    for(int d=0;d<cheats[i].size;++d){
-      if(d)fprintf(f," ");
-      fprintf(f,"%08x",cheats[i].buffer[d]);
-    }
-    fprintf(f,"\"\n");
-  }
-  fclose(f);
-}
-void se_load_cheats(const char * filename){
-  size_t data_size=0;
-  uint8_t*data = sb_load_file_data(filename,&data_size);
-  if(!data_size){
-    printf("Failed to load cheats from %s\n",filename);
-    return; 
-  }
-  int cheat_index = 0; 
-  int state = 0; 
-  int cheat_name_size =0; 
-  int cheat_code_size =0; 
-  char cheat_buffer[SE_MAX_CHEAT_CODE_SIZE*8] ={ 0 };
-  for(size_t i = 0; i < data_size;++i){
-    char c = data[i];
-    if(c=='\n'){
-      state = 0; 
-      cheat_name_size = 0; 
-      cheat_code_size = 0;
-      cheat_index++;
-      if(cheat_index>=SE_NUM_CHEATS)break;
-      continue; 
-    }
-    se_cheat_t * ch = cheats+cheat_index;
-    if(state==0 && (c=='1'||c=='0')) ch->state = c=='1';
-    if(c=='"'){
-      state++; 
-      if(state==4){
-        se_convert_cheat_code(cheat_buffer,cheat_index);
-        memset(cheat_buffer, 0, sizeof(cheat_buffer));
-      }
-      continue;
-    }
-    if(state == 1){
-      if(cheat_name_size<SE_MAX_CHEAT_NAME_SIZE)ch->name[cheat_name_size++]=c; 
-    }
-    if(state == 3){
-      if(cheat_name_size<SE_MAX_CHEAT_CODE_SIZE*8)cheat_buffer[cheat_code_size++]=c; 
-    }
-  }
-  free(data);
-}
+
 static void se_draw_debug_menu(){
   se_debug_tool_desc_t* desc=se_get_debug_description();
   if(!desc)return;
@@ -4935,31 +4854,6 @@ void se_open_file_browser(bool clicked, float x, float y, float w, float h, void
     gui_state.file_browser.state=SE_FILE_BROWSER_CLOSED;
     se_android_open_file_picker();
   #endif
-}
-void se_convert_cheat_code(char * text_code, int cheat_index){
-  if(cheat_index>=SE_NUM_CHEATS)return; 
-  se_cheat_t *cheat = cheats+cheat_index; 
-  int char_count = 0;
-  uint8_t code_buffer_truncated[SE_MAX_CHEAT_CODE_SIZE*8];
-  // Remove all the non-hex characters
-  for(int i=0;i<SE_MAX_CHEAT_CODE_SIZE*8;++i){
-    if(text_code[i]=='\0')break;
-    else if((text_code[i]>='0' && text_code[i]<='9') || (text_code[i]>='A' && text_code[i]<='F') || (text_code[i]>='a' && text_code[i]<='f')){
-      code_buffer_truncated[char_count]=text_code[i]; 
-      char_count++;
-    }
-  }
-  cheat->size = char_count/8;
-  if(cheat->size>=SE_MAX_CHEAT_CODE_SIZE)cheat->size=SE_MAX_CHEAT_CODE_SIZE;
-  for(int i=0;i<cheat->size;++i)cheat->buffer[i]=0; 
-  for(int i=0;i<cheat->size;i++){
-    char hex[9];
-    memcpy(hex,code_buffer_truncated+i*8,8);
-    for(int h=0;h<8;++h)if(hex[h]==0)hex[h]='0';
-    hex[8]='\0';
-    cheat->buffer[i]=strtoul(hex,NULL,16);
-  }
-
 }
 
 bool se_process_file_browser(){
@@ -7933,6 +7827,7 @@ static void se_init(){
   stm_setup();
   se_load_settings();
   se_reset_cheats();
+  gui_state.editing_cheat_index = -1;
   bool http_server_mode = false;
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0){
     gui_state.test_runner_mode=true;
@@ -8109,14 +8004,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
 
   return false;
 }
-void se_run_all_ar_cheats(){
-  for(int i=0;i< SE_NUM_CHEATS ;++i){
-    se_cheat_t * cheat = cheats+i;
-    if(cheat->state!=1)continue;
-    bool success = se_run_ar_cheat(cheat->buffer,cheat->size);
-    if(!success) cheat->state = 0; 
-  }
-}
+
 static void headless_mode(){
   //Leave here so the entry point still exists
 #ifdef ENABLE_HTTP_CONTROL_SERVER

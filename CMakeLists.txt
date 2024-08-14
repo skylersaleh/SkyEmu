@@ -51,7 +51,7 @@ if (MSVC)
 
 endif()
 
-if( (NOT ANDROID))
+if(NOT ANDROID)
     set(USE_SDL 1)
     add_definitions(-DUSE_SDL=1)
 endif()
@@ -155,8 +155,8 @@ add_library(cimgui STATIC
     src/cimgui/imgui/imgui_demo.cpp
     )
 set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-
 target_include_directories(cimgui INTERFACE src/cimgui)
+
 if(USE_SDL)
     message("Build with SDL!")
 
@@ -285,21 +285,18 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
+set(SKYEMU_SRC src/main.c src/shared.c src/cloud.cpp src/https.cpp src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
 endif()
 
-set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp src/https.cpp)
-
 if(UNICODE_GUI)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
   include_directories(src/utf8proc/)
   add_definitions(-DUNICODE_GUI=1)
   add_definitions(-DUTF8PROC_STATIC=1)
-
 endif()
 
 if(USE_SDL)
@@ -375,12 +372,15 @@ elseif(ANDROID)
 else()
     add_executable(${PROJECT_NAME} ${SKYEMU_SRC})
 endif()
+add_library(SkyEmuRetro SHARED src/libretro.c src/shared.c)
+
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-sALLOW_MEMORY_GROWTH -s TOTAL_MEMORY=192MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=0 --closure 0 ")
 endif ()
 if (EMSCRIPTEN)
   configure_file(src/sw.js.in ${CMAKE_CURRENT_BINARY_DIR}/bin/sw.js)
 endif ()
+
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
 
 if(NOT EMSCRIPTEN)

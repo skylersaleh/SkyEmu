@@ -106,7 +106,8 @@
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 
-#define SYSTEM_UNKNOWN 0
+#define SYSTEM_UNKNOWN 0xff
+#define SYSTEM_NONE 0
 #define SYSTEM_GB 1
 #define SYSTEM_GBA 2
 #define SYSTEM_NDS 3
