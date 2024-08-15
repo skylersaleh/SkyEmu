@@ -9,17 +9,11 @@
 #define RETRO_ACHIEVEMENTS
 #include <stdint.h>
 #include <stdbool.h>
+#include "atlas.h"
 
 #define SE_RC_BUFFER_SIZE (256*1024)
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-
-typedef struct {
-    uint32_t atlas_id;
-    uint32_t width, height;
-    float x1, y1;
-    float x2, y2;
-} atlas_tile_t;
 
 void retro_achievements_initialize(void* emu_state, bool hardcore, bool is_mobile);
 
@@ -31,9 +25,9 @@ void retro_achievements_frame();
 
 void retro_achievements_draw_panel();
 
-atlas_tile_t* retro_achievements_get_game_image();
+struct atlas_tile_t* retro_achievements_get_game_image();
 
-atlas_tile_t* retro_achievements_get_user_image();
+struct atlas_tile_t* retro_achievements_get_user_image();
 
 void retro_achievements_login(const char* username, const char* password);
 
@@ -42,10 +36,6 @@ bool retro_achievements_is_pending_login();
 struct rc_client_t* retro_achievements_get_client();
 
 const char* retro_achievements_get_login_error();
-
-void retro_achievements_update_atlases();
-
-void retro_achievements_delete_retired_atlases();
 
 void retro_achievements_keep_alive();
 

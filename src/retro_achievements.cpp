@@ -52,29 +52,14 @@ const float notification_start_secondary_text_seconds = notification_start_secon
 const float notification_end_seconds = 4.0f;
 const float notification_fade_seconds = notification_end_seconds - notification_start_seconds;
 bool only_one_notification = false;
-const int atlas_spacing = 4; // leaving some space between tiles to avoid bleeding
 const float padding = 7;
-
-// atlases -> the currently existing atlases, each serving a different image
-// width/height combo image_cache -> a mapping of image urls to their atlas and
-// the coordinates within the atlas download_cache -> a cache of downloaded
-// images, so we don't download the same image multiple times
-
-// download_cache has the lifetime of the program
-// atlases and image_cache are reset every time the user loads a *different*
-// game
 
 struct atlas_t;
 struct ra_game_state_t;
 
 using ra_game_state_ptr = std::shared_ptr<ra_game_state_t>;
 
-struct downloaded_image_t
-{
-    uint8_t* data; // always RGBA
-    int width;
-    int height;
-};
+std::atomic_bool loading_game = { false };
 
 struct ra_achievement_t
 {
@@ -128,34 +113,25 @@ struct ra_notification_t
     float start_time = 0;
 };
 
-static std::mutex global_cache_mutex;
-static std::unordered_map<std::string, downloaded_image_t*> download_cache;
-static std::vector<sg_image> images_to_destroy;
-
 struct ra_game_state_t
 {
-    ~ra_game_state_t();
+    ra_game_state_t() {
+        atlas_map = atlas_create_map();
+        game_image = nullptr;
+    }
 
-    atlas_tile_t* game_image = nullptr;
-    std::vector<atlas_t*> atlases{};
-    std::unordered_map<std::string, atlas_tile_t> image_cache{};
+    ~ra_game_state_t() {
+        atlas_destroy_map(atlas_map);
+    }
+
+    std::mutex mutex;
+    atlas_map_t* atlas_map;
+    atlas_tile_t* game_image;
     ra_achievement_list_t achievement_list;
     std::unordered_map<uint32_t, ra_leaderboard_tracker_t> leaderboard_trackers;
     std::unordered_map<uint32_t, ra_challenge_indicator_t> challenges;
     ra_progress_indicator_t progress_indicator;
     std::vector<ra_notification_t> notifications;
-    std::atomic_int outstanding_requests;
-    std::mutex mutex;
-
-    void inc()
-    {
-        outstanding_requests++;
-    }
-
-    void dec()
-    {
-        outstanding_requests--;
-    }
 };
 
 struct ra_state_t
@@ -171,6 +147,8 @@ struct ra_state_t
     std::atomic<const char*> error_message = { nullptr };
     sb_emu_state_t* emu_state = nullptr;
     rc_client_t* rc_client = nullptr;
+    atlas_map_t* user_image_atlas = nullptr;
+    atlas_tile_t* user_image = nullptr;
 
     std::atomic_bool pending_login = { false };
 
@@ -186,75 +164,10 @@ struct ra_state_t
     // global state solution is not viable.
     ra_game_state_ptr game_state;
 
-    void download(ra_game_state_ptr game_state, const std::string& url,
-                  const std::function<void()>& callback);
-    void handle_downloaded(ra_game_state_ptr game_state, const std::string& url);
     void rebuild_achievement_list(ra_game_state_ptr game_state);
 };
 
 static ra_state_t* ra_state = nullptr;
-
-// Atlases are always square and power of two
-// This always starts as a single tile image, but if a new tile needs to be
-// added, it's resized to the next power of two
-struct atlas_t
-{
-    atlas_t(uint32_t tile_width, uint32_t tile_height)
-        : tile_width(tile_width), tile_height(tile_height)
-    {
-        image.id = SG_INVALID_ID;
-    }
-
-    ~atlas_t() = default;
-    atlas_t(const atlas_t&) = delete;
-    atlas_t& operator=(const atlas_t&) = delete;
-    atlas_t(atlas_t&&) = default;
-    atlas_t& operator=(atlas_t&&) = default;
-
-    std::vector<uint8_t> data; // we construct the atlas here before uploading it to the GPU
-    sg_image image = {};
-    int pixel_stride = 0;
-    int offset_x = 0,
-        offset_y = 0; // to keep track of where next tile needs to be placed, in pixels
-    int tile_width, tile_height;
-    bool resized = false;
-    bool dirty = false; // needs the data to be reuploaded to the GPU
-
-    void copy_image(downloaded_image_t* image)
-    {
-        dirty = true;
-
-        uint32_t tile_offset_x = offset_x;
-        uint32_t tile_offset_y = offset_y;
-
-        offset_x += tile_width + atlas_spacing;
-        if (offset_x + tile_width > pixel_stride)
-        {
-            offset_x = 0;
-            offset_y += tile_width + atlas_spacing;
-        }
-
-        assert(image->width == tile_width);
-
-        for (int y = 0; y < tile_height; y++)
-        {
-            for (int x = 0; x < tile_width; x++)
-            {
-                uint32_t atlas_offset =
-                    ((tile_offset_x + x) * 4) + (((tile_offset_y + y) * pixel_stride) * 4);
-                uint32_t tile_offset = x * 4 + (y * 4 * tile_width);
-
-                assert(atlas_offset + 3 < data.size());
-                assert(tile_offset + 3 < tile_width * tile_height * 4);
-
-                data[atlas_offset + 0] = image->data[tile_offset + 0];
-                data[atlas_offset + 1] = image->data[tile_offset + 1];
-                data[atlas_offset + 2] = image->data[tile_offset + 2];
-                data[atlas_offset + 3] = image->data[tile_offset + 3];
-            }
-        }
-    }
-};
 
 namespace
 {
@@ -391,20 +304,14 @@ namespace
         if (rc_client_achievement_get_image_url(
                 rc_achievement, RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED, &url[0], url.size()) == RC_OK)
         {
-            notification->tile = &game_state->image_cache[url];
             uint32_t id = rc_achievement->id;
             uint8_t bucket = rc_achievement->bucket;
             std::unique_lock<std::mutex> lock(game_state->mutex);
             ra_achievement_t* achievement = retro_achievements_move_bucket(game_state, id, bucket);
             notification->start_time = se_time();
+            notification->tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+            achievement->tile = notification->tile;
             game_state->notifications.push_back(*notification);
-            ra_state->download(game_state, url, [game_state, notification, url, id, bucket, achievement]() {
-                if (achievement)
-                {
-                    achievement->tile = &game_state->image_cache[url];
-                    notification->tile = achievement->tile;
-                }
-            });
         }
     }
 
@@ -421,9 +328,7 @@ namespace
                                                 &url[0], url.size()) == RC_OK)
         {
             std::unique_lock<std::mutex> lock(game_state->mutex);
-            ra_state->download(game_state, url, [game_state, url]() {
-                game_state->progress_indicator.tile = &game_state->image_cache[url];
-            });
+            game_state->progress_indicator.tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
         }
     }
 
@@ -469,23 +374,15 @@ namespace
             if (rc_client_game_get_image_url(game, &url[0], url.size()) == RC_OK)
             {
                 std::unique_lock<std::mutex> lock(game_state->mutex);
-                ra_state->download(game_state, url, [game_state, url]() {
-                    game_state->game_image = &game_state->image_cache[url];
-                    retro_achievements_game_image_loaded(game_state);
-                });
+                game_state->game_image = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+                retro_achievements_game_image_loaded(game_state);
             }
 
             ra_state->rebuild_achievement_list(game_state);
         }
 
-        game_state->dec();
-
         delete game_state_ptr; // delete the pointer that was allocated to pass through ffi
-    }
-
-    void retro_achievements_download_user_image(const std::string& url)
-    {
-        // TODO: implement me, requires generalizing atlas stuff
+        loading_game = false;
     }
 
     void retro_achievements_login_callback(int result, const char* error_message,
@@ -513,7 +410,7 @@ namespace
             url.resize(256);
             if (rc_client_user_get_image_url(user, &url[0], url.size()) == RC_OK)
             {
-                retro_achievements_download_user_image(url);
+                ra_state->user_image = atlas_add_tile_from_url(ra_state->user_image_atlas, url.c_str());
             }
         } else {
             snprintf(buffer, sizeof(buffer), "Login failed: %s", error_message);
@@ -614,9 +511,7 @@ namespace
                                                         &url[0], url.size()) == RC_OK)
                 {
                     std::unique_lock<std::mutex> lock(game_state->mutex);
-                    ra_state->download(game_state, url, [game_state, url, id]() {
-                        game_state->challenges[id].tile = &game_state->image_cache[url];
-                    });
+                    game_state->challenges[id].tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
                 }
                 break;
             }
@@ -635,6 +530,7 @@ namespace
                 ra_game_state_ptr game_state = ra_state->game_state;
                 game_state->progress_indicator.show = true;
                 retro_achievements_progress_indicator_updated(game_state, event->achievement);
+                break;
             }
             case RC_CLIENT_EVENT_ACHIEVEMENT_PROGRESS_INDICATOR_UPDATE:
             {
@@ -762,9 +658,10 @@ namespace
             ImVec2 uv1 = ImVec2{1, 1};
             if (tile)
             {
-                image.id = tile->atlas_id;
-                uv0 = ImVec2{tile->x1, tile->y1};
-                uv1 = ImVec2{tile->x2, tile->y2};
+                image.id = atlas_get_tile_id(tile);
+                atlas_uvs_t uvs = atlas_get_tile_uvs(tile);
+                uv0 = ImVec2{uvs.x1, uvs.y1};
+                uv1 = ImVec2{uvs.x2, uvs.y2};
             }
             se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str, hardcore_color,
                                     ICON_FK_GAMEPAD, image, 0, uv0, uv1, false);
@@ -786,9 +683,10 @@ namespace
                 if (bucket->achievements[j]->tile)
                 {
                     atlas_tile_t* tile = bucket->achievements[j]->tile;
-                    uv0 = ImVec2{tile->x1, tile->y1};
-                    uv1 = ImVec2{tile->x2, tile->y2};
-                    image.id = tile->atlas_id;
+                    image.id = atlas_get_tile_id(tile);
+                    atlas_uvs_t uvs = atlas_get_tile_uvs(tile);
+                    uv0 = ImVec2{uvs.x1, uvs.y1};
+                    uv1 = ImVec2{uvs.x2, uvs.y2};
                 }
 
                 const auto& achievement = bucket->achievements[j];
@@ -797,7 +695,7 @@ namespace
                                    : achievement->rarity;
                 bool unlocked = bucket->bucket_id == RC_CLIENT_ACHIEVEMENT_BUCKET_RECENTLY_UNLOCKED ||
                                 bucket->bucket_id == RC_CLIENT_ACHIEVEMENT_BUCKET_UNLOCKED;
-                bool glow = rarity < 10.0f && unlocked; // glow if less than 10% of players have it and you have it too
+                bool glow = rarity < 5.0f && unlocked; // glow if less than 5% of players have it and you have it too
                 std::stringstream stream;
                 stream << std::fixed << std::setprecision(2) << rarity;
                 std::string players = stream.str() + "% of players have this achievement";
@@ -860,10 +758,7 @@ void ra_achievement_list_t::initialize(ra_game_state_ptr game_state,
             {
                 uint32_t id = achievement->id;
                 ra_achievement_t* achievement_ptr = buckets[i].achievements[j].get();
-                ra_state->download(game_state, url, [game_state, url, achievement_ptr]() {
-                    atlas_tile_t* tile = &game_state->image_cache[url];
-                    achievement_ptr->tile = tile;
-                });
+                achievement_ptr->tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
             }
 
             printf("[rcheevos]: Achievement %s, ", achievement->title);
@@ -881,160 +776,6 @@ void ra_achievement_list_t::initialize(ra_game_state_ptr game_state,
     rc_client_destroy_achievement_list(list);
 }
 
-void ra_state_t::download(ra_game_state_ptr game_state, const std::string& url,
-                          const std::function<void()>& callback)
-{
-    std::unique_lock<std::mutex> lock(global_cache_mutex);
-
-    if (download_cache.find(url) != download_cache.end())
-    {
-        // Great, image was already downloaded in the past and is in the cache
-        // First, let's see if there's already an atlas for this image
-        if (game_state->image_cache.find(url) != game_state->image_cache.end())
-        {
-            callback();
-            return;
-        }
-        else
-        {
-            // We have the image downloaded, but we need to create an atlas for it
-            handle_downloaded(game_state, url);
-            callback();
-            return;
-        }
-    }
-    lock.unlock();
-
-    game_state->inc();
-    // The image is not already downloaded, let's download it
-    https_request(http_request_e::GET, url, {}, {},
-                  [url, game_state, callback](const std::vector<uint8_t>& result) {
-                      if (result.empty())
-                      {
-                          printf("[rcheevos]: empty response from: %s\n", url.c_str());
-                          game_state->dec();
-                          return;
-                      }
-
-                      rc_api_server_response_t response;
-                      response.body = (const char*)result.data();
-                      response.body_length = result.size();
-                      response.http_status_code = 200;
-
-                      downloaded_image_t* image = new downloaded_image_t();
-                      image->data =
-                          stbi_load_from_memory((const uint8_t*)response.body, response.body_length,
-                                                &image->width, &image->height, NULL, 4);
-
-                      if (!image->data)
-                      {
-                          printf("[rcheevos]: failed to load image from memory\n");
-                      }
-                      else
-                      {
-                          std::unique_lock<std::mutex> glock(game_state->mutex);
-                          std::unique_lock<std::mutex> lock(global_cache_mutex);
-                          download_cache[url] = image;
-                          ra_state->handle_downloaded(game_state, url);
-                          callback();
-                      }
-
-                      game_state->dec();
-                  });
-}
-
-void ra_state_t::handle_downloaded(ra_game_state_ptr game_state, const std::string& url)
-{
-    downloaded_image_t* image = download_cache[url];
-    atlas_t* atlas = nullptr;
-
-    // Check if we already have an atlas for this exact tile size
-    for (atlas_t* a : game_state->atlases)
-    {
-        if (a->tile_width == image->width && a->tile_height == image->height)
-        {
-            atlas = a;
-            break;
-        }
-    }
-
-    // Otherwise, create a new atlas
-    if (!atlas)
-    {
-        atlas_t* new_atlas = new atlas_t(image->width, image->height);
-        game_state->atlases.push_back(new_atlas);
-        atlas = new_atlas;
-    }
-
-    // Check if we need to resize the atlas
-    uint32_t minimum_width = atlas->offset_x + atlas->tile_width + atlas_spacing;
-    uint32_t minimum_height = atlas->offset_y + atlas->tile_height + atlas_spacing;
-
-    if (minimum_width > atlas->pixel_stride || minimum_height > atlas->pixel_stride)
-    {
-        // We need to resize and upload the atlas later
-        atlas->resized = true;
-
-        // Find a sufficient power of two
-        uint32_t power = 2;
-        uint32_t max = std::max(minimum_width, minimum_height);
-        while (power < max)
-        {
-            power *= 2;
-
-            if (power > 4096)
-            {
-                printf("Atlas too large\n");
-                exit(1);
-            }
-        }
-
-        uint32_t old_stride = atlas->pixel_stride;
-        atlas->pixel_stride = power;
-        atlas->offset_x = 0;
-        atlas->offset_y = 0;
-
-        std::vector<uint8_t> new_data;
-        new_data.resize(power * power * 4);
-        atlas->data.swap(new_data);
-
-        // Copy every existing downloaded image of this size
-        for (auto& cached_image : game_state->image_cache)
-        {
-            if (cached_image.second.width == image->width &&
-                cached_image.second.height == image->height)
-            {
-                auto& tile = game_state->image_cache[cached_image.first];
-                uint32_t tile_offset_x = atlas->offset_x;
-                uint32_t tile_offset_y = atlas->offset_y;
-                tile.x1 = (float)tile_offset_x / atlas->pixel_stride;
-                tile.y1 = (float)tile_offset_y / atlas->pixel_stride;
-                tile.x2 = (float)(tile_offset_x + cached_image.second.width) / atlas->pixel_stride;
-                tile.y2 = (float)(tile_offset_y + cached_image.second.height) / atlas->pixel_stride;
-
-                atlas->copy_image(download_cache[cached_image.first]);
-            }
-        }
-    }
-
-    // At this point we should have an atlas that has enough room for our incoming
-    // tile
-    int offset_x = atlas->offset_x;
-    int offset_y = atlas->offset_y;
-
-    atlas->copy_image(image);
-
-    atlas_tile_t* tile = &game_state->image_cache[url];
-
-    tile->atlas_id = atlas->image.id;
-    tile->width = image->width;
-    tile->height = image->height;
-    tile->x1 = (float)offset_x / atlas->pixel_stride;
-    tile->y1 = (float)offset_y / atlas->pixel_stride;
-    tile->x2 = (float)(offset_x + image->width) / atlas->pixel_stride;
-    tile->y2 = (float)(offset_y + image->height) / atlas->pixel_stride;
-}
-
 void ra_state_t::rebuild_achievement_list(ra_game_state_ptr game_state)
 {
     game_state->achievement_list.initialize(
@@ -1043,16 +784,6 @@ void ra_state_t::rebuild_achievement_list(ra_game_state_ptr game_state)
             rc_client,
             RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE, // TODO: option for _AND_UNOFFICIAL achievements?
             RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS));
-}
-
-ra_game_state_t::~ra_game_state_t()
-{
-    std::unique_lock<std::mutex> lock(global_cache_mutex);
-    for (auto& atlas : atlases)
-    {
-        images_to_destroy.push_back(atlas->image);
-        delete atlas;
-    }
 }
 
 extern "C" uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer,
@@ -1067,6 +798,7 @@ void retro_achievements_initialize(void* state, bool hardcore, bool is_mobile)
     ra_state = new ra_state_t((sb_emu_state_t*)state);
     ra_state->rc_client = rc_client_create(retro_achievements_read_memory_callback,
                                            retro_achievements_server_callback);
+    ra_state->user_image_atlas = atlas_create_map();
 
     rc_client_enable_logging(ra_state->rc_client, RC_CLIENT_LOG_LEVEL_VERBOSE,
                              retro_achievements_log_callback);
@@ -1136,19 +868,7 @@ void retro_achievements_shutdown()
 
     ra_state->game_state.reset();
 
-    for (auto& image : images_to_destroy)
-    {
-        sg_destroy_image(image);
-    }
-    images_to_destroy.clear();
-
     delete ra_state;
-
-    for (auto& download : download_cache)
-    {
-        stbi_image_free(download.second->data);
-        delete download.second;
-    }
 }
 
 bool retro_achievements_load_game()
@@ -1161,7 +881,7 @@ bool retro_achievements_load_game()
         return false; // not logged in or login in progress, in which case the game will be loaded
                      // when the login is done
 
-    if (ra_state->game_state && ra_state->game_state->outstanding_requests.load() != 0)
+    if (loading_game)
         return false;
 
     // the old one will be destroyed when the last reference is gone
@@ -1170,23 +890,22 @@ bool retro_achievements_load_game()
     // We need to create a shared_ptr*, so we can pass it to the C api.
     ra_game_state_ptr* game_state = new ra_game_state_ptr(ra_state->game_state);
 
+    loading_game = true;
+
     switch (ra_state->emu_state->system)
     {
         case SYSTEM_GB:
-            (*game_state)->inc();
             rc_client_begin_identify_and_load_game(
                 ra_state->rc_client, RC_CONSOLE_GAMEBOY, NULL, ra_state->emu_state->rom_data,
                 ra_state->emu_state->rom_size, retro_achievements_load_game_callback, game_state);
             break;
         case SYSTEM_GBA:
-            (*game_state)->inc();
             rc_client_begin_identify_and_load_game(
                 ra_state->rc_client, RC_CONSOLE_GAMEBOY_ADVANCE, NULL,
                 ra_state->emu_state->rom_data, ra_state->emu_state->rom_size,
                 retro_achievements_load_game_callback, game_state);
             break;
         case SYSTEM_NDS:
-            (*game_state)->inc();
             rc_client_begin_identify_and_load_game(
                 ra_state->rc_client, RC_CONSOLE_NINTENDO_DS, NULL, ra_state->emu_state->rom_data,
                 ra_state->emu_state->rom_size, retro_achievements_load_game_callback, game_state);
@@ -1252,82 +971,7 @@ atlas_tile_t* retro_achievements_get_game_image()
 
 atlas_tile_t* retro_achievements_get_user_image()
 {
-    return nullptr;
-}
-
-void retro_achievements_update_atlases()
-{
-    if (!ra_state->game_state)
-        return;
-
-    if (ra_state->game_state->outstanding_requests.load() != 0)
-        return; // probably a lot of outstanding requests hold the mutex, let's wait for them to
-                // finish before we try to lock ourselves to prevent stuttering
-
-    std::unique_lock<std::mutex> lock(ra_state->game_state->mutex);
-
-    for (atlas_t* atlas : ra_state->game_state->atlases)
-    {
-        if (atlas->resized)
-        {
-            if (atlas->image.id != SG_INVALID_ID)
-            {
-                std::unique_lock<std::mutex> glock(global_cache_mutex);
-                images_to_destroy.push_back(atlas->image);
-            }
-            atlas->image.id = SG_INVALID_ID;
-        }
-
-        if (atlas->image.id == SG_INVALID_ID)
-        {
-            sg_image_desc desc = {0};
-            desc.type = SG_IMAGETYPE_2D, desc.render_target = false,
-            desc.width = atlas->pixel_stride, desc.height = atlas->pixel_stride,
-            desc.num_slices = 1, desc.num_mipmaps = 1, desc.usage = SG_USAGE_DYNAMIC,
-            desc.pixel_format = SG_PIXELFORMAT_RGBA8, desc.sample_count = 1,
-            desc.min_filter = SG_FILTER_LINEAR, desc.mag_filter = SG_FILTER_LINEAR,
-            desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE, desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE,
-            desc.wrap_w = SG_WRAP_CLAMP_TO_EDGE,
-            desc.border_color = SG_BORDERCOLOR_TRANSPARENT_BLACK, desc.max_anisotropy = 1,
-            desc.min_lod = 0.0f, desc.max_lod = 1e9f,
-
-            atlas->image = sg_make_image(&desc);
-
-            if (atlas->resized)
-            {
-                for (auto& image : ra_state->game_state->image_cache)
-                {
-                    // Update the images to point to the new atlas instead
-                    if (image.second.width == atlas->tile_width &&
-                        image.second.height == atlas->tile_height)
-                    {
-                        image.second.atlas_id = atlas->image.id;
-                    }
-                }
-            }
-        }
-
-        if (atlas->dirty)
-        {
-            sg_image_data data = {0};
-            data.subimage[0][0].ptr = atlas->data.data();
-            data.subimage[0][0].size = atlas->data.size();
-            sg_update_image(atlas->image, data);
-        }
-
-        atlas->dirty = false;
-        atlas->resized = false;
-    }
-}
-
-void retro_achievements_delete_retired_atlases()
-{
-    std::unique_lock<std::mutex> lock(global_cache_mutex);
-    for (auto& image : images_to_destroy)
-    {
-        sg_destroy_image(image);
-    }
-    images_to_destroy.clear();
+    return ra_state->user_image;
 }
 
 bool retro_achievements_has_game_loaded()
@@ -1445,11 +1089,13 @@ void retro_achievements_draw_notifications(float left, float top, float screen_w
         // Image, or a gray square if it's still loading
         ImVec2 img_top_left = {top_left.x + padding_adj, top_left.y + padding_adj};
         ImVec2 img_bottom_right = {img_top_left.x + image_width - padding_adj, img_top_left.y + image_height - padding_adj};
-        if (notification.tile && notification.tile->atlas_id != SG_INVALID_ID)
+        uint32_t id = atlas_get_tile_id(notification.tile);
+        if (notification.tile && id != SG_INVALID_ID)
         {
-            ImVec2 uv0 = {notification.tile->x1, notification.tile->y1};
-            ImVec2 uv1 = {notification.tile->x2, notification.tile->y2};
-            ImDrawList_AddImageRounded(ig, (ImTextureID)(intptr_t)notification.tile->atlas_id, img_top_left, img_bottom_right, uv0, uv1, 0xffffff | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
+            atlas_uvs_t uvs = atlas_get_tile_uvs(notification.tile);
+            ImVec2 uv0 = {uvs.x1, uvs.y1};
+            ImVec2 uv1 = {uvs.x2, uvs.y2};
+            ImDrawList_AddImageRounded(ig, (ImTextureID)(intptr_t)id, img_top_left, img_bottom_right, uv0, uv1, 0xffffff | ALPHA(255), 8.0f, ImDrawCornerFlags_All);
         }
         else
         {
@@ -1540,12 +1186,14 @@ void retro_achievements_draw_progress_indicator(float right, float top)
         ImVec2{x + placard_width - (padding / 2), y + placard_height - (padding / 2)}, 0x80000000,
         8.0f, ImDrawCornerFlags_All, 2.0f);
 
-    if (indicator.tile && indicator.tile->atlas_id != SG_INVALID_ID)
+    uint32_t id = atlas_get_tile_id(indicator.tile);
+    if (indicator.tile && id != SG_INVALID_ID)
     {
-        ImVec2 uv0 = {indicator.tile->x1, indicator.tile->y1};
-        ImVec2 uv1 = {indicator.tile->x2, indicator.tile->y2};
+        atlas_uvs_t uvs = atlas_get_tile_uvs(indicator.tile);
+        ImVec2 uv0 = {uvs.x1, uvs.y1};
+        ImVec2 uv1 = {uvs.x2, uvs.y2};
         ImDrawList_AddImageRounded(igGetWindowDrawList(),
-                                   (ImTextureID)(intptr_t)indicator.tile->atlas_id,
+                                   (ImTextureID)(intptr_t)id,
                                    ImVec2{x + padding, y + padding},
                                    ImVec2{x + padding + image_width, y + padding + image_height},
                                    uv0, uv1, 0x80ffffff, 8.0f, ImDrawCornerFlags_All);
@@ -1642,13 +1290,15 @@ void retro_achievements_draw_challenge_indicators(float right, float bottom)
     {
         const ra_challenge_indicator_t& challenge = item.second;
 
-        if (challenge.tile && challenge.tile->atlas_id != SG_INVALID_ID)
+        uint32_t id = atlas_get_tile_id(challenge.tile);
+        if (challenge.tile && id != SG_INVALID_ID)
         {
+            atlas_uvs_t uvs = atlas_get_tile_uvs(challenge.tile);
             ImDrawList_AddImage(igGetWindowDrawList(),
-                                (ImTextureID)(intptr_t)challenge.tile->atlas_id, ImVec2{x, y},
+                                (ImTextureID)(intptr_t)id, ImVec2{x, y},
                                 ImVec2{x + 32, y + 32},
-                                ImVec2{challenge.tile->x1, challenge.tile->y1},
-                                ImVec2{challenge.tile->x2, challenge.tile->y2}, 0x80ffffff);
+                                ImVec2{uvs.x1, uvs.y1},
+                                ImVec2{uvs.x2, uvs.y2}, 0x80ffffff);
         }
 
         if (i++ % 3 != 2)

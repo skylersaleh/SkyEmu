@@ -6289,12 +6289,13 @@ void se_draw_menu_panel(){
       sg_image image = {SG_INVALID_ID};
       ImVec2 offset1 = {0, 0};
       ImVec2 offset2 = {1, 1};
-      atlas_tile_t* user_image = retro_achievements_get_user_image();
+      struct atlas_tile_t* user_image = retro_achievements_get_user_image();
       if (user_image)
       {
-        image.id = user_image->atlas_id;
-        offset1 = (ImVec2){user_image->x1, user_image->y1};
-        offset2 = (ImVec2){user_image->x2, user_image->y2};
+        image.id = atlas_get_tile_id(user_image);
+        struct atlas_uvs_t uvs = atlas_get_tile_uvs(user_image);
+        offset1 = (ImVec2){uvs.x1, uvs.y1};
+        offset2 = (ImVec2){uvs.x2, uvs.y2};
       }
       static char line1[256];
       static char line2[256];
@@ -7337,7 +7338,8 @@ static void frame(void) {
       gui_state.menubar_hide_timer=se_time();
     }
     #ifdef ENABLE_RETRO_ACHIEVEMENTS
-    if(gui_state.retro_achievements_sidebar_open){
+    bool logged_in = rc_client_get_user_info(retro_achievements_get_client());
+    if(gui_state.retro_achievements_sidebar_open&&logged_in){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
       igBegin(se_localize_and_cache(ICON_FK_TROPHY " RetroAchievements"),&gui_state.retro_achievements_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
@@ -7374,8 +7376,6 @@ static void frame(void) {
     se_draw_emulated_system_screen(false);
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-    retro_achievements_update_atlases();
-
     float left = screen_x;
     float top = menu_height;
     float right = screen_x+screen_width/se_dpi_scale();
@@ -7565,7 +7565,7 @@ static void frame(void) {
     se_emscripten_flush_fs();
     gui_state.last_saved_settings=gui_state.settings;
   }
-  retro_achievements_delete_retired_atlases();
+  atlas_upload_all();
 }
 void se_load_settings(){
   se_load_recent_games_list();
