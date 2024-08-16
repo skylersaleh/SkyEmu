@@ -317,8 +317,55 @@ atlas_tile_t* atlas_map_t::add_tile_from_url(const char* url) {
 
 atlas_tile_t* atlas_map_t::add_tile_from_path(const char* path) {
     std::unique_lock<std::mutex> lock(atlases_mutex);
-    atlas_error("Not implemented");
-    return nullptr;
+    const std::string path_str(path);
+    
+    // same image can be requested multiple times, so we need to check if it's already in *some* atlas
+    if (total_tiles.find(path_str) != total_tiles.end()) {
+        return total_tiles[path_str];
+    }
+
+    {
+        std::unique_lock<std::mutex> lock(image_cache_mutex);
+        if (image_cache.find(path_str) != image_cache.end()) {
+            cached_image_t* cached_image = image_cache[path_str];
+            lock.unlock();
+
+            // If this is reached, the image is in our download cache but not in any atlas
+            // This can happen if you restart a game for example, so we add it to an atlas
+            // We know the dimensions of the image, so we can add it to the correct atlas immediately 
+            atlas_t* atlas = get_atlas(cached_image->width, cached_image->height);
+            atlas_tile_t* tile = new atlas_tile_t();
+            total_tiles[path_str] = tile;
+            atlas->add_tile(path_str, tile, cached_image);
+            return tile;
+        }
+    }
+
+    atlas_tile_t* tile = new atlas_tile_t();
+    total_tiles[path_str] = tile;
+
+    int width, height;
+    cached_image_t* cached_image = new cached_image_t();
+    cached_image->data = stbi_load(path, &width, &height, NULL, 4);
+    cached_image->width = width;
+    cached_image->height = height;
+
+    if (!cached_image->data)
+    {
+        printf("Failed to load image for atlas\n");
+        delete cached_image;
+    } else {
+        {
+            std::unique_lock<std::mutex> lock(image_cache_mutex);
+            image_cache[path_str] = cached_image;
+        }
+
+        std::unique_lock<std::mutex> lock(atlases_mutex);
+        atlas_t* atlas = get_atlas(cached_image->width, cached_image->height);
+        atlas->add_tile(path_str, tile, cached_image);
+    }
+
+    return tile;
 }
 
 void atlas_map_t::wait_all() {
@@ -369,8 +416,11 @@ atlas_tile_t* atlas_add_tile_from_url(atlas_map_t* map, const char* url) {
 }
 
 atlas_tile_t* atlas_add_tile_from_path(atlas_map_t* map, const char* path) {
-    atlas_error("Not implemented");
-    return nullptr;
+    if (map == nullptr) {
+        atlas_error("Map is null");
+    }
+
+    return map->add_tile_from_path(path);
 }
 
 void atlas_upload_all() {
