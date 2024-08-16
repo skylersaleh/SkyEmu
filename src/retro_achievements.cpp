@@ -109,6 +109,7 @@ struct ra_notification_t
     std::string submessage2{};
     float start_time = 0;
     uint32_t leaderboard_id = 0;
+    uint32_t leaderboard_format = NUM_RC_CLIENT_LEADERBOARD_FORMATS;
 };
 
 struct ra_game_state_t
@@ -447,11 +448,20 @@ namespace
                 {
                     std::string score_type = "score";
                     std::string score_type_caps = "Score";
-                    std::string score = event->leaderboard_scoreboard->submitted_score;
-                    if (score.find(':') != std::string::npos)
+                    switch (current_notification->leaderboard_format)
                     {
-                        score_type = "time";
-                        score_type_caps = "Time";
+                        case RC_CLIENT_LEADERBOARD_FORMAT_VALUE:
+                        case RC_CLIENT_LEADERBOARD_FORMAT_SCORE: {
+                            score_type = "score";
+                            score_type_caps = "Score";
+                            break;
+                        }
+
+                        case RC_CLIENT_LEADERBOARD_FORMAT_TIME: {
+                            score_type = "time";
+                            score_type_caps = "Time";
+                            break;
+                        }
                     }
 
                     current_notification->submessage = score_type_caps + ": " +
@@ -495,11 +505,12 @@ namespace
 
                 std::unique_lock<std::mutex> lock(game_state->mutex);
                 ra_notification_t notification;
-                notification.title = "Leaderboard attempt submitted!";
+                notification.title = std::string("Leaderboard attempt submitted: ") + event->leaderboard->title;
                 notification.submessage = std::string(event->leaderboard->tracker_value) + " for " +
                                           event->leaderboard->title;
                 notification.tile = game_state->game_image;
                 notification.leaderboard_id = event->leaderboard->id;
+                notification.leaderboard_format = event->leaderboard->format;
                 game_state->notifications.push_back(notification);
                 break;
             }
