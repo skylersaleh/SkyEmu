@@ -205,7 +205,8 @@ typedef struct{
   uint32_t draw_notifications;
   uint32_t ra_needs_reload;
   float gui_scale_factor;
-  uint32_t padding[222];
+  uint32_t only_one_notification;
+  uint32_t padding[221];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -396,6 +397,7 @@ typedef struct {
     int mem_dump_start_address;
     bool sidebar_open;
     bool retro_achievements_sidebar_open; 
+    bool retro_achievements_encore_mode;
     se_keybind_state_t key;
     se_controller_state_t controller;
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
@@ -2667,6 +2669,7 @@ static void se_emulate_single_frame(){
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   if (gui_state.settings.ra_needs_reload) {
+    rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.retro_achievements_encore_mode);
     if (retro_achievements_load_game()) {
       gui_state.settings.ra_needs_reload = false;
     }
@@ -6300,6 +6303,7 @@ void se_draw_menu_panel(){
       static char line1[256];
       static char line2[256];
       bool hardcore = gui_state.settings.hardcore_mode;
+      bool encore = gui_state.retro_achievements_encore_mode;
       snprintf(line1, 256, se_localize_and_cache("Logged in as %s"), user->display_name);
       snprintf(line2, 256, se_localize_and_cache("Points: %d"), hardcore ? user->score : user->score_softcore);
       se_boxed_image_triple_label(line1, line2, NULL, 0, ICON_FK_USER, image, 0, offset1, offset2, false);
@@ -6311,33 +6315,49 @@ void se_draw_menu_panel(){
         rc_client_logout(retro_achievements_get_client());
       }
 
-      bool draw_checkboxes_bool[5] = {
+      bool draw_checkboxes_bool[6] = {
         gui_state.settings.hardcore_mode,
         gui_state.settings.draw_notifications,
         gui_state.settings.draw_progress_indicators,
         gui_state.settings.draw_leaderboard_trackers,
         gui_state.settings.draw_challenge_indicators,
+        gui_state.settings.only_one_notification,
       };
 
+      if (encore) se_push_disabled();
       if (se_checkbox("Enable Hardcore Mode", &draw_checkboxes_bool[0]))
       {
         rc_client_set_hardcore_enabled(retro_achievements_get_client(), draw_checkboxes_bool[0]);
       }
+      if (encore) se_pop_disabled();
+
+      if (se_checkbox("Enable Encore Mode", &gui_state.retro_achievements_encore_mode))
+      {
+        se_reset_core();
+      }
 
       se_checkbox("Enable Notifications", &draw_checkboxes_bool[1]);
+      if (!gui_state.settings.draw_notifications) se_push_disabled();
+      igIndent(15);
+      se_checkbox("Only one notification at a time", &draw_checkboxes_bool[5]);
+      igUnindent(15);
+      if (!gui_state.settings.draw_notifications) se_pop_disabled();
       se_checkbox("Enable Progress Indicators",&draw_checkboxes_bool[2]);
+      if (!hardcore&&!encore) se_push_disabled();
       se_checkbox("Enable Leaderboard Trackers",&draw_checkboxes_bool[3]);
+      if (!hardcore&&!encore) se_pop_disabled();
       se_checkbox("Enable Challenge Indicators",&draw_checkboxes_bool[4]);
 
-      uint32_t* checkboxes[5] = {
+      uint32_t* checkboxes[6] = {
         &gui_state.settings.hardcore_mode,
         &gui_state.settings.draw_notifications,
         &gui_state.settings.draw_progress_indicators,
         &gui_state.settings.draw_leaderboard_trackers,
         &gui_state.settings.draw_challenge_indicators,
+        &gui_state.settings.only_one_notification,
       };
 
-      for (int i = 0; i < 5; i++)
+      for (int i = 0; i < 6; i++)
       {
         *checkboxes[i] = draw_checkboxes_bool[i];
       }
@@ -7380,10 +7400,10 @@ static void frame(void) {
     float top = menu_height;
     float right = screen_x+screen_width/se_dpi_scale();
     float bottom = height/se_dpi_scale();
-    float padding = screen_width * 0.02;
+    float padding = screen_width/se_dpi_scale()* 0.02;
 
     if (gui_state.settings.draw_notifications)
-      retro_achievements_draw_notifications(left+padding,top+padding,screen_width);
+      retro_achievements_draw_notifications(left+padding,top+padding,screen_width/se_dpi_scale(),gui_state.settings.only_one_notification);
 
     if (gui_state.settings.draw_progress_indicators)
       retro_achievements_draw_progress_indicator(right-padding,top+padding);
@@ -7392,7 +7412,7 @@ static void frame(void) {
       retro_achievements_draw_leaderboard_trackers(left+padding,bottom-padding);
 
     if (gui_state.settings.draw_challenge_indicators)
-      retro_achievements_draw_challenge_indicators(right-padding,bottom-padding);
+      retro_achievements_draw_challenge_indicators(right-padding,bottom-padding,screen_width/se_dpi_scale());
 #endif
 
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
@@ -7625,6 +7645,10 @@ void se_load_settings(){
       gui_state.settings.draw_progress_indicators=1;
       gui_state.settings.draw_leaderboard_trackers=1;
       gui_state.settings.draw_notifications=1;
+      bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
+      if(is_mobile){
+        gui_state.settings.only_one_notification=1;
+      }
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
@@ -7647,7 +7671,7 @@ void se_load_settings(){
   }
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
-  retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode,is_mobile);
+  retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode);
 #endif
 }
 static void se_compute_draw_lcd_rect(float *lcd_render_w, float *lcd_render_h, bool *hybrid_nds){
