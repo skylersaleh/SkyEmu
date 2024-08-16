@@ -371,7 +371,9 @@ atlas_tile_t* atlas_map_t::add_tile_from_path(const char* path) {
 void atlas_map_t::wait_all() {
     std::unique_lock<std::mutex> lock(atlases_mutex);
     while (requests > 0) {
+#ifndef SE_PLATFORM_WEB
         std::this_thread::sleep_for(std::chrono::milliseconds(15));
+#endif
     }
 }
 
@@ -400,11 +402,15 @@ void atlas_destroy_map(atlas_map_t* map) {
         }
     }
 
+#ifndef SE_PLATFORM_WEB
     std::thread delete_thread([map] {
+#endif
         map->wait_all();
         delete map;
+#ifndef SE_PLATFORM_WEB
     });
     delete_thread.detach();
+#endif
 }
 
 atlas_tile_t* atlas_add_tile_from_url(atlas_map_t* map, const char* url) {

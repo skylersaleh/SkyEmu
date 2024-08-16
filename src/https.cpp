@@ -142,39 +142,42 @@ void https_request(http_request_e type, const std::string& url, const std::strin
             return;
         }
 
+        CURLcode res;
+#define se_validate() if (res != CURLE_OK) { printf("curl failed, line: %d, error: %s\n", __LINE__, curl_easy_strerror(res)); return; }
+
         std::vector<uint8_t> result;
-        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_data);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&result);
+        res = curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L); se_validate();
+        res = curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); se_validate();
+        res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_data); se_validate();
+        res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&result); se_validate();
 
         /* Turn off the default CA locations, otherwise libcurl will load CA
         * certificates from the locations that were detected/specified at
         * build-time
         */
-        curl_easy_setopt(curl, CURLOPT_CAINFO, NULL);
-        curl_easy_setopt(curl, CURLOPT_CAPATH, NULL);
+        res = curl_easy_setopt(curl, CURLOPT_CAINFO, NULL); se_validate();
+        res = curl_easy_setopt(curl, CURLOPT_CAPATH, NULL); se_validate();
 
-        curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslctx_function);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5); // 5 second timeout
+        res = curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslctx_function); se_validate();
+        res = curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5); se_validate(); // 5 second timeout
 
         switch (type)
         {
             case http_request_e::GET:
-                curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+                res = curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L); se_validate();
                 break;
             case http_request_e::POST:
-                curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                curl_easy_setopt(curl, CURLOPT_POST, 1L);
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
+                res = curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_POST, 1L); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str()); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size()); se_validate();
                 break;
             case http_request_e::PATCH:
-                curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
+                res = curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH"); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str()); se_validate();
+                res = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size()); se_validate();
                 break;
             default:
                 printf("[cloud] invalid request type\n");
@@ -189,7 +192,7 @@ void https_request(http_request_e type, const std::string& url, const std::strin
         }
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
 
-        CURLcode res = curl_easy_perform(curl);
+        res = curl_easy_perform(curl);
         if (res != CURLE_OK)
         {
             printf("[cloud] curl failed: %s\n", curl_easy_strerror(res));
@@ -202,6 +205,7 @@ void https_request(http_request_e type, const std::string& url, const std::strin
 
         curl_slist_free_all(chunk);
         curl_easy_cleanup(curl);
+#undef se_validate
     });
     request_thread.detach();
 #else

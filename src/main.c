@@ -2668,13 +2668,15 @@ static void se_emulate_single_frame(){
   else if(emu_state.system == SYSTEM_NDS)nds_tick(&emu_state, &core.nds, &scratch.nds);
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  if (gui_state.settings.ra_needs_reload) {
-    rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.retro_achievements_encore_mode);
-    if (retro_achievements_load_game()) {
-      gui_state.settings.ra_needs_reload = false;
+  if (rc_client_get_user_info(retro_achievements_get_client())){
+    if (gui_state.settings.ra_needs_reload) {
+      rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.retro_achievements_encore_mode);
+      if (retro_achievements_load_game()) {
+        gui_state.settings.ra_needs_reload = false;
+      }
+    } else {
+      retro_achievements_frame();
     }
-  } else {
-    retro_achievements_frame();
   }
 #endif
   se_run_all_ar_cheats();
