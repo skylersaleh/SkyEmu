@@ -15,7 +15,7 @@
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 
-void retro_achievements_initialize(void* emu_state, bool hardcore, bool is_mobile);
+void retro_achievements_initialize(void* emu_state, bool hardcore);
 
 void retro_achievements_shutdown();
 
@@ -39,13 +39,13 @@ const char* retro_achievements_get_login_error();
 
 void retro_achievements_keep_alive();
 
-void retro_achievements_draw_notifications(float left, float top, float screen_width);
+void retro_achievements_draw_notifications(float left, float top, float screen_width, bool only_one_notification);
 
 void retro_achievements_draw_progress_indicator(float right, float top);
 
 void retro_achievements_draw_leaderboard_trackers(float left, float bottom);
 
-void retro_achievements_draw_challenge_indicators(float right, float bottom);
+void retro_achievements_draw_challenge_indicators(float right, float bottom, float screen_width);
 
 void retro_achievements_capture_state(uint8_t* buffer);
 

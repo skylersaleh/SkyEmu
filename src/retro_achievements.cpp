@@ -1,5 +1,3 @@
-// TODO: use some tool to simulate slow internet connection and try this
-
 #include "sokol_gfx.h"
 
 extern "C" {
@@ -51,7 +49,6 @@ const float notification_start_seconds = 0.75f;
 const float notification_start_secondary_text_seconds = notification_start_seconds + 1.25f;
 const float notification_end_seconds = 4.0f;
 const float notification_fade_seconds = notification_end_seconds - notification_start_seconds;
-bool only_one_notification = false;
 const float padding = 7;
 
 struct atlas_t;
@@ -111,6 +108,7 @@ struct ra_notification_t
     std::string submessage{};
     std::string submessage2{};
     float start_time = 0;
+    uint32_t leaderboard_id = 0;
 };
 
 struct ra_game_state_t
@@ -178,9 +176,11 @@ namespace
         rc_client_get_user_game_summary(ra_state->rc_client, &summary);
 
         ra_notification_t notification;
-        notification.title = "Loaded " + std::string(game->title) + "!";
+        notification.title = game->title;
 
-        int achievement_count = summary.num_core_achievements + summary.num_unofficial_achievements;
+        bool unofficial_enabled = rc_client_get_unofficial_enabled(ra_state->rc_client);
+        int achievement_count = summary.num_core_achievements;
+        int unlocked_achievement_count = summary.num_unlocked_achievements;
 
         if (achievement_count == 0)
         {
@@ -188,15 +188,11 @@ namespace
         }
         else
         {
-            notification.submessage = std::to_string(achievement_count) + " achievements, " +
-                                      std::to_string(summary.points_core) + " points";
-            notification.submessage2 = "You have earned " +
-                                       std::to_string(summary.num_unlocked_achievements) +
-                                       " achievements";
+            notification.submessage = "You have " + std::to_string(unlocked_achievement_count) + " of " + std::to_string(achievement_count) + " achievements unlocked.";
+            notification.submessage2 = "Points: " + std::to_string(summary.points_unlocked) + "/" + std::to_string(summary.points_core);
         }
 
         notification.tile = game_state->game_image;
-        notification.start_time = se_time();
 
         game_state->notifications.push_back(notification);
     }
@@ -308,7 +304,6 @@ namespace
             uint8_t bucket = rc_achievement->bucket;
             std::unique_lock<std::mutex> lock(game_state->mutex);
             ra_achievement_t* achievement = retro_achievements_move_bucket(game_state, id, bucket);
-            notification->start_time = se_time();
             notification->tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
             achievement->tile = notification->tile;
             game_state->notifications.push_back(*notification);
@@ -430,6 +425,44 @@ namespace
                 retro_achievements_achievement_triggered(game_state, event->achievement);
                 break;
             }
+            case RC_CLIENT_EVENT_LEADERBOARD_SCOREBOARD: {
+                ra_game_state_ptr game_state = ra_state->game_state;
+
+                std::unique_lock<std::mutex> lock(game_state->mutex);
+
+                // Find the existing notification from leaderboard_submitted and modify it
+                // leaderboard_scoreboard event was added later down the line to provide more
+                // information about the leaderboard submission so this is why we have to do it this way
+                ra_notification_t* current_notification = nullptr;
+                for (auto& notification : game_state->notifications)
+                {
+                    if (notification.leaderboard_id == event->leaderboard_scoreboard->leaderboard_id)
+                    {
+                        current_notification = &notification;
+                        break;
+                    }
+                }
+
+                if (current_notification)
+                {
+                    std::string score_type = "score";
+                    std::string score_type_caps = "Score";
+                    std::string score = event->leaderboard_scoreboard->submitted_score;
+                    if (score.find(':') != std::string::npos)
+                    {
+                        score_type = "time";
+                        score_type_caps = "Time";
+                    }
+
+                    current_notification->submessage = score_type_caps + ": " +
+                        std::string(event->leaderboard_scoreboard->submitted_score) + "\nYour best " + score_type + ": " +
+                        std::string(event->leaderboard_scoreboard->best_score);
+                    current_notification->submessage2 = ICON_FK_TROPHY " Ranked " +
+                        std::to_string(event->leaderboard_scoreboard->new_rank) + " out of " +
+                        std::to_string(event->leaderboard_scoreboard->num_entries);
+                }
+                break;   
+            }
             case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
             {
                 ra_game_state_ptr game_state = ra_state->game_state;
@@ -440,7 +473,6 @@ namespace
                     std::string("Leaderboard attempt started: ") + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
-                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -454,7 +486,6 @@ namespace
                     std::string("Leaderboard attempt failed: ") + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
-                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -468,7 +499,7 @@ namespace
                 notification.submessage = std::string(event->leaderboard->tracker_value) + " for " +
                                           event->leaderboard->title;
                 notification.tile = game_state->game_image;
-                notification.start_time = se_time();
+                notification.leaderboard_id = event->leaderboard->id;
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -560,7 +591,6 @@ namespace
                                           std::to_string(summary.num_core_achievements) +
                                           " achievements unlocked";
                 notification.tile = game_state->game_image;
-                notification.start_time = se_time();
                 game_state->notifications.push_back(notification);
                 break;
             }
@@ -650,8 +680,14 @@ namespace
                             std::to_string(summary.num_unlocked_achievements) + "/" +
                             std::to_string(summary.num_core_achievements) + " achievements";
             bool hardcore = rc_client_get_hardcore_enabled(ra_state->rc_client);
+            bool encore = rc_client_get_encore_mode_enabled(ra_state->rc_client);
             auto hardcore_str = hardcore ? "Hardcore mode" : "Softcore mode";
             uint32_t hardcore_color = hardcore ? 0xff0000ff : 0xff00ff00; // TODO: make me nicer
+            if (encore)
+            {
+                hardcore_str = "Encore mode";
+                hardcore_color = 0xff00ffff;
+            }
             sg_image image = {SG_INVALID_ID};
             atlas_tile_t* tile = game_state->game_image;
             ImVec2 uv0 = ImVec2{0, 0};
@@ -790,11 +826,8 @@ extern "C" uint32_t retro_achievements_read_memory_callback(uint32_t address, ui
                                                             uint32_t num_bytes,
                                                             rc_client_t* client);
 
-void retro_achievements_initialize(void* state, bool hardcore, bool is_mobile)
+void retro_achievements_initialize(void* state, bool hardcore)
 {
-    if (is_mobile)
-        only_one_notification = true;
-
     ra_state = new ra_state_t((sb_emu_state_t*)state);
     ra_state->rc_client = rc_client_create(retro_achievements_read_memory_callback,
                                            retro_achievements_server_callback);
@@ -994,7 +1027,7 @@ float easeOutBack(float t) {
     return 1 + c3 * (t1 * t1 * t1) + c1 * (t1 * t1);
 }
 
-void retro_achievements_draw_notifications(float left, float top, float screen_width)
+void retro_achievements_draw_notifications(float left, float top, float screen_width, bool only_one_notification)
 {
     ra_game_state_ptr game_state = ra_state->game_state;
 
@@ -1014,6 +1047,10 @@ void retro_achievements_draw_notifications(float left, float top, float screen_w
     while (it != game_state->notifications.end())
     {
         ra_notification_t& notification = *it;
+
+        if (notification.start_time == 0) {
+            notification.start_time = se_time();
+        }
 
         float time = se_time() - notification.start_time;
 
@@ -1039,8 +1076,13 @@ void retro_achievements_draw_notifications(float left, float top, float screen_w
         }
 
         float easing = easeOutBack(multiplier);
-        if (easing < 0.97f)
-            continue;
+        if (easing < 0.97f) {
+            if (!only_one_notification) {
+                continue;
+            } else {
+                break;
+            }
+        }
 
 #define ALPHA(x) ((uint32_t)(multiplier * x) << 24)
 
@@ -1270,7 +1312,7 @@ void retro_achievements_draw_leaderboard_trackers(float left, float bottom)
     igPopFont();
 }
 
-void retro_achievements_draw_challenge_indicators(float right, float bottom)
+void retro_achievements_draw_challenge_indicators(float right, float bottom, float screen_width)
 {
     ra_game_state_ptr game_state = ra_state->game_state;
 
@@ -1282,8 +1324,10 @@ void retro_achievements_draw_challenge_indicators(float right, float bottom)
     if (game_state->challenges.empty())
         return;
 
-    float x = right - 32 * 3 - padding * 2;
-    float y = bottom - 32 * 3 - padding * 2;
+    float padding_adj = 0.005 * screen_width;
+    float x = right - padding_adj;
+    float y = bottom - padding_adj * 2;
+    float image_size = screen_width * 0.04f;
     int i = 0;
 
     for (const auto& item : game_state->challenges)
@@ -1295,20 +1339,20 @@ void retro_achievements_draw_challenge_indicators(float right, float bottom)
         {
             atlas_uvs_t uvs = atlas_get_tile_uvs(challenge.tile);
             ImDrawList_AddImage(igGetWindowDrawList(),
-                                (ImTextureID)(intptr_t)id, ImVec2{x, y},
-                                ImVec2{x + 32, y + 32},
+                                (ImTextureID)(intptr_t)id, ImVec2{x-image_size, y-image_size},
+                                ImVec2{x, y},
                                 ImVec2{uvs.x1, uvs.y1},
                                 ImVec2{uvs.x2, uvs.y2}, 0x80ffffff);
         }
 
         if (i++ % 3 != 2)
         {
-            x += 32 + padding;
+            x -= image_size + padding_adj;
         }
         else
         {
-            x = right - 32 * 3 - padding * 2;
-            y += 32 + padding;
+            x = right - padding_adj;
+            y -= image_size + padding_adj;
         }
 
         if (i == 9)
