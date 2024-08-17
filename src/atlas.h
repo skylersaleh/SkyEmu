@@ -8,11 +8,11 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
-struct atlas_uvs_t {
+typedef struct atlas_uvs_t {
     float x1, y1, x2, y2;
-};
-
+}atlas_uvs_t;
 struct atlas_tile_t;
+typedef struct atlas_tile_t atlas_tile_t;
 struct atlas_map_t;
 
 struct atlas_map_t* atlas_create_map();
