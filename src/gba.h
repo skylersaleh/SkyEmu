@@ -2485,11 +2485,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         if(audio_dma){
           if(gba->dma[i].activate_audio_dma==false)continue;
           gba->dma[i].activate_audio_dma=false;
-          int fifo = -1;
-          uint32_t dst = gba->dma[i].dest_addr;
-          if(dst == GBA_FIFO_A)fifo =0; 
-          if(dst == GBA_FIFO_B)fifo =1; 
-          if(fifo == -1)continue;
         }
         if(gba->dma[i].source_addr>=0x08000000&&gba->dma[i].dest_addr>=0x08000000){
           force_first_write_sequential=true;
@@ -2513,37 +2508,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         gba->dma[i].source_addr&=src_mask[i];
         gba->dma[i].dest_addr  &=dst_mask[i];
         gba_io_store16(gba,GBA_DMA0CNT_L+12*i,cnt);
-        
-        if(src_addr_ctl==0&&(dst_addr_ctl==0||dst_addr_ctl==3)&&cnt>2){
-          int fast_dma_count = cnt-2;
-          int bytes = fast_dma_count*transfer_bytes;
-          int src_addr = gba->dma[i].source_addr; 
-          int dst_addr = gba->dma[i].dest_addr; 
-
-          uint8_t *source_start = (uint8_t*)gba_dword_lookup(gba,src_addr,transfer_bytes|GBA_REQ_READ)+(src_addr&2);
-          uint8_t *dest_start   = (uint8_t*)gba_dword_lookup(gba,dst_addr,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&2);
-          uint8_t *source_end = (uint8_t*)gba_dword_lookup(gba,src_addr+bytes,transfer_bytes|GBA_REQ_READ)+(src_addr&2);
-          uint8_t *dest_end   = (uint8_t*)gba_dword_lookup(gba,dst_addr+bytes,transfer_bytes|GBA_REQ_WRITE)+(dst_addr&2);
-          if(source_end-source_start==bytes&&dest_end-dest_start==bytes){
-            bool overlaps_io = src_addr<=0x04000000&&src_addr+bytes>=0x04000000;
-            overlaps_io |= dst_addr<=0x05000000&&dst_addr+bytes>=0x04000000;
-            if((src_addr<0x08000000)&&(src_addr>=0x02000000)&&!overlaps_io){
-              // Restrict the amount of cycles that can be spent on a fast DMA to avoid missing
-              // events for very large DMAs. 
-              if(fast_dma_count>128)fast_dma_count=128;
-              bytes = fast_dma_count*transfer_bytes;
-              memmove(dest_start,source_start, bytes);
-              gba->dma[i].current_transaction=fast_dma_count;
-              int trans_type = type?2:0;
-              // First non-sequential fetch
-              ticks+=gba_compute_access_cycles_dma(gba, gba->dma[i].dest_addr,trans_type+(force_first_write_sequential?0:1));
-              ticks+=gba_compute_access_cycles_dma(gba, src_addr, trans_type+1);
-              // Remaining sequential fetches
-              ticks+=gba_compute_access_cycles_dma(gba, gba->dma[i].dest_addr, trans_type)*(fast_dma_count-1);
-              ticks+=gba_compute_access_cycles_dma(gba, src_addr, trans_type)*(fast_dma_count-1);
-            }
-          }
-        }
       }
       const static int dir_lookup[4]={1,-1,0,1};
       int src_dir = dir_lookup[src_addr_ctl];
@@ -2606,11 +2570,9 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       }
       bool audio_dma = (mode==3) && (i==1||i==2);
       if(audio_dma){
-        int fifo = -1;
+        int fifo = i-1;
         dst&=~3;
         src&=~3;
-        if(dst == GBA_FIFO_A)fifo =0; 
-        if(dst == GBA_FIFO_B)fifo =1; 
         for(int x=0;x<4;++x){
           uint32_t src_addr=src+x*4*src_dir;
           uint32_t data = gba_read32(gba,src_addr);
@@ -3767,7 +3729,14 @@ static FORCE_INLINE void sb_process_audio(sb_gb_t *gb, sb_emu_state_t*emu, doubl
 
 // END GB REUSE CODE SHIM//
 
+void gba_cpu_trigger_breakpoint(void* data){
+  gba_t*gba =(gba_t*)data;
+  gba->frame_in_progress=false;
+  gba->pause_after_frame=true;
+}
+
 void gba_ptrs_init(gba_t* gba,gba_scratch_t *scratch, uint8_t* rom_data) {
+
   gba->framebuffer = scratch->framebuffer;
   gba->mem.bios    = scratch->bios;
   gba->mem.cart_rom = rom_data;
@@ -3785,6 +3754,8 @@ void gba_ptrs_init(gba_t* gba,gba_scratch_t *scratch, uint8_t* rom_data) {
 
 void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba_ptrs_init(gba, scratch, emu->rom_data);
+  gba->cpu.user_data=gba;
+  gba->cpu.trigger_breakpoint=gba_cpu_trigger_breakpoint;
 
   uint64_t* d = (uint64_t*)gba->mem.mmio_debug_access_buffer;
   for(int i=0;i<sizeof(gba->mem.mmio_debug_access_buffer)/8;++i){
