@@ -281,6 +281,8 @@ atlas_tile_t* atlas_map_t::add_tile_from_url(const char* url) {
     total_tiles[url_str] = tile;
 
     requests++;
+    lock.unlock();
+
     https_request(http_request_e::GET, url_str, {}, {}, [this, url_str, tile] (const std::vector<uint8_t>& result) {
         if (result.empty()) {
             printf("Failed to download image for atlas\n");
@@ -310,7 +312,7 @@ atlas_tile_t* atlas_map_t::add_tile_from_url(const char* url) {
         }
 
         requests--;
-    });
+    }, true /* do cache these images */);
 
     return tile;
 }

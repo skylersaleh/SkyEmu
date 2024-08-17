@@ -206,7 +206,8 @@ typedef struct{
   uint32_t ra_needs_reload;
   float gui_scale_factor;
   uint32_t only_one_notification;
-  uint32_t padding[221];
+  uint32_t enable_download_cache;
+  uint32_t padding[220];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -6631,6 +6632,33 @@ void se_draw_menu_panel(){
   }
 #endif 
 
+  char byte_str[32];
+  uint64_t cache_size = https_cache_size();
+  if(cache_size>1024*1024*1024){
+    cache_size/=1024*1024*1024;
+    snprintf(byte_str,32,"%zu GiB",cache_size);
+  }else if(cache_size>1024*1024){
+    cache_size/=1024*1024;
+    snprintf(byte_str,32,"%zu MiB",cache_size);
+  }else if(cache_size>1024){
+    cache_size/=1024;
+    snprintf(byte_str,32,"%zu KiB",cache_size);
+  }else{
+    snprintf(byte_str,32,"%zu bytes",cache_size);
+  }
+
+  bool enable_download_cache = gui_state.settings.enable_download_cache;
+  if (se_checkbox("Enable Download Cache",&enable_download_cache)) {
+    gui_state.settings.enable_download_cache = enable_download_cache;
+    https_set_cache_enabled(enable_download_cache);
+  }
+  if (!enable_download_cache)se_push_disabled();
+  se_text("Download Cache Size: %s",byte_str);
+  if (se_button("Clear Download Cache", (ImVec2){0,0})){
+    https_clear_cache();
+  }
+  if (!enable_download_cache)se_pop_disabled();
+
   float bottom_padding =0;
   #ifdef SE_PLATFORM_IOS
   se_ios_get_safe_ui_padding(NULL,&bottom_padding,NULL,NULL);
@@ -7651,6 +7679,8 @@ void se_load_settings(){
       if(is_mobile){
         gui_state.settings.only_one_notification=1;
       }
+      gui_state.settings.enable_download_cache=1;
+      https_set_cache_enabled(gui_state.settings.enable_download_cache);
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
@@ -8148,6 +8178,9 @@ static void se_init(){
   }
 }
 static void init(void) {
+  #if defined(EMSCRIPTEN)
+  em_init_fs();
+  #endif
   https_initialize();
   gui_state.overlay_open= true;
 #ifdef USE_SDL
@@ -8357,9 +8390,6 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     width = GBA_LCD_W;
     height= GBA_LCD_H;
   } 
-  #if defined(EMSCRIPTEN)
-    em_init_fs();  
-  #endif
   if(emu_state.cmd_line_arg_count >3&&strcmp("http_server",emu_state.cmd_line_args[1])==0)headless_mode();
 
   #ifdef SE_PLATFORM_IOS
