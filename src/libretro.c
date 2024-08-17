@@ -13,8 +13,6 @@
 #include "nds.h"
 #include "localization.h"
 
-#define SKYEMU_LIBRETRO_VERSION "0.1.0"
-
 static retro_video_refresh_t video_refresh_cb = NULL;
 static retro_input_poll_t input_poll_cb = NULL;
 static retro_input_state_t input_state_cb = NULL;
@@ -893,7 +891,7 @@ void retro_deinit(void) {}
 
 void retro_get_system_info(struct retro_system_info* info){
     info->library_name = "SkyEmu";
-    info->library_version = SKYEMU_LIBRETRO_VERSION;
+    info->library_version = GIT_COMMIT_HASH;
     info->block_extract = false;
     info->need_fullpath = false;
     info->valid_extensions = "gb|gbc|gba|nds";
