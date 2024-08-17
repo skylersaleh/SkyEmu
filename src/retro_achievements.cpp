@@ -3,12 +3,14 @@
 extern "C" {
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
+#include "retro_achievements.h"
+
 const char* se_get_pref_path();
 void se_push_disabled();
 void se_pop_disabled();
 void se_text(const char* fmt, ...);
-void se_boxed_image_triple_label(const char* first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* icon,
-                               sg_image image, int flags, ImVec2 uv0, ImVec2 uv1, bool glow);
+void se_boxed_image_triple_label(const char * first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, atlas_tile_t * atlas, bool glow);
+
 bool se_button(const char* label, ImVec2 size);
 bool se_checkbox(const char* label, bool * v);
 void se_section(const char* label,...);
@@ -16,7 +18,6 @@ const char* se_localize_and_cache(const char* input_str);
 ImFont* se_get_mono_font();
 void se_emscripten_flush_fs();
 double se_time();
-#include "retro_achievements.h"
 }
 
 #include "https.hpp"
@@ -699,20 +700,7 @@ namespace
                 hardcore_str = "Encore mode";
                 hardcore_color = 0xff00ffff;
             }
-            sg_image image = {SG_INVALID_ID};
-            atlas_tile_t* tile = game_state->game_image;
-            ImVec2 uv0 = ImVec2{0, 0};
-            ImVec2 uv1 = ImVec2{1, 1};
-            if (tile)
-            {
-                image.id = atlas_get_tile_id(tile);
-                atlas_uvs_t uvs = atlas_get_tile_uvs(tile);
-                uv0 = ImVec2{uvs.x1, uvs.y1};
-                uv1 = ImVec2{uvs.x2, uvs.y2};
-            }
-            se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str, hardcore_color,
-                                    ICON_FK_GAMEPAD, image, 0, uv0, uv1, false);
-            igSeparator();
+            se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str,hardcore_color,ICON_FK_GAMEPAD, game_state->game_image, false);
         }
         for (int i = 0; i < game_state->achievement_list.buckets.size(); i++)
         {
@@ -725,17 +713,6 @@ namespace
             se_section("%s", label.c_str());
             for (int j = 0; j < bucket->achievements.size(); j++)
             {
-                sg_image image = {SG_INVALID_ID};
-                ImVec2 uv0, uv1;
-                if (bucket->achievements[j]->tile)
-                {
-                    atlas_tile_t* tile = bucket->achievements[j]->tile;
-                    image.id = atlas_get_tile_id(tile);
-                    atlas_uvs_t uvs = atlas_get_tile_uvs(tile);
-                    uv0 = ImVec2{uvs.x1, uvs.y1};
-                    uv1 = ImVec2{uvs.x2, uvs.y2};
-                }
-
                 const auto& achievement = bucket->achievements[j];
                 float rarity = rc_client_get_hardcore_enabled(ra_state->rc_client)
                                    ? achievement->rarity_hardcore
@@ -761,8 +738,7 @@ namespace
                 }
 
                 se_boxed_image_triple_label(achievement->title.c_str(),
-                                          achievement->description.c_str(), players.c_str(), color, ICON_FK_SPINNER, image,
-                                          0, uv0, uv1, glow);
+                                          achievement->description.c_str(), players.c_str(), color, ICON_FK_SPINNER, bucket->achievements[j]->tile, glow);
             }
         }
     }
