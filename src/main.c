@@ -680,24 +680,30 @@ static bool se_input_int32(const char* label,int32_t* v,int step,int step_fast,I
 }
 void se_section(const char* label,...){
   ImGuiStyle * style = igGetStyle();
-  float height = igGetFontSize() + style->FramePadding.y * 2.0f;
   ImDrawList*dl= igGetWindowDrawList();
   ImVec2 b_min,b_sz,b_max,b_cursor;
 
   igGetWindowPos(&b_min);
   igGetWindowSize(&b_sz);
   igGetCursorPos(&b_cursor);
+  
   b_min.x+=b_cursor.x-style->FramePadding.x;
   b_min.y+=b_cursor.y-style->FramePadding.y;
   b_min.y-=igGetScrollY();
-  b_max.x = b_min.x+b_sz.x; 
-  b_max.y = b_min.y+height; 
+  b_max.x = b_min.x+b_sz.x-b_cursor.x; 
 
-  ImDrawList_AddRectFilled(dl,b_min,b_max,igGetColorU32Col(ImGuiCol_TitleBg,1.0),0,ImDrawCornerFlags_None);
+  char buffer[256]="";
   va_list args;
   va_start(args, label);
-  igTextV(se_localize_and_cache(label),args);
+  vsnprintf(buffer,sizeof(buffer),se_localize_and_cache(label),args);
   va_end(args);
+  ImVec2 text_size; 
+  igCalcTextSize(&text_size,buffer,NULL,false,b_max.x-b_min.x);
+
+  b_max.y = b_min.y+text_size.y+style->FramePadding.y * 2.0f; 
+
+  ImDrawList_AddRectFilled(dl,b_min,b_max,igGetColorU32Col(ImGuiCol_TitleBg,1.0),0,ImDrawCornerFlags_None);
+  igTextWrapped("%s",buffer);
 }
 static bool se_button_themed(int region, const char* label, ImVec2 size, bool always_draw_label){
   label=se_localize_and_cache(label);
@@ -4438,7 +4444,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
 #endif
   return clicked; 
 }
-void se_boxed_image_triple_label(const char * first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, sg_image image, int reduce_width, ImVec2 uv0, ImVec2 uv1, bool glow){
+void se_boxed_image_triple_label(const char * first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, atlas_tile_t * tile, bool glow){
   ImVec2 win_min,win_sz,win_max;
   win_min.x=0;
   win_min.y=0;                                  // content boundaries min (roughly (0,0)-Scroll), in window coordinates
@@ -4447,7 +4453,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   win_max.x = win_min.x+win_sz.x; 
   win_max.y = win_min.y+win_sz.y;
 
-  int item_height = 50; 
+  int item_height = 60; 
   int padding = 4; 
 
   ImVec2 screen_pos;
@@ -4464,7 +4470,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
 
   ImGuiStyle* style = igGetStyle();
   int scrollbar_width = style->ScrollbarSize;
-  int wrap_width = win_sz.x-curr_pos.x-box_w-padding*2-scrollbar_width;
+  int wrap_width = win_sz.x-curr_pos.x-box_w/se_dpi_scale()-padding*2;
 
   ImVec2 out;
   igCalcTextSize(&out,first_label,NULL,false,wrap_width);
@@ -4490,45 +4496,80 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   }
 
   // Draw a rectangle to show the text size
-  // ImDrawList* ig = igGetWindowDrawList();
+  ImDrawList* ig = igGetWindowDrawList();
   // ImVec2 top_left = {screen_pos.x+box_w+padding,screen_pos.y};
 
-  // float max_x = out.x > out2.x ? out.x : out2.x;
+  float max_x = out.x > out2.x ? out.x : out2.x;
 
   // ImVec2 bottom_right = {screen_pos.x+max_x+box_w,screen_pos.y+out.y+out2.y};
   // ImDrawList_AddRect(ig, top_left, bottom_right, 0xff0000ff, 0, 0, 1.0f);
 
   igPushIDStr(second_label);
   // TODO: if (glow)se_draw_glow((ImVec2){screen_pos.x+box_w*0.5,screen_pos.y+box_h*0.5+padding});
-  igSetCursorPosX(curr_pos.x+box_w+padding);
-  igSetCursorPosY(curr_pos.y-padding);
-  se_text("%s", first_label);
-  igSetCursorPosX(curr_pos.x+box_w+padding);
-  igSetCursorPosY(igGetCursorPosY()-5);
-  se_text_disabled("%s", second_label);
+  igSetCursorPosX(curr_pos.x+box_w+padding*2);
+  igSetCursorPosY(curr_pos.y-padding+1);
+  igPushStyleColorU32(ImGuiCol_Text,third_label_color);
+
+  int vert_start = ig->VtxBuffer.Size+4;
+  se_section("%s", first_label);
+  if (third_label_color == 0xff000000) { // black means rainbow
+    int vert_end = ig->VtxBuffer.Size;
+    int h = (uint64_t)(stm_now() / 10000000.0) % 360;
+    for (int i = vert_start; i < vert_end; i++) {
+      h+=5;
+      ig->VtxBuffer.Data[i].col = 0xff000000 + se_hsv_to_rgb(h, 40, 100);
+    }
+  }
+  igPopStyleColor(1);
+
+  igSetCursorPosX(curr_pos.x+box_w+padding*2);
+  igSetCursorPosY(igGetCursorPosY()-3);
+  se_text("%s", second_label);
   if(third_label){
-    igPushStyleColorU32(ImGuiCol_Text,third_label_color);
-    igSetCursorPosX(curr_pos.x+box_w+padding);
+    igSetCursorPosX(curr_pos.x+box_w+padding*2);
     igSetCursorPosY(igGetCursorPosY()-5);
     ImDrawList* ig = igGetWindowDrawList();
     int vert_start = ig->VtxBuffer.Size;
-    se_text("%s", third_label);
-    if (third_label_color == 0xff000000) { // black means rainbow
-      int vert_end = ig->VtxBuffer.Size;
-      int h = (uint64_t)(stm_now() / 10000000.0) % 360;
-      for (int i = vert_start; i < vert_end; i++) {
-        h+=5;
-        ig->VtxBuffer.Data[i].col = 0xff000000 + se_hsv_to_rgb(h, 40, 100);
-      }
-    }
-    igPopStyleColor(1);
+    se_text_disabled("%s", third_label);
   }
+  curr_pos.y-=3;
   igSetCursorPos(curr_pos);
-  if(image.id != SG_INVALID_ID)igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
-  else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
+  sg_image image = {SG_INVALID_ID};
+  ImVec2 uv0 = (ImVec2){0, 0};
+  ImVec2 uv1 = (ImVec2){1, 1};
+  if (tile)
+  {
+      image.id = atlas_get_tile_id(tile);
+      atlas_uvs_t uvs = atlas_get_tile_uvs(tile);
+      uv0 = (ImVec2){uvs.x1, uvs.y1};
+      uv1 = (ImVec2){uvs.x2, uvs.y2};
+  }
+  if(image.id != SG_INVALID_ID){
+      float border_size = 2; 
+      ImU32 col = igGetColorU32Col(ImGuiCol_FrameBg,1.0);
+      col = third_label_color;
+      ImVec2 screen_p;
+      igGetCursorScreenPos(&screen_p);
+      int vert_start = ig->VtxBuffer.Size;
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),
+                              (ImVec2){screen_p.x-border_size,screen_p.y-border_size},
+                              (ImVec2){screen_p.x+border_size+box_w,screen_p.y+box_h+border_size},
+                              col,0,ImDrawCornerFlags_None);
+      if (third_label_color == 0xff000000) { // black means rainbow
+        int vert_end = ig->VtxBuffer.Size;
+        int h = (uint64_t)(stm_now() / 10000000.0) % 360;
+        for (int i = vert_start; i < vert_end; i++) {
+          h+=50;
+          ig->VtxBuffer.Data[i].col = 0xff000000 + se_hsv_to_rgb(h, 40, 100);
+        }
+      }
+    
+    igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){box_w,box_h},uv0,uv1,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+  }else se_text_centered_in_box((ImVec2){0,0}, (ImVec2){box_w,box_h},box);
   igDummy((ImVec2){1,1});
   igSetCursorPos(next_pos);
   igPopID();
+  igSeparator();
 }
 #ifdef SE_PLATFORM_ANDROID
 #include <android/log.h>
@@ -6155,7 +6196,6 @@ void se_draw_menu_panel(){
       se_drive_login(clicked, min.x, min.y, max.x-min.x, max.y-min.y);
     }
   } else {
-    ImVec2 avatar_frame_sz = (ImVec2){64+style->FramePadding.x*2,64+style->FramePadding.y*2};
     ImVec2 screen_p;
     igGetCursorScreenPos(&screen_p);
     int screen_x = screen_p.x;
@@ -6177,7 +6217,7 @@ void se_draw_menu_panel(){
       igSameLine(0,5);
     }
     igBeginGroup();
-    se_text("Logged in as %s",cloud_state.user_info.name);
+    se_text("%s",cloud_state.user_info.name);
     bool pending_logout = cloud_drive_pending_logout();
     if (pending_logout) se_push_disabled();
     if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
@@ -6302,21 +6342,34 @@ void se_draw_menu_panel(){
         offset1 = (ImVec2){uvs.x1, uvs.y1};
         offset2 = (ImVec2){uvs.x2, uvs.y2};
       }
-      static char line1[256];
-      static char line2[256];
       bool hardcore = gui_state.settings.hardcore_mode;
       bool encore = gui_state.retro_achievements_encore_mode;
-      snprintf(line1, 256, se_localize_and_cache("Logged in as %s"), user->display_name);
-      snprintf(line2, 256, se_localize_and_cache("Points: %d"), hardcore ? user->score : user->score_softcore);
-      se_boxed_image_triple_label(line1, line2, NULL, 0, ICON_FK_USER, image, 0, offset1, offset2, false);
-      if (se_button(ICON_FK_SIGN_OUT " Logout", (ImVec2){0, 0}))
       {
-        char buffer[SB_FILE_PATH_SIZE];
-        snprintf(buffer, SB_FILE_PATH_SIZE, "%sra_token.txt", se_get_pref_path());
-        remove(buffer);
-        rc_client_logout(retro_achievements_get_client());
+        ImVec2 screen_p;
+        igGetCursorScreenPos(&screen_p);
+        int screen_x = screen_p.x;
+        int screen_y = screen_p.y;
+        ImVec2 ava_dims = {38,38};
+        if (cloud_state.user_info.avatar){
+          float border_size = 1; 
+          ImU32 col = igGetColorU32Col(ImGuiCol_FrameBg,1.0);
+          ImDrawList_AddRectFilled(igGetWindowDrawList(),
+                                  (ImVec2){screen_x-border_size,screen_y-border_size},
+                                  (ImVec2){screen_x+border_size+ava_dims.x,screen_y+border_size+ava_dims.y},
+                                  col,0,ImDrawCornerFlags_None);
+          igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){ava_dims.x,ava_dims.y},offset1,offset2,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+          igSameLine(0,5);
+        }
+        igBeginGroup();
+        se_text(se_localize_and_cache("%s (Points: %d)"), user->display_name,hardcore ? user->score : user->score_softcore);
+        if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
+          char buffer[SB_FILE_PATH_SIZE];
+          snprintf(buffer, SB_FILE_PATH_SIZE, "%sra_token.txt", se_get_pref_path());
+          remove(buffer);
+          rc_client_logout(retro_achievements_get_client());
+        }
+        igEndGroup();
       }
-
       bool draw_checkboxes_bool[6] = {
         gui_state.settings.hardcore_mode,
         gui_state.settings.draw_notifications,
@@ -6327,28 +6380,28 @@ void se_draw_menu_panel(){
       };
 
       if (encore) se_push_disabled();
-      if (se_checkbox("Enable Hardcore Mode", &draw_checkboxes_bool[0]))
+      if (se_checkbox("Hardcore Mode", &draw_checkboxes_bool[0]))
       {
         rc_client_set_hardcore_enabled(retro_achievements_get_client(), draw_checkboxes_bool[0]);
       }
       if (encore) se_pop_disabled();
 
-      if (se_checkbox("Enable Encore Mode", &gui_state.retro_achievements_encore_mode))
+      if (se_checkbox("Encore Mode", &gui_state.retro_achievements_encore_mode))
       {
         se_reset_core();
       }
 
-      se_checkbox("Enable Notifications", &draw_checkboxes_bool[1]);
+      se_checkbox("Notifications", &draw_checkboxes_bool[1]);
       if (!gui_state.settings.draw_notifications) se_push_disabled();
       igIndent(15);
       se_checkbox("Only one notification at a time", &draw_checkboxes_bool[5]);
       igUnindent(15);
       if (!gui_state.settings.draw_notifications) se_pop_disabled();
-      se_checkbox("Enable Progress Indicators",&draw_checkboxes_bool[2]);
+      se_checkbox("Progress Indicators",&draw_checkboxes_bool[2]);
       if (!hardcore&&!encore) se_push_disabled();
-      se_checkbox("Enable Leaderboard Trackers",&draw_checkboxes_bool[3]);
+      se_checkbox("Leaderboard Trackers",&draw_checkboxes_bool[3]);
       if (!hardcore&&!encore) se_pop_disabled();
-      se_checkbox("Enable Challenge Indicators",&draw_checkboxes_bool[4]);
+      se_checkbox("Challenge Indicators",&draw_checkboxes_bool[4]);
 
       uint32_t* checkboxes[6] = {
         &gui_state.settings.hardcore_mode,
