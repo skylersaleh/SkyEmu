@@ -372,7 +372,7 @@ elseif(ANDROID)
 else()
     add_executable(${PROJECT_NAME} ${SKYEMU_SRC})
 endif()
-add_library(SkyEmuRetro SHARED src/libretro.c src/shared.c)
+add_library(SkyEmuRetro SHARED src/libretro.c src/shared.c src/localization.c)
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-sALLOW_MEMORY_GROWTH -s TOTAL_MEMORY=192MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=0 --closure 0 ")

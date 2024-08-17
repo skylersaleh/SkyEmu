@@ -4,32 +4,246 @@
 #include <time.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 
 #include "shared.h"
 #include "sb_types.h"
 #include "gb.h"
 #include "gba.h"
 #include "nds.h"
+#include "localization.h"
 
 #define SKYEMU_LIBRETRO_VERSION "0.1.0"
-
-// necessary to resolve a linker error when loaded by retroarch
-bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t* data, size_t data_size) {
-  (void)name;
-  (void)base_path;
-  (void)file_name;
-  (void)data;
-  (void)data_size;
-  return false;
-}
 
 static retro_video_refresh_t video_refresh_cb = NULL;
 static retro_input_poll_t input_poll_cb = NULL;
 static retro_input_state_t input_state_cb = NULL;
-static retro_audio_sample_t audio_sample_cb = NULL;
+static retro_audio_sample_batch_t audio_sample_batch_cb = NULL;
 static retro_environment_t env_cb = NULL;
+static retro_log_printf_t log_cb = NULL;
 
 sb_emu_state_t emu_state;
+
+enum opts_core_override {
+  OPTS_CORE_OVERRIDE_AUTOMATIC,
+  OPTS_CORE_OVERRIDE_GB,
+  OPTS_CORE_OVERRIDE_GBA,
+  OPTS_CORE_OVERRIDE_NDS, 
+};
+
+struct {
+  enum opts_core_override core_override;
+  bool gb_use_bios;
+  bool gba_use_bios;
+  bool nds_use_bios; 
+} gopts;
+
+#define OPTS_VAL_ON "ON"
+#define OPTS_VAL_OFF "OFF"
+
+#define OPTS_KEY_SYSTEM_CORE_OVERRIDE "system_core_override"
+#define OPTS_VAL_SYSTEM_CORE_OVERRIDE_AUTOMATIC "Automatic"
+#define OPTS_VAL_SYSTEM_CORE_OVERRIDE_GB "Game Boy"
+#define OPTS_VAL_SYSTEM_CORE_OVERRIDE_GBA "Game Boy Advance"
+#define OPTS_VAL_SYSTEM_CORE_OVERRIDE_NDS "Nintendo DS"
+
+#define OPTS_KEY_SYSTEM_GB_ENABLE_BIOS "system_gb_bios_enable"
+#define OPTS_KEY_SYSTEM_GBA_ENABLE_BIOS "system_gba_bios_enable"
+#define OPTS_KEY_SYSTEM_NDS_ENABLE_BIOS "system_nds_bios_enable"
+
+void opts_initialize() {
+  static struct retro_core_option_v2_category categories_default[] = {
+    { .key = "system", .desc = "System Settings", .info = NULL },
+    {0}
+  };
+
+  static struct retro_core_option_v2_definition shared_opts[] = {
+    {
+      OPTS_KEY_SYSTEM_CORE_OVERRIDE,
+      "Core Override",
+      NULL,
+      "Determines which core is used",
+      NULL,
+      "system",
+      {
+        { OPTS_VAL_SYSTEM_CORE_OVERRIDE_AUTOMATIC, NULL },
+        { OPTS_VAL_SYSTEM_CORE_OVERRIDE_GB, NULL },
+        { OPTS_VAL_SYSTEM_CORE_OVERRIDE_GBA, NULL },
+        { OPTS_VAL_SYSTEM_CORE_OVERRIDE_NDS, NULL },
+        {0}
+      },
+      OPTS_VAL_SYSTEM_CORE_OVERRIDE_AUTOMATIC,
+    },
+    {
+      OPTS_KEY_SYSTEM_GB_ENABLE_BIOS,
+      "Game Boy Firmware",
+      NULL,
+      "Game Boy Firmware Enabled",
+      NULL,
+      "system",
+      {
+        { OPTS_VAL_ON, NULL },
+        { OPTS_VAL_OFF, NULL },
+        {0}
+      },
+      OPTS_VAL_ON,
+    },
+    {
+      OPTS_KEY_SYSTEM_GBA_ENABLE_BIOS,
+      "Game Boy Advance Firmware",
+      NULL,
+      "Game Boy Advance Firmware Enabled",
+      NULL,
+      "system",
+      {
+        { OPTS_VAL_ON, NULL },
+        { OPTS_VAL_OFF, NULL },
+        {0}
+      },
+      OPTS_VAL_ON,
+    },
+    {
+      OPTS_KEY_SYSTEM_NDS_ENABLE_BIOS,
+      "Nintendo DS Firmware",
+      NULL,
+      "Nintendo DS Firmware Enabled",
+      NULL,
+      "system",
+      {
+        { OPTS_VAL_ON, NULL },
+        { OPTS_VAL_OFF, NULL },
+        {0}
+      },
+      OPTS_VAL_ON,
+    },
+    {0}
+  };
+
+  static struct retro_core_option_v2_category opts_cat[SE_MAX_LANG_VALUE][sizeof categories_default / sizeof *categories_default];
+  static struct retro_core_option_v2_definition opts_def[SE_MAX_LANG_VALUE][sizeof shared_opts / sizeof *shared_opts];
+  static struct retro_core_options_v2 opts_langs[SE_MAX_LANG_VALUE];
+
+  struct { unsigned sky_emu_language; unsigned retro_language; } support[] = {
+    { SE_LANG_ENGLISH, RETRO_LANGUAGE_ENGLISH },
+    { SE_LANG_ARABIC, RETRO_LANGUAGE_ARABIC },
+    { SE_LANG_CHINESE, RETRO_LANGUAGE_CHINESE_SIMPLIFIED },
+    { SE_LANG_CHINESE, RETRO_LANGUAGE_CHINESE_TRADITIONAL },
+    { SE_LANG_DUTCH, RETRO_LANGUAGE_DUTCH },
+    { SE_LANG_FRENCH, RETRO_LANGUAGE_FRENCH },
+    { SE_LANG_GERMAN, RETRO_LANGUAGE_GERMAN },
+    { SE_LANG_GREEK, RETRO_LANGUAGE_GREEK },
+    { SE_LANG_ITALIAN, RETRO_LANGUAGE_ITALIAN },
+    { SE_LANG_JAPANESE, RETRO_LANGUAGE_JAPANESE },
+    { SE_LANG_KOREAN, RETRO_LANGUAGE_KOREAN },
+    { SE_LANG_POLISH, RETRO_LANGUAGE_POLISH },
+    { SE_LANG_PORTUGESE, RETRO_LANGUAGE_PORTUGUESE_PORTUGAL },
+    { SE_LANG_RUSSIAN, RETRO_LANGUAGE_RUSSIAN },
+    { SE_LANG_SPANISH, RETRO_LANGUAGE_SPANISH },
+  };
+
+  unsigned local;
+  int skyemu_local = -1;
+  env_cb(RETRO_ENVIRONMENT_GET_LANGUAGE, &local);
+  for (int s = 0; s < sizeof support / sizeof *support; ++s) {
+    unsigned l = support[s].sky_emu_language;
+    if (support[s].retro_language == local) {
+      skyemu_local = l;
+    }
+    se_set_language(l);
+
+    int i = 0;
+    for (; i < (sizeof opts_cat[l] / sizeof *opts_cat[l]) - 1; ++i) {
+      opts_cat[l][i].key = categories_default[i].key;
+      opts_cat[l][i].desc = se_localize(categories_default[i].desc);
+      opts_cat[l][i].info = categories_default[i].info ? se_localize(categories_default[i].info) : NULL;
+    }
+    memset(&opts_cat[i], 0, sizeof *opts_cat);
+
+    for (i = 0; i < (sizeof shared_opts / sizeof *shared_opts) - 1; ++i) {
+      opts_def[l][i].key = shared_opts[i].key;
+      opts_def[l][i].category_key = shared_opts[i].category_key;
+      memcpy(opts_def[l][i].values, shared_opts[i].values, sizeof opts_def[l][i].values);
+      opts_def[l][i].default_value = shared_opts[i].default_value;
+      opts_def[l][i].desc = se_localize(shared_opts[i].desc);
+      opts_def[l][i].info = se_localize(shared_opts[i].info);
+      opts_def[l][i].desc_categorized = shared_opts[i].desc_categorized ? se_localize(shared_opts[i].desc_categorized) : NULL;
+      opts_def[l][i].info_categorized = shared_opts[i].info_categorized ? se_localize(shared_opts[i].info_categorized) : NULL;
+    }
+    memset(&opts_def[l][i], 0, sizeof *opts_def[l]);
+
+    opts_langs[l].categories = opts_cat[l];
+    opts_langs[l].definitions = opts_def[l];
+  }
+
+  static struct retro_core_options_v2_intl opts;
+  opts.us = &opts_langs[SE_LANG_ENGLISH];
+  opts.local = skyemu_local >= 0 ? &opts_langs[skyemu_local] : NULL;
+
+  env_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL, &opts);
+}
+
+void opts_reload_all() {
+  struct retro_variable var;
+
+  var.key = OPTS_KEY_SYSTEM_CORE_OVERRIDE;
+  env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+  if (strcmp(var.value, OPTS_VAL_SYSTEM_CORE_OVERRIDE_GB) == 0)
+    gopts.core_override = OPTS_CORE_OVERRIDE_GB;
+  else if (strcmp(var.value, OPTS_VAL_SYSTEM_CORE_OVERRIDE_GBA) == 0) 
+    gopts.core_override = OPTS_CORE_OVERRIDE_GBA;
+  else if (strcmp(var.value, OPTS_VAL_SYSTEM_CORE_OVERRIDE_NDS) == 0)
+    gopts.core_override = OPTS_CORE_OVERRIDE_NDS;
+  else
+    gopts.core_override = OPTS_CORE_OVERRIDE_AUTOMATIC;
+
+  var.key = OPTS_KEY_SYSTEM_GB_ENABLE_BIOS;
+  env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+  gopts.gb_use_bios = strcmp(var.value, OPTS_VAL_ON) == 0;
+
+  var.key = OPTS_KEY_SYSTEM_GBA_ENABLE_BIOS;
+  env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+  gopts.gba_use_bios = strcmp(var.value, OPTS_VAL_ON) == 0;
+
+  var.key = OPTS_KEY_SYSTEM_NDS_ENABLE_BIOS;
+  env_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+  gopts.nds_use_bios = strcmp(var.value, OPTS_VAL_ON) == 0;  
+}
+
+bool se_load_bios_file(const char* name, const char* base_path, const char* file_name, uint8_t* data, size_t data_size) {
+  (void)base_path;
+  const char* syspath;
+  env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &syspath);
+  if (!syspath) return false;
+  char bios_path[PATH_MAX];
+  snprintf(bios_path, sizeof bios_path, "%s/%s", syspath, file_name);
+
+  log_cb(RETRO_LOG_INFO, "opening bios file: %s\n", bios_path);
+  FILE* biosf = fopen(bios_path, "rb");
+  if (!biosf) {
+    return false;
+  }
+  fseek(biosf, 0, SEEK_END);
+  long int size = ftell(biosf);
+  fseek(biosf, 0, SEEK_SET);
+
+  if (size > data_size) {
+    fclose(biosf);
+    return false;
+  }
+
+  bool did_read = false;
+  if (
+    (emu_state.system == SYSTEM_GB && gopts.gb_use_bios)
+    || (emu_state.system == SYSTEM_GBA && gopts.gba_use_bios)
+    || (emu_state.system == SYSTEM_NDS && gopts.nds_use_bios)
+  ) {
+    memset(data, 0, data_size);
+    fread(data, size, 1, biosf);
+    did_read = true;
+  }
+  fclose(biosf);
+  return did_read;
+}
 
 /* ------------------ RETROARCH GB ----------------- */
 
@@ -577,6 +791,8 @@ bool retro_nds_run_cheat(const uint32_t* buffer, uint32_t size) {
 /* ----------------- RETROARCH IMP ----------------- */
 
 static bool load_rom(const struct retro_game_info* game) {
+  opts_reload_all();
+
   if (emu_state.rom_loaded) {
     free(emu_state.rom_data);
   }
@@ -589,23 +805,27 @@ static bool load_rom(const struct retro_game_info* game) {
   char* extension = strrchr(game->path, '.');  
   if (
       // there must be a dot for there to be a valid extension
-      extension
+      extension || gopts.core_override != OPTS_CORE_OVERRIDE_AUTOMATIC
   ) {
-    if (!strcmp(".gb", extension) || !strcmp(".gbc", extension)) {
+    if (
+        ((!strcmp(".gb", extension) || !strcmp(".gbc", extension)) && gopts.core_override == OPTS_CORE_OVERRIDE_AUTOMATIC) 
+        || gopts.core_override == OPTS_CORE_OVERRIDE_GB
+    ) {
       emu_state.system = SYSTEM_GB;
       retro_gb_init();
       return retro_gb_load_rom();
-    } else if (!strcmp(".gba", extension)) {
+    } else if ((!strcmp(".gba", extension) && gopts.core_override == OPTS_CORE_OVERRIDE_AUTOMATIC) || gopts.core_override == OPTS_CORE_OVERRIDE_GBA) {
       emu_state.system = SYSTEM_GBA;
       retro_gba_init();
       return retro_gba_load_rom();
-    } else if (!strcmp(".nds", extension)) {
+    } else if ((!strcmp(".nds", extension) && gopts.core_override == OPTS_CORE_OVERRIDE_AUTOMATIC) || gopts.core_override == OPTS_CORE_OVERRIDE_NDS) {
       emu_state.system = SYSTEM_NDS;
       retro_nds_init();
       return retro_nds_load_rom();
     } 
-  }
+  }  
 
+  log_cb(RETRO_LOG_ERROR, "failed to load game '%s'\n%s\n", game->path, game->meta);
   emu_state.rom_loaded = false;
   free(emu_state.rom_data);
   return false;
@@ -617,29 +837,8 @@ unsigned retro_api_version(void) {
 
 void retro_set_environment(retro_environment_t env) {
   env_cb = env;
-}
+  env(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log_cb);
 
-void retro_set_video_refresh(retro_video_refresh_t refresh) {
-  video_refresh_cb = refresh;
-}
-
-void retro_set_audio_sample(retro_audio_sample_t sample) {
-  audio_sample_cb = sample;
-}
-
-void retro_set_audio_sample_batch(retro_audio_sample_batch_t batch) {
-  (void)batch;
-}
-
-void retro_set_input_poll(retro_input_poll_t poll) {
-  input_poll_cb = poll;
-}
-
-void retro_set_input_state(retro_input_state_t state) {
-  input_state_cb = state;
-}
-
-void retro_init(void) {
   // set input descriptors
   static struct retro_input_descriptor input_descriptors[] = {
     { .port = 0, .device = RETRO_DEVICE_JOYPAD, .index = 0, .id = RETRO_DEVICE_ID_JOYPAD_START, .description = "joypad start" },
@@ -659,8 +858,33 @@ void retro_init(void) {
     { .port = 0, .device = RETRO_DEVICE_POINTER, .index = 0, .id = RETRO_DEVICE_ID_POINTER_PRESSED, .description = "touch press" },
     {0}
   };
-  env_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_descriptors);
+  env(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_descriptors);
 
+  // set core configuration options
+  opts_initialize();
+}
+
+void retro_set_video_refresh(retro_video_refresh_t refresh) {
+  video_refresh_cb = refresh;
+}
+
+void retro_set_audio_sample(retro_audio_sample_t sample) {
+  (void)sample;
+}
+
+void retro_set_audio_sample_batch(retro_audio_sample_batch_t batch) {
+  audio_sample_batch_cb = batch;
+}
+
+void retro_set_input_poll(retro_input_poll_t poll) {
+  input_poll_cb = poll;
+}
+
+void retro_set_input_state(retro_input_state_t state) {
+  input_state_cb = state;
+}
+
+void retro_init(void) {
   emu_state.render_frame = true;
 }
 
@@ -685,8 +909,7 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
   // TODO: confirm skyemu does not need this.
-  (void)port;
-  (void)device;
+  log_cb(RETRO_LOG_WARN, "ignoring controller port device: port: %u, device: %u\n", port, device);
 }
 
 void retro_reset(void) {
@@ -745,13 +968,18 @@ void retro_run(void) {
   int pitch = width * 4;
   video_refresh_cb(data, width, height, pitch);
 
-  for (uint32_t audio_buffer_size; audio_buffer_size = sb_ring_buffer_size(&emu_state.audio_ring_buff), audio_buffer_size > 2;) {
-    uint32_t read0 = emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
-    uint32_t read1 = emu_state.audio_ring_buff.read_ptr++ % SB_AUDIO_RING_BUFFER_SIZE;
-    int16_t sample0 = emu_state.audio_ring_buff.data[read0];
-    int16_t sample1 = emu_state.audio_ring_buff.data[read1];
-    audio_sample_cb(sample0, sample1);
-  }    
+  uint32_t samples = sb_ring_buffer_size(&emu_state.audio_ring_buff);
+  uint32_t frames = samples >> 1;
+  uint32_t beg_ptr = emu_state.audio_ring_buff.read_ptr;
+  uint32_t end_ptr = (emu_state.audio_ring_buff.read_ptr + (frames << 1)) % SB_AUDIO_RING_BUFFER_SIZE;
+  if (end_ptr < beg_ptr) {
+    int remaining = (SB_AUDIO_RING_BUFFER_SIZE - beg_ptr) >> 1;
+    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], remaining);
+    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[0], frames - remaining);
+  } else {
+    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], frames);
+  }
+  emu_state.audio_ring_buff.read_ptr = end_ptr;
 }
 
 size_t retro_serialize_size(void) {
@@ -794,6 +1022,7 @@ void retro_cheat_set(unsigned index, bool enabled, const char* code) {
     fprintf(stderr, "cheat index cannot be higher than 32\n");
     return;
   }
+  log_cb(RETRO_LOG_INFO, "setting cheat %u: %b\n", index, enabled);
   se_convert_cheat_code(code, index);
   if (enabled) {
     se_enable_cheat(index);
