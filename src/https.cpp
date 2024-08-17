@@ -49,6 +49,9 @@ struct thread_pool {
 
 private:
     void main_loop() {
+        CURL* curl = curl_easy_init();
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L); 
+        curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L); 
         while (!terminate_all) {
             job j;
             {
@@ -60,11 +63,12 @@ private:
                 j = jobs.front();
                 jobs.pop();
             }
-            handle_job(j);
+            handle_job(j,curl);
         }
+        curl_easy_cleanup(curl);
     }
 
-    void handle_job(job& j);
+    void handle_job(job& j, CURL* curl);
 
     std::atomic_bool terminate_all = { false };
 
@@ -188,9 +192,8 @@ CURLcode sslctx_function(CURL *curl, void *sslctx, void *parm)
     return rv;
 }
 
-void thread_pool::handle_job(job& j)
+void thread_pool::handle_job(job& j, CURL * curl)
 {
-    CURL* curl = curl_easy_init();
     if (!curl)
     {
         printf("[cloud] failed to initialize curl\n");
@@ -248,6 +251,12 @@ void thread_pool::handle_job(job& j)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
 
     res = curl_easy_perform(curl);
+    res = curl_easy_setopt(curl, CURLOPT_HTTPGET, 0L); se_validate();
+    res = curl_easy_setopt(curl, CURLOPT_POST, 0L); se_validate();
+    res = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, ""); se_validate();
+    res = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0); se_validate();
+
+    
     if (res != CURLE_OK)
     {
         printf("[cloud] curl failed: %s\n", curl_easy_strerror(res));
@@ -259,7 +268,6 @@ void thread_pool::handle_job(job& j)
     }
 
     curl_slist_free_all(chunk);
-    curl_easy_cleanup(curl);
 }
 #endif
 
