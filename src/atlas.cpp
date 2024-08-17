@@ -196,6 +196,7 @@ void atlas_t::add_tile(const std::string& url, atlas_tile_t* tile, cached_image_
             atlas_tile_t* old_tile = map->total_tiles[image_url];
             cached_image_t* old_cached_image = image_cache[image_url];
             copy_to_data(old_tile, old_cached_image);
+            old_tile->atlas_id = SG_INVALID_ID; // old tile is no longer valid
         }
     }
 
@@ -434,10 +435,6 @@ atlas_tile_t* atlas_add_tile_from_path(atlas_map_t* map, const char* path) {
 void atlas_upload_all() {
     std::unique_lock<std::mutex> lock(atlas_maps_mutex);
     for (atlas_map_t* map : atlas_maps) {
-        if (map->requests > 0) {
-            continue; // probably a lot of outstanding requests and we don't wanna update too often
-        }
-
         map->upload_all();
     }
     lock.unlock();
