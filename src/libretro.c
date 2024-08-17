@@ -22,6 +22,18 @@ static retro_log_printf_t log_cb = NULL;
 
 sb_emu_state_t emu_state;
 
+static union {
+  gb_scratch_t gb;
+  gba_scratch_t gba;
+  nds_scratch_t nds;
+} scratch;
+
+static union {
+  sb_gb_t gb;
+  gba_t gba;
+  nds_t nds;
+} cores;
+
 enum opts_core_override {
   OPTS_CORE_OVERRIDE_AUTOMATIC,
   OPTS_CORE_OVERRIDE_GB,
@@ -246,62 +258,59 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
 
 /* ------------------ RETROARCH GB ----------------- */
 
-static gb_scratch_t gb_scratch;
-static sb_gb_t gb;
-
 void retro_gb_init(){
   static struct retro_memory_descriptor mdesc[9];
   // rom
-  mdesc[0].ptr = gb.mem.data;
+  mdesc[0].ptr = cores.gb.mem.data;
   mdesc[0].start = 0x0000;
   mdesc[0].len = 0x4000;
   mdesc[0].flags = RETRO_MEMDESC_CONST;
 
-  mdesc[1].ptr = gb.mem.data;
+  mdesc[1].ptr = cores.gb.mem.data;
   mdesc[1].offset = 0x4000;
   mdesc[1].start = 0x4000;
   mdesc[1].len = 0x4000;
   mdesc[1].flags = RETRO_MEMDESC_CONST;
 
   // vram
-  mdesc[2].ptr = gb.mem.data;
+  mdesc[2].ptr = cores.gb.mem.data;
   mdesc[2].offset = 0x8000;
   mdesc[2].start = 0x8000;
   mdesc[2].len = 0x2000;
 
   // wram
-  mdesc[3].ptr = gb.mem.data;
+  mdesc[3].ptr = cores.gb.mem.data;
   mdesc[3].offset = 0xc000;
   mdesc[3].start = 0xc000;
   mdesc[3].len = 0x1000;
 
-  mdesc[4].ptr = gb.mem.data;
+  mdesc[4].ptr = cores.gb.mem.data;
   mdesc[4].offset = 0xd000;
   mdesc[4].start = 0xd000;
   mdesc[4].len = 0x1000;
 
   // oam
-  mdesc[5].ptr = gb.mem.data;
+  mdesc[5].ptr = cores.gb.mem.data;
   mdesc[5].offset = 0xfe00;
   mdesc[5].start = 0xfe00;
   mdesc[5].len = 0xa0;
   mdesc[5].select = 0xffffff60;
 
   // mmio
-  mdesc[6].ptr = gb.mem.data;
+  mdesc[6].ptr = cores.gb.mem.data;
   mdesc[6].offset = 0xff00;
   mdesc[6].start = 0xff00;
   mdesc[6].len = 0x80;
 
   // hram
-  mdesc[7].ptr = gb.mem.data;
+  mdesc[7].ptr = cores.gb.mem.data;
   mdesc[7].offset = 0xff80;
   mdesc[7].start = 0xff80;
   mdesc[7].len = 0x7f;
   mdesc[7].select = 0xffffff80;
 
   // ie
-  mdesc[8].ptr = gb.mem.data;
+  mdesc[8].ptr = cores.gb.mem.data;
   mdesc[8].offset = 0xffff;
   mdesc[8].start = 0xffff;
   mdesc[8].len = 1;
@@ -314,11 +323,11 @@ void retro_gb_init(){
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
   env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
 
-  sb_ptrs_init(&gb, &gb_scratch, emu_state.rom_data);  
+  sb_ptrs_init(&cores.gb, &scratch.gb, emu_state.rom_data);
 }
 
 bool retro_gb_load_rom(){
-  return sb_load_rom(&emu_state, &gb, &gb_scratch);
+  return sb_load_rom(&emu_state, &cores.gb, &scratch.gb);
 }
 
 void retro_gb_get_system_av_info(struct retro_system_av_info* info) {  
@@ -332,137 +341,134 @@ void retro_gb_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 void retro_gb_reset() {  
-    sb_load_rom(&emu_state, &gb, &gb_scratch);
+    sb_load_rom(&emu_state, &cores.gb, &scratch.gb);
 }
 
 void* retro_gb_step_frame(uint32_t* width, uint32_t* height) {
   // must be done before each tick.
   uint8_t palette[12] = { 0xff,0xff,0xff,0xAA,0xAA,0xAA,0x55,0x55,0x55,0x00,0x00,0x00 };
-  for(int i = 0; i < 12; ++i) gb.dmg_palette[i] = palette[i];
+  for(int i = 0; i < 12; ++i) cores.gb.dmg_palette[i] = palette[i];
 
-  sb_tick(&emu_state, &gb, &gb_scratch);
+  sb_tick(&emu_state, &cores.gb, &scratch.gb);
 
-  static uint8_t flipped_frame[sizeof gb_scratch.framebuffer];
+  static uint8_t flipped_frame[sizeof scratch.gb.framebuffer];
   *width = SB_LCD_W;
   *height = SB_LCD_H;  
   for (int i = 0; i < sizeof(flipped_frame); i += 4) {
     // NOTE: assume little endian
-    flipped_frame[i + 0] = gb_scratch.framebuffer[i + 2]; // blue
-    flipped_frame[i + 1] = gb_scratch.framebuffer[i + 1]; // green
-    flipped_frame[i + 2] = gb_scratch.framebuffer[i + 0]; // red
+    flipped_frame[i + 0] = scratch.gb.framebuffer[i + 2]; // blue
+    flipped_frame[i + 1] = scratch.gb.framebuffer[i + 1]; // green
+    flipped_frame[i + 2] = scratch.gb.framebuffer[i + 0]; // red
     flipped_frame[i + 3] = 0; // ignored
   }
   return flipped_frame;
 }
 
 size_t retro_gb_serialize_size() {
-  return sizeof gb;
+  return sizeof cores.gb;
 }
 
 bool retro_gb_serialize(void* data, size_t size) {
-  if (size < sizeof gb) return false;
-  memcpy(data, &gb, sizeof gb);
+  if (size < sizeof cores.gb) return false;
+  memcpy(data, &cores.gb, sizeof cores.gb);
   return true;
 }
 
 bool retro_gb_unserialize(const void* data, size_t size) {
-  if (size < sizeof gb) return false;
-  memcpy(&gb, data, sizeof gb);
-  sb_ptrs_init(&gb, &gb_scratch, emu_state.rom_data);
+  if (size < sizeof cores.gb) return false;
+  memcpy(&cores.gb, data, sizeof cores.gb);
+  sb_ptrs_init(&cores.gb, &scratch.gb, emu_state.rom_data);
   return true;
 }
 
 size_t retro_gb_get_memory_size(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof gb.cart.ram_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return sizeof gb.mem;
-    case RETRO_MEMORY_RTC: return sizeof gb.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return sizeof cores.gb.cart.ram_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return sizeof cores.gb.mem;
+    case RETRO_MEMORY_RTC: return sizeof cores.gb.rtc;
     default: return 0;
   }
 }
 
 void* retro_gb_get_memory_data(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return gb.cart.ram_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return &gb.mem;
-    case RETRO_MEMORY_RTC: return &gb.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return cores.gb.cart.ram_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return &cores.gb.mem;
+    case RETRO_MEMORY_RTC: return &cores.gb.rtc;
     default: return NULL;
   }
 }
 
 bool retro_gb_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return sb_run_ar_cheat(&gb, buffer, size);
+  return sb_run_ar_cheat(&cores.gb, buffer, size);
 }
 
 /* ----------------- RETROARCH GBA ----------------- */
-
-static gba_scratch_t gba_scratch;
-static gba_t gba;
 
 void retro_gba_init() {
   // TODO: add external memory (flash/sram)
   static struct retro_memory_descriptor mdesc[11];
   // internal wram
-  mdesc[0].ptr = gba.mem.wram1;
+  mdesc[0].ptr = cores.gba.mem.wram1;
   mdesc[0].start = 0x03000000;
-  mdesc[0].len = sizeof gba.mem.wram1;
+  mdesc[0].len = sizeof cores.gba.mem.wram1;
   mdesc[0].select = 0xff000000;
 
   // wram
-  mdesc[1].ptr = gba.mem.wram0;
+  mdesc[1].ptr = cores.gba.mem.wram0;
   mdesc[1].start = 0x02000000;
-  mdesc[1].len = sizeof gba.mem.wram0;
+  mdesc[1].len = sizeof cores.gba.mem.wram0;
   mdesc[1].select = 0xff000000;
 
   // save ram
-  mdesc[2].ptr = gba.mem.cart_backup;
+  mdesc[2].ptr = cores.gba.mem.cart_backup;
   mdesc[2].start = 0x0e000000;
-  mdesc[2].len = sizeof gba.mem.cart_backup;
+  mdesc[2].len = sizeof cores.gba.mem.cart_backup;
 
   // roms
-  mdesc[3].ptr = gba.mem.cart_rom;
+  mdesc[3].ptr = cores.gba.mem.cart_rom;
   mdesc[3].start = 0x08000000;
   mdesc[3].len = 0x02000000;
   mdesc[3].flags = RETRO_MEMDESC_CONST;
 
-  mdesc[4].ptr = gba.mem.cart_rom;
+  mdesc[4].ptr = cores.gba.mem.cart_rom;
   mdesc[4].start = 0x0a000000;
   mdesc[4].len = 0x02000000;
   mdesc[4].flags = RETRO_MEMDESC_CONST;
 
-  mdesc[5].ptr = gba.mem.cart_rom;
+  mdesc[5].ptr = cores.gba.mem.cart_rom;
   mdesc[5].start = 0x0c000000;
   mdesc[5].len = 0x02000000;
   mdesc[5].flags = RETRO_MEMDESC_CONST;
 
   // bios
-  mdesc[6].ptr = gba.mem.bios;
+  mdesc[6].ptr = cores.gba.mem.bios;
   mdesc[6].start = 0x00000000;
   mdesc[6].len = 0x00004000;
   mdesc[6].flags = RETRO_MEMDESC_CONST;
 
   // vram
-  mdesc[7].ptr = gba.mem.vram;
+  mdesc[7].ptr = cores.gba.mem.vram;
   mdesc[7].start = 0x00000400;
-  mdesc[7].len = sizeof gba.mem.vram;
+  mdesc[7].len = sizeof cores.gba.mem.vram;
   mdesc[7].select = 0xff000000;
 
   // palette
-  mdesc[8].ptr = gba.mem.palette;
+  mdesc[8].ptr = cores.gba.mem.palette;
   mdesc[8].start = 0x05000000;
-  mdesc[8].len = sizeof gba.mem.palette;
+  mdesc[8].len = sizeof cores.gba.mem.palette;
   mdesc[8].select = 0xff000000;
 
   // oam
-  mdesc[9].ptr = gba.mem.oam;
+  mdesc[9].ptr = cores.gba.mem.oam;
   mdesc[9].start = 0x07000000;
-  mdesc[9].len = sizeof gba.mem.oam;
+  mdesc[9].len = sizeof cores.gba.mem.oam;
   mdesc[9].select = 0xff000000;
 
   // mmio
-  mdesc[10].ptr = gba.mem.io;
+  mdesc[10].ptr = cores.gba.mem.io;
   mdesc[10].start = 0x04000000;
-  mdesc[10].len = sizeof gba.mem.io;
+  mdesc[10].len = sizeof cores.gba.mem.io;
 
   static struct retro_memory_map mmap;
   mmap.descriptors = mdesc;
@@ -472,11 +478,11 @@ void retro_gba_init() {
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
   env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
 
-  gba_ptrs_init(&gba, &gba_scratch, emu_state.rom_data);
+  gba_ptrs_init(&cores.gba, &scratch.gba, emu_state.rom_data);
 }
 
 bool retro_gba_load_rom() {
-  return gba_load_rom(&emu_state, &gba, &gba_scratch);
+  return gba_load_rom(&emu_state, &cores.gba, &scratch.gba);
 }
 
 void retro_gba_get_system_av_info(struct retro_system_av_info* info) {
@@ -490,46 +496,46 @@ void retro_gba_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 void retro_gba_reset() {
-  gba_load_rom(&emu_state, &gba, &gba_scratch);
+  gba_load_rom(&emu_state, &cores.gba, &scratch.gba);
 }
 
 void* retro_gba_step_frame(uint32_t* width, uint32_t* height) {
-  gba_tick(&emu_state, &gba, &gba_scratch);
+  gba_tick(&emu_state, &cores.gba, &scratch.gba);
 
-  static uint8_t flipped_frame[sizeof gba_scratch.framebuffer];
+  static uint8_t flipped_frame[sizeof scratch.gba.framebuffer];
   *width = GBA_LCD_W;
   *height = GBA_LCD_H;
   for (int i = 0; i < sizeof(flipped_frame); i += 4) {
     // NOTE: assume little endian
-    flipped_frame[i + 0] = gba_scratch.framebuffer[i + 2]; // blue
-    flipped_frame[i + 1] = gba_scratch.framebuffer[i + 1]; // green
-    flipped_frame[i + 2] = gba_scratch.framebuffer[i + 0]; // red
+    flipped_frame[i + 0] = scratch.gba.framebuffer[i + 2]; // blue
+    flipped_frame[i + 1] = scratch.gba.framebuffer[i + 1]; // green
+    flipped_frame[i + 2] = scratch.gba.framebuffer[i + 0]; // red
     flipped_frame[i + 3] = 0; // ignored
   }
   return flipped_frame;
 }
 
 size_t retro_gba_serialize_size() {
-  return sizeof gba;
+  return sizeof cores.gba;
 }
 
 bool retro_gba_serialize(void* data, size_t size) {
-  if (size < sizeof gba) return false;
-  memcpy(data, &gba, sizeof gba);
+  if (size < sizeof cores.gba) return false;
+  memcpy(data, &cores.gba, sizeof cores.gba);
   return true;
 }
 
 bool retro_gba_unserialize(const void* data, size_t size) {
-  if (size < sizeof gba) return false;
-  memcpy(&gba, data, sizeof gba);
-  gba_ptrs_init(&gba, &gba_scratch, emu_state.rom_data);
+  if (size < sizeof cores.gba) return false;
+  memcpy(&cores.gba, data, sizeof cores.gba);
+  gba_ptrs_init(&cores.gba, &scratch.gba, emu_state.rom_data);
   return true;
 }
 
 size_t retro_gba_get_memory_size(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof gba.mem.cart_backup;
-    case RETRO_MEMORY_RTC: return sizeof gba.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return sizeof cores.gba.mem.cart_backup;
+    case RETRO_MEMORY_RTC: return sizeof cores.gba.rtc;
     default: return 0;
   }
 }
@@ -537,20 +543,17 @@ size_t retro_gba_get_memory_size(unsigned id) {
 void* retro_gba_get_memory_data(unsigned id) {
   // isgnoring system memory here as it is not continuous, it does not matter anyway.
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return gba.mem.cart_backup;
-    case RETRO_MEMORY_RTC: return &gba.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return cores.gba.mem.cart_backup;
+    case RETRO_MEMORY_RTC: return &cores.gba.rtc;
     default: return NULL;
   }
 }
 
 bool retro_gba_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return gba_run_ar_cheat(&gba, buffer, size);
+  return gba_run_ar_cheat(&cores.gba, buffer, size);
 }
 
 /* ----------------- RETROARCH NDS ----------------- */
-
-static nds_scratch_t nds_scratch;
-static nds_t nds;
 
 void retro_nds_init() {
   // TODO: there are still memory regions
@@ -561,73 +564,73 @@ void retro_nds_init() {
   // instruction tcm
   mdesc[0] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.code_tcm,
+    .ptr = cores.nds.mem.code_tcm,
     .offset = 0,
 
     .start = 0,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.code_tcm,
+    .len = sizeof cores.nds.mem.code_tcm,
     .addrspace = NULL,
   };
   // main memory
   mdesc[1] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.ram,
+    .ptr = cores.nds.mem.ram,
     .offset = 0,
 
     .start = 0x02000000,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.ram,
+    .len = sizeof cores.nds.mem.ram,
     // .addrspace = NULL,
   };
   ;
   // shared wram
   mdesc[2] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.wram,
+    .ptr = cores.nds.mem.wram,
     .offset = 0,
 
     .start = 0x03000000,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.wram,
+    .len = sizeof cores.nds.mem.wram,
     .addrspace = NULL,
   };
   // arm9 io
   mdesc[3] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.io,
+    .ptr = cores.nds.mem.io,
     .offset = 0,
 
     .start = 0x04000000,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.io,
+    .len = sizeof cores.nds.mem.io,
     .addrspace = NULL,
   };
   // palette
   mdesc[4] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.palette,
+    .ptr = cores.nds.mem.palette,
     .offset = 0,
 
     .start = 0x05000000,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.palette,
+    .len = sizeof cores.nds.mem.palette,
     .addrspace = NULL,
   };
   // vram 0
   mdesc[5] = (struct retro_memory_descriptor){
     .flags = RETRO_MEMDESC_VIDEO_RAM,
-    .ptr = nds.mem.vram,
+    .ptr = cores.nds.mem.vram,
     .offset = 0,
 
     .start = 0x06000000,
@@ -640,7 +643,7 @@ void retro_nds_init() {
   // vram 1
   mdesc[6] = (struct retro_memory_descriptor){
     .flags = RETRO_MEMDESC_VIDEO_RAM,
-    .ptr = nds.mem.vram,
+    .ptr = cores.nds.mem.vram,
     .offset = 512 << 10,
 
     .start = 0x06200000,
@@ -653,7 +656,7 @@ void retro_nds_init() {
   // vram 2
   mdesc[7] = (struct retro_memory_descriptor){
     .flags = RETRO_MEMDESC_VIDEO_RAM,
-    .ptr = nds.mem.vram,
+    .ptr = cores.nds.mem.vram,
     .offset = (512 << 10) + (128 << 10),
 
     .start = 0x06400000,
@@ -666,7 +669,7 @@ void retro_nds_init() {
   // vram 3
   mdesc[8] = (struct retro_memory_descriptor){
     .flags = RETRO_MEMDESC_VIDEO_RAM,
-    .ptr = nds.mem.vram,
+    .ptr = cores.nds.mem.vram,
     .offset = (512 << 10) + (128 << 10) + (256 << 10),
 
     .start = 0x06600000,
@@ -679,7 +682,7 @@ void retro_nds_init() {
   // vram 4
   mdesc[9] = (struct retro_memory_descriptor){
     .flags = RETRO_MEMDESC_VIDEO_RAM,
-    .ptr = nds.mem.vram,
+    .ptr = cores.nds.mem.vram,
     .offset = (512 << 10) + (128 << 10) * 2 + (256 << 10),
 
     .start = 0x06800000,
@@ -692,14 +695,14 @@ void retro_nds_init() {
   // oam
   mdesc[10] = (struct retro_memory_descriptor){
     .flags = 0,
-    .ptr = nds.mem.oam,
+    .ptr = cores.nds.mem.oam,
     .offset = 0,
 
     .start = 0x07000000,
     .select = 0,
     .disconnect = 0,
 
-    .len = sizeof nds.mem.oam,
+    .len = sizeof cores.nds.mem.oam,
     .addrspace = NULL,
   };
   
@@ -711,11 +714,11 @@ void retro_nds_init() {
   int pixel_fmt = RETRO_PIXEL_FORMAT_XRGB8888;
   env_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_fmt);
 
-  nds_ptrs_init(&nds, &nds_scratch, emu_state.rom_data, emu_state.rom_size);
+  nds_ptrs_init(&cores.nds, &scratch.nds, emu_state.rom_data, emu_state.rom_size);
 }
 
 bool retro_nds_load_rom() {
-  return nds_load_rom(&emu_state, &nds, &nds_scratch);
+  return nds_load_rom(&emu_state, &cores.nds, &scratch.nds);
 }
 
 void retro_nds_get_system_av_info(struct retro_system_av_info* info) {
@@ -729,62 +732,62 @@ void retro_nds_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 void retro_nds_reset() {
-  nds_load_rom(&emu_state, &nds, &nds_scratch);
+  nds_load_rom(&emu_state, &cores.nds, &scratch.nds);
 }
 
 void* retro_nds_step_frame(uint32_t* width, uint32_t* height) {
-  nds_tick(&emu_state, &nds, &nds_scratch);
+  nds_tick(&emu_state, &cores.nds, &scratch.nds);
 
-  static uint8_t flipped_frame[sizeof nds_scratch.framebuffer_full];
+  static uint8_t flipped_frame[sizeof scratch.nds.framebuffer_full];
   *width = NDS_LCD_W;
   *height = NDS_LCD_H * 2; // we have two screens (bottom and top)
   for (int i = 0; i < sizeof(flipped_frame); i += 4) {
     // NOTE: assume little endian
-    flipped_frame[i + 0] = nds_scratch.framebuffer_full[i + 2]; // blue
-    flipped_frame[i + 1] = nds_scratch.framebuffer_full[i + 1]; // green
-    flipped_frame[i + 2] = nds_scratch.framebuffer_full[i + 0]; // red
+    flipped_frame[i + 0] = scratch.nds.framebuffer_full[i + 2]; // blue
+    flipped_frame[i + 1] = scratch.nds.framebuffer_full[i + 1]; // green
+    flipped_frame[i + 2] = scratch.nds.framebuffer_full[i + 0]; // red
     flipped_frame[i + 3] = 0; // ignored
   }
   return flipped_frame;
 }
 
 size_t retro_nds_serialize_size() {
-  return sizeof nds;
+  return sizeof cores.nds;
 }
 
 bool retro_nds_serialize(void* data, size_t size) {
-  if (size < sizeof nds) return false;
-  memcpy(data, &nds, sizeof nds);
+  if (size < sizeof cores.nds) return false;
+  memcpy(data, &cores.nds, sizeof cores.nds);
   return true;
 }
 
 bool retro_nds_unserialize(const void* data, size_t size) {
-  if (size < sizeof nds) return false;
-  memcpy(&nds, data, sizeof nds);
-  nds_ptrs_init(&nds, &nds_scratch, emu_state.rom_data, emu_state.rom_size);
+  if (size < sizeof cores.nds) return false;
+  memcpy(&cores.nds, data, sizeof cores.nds);
+  nds_ptrs_init(&cores.nds, &scratch.nds, emu_state.rom_data, emu_state.rom_size);
   return true;
 }
 
 size_t retro_nds_get_memory_size(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return sizeof nds_scratch.save_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return sizeof nds.mem.ram;
-    case RETRO_MEMORY_RTC: return sizeof nds.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return sizeof scratch.nds.save_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return sizeof cores.nds.mem.ram;
+    case RETRO_MEMORY_RTC: return sizeof cores.nds.rtc;
     default: return 0;
   }
 }
 
 void* retro_nds_get_memory_data(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM: return nds_scratch.save_data;
-    case RETRO_MEMORY_SYSTEM_RAM: return nds.mem.ram;
-    case RETRO_MEMORY_RTC: return &nds.rtc;
+    case RETRO_MEMORY_SAVE_RAM: return scratch.nds.save_data;
+    case RETRO_MEMORY_SYSTEM_RAM: return cores.nds.mem.ram;
+    case RETRO_MEMORY_RTC: return &cores.nds.rtc;
     default: return NULL;
   }
 }
 
 bool retro_nds_run_cheat(const uint32_t* buffer, uint32_t size) {
-  return nds_run_ar_cheat(&nds, buffer, size);
+  return nds_run_ar_cheat(&cores.nds, buffer, size);
 }
 
 /* ----------------- RETROARCH IMP ----------------- */
