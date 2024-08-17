@@ -665,7 +665,7 @@ namespace
                               response.http_status_code = 200;
                               callback(&response, callback_data);
                           }
-                      });
+                      }, false);
     }
 
     void retro_achievements_log_callback(const char* message, const rc_client_t* client)
