@@ -10,7 +10,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. && cmake --build .
+          cmake .. && cmake --build . --target SkyEmuRetro --config Release
           
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.

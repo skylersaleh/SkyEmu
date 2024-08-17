@@ -11,7 +11,7 @@ jobs:
           mkdir build
           cd build
           cmake -GXcode -DCMAKE_SYSTEM_NAME=iOS ../
-          cmake --build . --config Release
+          cmake --build . --target SkyEmuRetro --config Release
           mkdir Payload
           cp -R libSkyEmuRetro.dylib Payload/SkyEmu.app
           zip -r SkyEmuRetro.ipa Payload
