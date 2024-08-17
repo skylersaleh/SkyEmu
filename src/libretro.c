@@ -215,7 +215,7 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &syspath);
   if (!syspath) return false;
   char bios_path[PATH_MAX];
-  snprintf(bios_path, sizeof bios_path, "%s/%s", syspath, file_name);
+  snprintf(bios_path, sizeof bios_path, "%s/SkyEmu/%s", syspath, file_name);
 
   log_cb(RETRO_LOG_INFO, "opening bios file: %s\n", bios_path);
   FILE* biosf = fopen(bios_path, "rb");
@@ -239,6 +239,7 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   ) {
     memset(data, 0, data_size);
     fread(data, size, 1, biosf);
+    log_cb(RETRO_LOG_INFO, "successfully loaded firmware data '%s'", bios_path);
     did_read = true;
   }
   fclose(biosf);
@@ -328,7 +329,7 @@ void retro_gb_get_system_av_info(struct retro_system_av_info* info) {
   info->geometry.max_width = SB_LCD_W;
   info->geometry.base_height = info->geometry.max_height;
   info->geometry.base_width = info->geometry.max_width;
-  info->timing.fps = 60;
+  info->timing.fps = 59.727;
   info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
 }
 
@@ -486,7 +487,7 @@ void retro_gba_get_system_av_info(struct retro_system_av_info* info) {
   info->geometry.max_height = GBA_LCD_H;
   info->geometry.base_width = info->geometry.max_width;
   info->geometry.base_height = info->geometry.max_height; 
-  info->timing.fps = 60;
+  info->timing.fps = 59.727;
   info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
 }
 
@@ -725,7 +726,7 @@ void retro_nds_get_system_av_info(struct retro_system_av_info* info) {
   info->geometry.max_height = NDS_LCD_H * 2; // (bottom and top screen)
   info->geometry.base_width = info->geometry.max_width;
   info->geometry.base_height = info->geometry.max_height; 
-  info->timing.fps = 60;
+  info->timing.fps = 59.8261;
   info->timing.sample_rate = SE_AUDIO_SAMPLE_RATE;
 }
 
