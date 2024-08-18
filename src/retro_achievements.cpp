@@ -99,6 +99,7 @@ struct ra_progress_indicator_t
     atlas_tile_t* tile = nullptr;
     std::string title{};
     std::string measured_progress{};
+    float measured_percent = 0;
     bool show = false;
 };
 
@@ -318,6 +319,7 @@ namespace
     {
         game_state->progress_indicator.title = std::string("Progress: ") + rc_achievement->title;
         game_state->progress_indicator.measured_progress = rc_achievement->measured_progress;
+        game_state->progress_indicator.measured_percent = rc_achievement->measured_percent;
 
         std::string url;
         url.resize(256);
@@ -1175,7 +1177,7 @@ void retro_achievements_draw_notifications(float left, float top, float screen_w
     }
 }
 
-void retro_achievements_draw_progress_indicator(float right, float top)
+void retro_achievements_draw_progress_indicator(float right, float top, float screen_width)
 {
     ra_game_state_ptr game_state = ra_state->game_state;
 
@@ -1187,61 +1189,76 @@ void retro_achievements_draw_progress_indicator(float right, float top)
 
     ra_progress_indicator_t& indicator = game_state->progress_indicator;
 
-    float image_width = 64;
-    float image_height = 64;
-    float wrap_width = 200;
-    float placard_width = padding + image_width + padding + wrap_width + padding;
-    float x = right - placard_width;
-    float y = top;
+    float image_size = screen_width * 0.04f;
+    float font_size = 0.015f * screen_width;
 
-    ImVec2 out;
-    ImFont* font = igGetFont();
-    ImFont_CalcTextSizeA(&out, font, 22.0f, std::numeric_limits<float>::max(), wrap_width,
-                         indicator.measured_progress.c_str(), NULL, NULL);
-    float title_height = out.y;
-    ImFont_CalcTextSizeA(&out, font, 18.0f, std::numeric_limits<float>::max(), wrap_width,
-                         indicator.measured_progress.c_str(), NULL, NULL);
-    float progress_height = out.y;
+    if (font_size < 9.0f) {
+        font_size = 9.0f;
+    }
 
-    float placard_height = std::max(padding + title_height + padding + progress_height + padding,
-                                    padding + image_height + padding);
+    int numerator, denominator;
+    bool is_percentage = false;
 
-    ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{x, y},
-                             ImVec2{x + placard_width, y + placard_height}, 0x80515151, 8.0f,
-                             ImDrawCornerFlags_All);
+    if (strchr(indicator.measured_progress.c_str(), '/') != NULL) {
+        int res = sscanf(indicator.measured_progress.c_str(), "%d/%d", &numerator, &denominator);
+        if (res != 2) {
+            is_percentage = true;
+        }
+    } else {
+        is_percentage = true;
+    }
 
-    ImDrawList_AddRect(
-        igGetWindowDrawList(), ImVec2{x + (padding / 2), y + (padding / 2)},
-        ImVec2{x + placard_width - (padding / 2), y + placard_height - (padding / 2)}, 0x80000000,
-        8.0f, ImDrawCornerFlags_All, 2.0f);
+    std::string nums = std::to_string(numerator);
+    std::string dens = std::to_string(denominator);
+    ImVec2 numout, denout;
+    if (!is_percentage) {
+        ImFont_CalcTextSizeA(&numout, igGetFont(), font_size, std::numeric_limits<float>::max(), 0, nums.c_str(), NULL, NULL);
+        ImFont_CalcTextSizeA(&denout, igGetFont(), font_size, std::numeric_limits<float>::max(), 0, dens.c_str(), NULL, NULL);
+
+        image_size = std::max(std::max(image_size, numout.x + 8), denout.x + 8);
+    }
 
     uint32_t id = atlas_get_tile_id(indicator.tile);
-    if (indicator.tile && id != SG_INVALID_ID)
-    {
+    if (indicator.tile && id != SG_INVALID_ID) {
         atlas_uvs_t uvs = atlas_get_tile_uvs(indicator.tile);
-        ImVec2 uv0 = {uvs.x1, uvs.y1};
-        ImVec2 uv1 = {uvs.x2, uvs.y2};
-        ImDrawList_AddImageRounded(igGetWindowDrawList(),
-                                   (ImTextureID)(intptr_t)id,
-                                   ImVec2{x + padding, y + padding},
-                                   ImVec2{x + padding + image_width, y + padding + image_height},
-                                   uv0, uv1, 0x80ffffff, 8.0f, ImDrawCornerFlags_All);
-    }
-    else
-    {
-        ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{x + 15, y + 15},
-                                 ImVec2{x + padding + image_width, y + padding + image_height},
-                                 0x80242424, 8.0f, ImDrawCornerFlags_All);
+        ImDrawList_AddImage(igGetWindowDrawList(),
+                    (ImTextureID)(intptr_t)id, ImVec2{right-image_size, top},
+                    ImVec2{right, top+image_size},
+                    ImVec2{uvs.x1, uvs.y1},
+                    ImVec2{uvs.x2, uvs.y2}, 0x80ffffff);
+    } else {
+        ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{right-image_size, top},
+                                ImVec2{right, top+image_size}, 0x80242424, 0, 0);
     }
 
-    ImDrawList_AddTextFontPtr(igGetWindowDrawList(), igGetFont(), 22.0f,
-                              ImVec2{x + padding + image_width + padding, y + padding}, 0xffffffff,
-                              indicator.title.c_str(), NULL, wrap_width, NULL);
-
-    ImDrawList_AddTextFontPtr(
-        igGetWindowDrawList(), igGetFont(), 18.0f,
-        ImVec2{x + padding + image_width + padding, y + placard_height - padding - progress_height},
-        0xff00aaaa, indicator.measured_progress.c_str(), NULL, wrap_width, NULL);
+    if (is_percentage) {
+        char percentage[8];
+        snprintf(percentage, sizeof(percentage), "%.2f%%", indicator.measured_percent);
+        ImVec2 out;
+        ImFont_CalcTextSizeA(&out, igGetFont(), font_size, std::numeric_limits<float>::max(), 0, percentage, NULL, NULL);
+        float text_height = out.y;
+        float start_of_rectangle = top + image_size / 2 - text_height / 2;
+        float start_of_text = right - image_size / 2 - out.x / 2;
+        ImDrawList_AddRectFilled(igGetWindowDrawList(), ImVec2{start_of_text - 4, start_of_rectangle - 4},
+                                ImVec2{right, start_of_rectangle + text_height + 4}, 0x80515151, 0, 0);
+        ImDrawList_AddTextFontPtr(igGetWindowDrawList(), igGetFont(), font_size, ImVec2{start_of_text, start_of_rectangle},
+                                0xffffffff, percentage, NULL, std::numeric_limits<float>::max(), NULL);
+    } else {
+        float text_height = numout.y;
+        float start_of_rectangle = top + image_size / 2 - text_height - 8;
+        float start_of_text_num = right - image_size / 2 - numout.x / 2;
+        float start_of_text_den = right - image_size / 2 - denout.x / 2;
+        float start_of_text_num_y = start_of_rectangle + 4;
+        float start_of_text_den_y = start_of_rectangle + 4 + text_height + 4;
+        float start_of_line = start_of_text_den - 2;
+        float start_of_line_y = start_of_text_num_y + text_height + 2;
+        ImDrawList_AddTextFontPtr(igGetWindowDrawList(), igGetFont(), font_size, ImVec2{start_of_text_num, start_of_text_num_y},
+                                0xffffffff, nums.c_str(), NULL, std::numeric_limits<float>::max(), NULL);
+        ImDrawList_AddLine(igGetWindowDrawList(), ImVec2{start_of_line, start_of_line_y},
+                            ImVec2{start_of_line + denout.x + 2, start_of_line_y}, 0xffffffff, 2.0f);
+        ImDrawList_AddTextFontPtr(igGetWindowDrawList(), igGetFont(), font_size, ImVec2{start_of_text_den, start_of_text_den_y},
+                                0xffffffff, dens.c_str(), NULL, std::numeric_limits<float>::max(), NULL);
+    }
 }
 
 void retro_achievements_draw_leaderboard_trackers(float left, float bottom)
