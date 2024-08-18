@@ -22,6 +22,8 @@
 #include "rc_client.h"
 #include "rc_consoles.h"
 #include "retro_achievements.h"
+static bool ra_logged_in = false;
+static bool ra_needs_reload = false;
 #endif
 
 #include "gba.h"
@@ -203,11 +205,10 @@ typedef struct{
   uint32_t draw_progress_indicators;
   uint32_t draw_leaderboard_trackers;
   uint32_t draw_notifications;
-  uint32_t ra_needs_reload;
   float gui_scale_factor;
   uint32_t only_one_notification;
   uint32_t enable_download_cache;
-  uint32_t padding[220];
+  uint32_t padding[221];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -2533,7 +2534,7 @@ void se_load_rom(const char *filename){
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  gui_state.settings.ra_needs_reload=true;
+  ra_needs_reload=true;
   #endif
 }
 static void se_reset_core(){
@@ -2676,10 +2677,10 @@ static void se_emulate_single_frame(){
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   if (rc_client_get_user_info(retro_achievements_get_client())){
-    if (gui_state.settings.ra_needs_reload) {
+    if (ra_needs_reload) {
       rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.retro_achievements_encore_mode);
       if (retro_achievements_load_game()) {
-        gui_state.settings.ra_needs_reload = false;
+        ra_needs_reload = false;
       }
     } else {
       retro_achievements_frame();
@@ -3018,7 +3019,7 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
   se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
 }
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
-  if(!save_state->valid || save_state->system != emu_state.system||gui_state.settings.hardcore_mode)return; 
+  if(!save_state->valid || save_state->system != emu_state.system||(gui_state.settings.hardcore_mode&&ra_logged_in))return; 
   *core=save_state->state;
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_restore_state(save_state->state.rc_buffer);
@@ -3273,7 +3274,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
       igBegin(se_localize_and_cache(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-      if(gui_state.settings.hardcore_mode && desc->allow_hardcore == false){
+      if(gui_state.settings.hardcore_mode && ra_logged_in && desc->allow_hardcore == false){
         se_text("Disabled in Hardcore Mode");
       }else desc->function();
   
@@ -5233,7 +5234,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,w_size.y},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),gui_state.settings.hardcore_mode?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),(gui_state.settings.hardcore_mode&&ra_logged_in)?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   int x, y, w,  h;
@@ -6166,7 +6167,7 @@ void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   int win_w = igGetWindowContentRegionWidth();
   se_section(ICON_FK_FLOPPY_O " Save States");
-  if(gui_state.settings.hardcore_mode)se_text("Disabled in Hardcore Mode");
+  if(gui_state.settings.hardcore_mode&&ra_logged_in)se_text("Disabled in Hardcore Mode");
   else{
     if (cloud_state.drive){
       if (igBeginTabBar("Saves",ImGuiTabBarFlags_None)){
@@ -6234,7 +6235,7 @@ void se_draw_menu_panel(){
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_section(ICON_FK_KEY " Action Replay Codes");
-    if(gui_state.settings.hardcore_mode) se_text("Disabled in Hardcore Mode");
+    if(gui_state.settings.hardcore_mode&&ra_logged_in) se_text("Disabled in Hardcore Mode");
     else{
       int free_cheat_index = -1; 
       for(int i=0;i<SE_NUM_CHEATS;i++){
@@ -6328,8 +6329,9 @@ void se_draw_menu_panel(){
       }
       if (se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0, 0}) || enter)
       {
+        ra_needs_reload = true;
+        gui_state.settings.hardcore_mode = false;
         retro_achievements_login(username, password);
-        gui_state.settings.ra_needs_reload = true;
       }
       igSameLine(0, 6);
       if (se_button(ICON_FK_USER_PLUS " Register", (ImVec2){0, 0}))
@@ -6352,7 +6354,7 @@ void se_draw_menu_panel(){
         offset1 = (ImVec2){uvs.x1, uvs.y1};
         offset2 = (ImVec2){uvs.x2, uvs.y2};
       }
-      bool hardcore = gui_state.settings.hardcore_mode;
+      bool hardcore = gui_state.settings.hardcore_mode&&ra_logged_in;
       bool encore = gui_state.retro_achievements_encore_mode;
       {
         ImVec2 screen_p;
@@ -6677,11 +6679,6 @@ void se_draw_menu_panel(){
   bool draw_debug_menu = gui_state.settings.draw_debug_menu;
   se_checkbox("Show Debug Tools",&draw_debug_menu);
   gui_state.settings.draw_debug_menu = draw_debug_menu;
-  bool hardcore_mode = gui_state.settings.hardcore_mode;
-  if(gui_state.settings.hardcore_mode!=hardcore_mode){
-    gui_state.settings.hardcore_mode = hardcore_mode;
-    se_reset_core();
-  }
 
 #ifdef ENABLE_HTTP_CONTROL_SERVER
   bool enable_hcs = gui_state.settings.http_control_server_enable;
@@ -7161,6 +7158,7 @@ static void frame(void) {
 #endif
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_keep_alive();
+  ra_logged_in = rc_client_get_user_info(retro_achievements_get_client()) != NULL;
 #endif
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
@@ -7352,7 +7350,7 @@ static void frame(void) {
 
     if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
-      bool hardcore_disabled = gui_state.settings.hardcore_mode&& i<first_hardcore_toggle;
+      bool hardcore_disabled = gui_state.settings.hardcore_mode&&ra_logged_in&& i<first_hardcore_toggle;
       if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
@@ -7392,7 +7390,7 @@ static void frame(void) {
       } 
     }
 
-    if(gui_state.settings.hardcore_mode){
+    if(gui_state.settings.hardcore_mode&&ra_logged_in){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP){
         emu_state.run_mode= SB_MODE_RUN;
         emu_state.step_frames=1;
@@ -7400,7 +7398,7 @@ static void frame(void) {
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
-    if(gui_state.settings.hardcore_mode){
+    if(gui_state.settings.hardcore_mode&&ra_logged_in){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
@@ -8235,7 +8233,7 @@ static void se_init(){
     gui_state.settings.http_control_server_enable=true;
     http_server_mode=true;
     // HTTP Server mode only has frame stepping which is not allowed in hardcore mode.
-    gui_state.settings.hardcore_mode = false; 
+    gui_state.settings.hardcore_mode = false; // TODO: this doesn't do much as it can be re-enabled
   } 
   if(emu_state.cmd_line_arg_count>=2){
     se_load_rom(emu_state.cmd_line_args[1]);
