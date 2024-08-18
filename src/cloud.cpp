@@ -34,17 +34,6 @@ const char* se_get_pref_path();
 #include <emscripten.h>
 #endif
 
-#ifdef SE_PLATFORM_ANDROID
-#include <android/native_activity.h>
-extern "C" const void* sapp_android_get_native_activity();
-#endif
-
-#ifdef SE_PLATFORM_IOS
-extern "C" {
-#include "ios_support.h"
-}
-#endif
-
 static bool pending_login = false;
 static bool pending_logout = false;
 
@@ -639,34 +628,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                           "&code_challenge=" +
                           code_verifier + "&code_challenge_method=plain";
 
-#ifdef SE_PLATFORM_LINUX
-    std::string command = "xdg-open \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_WINDOWS
-    std::string command = "start \"\" \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_MACOS
-    std::string command = "open \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_ANDROID
-    ANativeActivity* activity = (ANativeActivity*)sapp_android_get_native_activity();
-    JavaVM* pJavaVM = activity->vm;
-    JNIEnv* pJNIEnv = activity->env;
-    jint nResult = pJavaVM->AttachCurrentThread(&pJNIEnv, NULL);
-    if (nResult != JNI_ERR) 
-    {
-        jobject nativeActivity = activity->clazz;
-        jclass ClassNativeActivity = pJNIEnv->GetObjectClass(nativeActivity);
-        jmethodID MethodOpenURL = pJNIEnv->GetMethodID(ClassNativeActivity, "openCustomTab", "(Ljava/lang/String;)V");
-        jstring jstrURL = pJNIEnv->NewStringUTF(request.c_str());
-        pJNIEnv->CallVoidMethod(nativeActivity, MethodOpenURL, jstrURL);
-        pJavaVM->DetachCurrentThread();
-    }
-#elif SE_PLATFORM_IOS
-    se_ios_open_modal(request.c_str());
-#else
-    printf("Navigate to the following URL to authorize the application:\n%s\n", request.c_str());
-#endif
+    https_open_url(request.c_str());
 
     // Listen on port 5000 for the oauth2 callback
     std::string refresh_path = drive->save_directory + "refresh_token.txt";

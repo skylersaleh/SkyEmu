@@ -13,6 +13,7 @@ void https_shutdown();
 uint64_t https_cache_size();
 void https_clear_cache();
 void https_set_cache_enabled(bool enabled);
+void https_open_url(const char* url);
 
 #ifdef __cplusplus
 }

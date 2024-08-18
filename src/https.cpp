@@ -20,6 +20,17 @@ extern "C" {
 #include <emscripten.h>
 #endif
 
+#ifdef SE_PLATFORM_ANDROID
+#include <android/native_activity.h>
+extern "C" const void* sapp_android_get_native_activity();
+#endif
+
+#ifdef SE_PLATFORM_IOS
+extern "C" {
+#include "ios_support.h"
+}
+#endif
+
 extern "C" {
 const char* se_get_pref_path();
 }
@@ -470,4 +481,46 @@ extern "C" void https_clear_cache()
 extern "C" void https_set_cache_enabled(bool enabled)
 {
     cache_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+extern "C" void https_open_url(const char* url)
+{
+    std::string request = url;
+#if defined(SE_PLATFORM_LINUX) || defined(SE_PLATFORM_FREEBSD)
+    std::string command = "xdg-open \"" + request + "\"";
+    system(command.c_str());
+#elif defined(SE_PLATFORM_WINDOWS)
+    std::string command = "start \"\" \"" + request + "\"";
+    system(command.c_str());
+#elif defined(SE_PLATFORM_MACOS)
+    std::string command = "open \"" + request + "\"";
+    system(command.c_str());
+#elif defined(SE_PLATFORM_ANDROID)
+    ANativeActivity* activity = (ANativeActivity*)sapp_android_get_native_activity();
+    JavaVM* pJavaVM = activity->vm;
+    JNIEnv* pJNIEnv = activity->env;
+    jint nResult = pJavaVM->AttachCurrentThread(&pJNIEnv, NULL);
+    if (nResult != JNI_ERR) 
+    {
+        jobject nativeActivity = activity->clazz;
+        jclass ClassNativeActivity = pJNIEnv->GetObjectClass(nativeActivity);
+        jmethodID MethodOpenURL = pJNIEnv->GetMethodID(ClassNativeActivity, "openCustomTab", "(Ljava/lang/String;)V");
+        jstring jstrURL = pJNIEnv->NewStringUTF(request.c_str());
+        pJNIEnv->CallVoidMethod(nativeActivity, MethodOpenURL, jstrURL);
+        pJavaVM->DetachCurrentThread();
+    }
+#elif defined(SE_PLATFORM_IOS)
+    se_ios_open_modal(request.c_str());
+#elif defined(SE_PLATFORM_WEB)
+    EM_ASM({
+        var win = window.open($0);
+        try {
+            win.focus();
+        } else {
+            alert('Popups blocked');
+        }
+    }, url);
+#else
+    printf("Navigate to the following URL to authorize the application:\n%s\n", request.c_str());
+#endif
 }

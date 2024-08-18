@@ -6331,6 +6331,11 @@ void se_draw_menu_panel(){
         retro_achievements_login(username, password);
         gui_state.settings.ra_needs_reload = true;
       }
+      igSameLine(0, 6);
+      if (se_button(ICON_FK_USER_PLUS " Register", (ImVec2){0, 0}))
+      {
+        https_open_url("https://retroachievements.org/createaccount.php");
+      }
       if (pending_login)
         se_pop_disabled();
   }else{
@@ -6362,7 +6367,10 @@ void se_draw_menu_panel(){
                                   (ImVec2){screen_x-border_size,screen_y-border_size},
                                   (ImVec2){screen_x+border_size+ava_dims.x,screen_y+border_size+ava_dims.y},
                                   col,0,ImDrawCornerFlags_None);
-          igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){ava_dims.x,ava_dims.y},offset1,offset2,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+          if (image.id != SG_INVALID_ID)
+            igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){ava_dims.x,ava_dims.y},offset1,offset2,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+          else
+            igDummy(ava_dims);
           igSameLine(0,5);
         }
         igBeginGroup();
