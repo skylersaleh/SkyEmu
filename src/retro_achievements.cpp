@@ -724,7 +724,7 @@ namespace
                 bool glow = rarity < 5.0f && unlocked; // glow if less than 5% of players have it and you have it too
                 std::stringstream stream;
                 stream << std::fixed << std::setprecision(2) << rarity;
-                std::string players = stream.str() + "% of players have this achievement";
+                std::string players = stream.str() + "% of players";
 
                 uint32_t color;
                 if (rarity > 30.0f) {

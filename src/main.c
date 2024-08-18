@@ -4471,7 +4471,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
 
   ImGuiStyle* style = igGetStyle();
   int scrollbar_width = style->ScrollbarSize;
-  int wrap_width = win_sz.x-curr_pos.x-box_w/se_dpi_scale()-padding*2;
+  int wrap_width = win_sz.x - curr_pos.x - box_w - padding*2 - scrollbar_width - style->ItemSpacing.x - 2;
 
   ImVec2 out;
   igCalcTextSize(&out,first_label,NULL,false,wrap_width);
@@ -4482,9 +4482,10 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   ImVec2 out3 = {0, 0};
   if(third_label)igCalcTextSize(&out3,third_label,NULL,false,wrap_width);
 
-  float text_height = out.y + out2.y + out3.y;
-  if (text_height+padding*2 > box_h+padding*2)
-    next_pos.y+=text_height+padding*2;
+  float spacing = igGetStyle()->ItemSpacing.y;
+  float text_height = out.y + out2.y + out3.y + spacing * 2;
+  if (text_height > box_h+padding*2)
+    next_pos.y+=text_height+2;
   else
     next_pos.y+=box_h+padding*2;
 
@@ -4496,13 +4497,15 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
     return;
   }
 
+
   // Draw a rectangle to show the text size
   ImDrawList* ig = igGetWindowDrawList();
   // ImVec2 top_left = {screen_pos.x+box_w+padding,screen_pos.y};
 
-  float max_x = out.x > out2.x ? out.x : out2.x;
+  // float max_x = fmax(out.x,out2.x);
+  // max_x = fmax(max_x,out3.x);
 
-  // ImVec2 bottom_right = {screen_pos.x+max_x+box_w,screen_pos.y+out.y+out2.y};
+  // ImVec2 bottom_right = {screen_pos.x+max_x+box_w,screen_pos.y+out.y+out2.y+out3.y+spacing*2};
   // ImDrawList_AddRect(ig, top_left, bottom_right, 0xff0000ff, 0, 0, 1.0f);
 
   igPushIDStr(second_label);
@@ -4524,11 +4527,10 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   igPopStyleColor(1);
 
   igSetCursorPosX(curr_pos.x+box_w+padding*2);
-  igSetCursorPosY(igGetCursorPosY()-3);
+  igGetContentRegionAvail(&out);
   se_text("%s", second_label);
   if(third_label){
     igSetCursorPosX(curr_pos.x+box_w+padding*2);
-    igSetCursorPosY(igGetCursorPosY()-5);
     ImDrawList* ig = igGetWindowDrawList();
     int vert_start = ig->VtxBuffer.Size;
     se_text_disabled("%s", third_label);
