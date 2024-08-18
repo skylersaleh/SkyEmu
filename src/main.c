@@ -4482,7 +4482,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   ImVec2 out3 = {0, 0};
   if(third_label)igCalcTextSize(&out3,third_label,NULL,false,wrap_width);
 
-  float spacing = igGetStyle()->ItemSpacing.y;
+  float spacing = 3;
   float text_height = out.y + out2.y + out3.y + spacing * 2;
   if (text_height > box_h+padding*2)
     next_pos.y+=text_height+2;
@@ -4512,6 +4512,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
   // TODO: if (glow)se_draw_glow((ImVec2){screen_pos.x+box_w*0.5,screen_pos.y+box_h*0.5+padding});
   igSetCursorPosX(curr_pos.x+box_w+padding*2);
   igSetCursorPosY(curr_pos.y-padding+1);
+  igPushStyleVarVec2(ImGuiStyleVar_ItemSpacing, (ImVec2){spacing,spacing});
   igPushStyleColorU32(ImGuiCol_Text,third_label_color);
 
   int vert_start = ig->VtxBuffer.Size+4;
@@ -4535,6 +4536,7 @@ void se_boxed_image_triple_label(const char * first_label, const char* second_la
     int vert_start = ig->VtxBuffer.Size;
     se_text_disabled("%s", third_label);
   }
+  igPopStyleVar(1);
   curr_pos.y-=3;
   igSetCursorPos(curr_pos);
   sg_image image = {SG_INVALID_ID};
