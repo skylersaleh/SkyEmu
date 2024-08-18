@@ -22,8 +22,6 @@
 #include "rc_client.h"
 #include "rc_consoles.h"
 #include "retro_achievements.h"
-static bool ra_logged_in = false;
-static bool ra_needs_reload = false;
 #endif
 
 #include "gba.h"
@@ -398,8 +396,10 @@ typedef struct {
     int mem_dump_size;
     int mem_dump_start_address;
     bool sidebar_open;
-    bool retro_achievements_sidebar_open; 
-    bool retro_achievements_encore_mode;
+    bool ra_sidebar_open; 
+    bool ra_encore_mode;
+    bool ra_logged_in;
+    bool ra_needs_reload;
     se_keybind_state_t key;
     se_controller_state_t controller;
     se_game_info_t recently_loaded_games[SE_NUM_RECENT_PATHS];
@@ -2534,7 +2534,7 @@ void se_load_rom(const char *filename){
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
-  ra_needs_reload=true;
+  gui_state.ra_needs_reload=true;
   #endif
 }
 static void se_reset_core(){
@@ -2677,10 +2677,11 @@ static void se_emulate_single_frame(){
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   if (rc_client_get_user_info(retro_achievements_get_client())){
-    if (ra_needs_reload) {
-      rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.retro_achievements_encore_mode);
+    if (gui_state.ra_needs_reload) {
+      rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.ra_encore_mode);
+      rc_client_set_hardcore_enabled(retro_achievements_get_client(), gui_state.settings.hardcore_mode);
       if (retro_achievements_load_game()) {
-        ra_needs_reload = false;
+        gui_state.ra_needs_reload = false;
       }
     } else {
       retro_achievements_frame();
@@ -3019,7 +3020,7 @@ void se_capture_state(se_core_state_t* core, se_save_state_t * save_state){
   se_screenshot(save_state->screenshot, &save_state->screenshot_width, &save_state->screenshot_height);
 }
 void se_restore_state(se_core_state_t* core, se_save_state_t * save_state){
-  if(!save_state->valid || save_state->system != emu_state.system||(gui_state.settings.hardcore_mode&&ra_logged_in))return; 
+  if(!save_state->valid || save_state->system != emu_state.system||(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in))return; 
   *core=save_state->state;
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_restore_state(save_state->state.rc_buffer);
@@ -3155,6 +3156,48 @@ void se_drive_login(bool clicked, int x, int y, int w, int h){
     se_login_cloud();
 #endif
 }
+void se_ra_register(bool clicked, int x, int y, int w, int h){
+#ifdef EMSCRIPTEN
+  float delta_dpi_scale = se_dpi_scale()/sapp_dpi_scale();
+  static bool button_created = false;
+  if(!button_created){
+    button_created = true;
+    EM_ASM({
+        var input = document.createElement('input');
+        input.id = 'raRegister';
+        input.value = '';
+        input.type = 'button';
+        document.body.appendChild(input);
+        input.onmousemove = input.onmouseover =  function(e) {
+          const mouseMoveEvent = new MouseEvent('mousemove', {
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY
+          });
+          document.getElementById('canvas').dispatchEvent(mouseMoveEvent);
+        };
+        input.onclick = function(e) {
+          var url = 'https://retroachievements.org/createaccount.php';
+          Module.ccall('https_open_url', 'void', ['string'], [url]);
+        };
+    });
+  }
+  EM_ASM_INT({
+    var input = document.getElementById('raRegister');
+    input.style.left = $0 +'px';
+    input.style.top = $1 +'px';
+    input.style.width = $2 +'px';
+    input.style.height = $3 +'px';
+    input.style.visibility = 'visible';
+    input.style.position = 'absolute';
+    input.style.opacity = 0;
+  }, x*delta_dpi_scale, y*delta_dpi_scale, w*delta_dpi_scale, h*delta_dpi_scale);
+#else
+  if (clicked)
+    https_open_url("https://retroachievements.org/createaccount.php");
+#endif
+}
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
 }
@@ -3274,7 +3317,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
       igSetNextWindowPos((ImVec2){screen_x,y}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){w, height}, ImGuiCond_Always);
       igBegin(se_localize_and_cache(desc->label),&desc->visible, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
-      if(gui_state.settings.hardcore_mode && ra_logged_in && desc->allow_hardcore == false){
+      if(gui_state.settings.hardcore_mode && gui_state.ra_logged_in && desc->allow_hardcore == false){
         se_text("Disabled in Hardcore Mode");
       }else desc->function();
   
@@ -5022,7 +5065,11 @@ static void se_reset_html_click_regions(){
     if (typeof(input) != 'undefined' && input != null) {
       input.style.visibility= "hidden";
     }
-  },gui_state.current_click_region_id);
+    var input2 = document.getElementById('raRegister');
+    if (typeof(input2) != 'undefined' && input2 != null) {
+      input2.style.visibility= "hidden";
+    }
+  });
 #endif
 }
 //Opens a file picker when clicked is true or a user clicks in the click region defined by x,y,w,h in ImGUI coordinates
@@ -5234,7 +5281,7 @@ void se_load_rom_overlay(bool visible){
   igSetNextWindowSize((ImVec2){w_size.x,w_size.y},ImGuiCond_Always);
   igSetNextWindowPos((ImVec2){w_pos.x,w_pos.y},ImGuiCond_Always,(ImVec2){0,0});
   igSetNextWindowBgAlpha(gui_state.settings.hardcore_mode? 1.0: SE_TRANSPARENT_BG_ALPHA);
-  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),(gui_state.settings.hardcore_mode&&ra_logged_in)?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+  igBegin(se_localize_and_cache(ICON_FK_FILE_O " Load Game"),(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in)?NULL:&gui_state.overlay_open,ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
   
   float list_y_off = igGetWindowHeight(); 
   int x, y, w,  h;
@@ -6167,7 +6214,7 @@ void se_draw_menu_panel(){
   ImGuiStyle *style = igGetStyle();
   int win_w = igGetWindowContentRegionWidth();
   se_section(ICON_FK_FLOPPY_O " Save States");
-  if(gui_state.settings.hardcore_mode&&ra_logged_in)se_text("Disabled in Hardcore Mode");
+  if(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in)se_text("Disabled in Hardcore Mode");
   else{
     if (cloud_state.drive){
       if (igBeginTabBar("Saves",ImGuiTabBarFlags_None)){
@@ -6235,7 +6282,7 @@ void se_draw_menu_panel(){
 
   if(emu_state.system==SYSTEM_NDS || emu_state.system == SYSTEM_GBA || emu_state.system == SYSTEM_GB){
     se_section(ICON_FK_KEY " Action Replay Codes");
-    if(gui_state.settings.hardcore_mode&&ra_logged_in) se_text("Disabled in Hardcore Mode");
+    if(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in) se_text("Disabled in Hardcore Mode");
     else{
       int free_cheat_index = -1; 
       for(int i=0;i<SE_NUM_CHEATS;i++){
@@ -6329,14 +6376,21 @@ void se_draw_menu_panel(){
       }
       if (se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0, 0}) || enter)
       {
-        ra_needs_reload = true;
+        gui_state.ra_needs_reload = true;
         gui_state.settings.hardcore_mode = false;
         retro_achievements_login(username, password);
       }
       igSameLine(0, 6);
-      if (se_button(ICON_FK_USER_PLUS " Register", (ImVec2){0, 0}))
-      {
-        https_open_url("https://retroachievements.org/createaccount.php");
+      bool register_clicked=false;
+      if (se_button(ICON_FK_USER_PLUS " Register", (ImVec2){0, 0}))register_clicked=true;
+      if(igIsItemVisible()){
+        ImVec2 min, max;
+        igGetItemRectMin(&min);
+        igGetItemRectMax(&max);
+        ImGuiStyle *style = igGetStyle();
+        max.x+=style->FramePadding.x;
+        max.y+=style->FramePadding.y;
+        se_ra_register(register_clicked, min.x, min.y, max.x-min.x, max.y-min.y);
       }
       if (pending_login)
         se_pop_disabled();
@@ -6354,27 +6408,28 @@ void se_draw_menu_panel(){
         offset1 = (ImVec2){uvs.x1, uvs.y1};
         offset2 = (ImVec2){uvs.x2, uvs.y2};
       }
-      bool hardcore = gui_state.settings.hardcore_mode&&ra_logged_in;
-      bool encore = gui_state.retro_achievements_encore_mode;
+      bool hardcore = gui_state.settings.hardcore_mode&&gui_state.ra_logged_in;
+      bool encore = gui_state.ra_encore_mode;
       {
         ImVec2 screen_p;
         igGetCursorScreenPos(&screen_p);
         int screen_x = screen_p.x;
         int screen_y = screen_p.y;
         ImVec2 ava_dims = {38,38};
-        if (cloud_state.user_info.avatar){
-          float border_size = 1; 
-          ImU32 col = igGetColorU32Col(ImGuiCol_FrameBg,1.0);
-          ImDrawList_AddRectFilled(igGetWindowDrawList(),
-                                  (ImVec2){screen_x-border_size,screen_y-border_size},
-                                  (ImVec2){screen_x+border_size+ava_dims.x,screen_y+border_size+ava_dims.y},
-                                  col,0,ImDrawCornerFlags_None);
-          if (image.id != SG_INVALID_ID)
-            igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){ava_dims.x,ava_dims.y},offset1,offset2,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
-          else
-            igDummy(ava_dims);
-          igSameLine(0,5);
+        float border_size = 1; 
+        ImU32 col = igGetColorU32Col(ImGuiCol_FrameBg,1.0);
+        ImDrawList_AddRectFilled(igGetWindowDrawList(),
+                                (ImVec2){screen_x-border_size,screen_y-border_size},
+                                (ImVec2){screen_x+border_size+ava_dims.x,screen_y+border_size+ava_dims.y},
+                                col,0,ImDrawCornerFlags_None);
+        if (image.id != SG_INVALID_ID) {
+          igImageButton((ImTextureID)(intptr_t)image.id,(ImVec2){ava_dims.x,ava_dims.y},offset1,offset2,0,(ImVec4){1,1,1,1},(ImVec4){1,1,1,1});
+        } else {
+          igPushItemFlag(ImGuiItemFlags_Disabled, true);
+          se_button(ICON_FK_USER,(ImVec2){ava_dims.x,ava_dims.y});
+          igPopItemFlag();
         }
+        igSameLine(0,5);
         igBeginGroup();
         se_text(se_localize_and_cache("%s (Points: %d)"), user->display_name,hardcore ? user->score : user->score_softcore);
         if (se_button(ICON_FK_SIGN_OUT " Logout",(ImVec2){0,0})){
@@ -6401,7 +6456,7 @@ void se_draw_menu_panel(){
       }
       if (encore) se_pop_disabled();
 
-      if (se_checkbox("Encore Mode", &gui_state.retro_achievements_encore_mode))
+      if (se_checkbox("Encore Mode", &gui_state.ra_encore_mode))
       {
         se_reset_core();
       }
@@ -6698,15 +6753,15 @@ void se_draw_menu_panel(){
   uint64_t cache_size = https_cache_size();
   if(cache_size>1024*1024*1024){
     cache_size/=1024*1024*1024;
-    snprintf(byte_str,32,"%zu GiB",cache_size);
+    snprintf(byte_str,32,"%d GiB",(int)cache_size);
   }else if(cache_size>1024*1024){
     cache_size/=1024*1024;
-    snprintf(byte_str,32,"%zu MiB",cache_size);
+    snprintf(byte_str,32,"%d MiB",(int)cache_size);
   }else if(cache_size>1024){
     cache_size/=1024;
-    snprintf(byte_str,32,"%zu KiB",cache_size);
+    snprintf(byte_str,32,"%d KiB",(int)cache_size);
   }else{
-    snprintf(byte_str,32,"%zu bytes",cache_size);
+    snprintf(byte_str,32,"%d bytes",(int)cache_size);
   }
 
   bool enable_download_cache = gui_state.settings.enable_download_cache;
@@ -7158,13 +7213,13 @@ static void frame(void) {
 #endif
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   retro_achievements_keep_alive();
-  ra_logged_in = rc_client_get_user_info(retro_achievements_get_client()) != NULL;
+  gui_state.ra_logged_in = rc_client_get_user_info(retro_achievements_get_client()) != NULL;
 #endif
 #ifdef SE_PLATFORM_ANDROID
   //Handle Android Back Button Navigation
   static bool last_back_press = false;
   if(!last_back_press&&gui_state.button_state[SAPP_KEYCODE_BACK]){
-      if(gui_state.retro_achievements_sidebar_open)gui_state.retro_achievements_sidebar_open = false;
+      if(gui_state.ra_sidebar_open)gui_state.ra_sidebar_open = false;
       else if(gui_state.sidebar_open)gui_state.sidebar_open = false;
       else if(emu_state.run_mode!=SB_MODE_PAUSE)emu_state.run_mode = SB_MODE_PAUSE;
       else if(emu_state.rom_loaded &&!gui_state.ran_from_launcher)emu_state.run_mode = SB_MODE_RUN;
@@ -7216,7 +7271,7 @@ static void frame(void) {
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
     if(retro_achievements_has_game_loaded()){
-      se_panel_toggle(SE_REGION_BLANK,&gui_state.retro_achievements_sidebar_open,ICON_FK_TROPHY,"Show/Hide RetroAchievements Panel");
+      se_panel_toggle(SE_REGION_BLANK,&gui_state.ra_sidebar_open,ICON_FK_TROPHY,"Show/Hide RetroAchievements Panel");
     }
 #endif
 
@@ -7350,7 +7405,7 @@ static void frame(void) {
 
     if(!emu_state.rom_loaded)se_push_disabled();
     for(int i=0;i<num_toggles;++i){
-      bool hardcore_disabled = gui_state.settings.hardcore_mode&&ra_logged_in&& i<first_hardcore_toggle;
+      bool hardcore_disabled = gui_state.settings.hardcore_mode&&gui_state.ra_logged_in&& i<first_hardcore_toggle;
       if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
@@ -7390,7 +7445,7 @@ static void frame(void) {
       } 
     }
 
-    if(gui_state.settings.hardcore_mode&&ra_logged_in){
+    if(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP){
         emu_state.run_mode= SB_MODE_RUN;
         emu_state.step_frames=1;
@@ -7398,7 +7453,7 @@ static void frame(void) {
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
 
-    if(gui_state.settings.hardcore_mode&&ra_logged_in){
+    if(gui_state.settings.hardcore_mode&&gui_state.ra_logged_in){
       if(emu_state.run_mode==SB_MODE_REWIND||emu_state.run_mode==SB_MODE_STEP)emu_state.run_mode= SB_MODE_RUN;
       if(emu_state.step_frames<1&&emu_state.step_frames!=-1)emu_state.step_frames=1; 
     }
@@ -7422,7 +7477,7 @@ static void frame(void) {
     float scaled_screen_width = screen_width/se_dpi_scale();
 
     float sidebar_w = 300; 
-    int num_sidebars_open = gui_state.sidebar_open+gui_state.retro_achievements_sidebar_open;
+    int num_sidebars_open = gui_state.sidebar_open+gui_state.ra_sidebar_open;
     if(gui_state.settings.draw_debug_menu){
       se_debug_tool_desc_t* desc=se_get_debug_description();
       while(desc&&desc->label){
@@ -7452,10 +7507,10 @@ static void frame(void) {
     }
     #ifdef ENABLE_RETRO_ACHIEVEMENTS
     bool logged_in = rc_client_get_user_info(retro_achievements_get_client());
-    if(gui_state.retro_achievements_sidebar_open&&logged_in){
+    if(gui_state.ra_sidebar_open&&logged_in){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
-      igBegin(se_localize_and_cache(ICON_FK_TROPHY " RetroAchievements"),&gui_state.retro_achievements_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
+      igBegin(se_localize_and_cache(ICON_FK_TROPHY " RetroAchievements"),&gui_state.ra_sidebar_open, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize);
       retro_achievements_draw_panel();
       igEnd();
       screen_x += sidebar_w;

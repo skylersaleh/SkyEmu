@@ -9,10 +9,10 @@ const char* se_get_pref_path();
 void se_push_disabled();
 void se_pop_disabled();
 void se_text(const char* fmt, ...);
-void se_boxed_image_triple_label(const char * first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, atlas_tile_t * atlas, bool glow);
+void se_boxed_image_triple_label(const char* first_label, const char* second_label, const char* third_label, uint32_t third_label_color, const char* box, atlas_tile_t* atlas, bool glow);
 
 bool se_button(const char* label, ImVec2 size);
-bool se_checkbox(const char* label, bool * v);
+bool se_checkbox(const char* label, bool* v);
 void se_section(const char* label,...);
 const char* se_localize_and_cache(const char* input_str);
 ImFont* se_get_mono_font();
