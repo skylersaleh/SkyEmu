@@ -513,10 +513,11 @@ extern "C" void https_open_url(const char* url)
     se_ios_open_modal(request.c_str());
 #elif defined(SE_PLATFORM_WEB)
     EM_ASM({
-        var win = window.open($0);
+        var urlstr = UTF8ToString($0);
+        var win = window.open(urlstr);
         try {
             win.focus();
-        } else {
+        } catch {
             alert('Popups blocked');
         }
     }, url);

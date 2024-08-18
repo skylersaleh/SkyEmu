@@ -21,7 +21,7 @@ struct cached_image_t {
 };
 
 struct atlas_tile_t {
-    std::atomic_uint32_t atlas_id;
+    std::atomic_uint32_t atlas_id = { 0 };
     std::atomic<float> x1, y1, x2, y2;
 };
 
