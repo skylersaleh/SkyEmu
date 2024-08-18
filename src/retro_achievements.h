@@ -41,7 +41,7 @@ void retro_achievements_keep_alive();
 
 void retro_achievements_draw_notifications(float left, float top, float screen_width, bool only_one_notification);
 
-void retro_achievements_draw_progress_indicator(float right, float top);
+void retro_achievements_draw_progress_indicator(float right, float top, float screen_width);
 
 void retro_achievements_draw_leaderboard_trackers(float left, float bottom);
 

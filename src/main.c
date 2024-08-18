@@ -7489,7 +7489,7 @@ static void frame(void) {
       retro_achievements_draw_notifications(left+padding,top+padding,screen_width/se_dpi_scale(),gui_state.settings.only_one_notification);
 
     if (gui_state.settings.draw_progress_indicators)
-      retro_achievements_draw_progress_indicator(right-padding,top+padding);
+      retro_achievements_draw_progress_indicator(right-padding,top+padding,screen_width/se_dpi_scale());
 
     if (gui_state.settings.draw_leaderboard_trackers)
       retro_achievements_draw_leaderboard_trackers(left+padding,bottom-padding);
