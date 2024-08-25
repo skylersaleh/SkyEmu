@@ -1,29 +1,28 @@
-name: Build Linux (Libretro)
+name: Build Windows (Libretro)
 on: [push,pull_request]
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: windows-2019
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1 
-      - name: Install dependencies
-        # We don't actually use these dependencies, but they are needed for find package.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxinerama-dev libxcursor-dev
-          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libasound2-dev
-      - name: Configure & Build 🔧 
+      - name: Get latest CMake and ninja
+        # Using 'latest' branch, the most recent CMake and ninja are installed.
+        uses: lukka/get-cmake@latest
+     
+      - name: Build 🔧 
         run: |
           mkdir build
           cd build
-          cmake .. && cmake --build . --target SkyEmuRetro --config Release
+          cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_SYSTEM_VERSION=10.0.19041.0 ..
+          cmake --build . --config Release --target SkyEmuRetro
           
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
         with:
-           name: LinuxRelease (Libretro)
-           path: build/libSkyEmuRetro.so
+           name: WindowsRelease (Libretro)
+           path: build/libSkyEmuRetro.dll
         #uses: softprops/action-gh-release@v0.1.5
         #with:
         #  # Note-worthy description of changes in release
