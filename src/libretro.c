@@ -4,7 +4,6 @@
 #include <time.h>
 #include <string.h>
 #include <math.h>
-#include <limits.h>
 
 #include "shared.h"
 #include "sb_types.h"
@@ -224,8 +223,15 @@ bool se_load_bios_file(const char* name, const char* base_path, const char* file
   const char* syspath;
   env_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &syspath);
   if (!syspath) return false;
-  char bios_path[PATH_MAX];
-  snprintf(bios_path, sizeof bios_path, "%s/SkyEmu/%s", syspath, file_name);
+  char bios_path[4096];
+  int written = snprintf(bios_path, sizeof bios_path, "%s/SkyEmu/%s", syspath, file_name);
+  if (written >= sizeof bios_path) {
+    log_cb(RETRO_LOG_WARN, "path to bios exceeded %d characters", sizeof bios_path);
+    return false;
+  } else if (written < 0) {
+    log_cb(RETRO_LOG_WARN, "error encoding bios path");
+    return false;
+  }
 
   log_cb(RETRO_LOG_INFO, "opening bios file: %s\n", bios_path);
   FILE* biosf = fopen(bios_path, "rb");
