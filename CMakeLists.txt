@@ -376,7 +376,7 @@ endif()
 add_library(SkyEmuRetro SHARED EXCLUDE_FROM_ALL src/libretro.c src/shared.c src/localization.c)
 if (MACOS OR IOS)
     find_library(FoundationLib CoreFoundation)
-    target_link_libraries(SkyEmuRetro FoundationLib)
+    target_link_libraries(SkyEmuRetro ${FoundationLib})
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
