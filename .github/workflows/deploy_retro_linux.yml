@@ -23,7 +23,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
            name: LinuxRelease
-           path: libSkyEmuRetro.so
+           path: build/libSkyEmuRetro.so
         #uses: softprops/action-gh-release@v0.1.5
         #with:
         #  # Note-worthy description of changes in release
