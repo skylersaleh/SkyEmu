@@ -11,12 +11,13 @@ jobs:
           mkdir build
           cd build
           cmake .. && cmake --build . --target skyemu_libretro
+          zip skyemu_libretro.zip skyemu_libretro.dylib ../skyemu_libretro.info
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
         with:
            name: MacOSRelease (Libretro)
-           path: build/skyemu_libretro.dylib
+           path: build/skyemu_libretro.zip
         #uses: softprops/action-gh-release@v0.1.5
         #with:
         #  # Note-worthy description of changes in release
