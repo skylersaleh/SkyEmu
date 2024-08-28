@@ -2003,7 +2003,7 @@ static char* sw_localization_array[]={
     "Rumble Supported", "Rumble Stöd",
     "Rumble Not Supported", "Rumble Stöds Inte",
     ICON_FK_FLOPPY_O " Save States", ICON_FK_FLOPPY_O " Sparning Platser",
-    "Save Slot %d", "Sparnings Plats %d",
+    "Save Slot %d", "Plats %d",
     "Capture", "Fånga",
     "Restore", "Återställ",
     "This save state came from an incompatible build. SkyEmu has attempted to recover it, but there may be issues", "Denna Sparnings Plats kom från en ostöd version. SkyEmu har försökt att återställa den, men det kan förekomma problem",
