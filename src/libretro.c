@@ -892,9 +892,7 @@ void retro_set_input_state(retro_input_state_t state) {
   input_state_cb = state;
 }
 
-void retro_init(void) {
-  emu_state.render_frame = true;
-}
+void retro_init(void) {}
 
 void retro_deinit(void) {}
 
@@ -955,6 +953,12 @@ void retro_run(void) {
   emu_state.joy.touch_pos[1] = (float)mouse_pos[1] / SHRT_MAX;
   emu_state.joy.inputs[SE_KEY_PEN_DOWN] = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
 
+  int video_audio_enabled;
+  env_cb(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &video_audio_enabled);
+  int video_enabled = video_audio_enabled & 1;
+  int audio_enabled = video_audio_enabled & 2;
+
+  emu_state.render_frame = video_enabled;
 
   uint32_t width = 0, height = 0;
   void* data = NULL;
@@ -980,12 +984,14 @@ void retro_run(void) {
   uint32_t frames = samples >> 1;
   uint32_t beg_ptr = emu_state.audio_ring_buff.read_ptr;
   uint32_t end_ptr = (emu_state.audio_ring_buff.read_ptr + (frames << 1)) % SB_AUDIO_RING_BUFFER_SIZE;
-  if (end_ptr < beg_ptr) {
-    int remaining = (SB_AUDIO_RING_BUFFER_SIZE - beg_ptr) >> 1;
-    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], remaining);
-    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[0], frames - remaining);
-  } else {
-    audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], frames);
+  if (audio_enabled) {
+    if (end_ptr < beg_ptr) {
+      int remaining = (SB_AUDIO_RING_BUFFER_SIZE - beg_ptr) >> 1;
+      audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], remaining);
+      audio_sample_batch_cb(&emu_state.audio_ring_buff.data[0], frames - remaining);
+    } else {
+      audio_sample_batch_cb(&emu_state.audio_ring_buff.data[beg_ptr], frames);
+    }
   }
   emu_state.audio_ring_buff.read_ptr = end_ptr;
 }
