@@ -34,6 +34,12 @@ const char* se_get_pref_path();
 #include <emscripten.h>
 #endif
 
+#ifdef SE_PLATFORM_IOS
+extern "C" {
+#include "ios_support.h"
+}
+#endif
+
 static bool pending_login = false;
 static bool pending_logout = false;
 
