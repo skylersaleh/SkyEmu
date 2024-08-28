@@ -15,14 +15,14 @@ jobs:
           mkdir build
           cd build
           cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_SYSTEM_VERSION=10.0.19041.0 ..
-          cmake --build . --config Release --target SkyEmuRetro
+          cmake --build . --config Release --target skyemu_libretro
           
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
         uses: actions/upload-artifact@v2
         with:
            name: WindowsRelease (Libretro)
-           path: build/libSkyEmuRetro.dll
+           path: build/skyemu_libretro.dll
         #uses: softprops/action-gh-release@v0.1.5
         #with:
         #  # Note-worthy description of changes in release

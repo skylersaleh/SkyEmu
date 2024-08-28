@@ -374,6 +374,7 @@ else()
 endif()
 
 add_library(skyemu_libretro SHARED EXCLUDE_FROM_ALL src/libretro.c src/shared.c src/localization.c)
+set_target_properties(skyemu_libretro PROPERTIES PREFIX "")
 if (MACOS OR IOS)
     find_library(FoundationLib CoreFoundation)
     target_link_libraries(skyemu_libretro ${FoundationLib})
