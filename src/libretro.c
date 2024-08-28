@@ -951,7 +951,7 @@ void retro_run(void) {
   // This is a hack specifically for the NDS core, which only allows touch for the bottom screen.
   emu_state.joy.touch_pos[0] = (float)mouse_pos[0] / USHRT_MAX + 0.5;
   emu_state.joy.touch_pos[1] = (float)mouse_pos[1] / SHRT_MAX;
-  emu_state.joy.inputs[SE_KEY_PEN_DOWN] = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+  emu_state.joy.inputs[SE_KEY_PEN_DOWN] = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED) && emu_state.joy.touch_pos[1] > 0.0;
 
   int video_audio_enabled;
   env_cb(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &video_audio_enabled);
