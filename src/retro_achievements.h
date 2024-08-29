@@ -9,19 +9,13 @@
 #define RETRO_ACHIEVEMENTS
 #include <stdint.h>
 #include <stdbool.h>
+#include "atlas.h"
 
 #define SE_RC_BUFFER_SIZE (256*1024)
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 
-typedef struct {
-    uint32_t atlas_id;
-    uint32_t width, height;
-    float x1, y1;
-    float x2, y2;
-} atlas_tile_t;
-
-void retro_achievements_initialize(void* emu_state, bool hardcore, bool is_mobile);
+void retro_achievements_initialize(void* emu_state, bool hardcore);
 
 void retro_achievements_shutdown();
 
@@ -31,19 +25,27 @@ void retro_achievements_frame();
 
 void retro_achievements_draw_panel();
 
-void retro_achievements_draw_settings(uint32_t* draw_checkboxes[5]);
+struct atlas_tile_t* retro_achievements_get_game_image();
 
-void retro_achievements_update_atlases();
+struct atlas_tile_t* retro_achievements_get_user_image();
+
+void retro_achievements_login(const char* username, const char* password);
+
+bool retro_achievements_is_pending_login();
+
+struct rc_client_t* retro_achievements_get_client();
+
+const char* retro_achievements_get_login_error();
 
 void retro_achievements_keep_alive();
 
-void retro_achievements_draw_notifications(float left, float top);
+void retro_achievements_draw_notifications(float left, float top, float screen_width, bool only_one_notification);
 
-void retro_achievements_draw_progress_indicator(float right, float top);
+void retro_achievements_draw_progress_indicator(float right, float top, float screen_width);
 
 void retro_achievements_draw_leaderboard_trackers(float left, float bottom);
 
-void retro_achievements_draw_challenge_indicators(float right, float bottom);
+void retro_achievements_draw_challenge_indicators(float right, float bottom, float screen_width);
 
 void retro_achievements_capture_state(uint8_t* buffer);
 

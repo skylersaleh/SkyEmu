@@ -20,6 +20,7 @@
 #define SE_LANG_PORTUGESE 70
 #define SE_LANG_RUSSIAN 75
 #define SE_LANG_SPANISH 80
+#define SE_LANG_SWEDISH 81
 #define SE_MAX_LANG_VALUE 85
 
 void se_set_language(int language_enum);//i.e. SE_LANG_ENGLISH

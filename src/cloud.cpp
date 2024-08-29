@@ -34,11 +34,6 @@ const char* se_get_pref_path();
 #include <emscripten.h>
 #endif
 
-#ifdef SE_PLATFORM_ANDROID
-#include <android/native_activity.h>
-extern "C" const void* sapp_android_get_native_activity();
-#endif
-
 #ifdef SE_PLATFORM_IOS
 extern "C" {
 #include "ios_support.h"
@@ -279,7 +274,7 @@ void google_use_refresh_token(cloud_drive_t* drive, std::function<void(cloud_dri
             drive->expire_timestamp = time(NULL) + expires_in.get<int>();
             callback(drive);
             drive->dec();
-        });
+        }, false);
 }
 
 std::string create_multipart_body(cloud_drive_t* drive, const std::string& filename, const std::string& parent, void* data,
@@ -345,7 +340,7 @@ void google_cloud_drive_upload(cloud_drive_t* drive, const std::string& filename
                              [drive, callback](const std::vector<uint8_t>& data) {
                                 callback(drive);
                                 drive->dec();
-                             });
+                             }, false);
     }
     else
     {
@@ -389,7 +384,7 @@ void google_cloud_drive_upload(cloud_drive_t* drive, const std::string& filename
 
                 callback(drive);
                 drive->dec();
-            });
+            }, false);
     }
 }
 
@@ -428,7 +423,7 @@ void google_cloud_drive_download(cloud_drive_t* drive, const std::string& filena
                                 callback(userdata, nullptr, 0);
                             }
                             drive->dec();
-                         });
+                         }, false);
 }
 
 void google_cloud_drive_get_files(cloud_drive_t* drive,
@@ -474,7 +469,7 @@ void google_cloud_drive_get_files(cloud_drive_t* drive,
 
                              callback(drive);
                              drive->dec();
-                         });
+                         }, false);
 }
 
 bool google_check_avatar_exists(cloud_drive_t* drive)
@@ -571,7 +566,7 @@ void google_get_user_data(cloud_drive_t* drive)
                                             google_check_avatar_exists(drive);
                                             drive->dec();
                                             drive->ready_callback(drive);
-                                        });
+                                        }, true /* cache the avatar image */);
                         } else {
                             printf("[cloud] failed to get username: no user in response\n");
                             drive->dec();
@@ -579,7 +574,7 @@ void google_get_user_data(cloud_drive_t* drive)
                             return;
                         }
                         drive->dec();
-                  });
+                  }, false);
 }
 
 void google_cloud_drive_mkdir(cloud_drive_t* drive, const std::string& name, const std::string& parent, std::function<void(cloud_drive_t*)> callback)
@@ -639,34 +634,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                           "&code_challenge=" +
                           code_verifier + "&code_challenge_method=plain";
 
-#ifdef SE_PLATFORM_LINUX
-    std::string command = "xdg-open \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_WINDOWS
-    std::string command = "start \"\" \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_MACOS
-    std::string command = "open \"" + request + "\"";
-    system(command.c_str());
-#elif SE_PLATFORM_ANDROID
-    ANativeActivity* activity = (ANativeActivity*)sapp_android_get_native_activity();
-    JavaVM* pJavaVM = activity->vm;
-    JNIEnv* pJNIEnv = activity->env;
-    jint nResult = pJavaVM->AttachCurrentThread(&pJNIEnv, NULL);
-    if (nResult != JNI_ERR) 
-    {
-        jobject nativeActivity = activity->clazz;
-        jclass ClassNativeActivity = pJNIEnv->GetObjectClass(nativeActivity);
-        jmethodID MethodOpenURL = pJNIEnv->GetMethodID(ClassNativeActivity, "openCustomTab", "(Ljava/lang/String;)V");
-        jstring jstrURL = pJNIEnv->NewStringUTF(request.c_str());
-        pJNIEnv->CallVoidMethod(nativeActivity, MethodOpenURL, jstrURL);
-        pJavaVM->DetachCurrentThread();
-    }
-#elif SE_PLATFORM_IOS
-    se_ios_open_modal(request.c_str());
-#else
-    printf("Navigate to the following URL to authorize the application:\n%s\n", request.c_str());
-#endif
+    https_open_url(request.c_str());
 
     // Listen on port 5000 for the oauth2 callback
     std::string refresh_path = drive->save_directory + "refresh_token.txt";
@@ -718,7 +686,7 @@ void cloud_drive_authenticate(cloud_drive_t* drive)
                                       drive->refresh_token.size() + 1);
                     em_flush_fs();
                     google_cloud_drive_init(drive);
-                });
+                }, false);
 
             #ifdef SE_PLATFORM_ANDROID
             res.set_redirect("skyemu://oauth");
@@ -819,7 +787,7 @@ void cloud_drive_logout(cloud_drive_t* drive, void (*callback)())
                         delete drive;
                         fcallback();
                         pending_logout = false;
-                    });
+                    }, false);
         
         em_flush_fs();
 #ifndef EMSCRIPTEN
