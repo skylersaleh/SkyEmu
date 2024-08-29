@@ -5,8 +5,15 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+#include <stdint.h>
+
 void https_initialize();
 void https_shutdown();
+uint64_t https_cache_size();
+void https_clear_cache();
+void https_set_cache_enabled(bool enabled);
+void https_open_url(const char* url);
 
 #ifdef __cplusplus
 }
@@ -16,7 +23,6 @@ void https_shutdown();
 #include <string>
 #include <vector>
 #include <functional>
-#include <cstdint>
 
 enum class http_request_e
 {
@@ -27,6 +33,6 @@ enum class http_request_e
 
 void https_request(http_request_e type, const std::string& url, const std::string& body,
                    const std::vector<std::pair<std::string, std::string>>& headers,
-                   std::function<void(const std::vector<uint8_t>&)> callback);
+                   std::function<void(const std::vector<uint8_t>&)> callback, bool do_cache);
 #endif
 #endif

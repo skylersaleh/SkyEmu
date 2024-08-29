@@ -186,8 +186,8 @@ endif()
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_https_open_url,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_https_open_url,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
 endif ()
 
 #=== LIBRARY: sokol
@@ -292,7 +292,7 @@ if(ENABLE_HTTP_CONTROL_SERVER)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
 endif()
 
-set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp src/https.cpp)
+set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp src/https.cpp src/atlas.cpp)
 
 if(UNICODE_GUI)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
@@ -308,8 +308,13 @@ endif()
 
 if(ENABLE_RETRO_ACHIEVEMENTS)
   add_definitions(-DENABLE_RETRO_ACHIEVEMENTS=1)
-  add_definitions(-DRC_DISABLE_LUA)
   add_definitions(-DRC_CLIENT_SUPPORTS_HASH)
+  add_library(Lua STATIC src/lua/onelua.c)
+  if(IOS)
+    target_compile_definitions(Lua PRIVATE LUA_USE_IOS) # makes it so system is not used
+  endif()
+  set_property(TARGET Lua PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  set(LINK_LIBS ${LINK_LIBS} Lua)
   set(RCHEEVOS_SRC src/rcheevos/src/rapi/rc_api_common.c
     src/rcheevos/src/rapi/rc_api_editor.c
     src/rcheevos/src/rapi/rc_api_info.c
@@ -341,7 +346,7 @@ if(ENABLE_RETRO_ACHIEVEMENTS)
     src/rcheevos/src/rurl/url.c
   )
   set(SKYEMU_SRC ${SKYEMU_SRC} ${RCHEEVOS_SRC} src/retro_achievements.cpp)
-  include_directories(src/rcheevos/include)
+  include_directories(src/rcheevos/include src/lua)
 endif()
 
 if(IOS)
