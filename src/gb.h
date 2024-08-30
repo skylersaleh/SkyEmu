@@ -1335,10 +1335,15 @@ void gb_tick_rtc(sb_gb_t*gb){
   gb->rtc.hour= tm->tm_hour;
   gb->rtc.day = (tm->tm_wday-1)%7;
 }
-void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
+
+void sb_ptrs_init(sb_gb_t* gb, gb_scratch_t* scratch, uint8_t* rom_data) {
   gb->lcd.framebuffer = scratch->framebuffer; 
-  gb->cart.data = emu->rom_data; 
+  gb->cart.data = rom_data; 
   gb->bios = scratch->bios;
+}
+
+void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
+  sb_ptrs_init(gb, scratch, emu->rom_data);
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=70224/2;
   int frames_to_draw = 1;

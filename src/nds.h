@@ -2259,8 +2259,13 @@ typedef struct{
   /* Firmware FLASH (512KB in iQue variant, with chinese charset) */
   uint8_t firmware[NDS_FIRMWARE_SIZE];
   uint8_t save_data[8*1024*1024];
-  uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
-  uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+  union {
+    struct {
+      uint8_t framebuffer_top[NDS_LCD_W*NDS_LCD_H*4];
+      uint8_t framebuffer_bottom[NDS_LCD_W*NDS_LCD_H*4];
+    };
+    uint8_t framebuffer_full[NDS_LCD_W*NDS_LCD_H*8];
+  };
   float framebuffer_3d_depth[NDS_LCD_W*NDS_LCD_H];
   uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
@@ -6907,11 +6912,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
   }
 }
 
-
-void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
-  //printf("#####New Frame#####\n");
-  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f)*0.3;
-
+void nds_ptrs_init(nds_t* nds, nds_scratch_t* scratch, uint8_t* rom_data, size_t rom_size) {
   nds->arm7.read8      = nds7_arm_read8;
   nds->arm7.read16     = nds7_arm_read16;
   nds->arm7.read32     = nds7_arm_read32;
@@ -6940,14 +6941,21 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
   nds->mem.nds9_bios=scratch->nds9_bios;
   nds->mem.firmware=scratch->firmware;
   nds->mem.save_data = scratch->save_data;
-  nds->mem.card_data = emu->rom_data;
-  nds->mem.card_size = emu->rom_size;
+  nds->mem.card_data = rom_data;
+  nds->mem.card_size = rom_size;
   nds->framebuffer_top=scratch->framebuffer_top;
   nds->framebuffer_bottom=scratch->framebuffer_bottom;
   nds->framebuffer_3d_depth=scratch->framebuffer_3d_depth;
   nds->framebuffer_3d=scratch->framebuffer_3d;
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds->gpu.vert_buffer=scratch->vert_buffer;
+}
+
+void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
+  //printf("#####New Frame#####\n");
+  nds->ghosting_strength = fminf(fmaxf(0.0f,emu->screen_ghosting_strength),1.0f)*0.3;
+  nds_ptrs_init(nds, scratch, emu->rom_data, emu->rom_size);
+
   nds_tick_rtc(nds);
   nds_tick_keypad(emu,nds);
   nds_tick_touch(&emu->joy,nds);

@@ -22,7 +22,8 @@ android {
         setProperty("archivesBaseName", applicationId + "-v" + versionCode)
         externalNativeBuild {
             cmake {
-                arguments '-DANDROID_STL=c++_static', '-DANDROID=1', '-DNDK_DEBUG=0', '-DCMAKE_BUILD_TYPE=RELWITHDEBINFO',"-DANDROID_ARM_NEON=TRUE"
+                arguments '-DANDROID_STL=c++_static', '-DANDROID=1', '-DNDK_DEBUG=0', '-DCMAKE_BUILD_TYPE=RELWITHDEBINFO', "-DANDROID_ARM_NEON=TRUE"
+                targets "SkyEmu"
             }
         }
         ndk {

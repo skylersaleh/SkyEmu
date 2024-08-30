@@ -1,0 +1,33 @@
+name: Build macOS (Libretro)
+on: [push,pull_request]
+jobs:
+  build-and-deploy:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v2.3.1 
+      - name: Configure & Build 🔧 
+        run: |
+          mkdir build
+          cd build
+          cmake .. && cmake --build . --target skyemu_libretro
+          zip skyemu_libretro.zip skyemu_libretro.dylib ../skyemu_libretro.info
+      - name: GH Release 🚀
+        # You may pin to the exact commit or the version.
+        uses: actions/upload-artifact@v2
+        with:
+           name: MacOSRelease (Libretro)
+           path: build/skyemu_libretro.zip
+        #uses: softprops/action-gh-release@v0.1.5
+        #with:
+        #  # Note-worthy description of changes in release
+        #  # body: # optional
+        #  # Path to load note-worthy description of changes in release from
+        #  # body_path: # optional
+        #  # Gives the release a custom name. Defaults to tag name
+        #  name: LinuxRelease
+        #  # Identify the release as a prerelease. Defaults to false
+        #  prerelease: True
+        #  # Newline-delimited list of path globs for asset files to upload
+        #  files: build/bin/*
+ 
