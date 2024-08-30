@@ -741,8 +741,9 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
   float alpha = 1.0;
   if(hover) alpha=0.75;
   uint32_t tint = 0x00ffffff|((uint32_t)(alpha*255)<<24u); 
-  if(!se_draw_theme_region_tint(region, pos.x,pos.y,size.x,size.y,tint))
-      *style = restore_style; 
+  if(se_draw_theme_region_tint(region, pos.x,pos.y,size.x,size.y,tint));
+  else if(se_draw_theme_region_tint(SE_REGION_BLANK, pos.x,pos.y,size.x,size.y,tint));
+  else *style = restore_style; 
   bool button_result = igButton(label,size);
 
   *style = restore_style; 
@@ -933,10 +934,10 @@ static void se_panel_toggle(int region, bool * is_open, const char* icon, const 
   igPushIDStr(icon);
   if(*is_open){
     igPushStyleColorVec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-    if(se_button_themed(region+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){*is_open=!*is_open;}
+    if(se_button_themed(region+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
     igPopStyleColor(1);
   }else{
-    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},false)){*is_open=!*is_open;}
+    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
   }
   igPopID();
   igSameLine(0,1);
@@ -2773,6 +2774,7 @@ static void se_draw_emulated_system_screen(bool preview){
   igGetWindowPos(&win_pos);
 
   int result = se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,dims[0],dims[1]);
+  if(!result) result = se_draw_theme_region(SE_REGION_BEZEL_PORTRAIT, win_pos.x,win_pos.y,dims[0],dims[1]);
   if(!result){ 
     float render_w = dims[0], render_h = dims[1];
     se_compute_draw_lcd_rect(&render_w, &render_h, &nds_layout);
@@ -3990,15 +3992,21 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
           pressed=true;
         }
       }
-      if(!se_draw_theme_region_tint(region+pressed,x,y,w,h,col)){
-        if(!se_draw_theme_region_tint(region,x,y,w,h,col)){
-          ImDrawList_AddRect(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
-          ImDrawList_AddRect(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},col,0,ImDrawCornerFlags_None,line_w0);  
-          if(pressed){
-            ImDrawList_AddRectFilled(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},sel_color,0,ImDrawCornerFlags_None);  
-          }
-        }else if(pressed){
+      if(se_draw_theme_region_tint(region+pressed,x,y,w,h,col)){
+      }else if(se_draw_theme_region_tint(region,x,y,w,h,col)){
+        if(pressed){
           se_draw_theme_region_tint(region,x,y,w,h,sel_color);
+        }
+      }else if(se_draw_theme_region_tint(SE_REGION_KEY_L+pressed,x,y,w,h,col)){
+      }else if(se_draw_theme_region_tint(SE_REGION_KEY_L,x,y,w,h,col)){
+        if(pressed){
+          se_draw_theme_region_tint(SE_REGION_KEY_L,x,y,w,h,sel_color);
+        }
+      }else{
+        ImDrawList_AddRect(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
+        ImDrawList_AddRect(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},col,0,ImDrawCornerFlags_None,line_w0);  
+        if(pressed){
+          ImDrawList_AddRectFilled(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},sel_color,0,ImDrawCornerFlags_None);  
         }
       }
     }else if(b->type==ROUND){
@@ -7806,7 +7814,7 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
 static int se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint){
   if(gui_state.settings.theme!=SE_THEME_CUSTOM)return 0;
   se_theme_region_t* r = &gui_state.theme.regions[region];
-  if(!r->active)return false; 
+  if(!r->active)return 0; 
   if(gui_state.theme.image.id==SG_INVALID_ID)return 0;
   if(w==0||h==0)return 0;
   float tex_w = gui_state.theme.im_w;
@@ -8029,8 +8037,7 @@ static int se_draw_theme_region_tint(int region, float x, float y, float w, floa
 static int se_draw_theme_region(int region, float x, float y, float w, float h){
   return se_draw_theme_region_tint(region,x,y,w,h,0xffffffff);
 }
-static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
-  if(!im){return false; }
+static bool se_load_theme_from_image_format_full(uint8_t* im, uint32_t im_w, uint32_t im_h){
 
   uint32_t version_code = (uint32_t)im[(75+32*im_w)*4+3];
   version_code |= (uint32_t)im[(75+32*im_w)*4+2]<<(8*1);
@@ -8162,156 +8169,298 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
       region->h=6878-6378;
     }
   }
-  int num_mips = 3;
+  return true;
+}
+static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uint32_t im_h){
 
-  for(int i=0; i<SE_TOTAL_REGIONS;++i){
-    se_theme_region_t * region = &theme->regions[i];
-    region->active = false; 
-    //Determine if region is active
-    for(int y=1;y<region->h-1;++y){
-      for(int x=1;x<region->w-1;++x){
-        int pixel = (x+region->x)+(y+region->y)*im_w;
-        if(im[pixel*4+3]>0x01){
-          region->active=true;
-          break;
-        }
-      }
-      if(region->active)break;
-    }
-    for(int i=0;i<SE_MAX_CONTROL_POINTS;++i){
-      region->control_points_x[i].start_pixel=
-      region->control_points_x[i].end_pixel=
-      region->control_points_y[i].start_pixel=
-      region->control_points_y[i].end_pixel=0;
-      region->control_points_x[i].resize_control=
-      region->control_points_x[i].screen_control=
-      region->control_points_x[i].gamepad_control=0;
-      region->control_points_y[i].resize_control=
-      region->control_points_y[i].screen_control=
-      region->control_points_y[i].gamepad_control=0;
-    }
-    //Load Control Points
-    if(region->active){
-      for(int dir = 0; dir<2;++dir){
-        int current_point = 0; 
-        se_control_point_t * cp = region->control_points_x;
-        int start_x = region->x;
-        int start_y = region->y-3;
-        int end_x = region->x+region->w;
-        int end_y = region->y+region->h; 
-        int inc_x = 1;
-        int inc_y = 0; 
-        int gamepad_offset_x = 0; 
-        int gamepad_offset_y = -1; 
-        if(dir){
-          cp = region->control_points_y;
-          start_x = region->x-3;
-          start_y = region->y;
-          inc_x = 0;
-          inc_y = 1; 
-          gamepad_offset_x=-1;
-          gamepad_offset_y=0;
-        }
-        int curr_x = start_x;
-        int curr_y = start_y; 
-        cp->start_pixel=dir? curr_y : curr_x;
-        while(curr_x<end_x&&curr_y<end_y){
-          int p = (curr_x+curr_y*im_w)*4;
-          int p_gamepad = (curr_x+gamepad_offset_x+(curr_y+gamepad_offset_y)*im_w)*4;
-          int resize = 0;
-          int screen = 0;
-          int gamepad = 0;
-          for(int i=-1;i<2;++i){
-            int p2= p+(inc_x*im_w+inc_y)*4*i;
-            if(resize<im[p2+0])resize=im[p2+0];
-            if(screen<im[p2+1])screen=im[p2+1];
-            if(gamepad<im[p2+2])gamepad=im[p2+2];
-          }
-          if(resize!=cp->resize_control||screen!=cp->screen_control||gamepad!=cp->gamepad_control){
-            ++current_point;
-            if(current_point>=SE_MAX_CONTROL_POINTS){
-              printf("Error: Theme requires more control points than the %d limit\n",SE_MAX_CONTROL_POINTS);
-              break;
-            }
-            cp++;
-            cp->start_pixel=dir? curr_y : curr_x;
-            cp->screen_control=screen;
-            cp->resize_control=resize;
-            cp->gamepad_control=gamepad; 
-          }
-          curr_x+=inc_x; 
-          curr_y+=inc_y; 
-          cp->end_pixel=dir? curr_y : curr_x;
-        }
-      }
-      for(int y = region->y-7; y<region->y+region->h+7;++y){
-        for(int x = region->x-7;x<=region->x;++x){
-          SE_RPT4 im[(x+y*im_w)*4+r]=0;
-        }
-        for(int x = region->x+region->w;x<region->x+region->w+7;++x){
-          SE_RPT4 im[(x+y*im_w)*4+r]=0;
-        }
-      }
-      for(int x = region->x-7; x<region->x+region->w+7;++x){
-        for(int y = region->y-7;y<region->y;++y){
-          SE_RPT4 im[(x+y*im_w)*4+r]=0;
-        }
-        for(int y = region->y+region->h;y<region->y+region->h+7;++y){
-          SE_RPT4 im[(x+y*im_w)*4+r]=0;
-        }
-      }
-    }
+  uint32_t version_code = (uint32_t)im[(32+32*im_w)*4+3];
+  version_code |= (uint32_t)im[(32+32*im_w)*4+2]<<(8*1);
+  version_code |= (uint32_t)im[(32+32*im_w)*4+1]<<(8*2);
+  version_code |= (uint32_t)im[(32+32*im_w)*4+0]<<(8*3);
+  if(version_code!= 0x6f8a91ff){
+    printf("Error Loading Theme: Unknown Version Code %08x\n",version_code);
+    return false;
   }
-  sg_image_data im_data={0};
- 
-  im_data.subimage[0][0].ptr = im;
-  im_data.subimage[0][0].size = im_w*im_h*4;
-  for(int m = 1; m<num_mips;++m){
-    int mip_w = (im_w)>>(m);
-    int mip_h = (im_h)>>(m);
-    im_data.subimage[0][m].size =mip_h*mip_w*4;
-    uint8_t* data =(uint8_t*)malloc(im_data.subimage[0][m].size);
-    im_data.subimage[0][m].ptr = data;
-    uint8_t* data2 = (uint8_t*)im_data.subimage[0][m-1].ptr;
-    for(int y=0;y<mip_h;++y){
-      for(int x=0;x<mip_w;++x){
-        for(int c = 0; c<4;++c){
-          int parent_w = im_w>>(m-1);
-          data[(x+y*mip_w)*4+c]=(data2[((x*2+0)+(y*2+0)*parent_w)*4+c]+
-                                 data2[((x*2+1)+(y*2+0)*parent_w)*4+c]+
-                                 data2[((x*2+0)+(y*2+1)*parent_w)*4+c]+
-                                 data2[((x*2+1)+(y*2+1)*parent_w)*4+c])/4;
-          
-        }
-      }
-    }
+  se_custom_theme_t* theme = &gui_state.theme;
+  theme->im_h= im_h;
+  theme->im_w= im_w;
+
+  // Name and author
+  for(int i=0;i<2;++i){
+    se_theme_region_t * region = &theme->regions[SE_REGION_NAME+i];
+    region->x = 7;
+    region->y = 65+i*(125-65);
+    region->w = 662;
+    region->h = 53;
   }
-  sg_image_desc desc={
-    .type=              SG_IMAGETYPE_2D,
-    .render_target=     false,
-    .width=             im_w,
-    .height=            im_h,
-    .num_slices=        1,
-    .num_mipmaps=       num_mips,
-    .usage=             SG_USAGE_IMMUTABLE,
-    .pixel_format=      SG_PIXELFORMAT_RGBA8,
-    .sample_count=      1,
-    .min_filter=        SG_FILTER_LINEAR_MIPMAP_LINEAR,
-    .mag_filter=        SG_FILTER_LINEAR,
-    .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-    .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
-    .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
-    .max_anisotropy=    4,
-    .min_lod=           0.0f,
-    .max_lod=           1e9f,
-    .data=              im_data,
-  };
-  gui_state.theme.image=  sg_make_image(&desc);
-  for(int m = 1; m<num_mips;++m){
-    free((uint8_t*)im_data.subimage[0][m].ptr);
+  // Palettes
+  for(int i=0;i<5;++i){
+    int im_x = i*57 + 420;
+    int im_y = 40; 
+    theme->palettes[i*4+0]= im[(im_x+im_y*im_w)*4+0];
+    theme->palettes[i*4+1]= im[(im_x+im_y*im_w)*4+1];
+    theme->palettes[i*4+2]= im[(im_x+im_y*im_w)*4+2];
+    theme->palettes[i*4+3]= im[(im_x+im_y*im_w)*4+3];
+  }
+
+  //Menu Buttons
+  for(int button=0;button<2;++button)
+  for(int state=0;state<2;++state){
+    se_theme_region_t * region = &theme->regions[(button?SE_REGION_BLANK:SE_REGION_MENU)+state*2];
+    region->x=687+button*(220+7);
+    region->y=2500+state*(160+7);
+    region->w=220;
+    region->h=160;
+  }
+
+
+  //Volume Bar
+  for(int y=0;y<2;++y){
+    se_theme_region_t * region = &theme->regions[SE_REGION_VOL_EMPTY+y*2];
+    region->x=1141;
+    region->y=2500+y*(160+7);
+    region->w=500;
+    region->h=160;
+  }
+  
+
+  //Volume Knob
+  for(int y=0;y<2;++y){
+    se_theme_region_t * region = &theme->regions[SE_REGION_VOL_KNOB+y*2];
+    region->x=1648;
+    region->y=2500+y*(160+7);
+    region->w=160;
+    region->h=160;
+  }
+
+  //Menu background
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_MENUBAR];
+    region->x=1014;
+    region->y=2323;
+    region->w=1514;
+    region->h=170;
+  }
+
+  //Bezel Portrait
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_BEZEL_PORTRAIT];
+    region->x=1014;
+    region->y=7;
+    region->w=2021;
+    region->h=1802;
+  }
+  //ABXY
+  for(int k = 0; k<4;++k){
+    se_theme_region_t * key = &theme->regions[k*2+SE_REGION_KEY_A];
+    key->x = 1014 +k*(500+7);
+    key->y = 1816;
+    key->w = 500;
+    key->h = 500;
+  }
+  //Turbo/Hold
+  for(int k = 0; k<2;++k){
+    se_theme_region_t * key = &theme->regions[k*2+SE_REGION_KEY_TURBO];
+    key->x = 7 +k*(333+7);
+    key->y = 2500;
+    key->w = 333;
+    key->h = 320;
+  }
+  //Blank
+  {
+    se_theme_region_t * key = &theme->regions[SE_REGION_KEY_BLANK];
+    key->x = 2535;
+    key->y = 2323;
+    key->w = 500;
+    key->h = 500;
+  }
+  //Dpad
+  {
+    se_theme_region_t * dpad_region = &theme->regions[SE_REGION_DPAD_CENTER];
+    dpad_region->x = 7;
+    dpad_region->y = 185;
+    dpad_region->w = 1000;
+    dpad_region->h = 1000;
+  }
+  //L/R/Start/Select
+  for(int y=0;y<4;++y){
+    se_theme_region_t * region = &theme->regions[SE_REGION_KEY_L+y*2];
+    region->x=7;
+    region->y=1192+y*(7+320);
+    region->w=1000;
+    region->h=320;
   }
   return true;
+}
+static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
+  if(!im){return false; }
+  bool loaded = false; 
+  se_custom_theme_t* theme = &gui_state.theme;
+  for(int i=0; i<SE_TOTAL_REGIONS;++i){
+    se_theme_region_t * region = &theme->regions[i];
+    region->x=region->y=region->w=region->h=0;
+    region->active=false;
+  }
+
+  if(im_w==5250 && im_h == 7400)loaded = se_load_theme_from_image_format_full(im,im_w,im_h);
+  else if(im_w==3042 && im_h == 2835)loaded= se_load_theme_from_image_format_mini(im,im_w,im_h);
+  else{ 
+    printf("Unknown theme template size: %d %d\n", (int)im_w, (int)im_h);
+    return false; 
+  }
+  if(loaded){
+    int num_mips = 3;
+    for(int i=0; i<SE_TOTAL_REGIONS;++i){
+      se_theme_region_t * region = &theme->regions[i];
+      region->active = false; 
+      //Determine if region is active
+      if(region->x+region->w>=im_w&&region->y+region->h>=im_h||region->y<0||region->x<0)continue;
+      for(int y=1;y<region->h-1;++y){
+        for(int x=1;x<region->w-1;++x){
+          int pixel = (x+region->x)+(y+region->y)*im_w;
+          if(im[pixel*4+3]>0x01){
+            region->active=true;
+            break;
+          }
+        }
+        if(region->active)break;
+      }
+      for(int i=0;i<SE_MAX_CONTROL_POINTS;++i){
+        region->control_points_x[i].start_pixel=
+        region->control_points_x[i].end_pixel=
+        region->control_points_y[i].start_pixel=
+        region->control_points_y[i].end_pixel=0;
+        region->control_points_x[i].resize_control=
+        region->control_points_x[i].screen_control=
+        region->control_points_x[i].gamepad_control=0;
+        region->control_points_y[i].resize_control=
+        region->control_points_y[i].screen_control=
+        region->control_points_y[i].gamepad_control=0;
+      }
+      //Load Control Points
+      if(region->active){
+        for(int dir = 0; dir<2;++dir){
+          int current_point = 0; 
+          se_control_point_t * cp = region->control_points_x;
+          int start_x = region->x;
+          int start_y = region->y-3;
+          int end_x = region->x+region->w;
+          int end_y = region->y+region->h; 
+          int inc_x = 1;
+          int inc_y = 0; 
+          int gamepad_offset_x = 0; 
+          int gamepad_offset_y = -1; 
+          if(dir){
+            cp = region->control_points_y;
+            start_x = region->x-3;
+            start_y = region->y;
+            inc_x = 0;
+            inc_y = 1; 
+            gamepad_offset_x=-1;
+            gamepad_offset_y=0;
+          }
+          int curr_x = start_x;
+          int curr_y = start_y; 
+          cp->start_pixel=dir? curr_y : curr_x;
+          while(curr_x<end_x&&curr_y<end_y){
+            int p = (curr_x+curr_y*im_w)*4;
+            int p_gamepad = (curr_x+gamepad_offset_x+(curr_y+gamepad_offset_y)*im_w)*4;
+            int resize = 0;
+            int screen = 0;
+            int gamepad = 0;
+            for(int i=-1;i<2;++i){
+              int p2= p+(inc_x*im_w+inc_y)*4*i;
+              if(resize<im[p2+0])resize=im[p2+0];
+              if(screen<im[p2+1])screen=im[p2+1];
+              if(gamepad<im[p2+2])gamepad=im[p2+2];
+            }
+            if(resize!=cp->resize_control||screen!=cp->screen_control||gamepad!=cp->gamepad_control){
+              ++current_point;
+              if(current_point>=SE_MAX_CONTROL_POINTS){
+                printf("Error: Theme requires more control points than the %d limit for region:%d\n",SE_MAX_CONTROL_POINTS,i);
+                break;
+              }
+              cp++;
+              cp->start_pixel=dir? curr_y : curr_x;
+              cp->screen_control=screen;
+              cp->resize_control=resize;
+              cp->gamepad_control=gamepad; 
+            }
+            curr_x+=inc_x; 
+            curr_y+=inc_y; 
+            cp->end_pixel=dir? curr_y : curr_x;
+          }
+        }
+        for(int y = region->y-7; y<region->y+region->h+7;++y){
+          for(int x = region->x-7;x<=region->x;++x){
+            SE_RPT4 im[(x+y*im_w)*4+r]=0;
+          }
+          for(int x = region->x+region->w;x<region->x+region->w+7;++x){
+            SE_RPT4 im[(x+y*im_w)*4+r]=0;
+          }
+        }
+        for(int x = region->x-7; x<region->x+region->w+7;++x){
+          for(int y = region->y-7;y<region->y;++y){
+            SE_RPT4 im[(x+y*im_w)*4+r]=0;
+          }
+          for(int y = region->y+region->h;y<region->y+region->h+7;++y){
+            SE_RPT4 im[(x+y*im_w)*4+r]=0;
+          }
+        }
+      }
+    }
+    sg_image_data im_data={0};
+  
+    im_data.subimage[0][0].ptr = im;
+    im_data.subimage[0][0].size = im_w*im_h*4;
+    for(int m = 1; m<num_mips;++m){
+      int mip_w = (im_w)>>(m);
+      int mip_h = (im_h)>>(m);
+      im_data.subimage[0][m].size =mip_h*mip_w*4;
+      uint8_t* data =(uint8_t*)malloc(im_data.subimage[0][m].size);
+      im_data.subimage[0][m].ptr = data;
+      uint8_t* data2 = (uint8_t*)im_data.subimage[0][m-1].ptr;
+      for(int y=0;y<mip_h;++y){
+        for(int x=0;x<mip_w;++x){
+          for(int c = 0; c<4;++c){
+            int parent_w = im_w>>(m-1);
+            data[(x+y*mip_w)*4+c]=(data2[((x*2+0)+(y*2+0)*parent_w)*4+c]+
+                                  data2[((x*2+1)+(y*2+0)*parent_w)*4+c]+
+                                  data2[((x*2+0)+(y*2+1)*parent_w)*4+c]+
+                                  data2[((x*2+1)+(y*2+1)*parent_w)*4+c])/4;
+            
+          }
+        }
+      }
+    }
+    sg_image_desc desc={
+      .type=              SG_IMAGETYPE_2D,
+      .render_target=     false,
+      .width=             im_w,
+      .height=            im_h,
+      .num_slices=        1,
+      .num_mipmaps=       num_mips,
+      .usage=             SG_USAGE_IMMUTABLE,
+      .pixel_format=      SG_PIXELFORMAT_RGBA8,
+      .sample_count=      1,
+      .min_filter=        SG_FILTER_LINEAR_MIPMAP_LINEAR,
+      .mag_filter=        SG_FILTER_LINEAR,
+      .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+      .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
+      .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+      .max_anisotropy=    4,
+      .min_lod=           0.0f,
+      .max_lod=           1e9f,
+      .data=              im_data,
+    };
+    gui_state.theme.image=  sg_make_image(&desc);
+    for(int m = 1; m<num_mips;++m){
+      free((uint8_t*)im_data.subimage[0][m].ptr);
+    }
+  }
+
+  return loaded; 
 }
 static bool se_load_theme_from_file(const char * filename){
   int im_w, im_h, im_c; 
