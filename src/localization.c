@@ -27,6 +27,8 @@
 // - "GUI Scale"
 // - "Auto\0Vertical\0Horizontal\0Hybrid Large Top\0Hybrid Large Bottom\0Vertical Large Top\0Vertical Large Bottom\0Horizontal Large Top\0Horizontal Large Bottom\0\0"
 // - "NDS Screen Layout"
+// - "Never Overlap Screen"
+// - "Button Labels"
 
 // Strings removed in v4:
 // - "Controller"
