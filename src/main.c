@@ -8273,6 +8273,18 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   }
   return true;
 }
+static uint8_t * se_pad_image_to_size(uint8_t* im, uint32_t im_w, uint32_t im_h, uint32_t new_w, uint32_t new_h){
+  uint8_t * new_image = malloc(new_w*new_h*4);
+  memset(new_image,0,new_w*new_h*4);
+  for(int y = 0; y< im_h;++y)
+    for(int x = 0; x< im_w;++x){
+      new_image[(y*new_w + x)*4+0] = im[(y*im_w+x)*4+0];
+      new_image[(y*new_w + x)*4+1] = im[(y*im_w+x)*4+1];
+      new_image[(y*new_w + x)*4+2] = im[(y*im_w+x)*4+2];
+      new_image[(y*new_w + x)*4+3] = im[(y*im_w+x)*4+3];
+    }
+  return new_image;
+} 
 static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, bool invert){
   if(!im){return false; }
   bool loaded = false; 
@@ -8290,7 +8302,6 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
     return false; 
   }
   if(loaded){
-    int num_mips = 8;
     for(int i=0; i<SE_TOTAL_REGIONS;++i){
       se_theme_region_t * region = &theme->regions[i];
       region->active = false; 
@@ -8413,10 +8424,30 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
         theme->palettes[i*4+2]= 255-theme->palettes[i*4+2];
       }
     }
+    //WebGL and Android don't support mip mapping of NPOT, so pad them to a power of two. 
+    bool free_mip0 = false; 
+    //#if defined(EMSCRIPTEN)
+    int pad_pow2 = 1;
+    while(pad_pow2 < im_w ||pad_pow2<im_h)pad_pow2<<=1;
+    if(pad_pow2!=im_w ||pad_pow2!=im_h){
+      uint8_t * old = im;
+      im = se_pad_image_to_size(im,im_w,im_h,pad_pow2,pad_pow2);
+      printf("Padding npot texture from {%d, %d} -> {%d %d}\n",im_w,im_h,pad_pow2,pad_pow2);
+      im_w = pad_pow2;
+      im_h = pad_pow2; 
+      free_mip0 = true; 
+    }
+    //#endif 
+    theme->im_h=im_h;
+    theme->im_w=im_w;
     sg_image_data im_data={0};
   
     im_data.subimage[0][0].ptr = im;
     im_data.subimage[0][0].size = im_w*im_h*4;
+    int max_dim = im_h>im_w? im_h:im_w;
+    int num_mips = 0;
+    while(max_dim>=(1<<num_mips))++num_mips;
+
     for(int m = 1; m<num_mips;++m){
       int mip_w = (im_w)>>(m);
       int mip_h = (im_h)>>(m);
@@ -8424,6 +8455,7 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
       uint8_t* data =(uint8_t*)malloc(im_data.subimage[0][m].size);
       im_data.subimage[0][m].ptr = data;
       uint8_t* data2 = (uint8_t*)im_data.subimage[0][m-1].ptr;
+      printf("Gen Mip-layer %d %d\n",mip_w,mip_h);
       for(int y=0;y<mip_h;++y){
         for(int x=0;x<mip_w;++x){
           for(int c = 0; c<4;++c){
@@ -8436,7 +8468,8 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
           }
         }
       }
-    }
+    } 
+    //#endif
     sg_image_desc desc={
       .type=              SG_IMAGETYPE_2D,
       .render_target=     false,
@@ -8447,18 +8480,15 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
       .usage=             SG_USAGE_IMMUTABLE,
       .pixel_format=      SG_PIXELFORMAT_RGBA8,
       .sample_count=      1,
-      .min_filter=        SG_FILTER_LINEAR_MIPMAP_LINEAR,
+      .min_filter=        num_mips>1 ? SG_FILTER_LINEAR_MIPMAP_LINEAR : SG_FILTER_LINEAR,
       .mag_filter=        SG_FILTER_LINEAR,
       .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
       .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-      .wrap_w=            SG_WRAP_CLAMP_TO_EDGE,
       .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
-      .max_anisotropy=    4,
-      .min_lod=           0.0f,
-      .max_lod=           1e9f,
       .data=              im_data,
     };
     gui_state.theme.image=  sg_make_image(&desc);
+    if(free_mip0)free((uint8_t*)im_data.subimage[0][0].ptr);
     for(int m = 1; m<num_mips;++m){
       free((uint8_t*)im_data.subimage[0][m].ptr);
     }
