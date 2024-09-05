@@ -205,7 +205,8 @@ typedef struct{
   uint32_t only_one_notification;
   uint32_t enable_download_cache;
   uint32_t nds_layout; 
-  uint32_t padding[220];
+  uint32_t touch_screen_show_button_labels;
+  uint32_t padding[219];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -339,9 +340,13 @@ typedef struct{
 #define SE_REGION_VOL_KNOB             63
 #define SE_REGION_VOL_KNOB_ACTIVE      64
 #define SE_REGION_MENUBAR              65
-#define SE_TOTAL_REGIONS               66
+#define SE_REGION_KEY_RECT_BLANK         66
+#define SE_REGION_KEY_RECT_BLANK_PRESSED 67
+#define SE_TOTAL_REGIONS                 68
 
 #define SE_RESIZE_STRETCH  0
+#define SE_RESIZE_ONLY_PORTRAIT  0x20
+#define SE_RESIZE_ONLY_LANDSCAPE 0x40
 #define SE_RESIZE_FIXED 0x80
 
 #define SE_SCREEN_NONE  0
@@ -350,6 +355,13 @@ typedef struct{
 #define SE_NO_SORT 0
 #define SE_SORT_ALPHA_ASC 1
 #define SE_SORT_ALPHA_DESC 2
+
+#define SE_GAMEPAD_PORTRAIT_LEFT  0x40
+#define SE_GAMEPAD_PORTRAIT_RIGHT 0x80
+#define SE_GAMEPAD_PORTRAIT_BOTH  0xC0
+#define SE_GAMEPAD_LANDSCAPE_LEFT  0x10
+#define SE_GAMEPAD_LANDSCAPE_RIGHT 0x20
+#define SE_GAMEPAD_LANDSCAPE_BOTH  0x30
 
 #define SE_GAMEPAD_LEFT  0x40
 #define SE_GAMEPAD_RIGHT 0x80
@@ -570,6 +582,8 @@ void se_open_file_browser(bool clicked, float x, float y, float w, float h, void
 void se_file_browser_accept(const char * path);
 static void se_reset_core();
 static bool se_load_theme_from_file(const char * filename);
+static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert);
+static bool se_reload_theme();
 
 double se_time();
 void se_push_disabled();
@@ -671,9 +685,6 @@ static bool se_combo_str(const char* label,int* current_item,const char* items_s
   }
   return igComboStr(se_localize_and_cache(label),current_item,se_localize_and_cache(items_separated_by_zeros),popup_max_height_in_items);
 }
-static int se_slider_float(const char* label,float* v,float v_min,float v_max,const char* format){
-  return igSliderFloat(se_localize_and_cache(label),v,v_min,v_max,se_localize_and_cache(format),ImGuiSliderFlags_AlwaysClamp);
-}
 static bool se_input_int(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags){
   return igInputInt(se_localize_and_cache(label),v,step,step_fast,flags);
 }
@@ -712,7 +723,7 @@ void se_section(const char* label,...){
   igCalcTextSize(&text_size,buffer,NULL,false,b_max.x-b_min.x);
 
   b_max.y = b_min.y+text_size.y+style->FramePadding.y * 2.0f; 
-
+  
   ImDrawList_AddRectFilled(dl,b_min,b_max,igGetColorU32Col(ImGuiCol_TitleBg,1.0),0,ImDrawCornerFlags_None);
   igTextWrapped("%s",buffer);
 }
@@ -730,7 +741,7 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
   pos.x+=v.x-igGetScrollX();
   pos.y+=v.y-igGetScrollY();
   ImGuiStyle restore_style = *style;
-  if(gui_state.settings.theme==SE_THEME_CUSTOM && gui_state.theme.regions[region].active){
+  if(gui_state.theme.regions[region].active){
     for(int i=0;i<ImGuiCol_COUNT;++i)style->Colors[i].w = 0.;
     if(always_draw_label){
       style->Colors[ImGuiCol_Text] = restore_style.Colors[ImGuiCol_Text];
@@ -739,7 +750,7 @@ static bool se_button_themed(int region, const char* label, ImVec2 size, bool al
   }
   bool hover = igIsMouseHoveringRect((ImVec2){pos.x,pos.y},(ImVec2){pos.x+size.x,pos.y+size.y},true);
   float alpha = 1.0;
-  if(hover) alpha=0.75;
+  if(hover) alpha=0.5;
   uint32_t tint = 0x00ffffff|((uint32_t)(alpha*255)<<24u); 
   if(se_draw_theme_region_tint(region, pos.x,pos.y,size.x,size.y,tint));
   else if(se_draw_theme_region_tint(SE_REGION_BLANK, pos.x,pos.y,size.x,size.y,tint));
@@ -803,7 +814,7 @@ bool se_slider_float_themed(const char* label, float* p_data, float p_min, float
   frame_size.x+=frame_size.x*bar_growth;
   frame_size.y+=frame_size.y*bar_growth;
 
-  if(gui_state.settings.theme==SE_THEME_CUSTOM && gui_state.theme.regions[SE_REGION_VOL_EMPTY].active){
+  if( gui_state.theme.regions[SE_REGION_VOL_EMPTY].active){
     for(int i=0;i<ImGuiCol_COUNT;++i)style->Colors[i].w = 0.;
     style->Colors[ImGuiCol_Text] = restore_style.Colors[ImGuiCol_Text];
     style->Colors[ImGuiCol_TextDisabled] = restore_style.Colors[ImGuiCol_TextDisabled];
@@ -838,6 +849,9 @@ bool se_slider_int_themed(const char* label, int* v, float v_min, float v_max, c
   bool ret = se_slider_float_themed(label, &vf, v_min, v_max, format);
   *v = vf;
   return ret;
+}
+static int se_slider_float(const char* label,float* v,float v_min,float v_max,const char* format){
+  return se_slider_float_themed(label,v,v_min,v_max,format);
 }
 
 bool se_button(const char* label, ImVec2 size){
@@ -931,10 +945,11 @@ static void se_tooltip(const char * tooltip){
   }
 }
 static void se_panel_toggle(int region, bool * is_open, const char* icon, const char* tooltip ){
+  if(gui_state.theme.regions[region].active==false)region = SE_REGION_BLANK;
   igPushIDStr(icon);
   if(*is_open){
     igPushStyleColorVec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-    if(se_button_themed(region+2,ICON_FK_TIMES,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
+    if(se_button_themed(region+2,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
     igPopStyleColor(1);
   }else{
     if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
@@ -3087,18 +3102,31 @@ static void se_draw_debug_menu(){
 
   if(gui_state.screen_width*0.5/se_dpi_scale()-SE_TOGGLE_WIDTH*2.5<(SE_MENU_BAR_BUTTON_WIDTH+1)*9){
     igSetNextItemWidth(SE_MENU_BAR_BUTTON_WIDTH);
-    if(igBeginCombo("##debug combo","  " ICON_FK_BUG,ImGuiComboFlags_NoArrowButton|ImGuiComboFlags_HeightLarge)){
-      while(desc->label){
-        bool is_selected = desc->visible; // You can store your selection however you want, outside or inside your objects
-        if (igSelectableBool(se_localize_and_cache(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
-          desc->visible=!desc->visible;
+    static bool debug_menu_open; 
+    se_panel_toggle(SE_REGION_BLANK,&debug_menu_open,ICON_FK_BUG,"Debuggers");
+    if(debug_menu_open){
+      igSetNextWindowSize((ImVec2){gui_state.screen_width/se_dpi_scale(),0},ImGuiCond_Always);
+      ImVec2 win;
+      igGetWindowPos(&win);
+      ImVec2 size;
+      igGetWindowSize(&size);
+      igSetNextWindowPos((ImVec2){0,win.y+size.y},ImGuiCond_Always,(ImVec2){0,0});
+      if(igBegin("##debug combo",&debug_menu_open,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize)){
+        while(desc->label){
+          igSetCursorPosX(4);
+          bool is_selected = desc->visible; // You can store your selection however you want, outside or inside your objects
+          if (igSelectableBool(se_localize_and_cache(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
+            desc->visible=!desc->visible;
+            debug_menu_open = false;
+          }
+          char tmp_str[256];
+          snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+          se_tooltip(tmp_str);
+          igSeparator();
+          desc++;
         }
-        char tmp_str[256];
-        snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
-        se_tooltip(tmp_str);
-        desc++;
+        igEndPopup();
       }
-      igEndCombo();
     }
     igSameLine(0,1);
   }else{
@@ -3855,19 +3883,12 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   if(opacity<=0){opacity=0;}
   opacity*=gui_state.settings.touch_controls_opacity;
 
-  if(gui_state.settings.theme==SE_THEME_CUSTOM){
-    line_color|=(int)(opacity*0xff)<<24;
-    line_color2|=(int)(opacity*0xff)<<24;
-    sel_color|=(int)(opacity*0x80)<<24;
-    hold_color|=(uint32_t)(0xffu)<<24;
-    turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
-  }else{
-    line_color|=(int)(opacity*0x8f)<<24;
-    line_color2|=(int)(opacity*0x8f)<<24;
-    sel_color|=(int)(opacity*0x8f)<<24;
-    hold_color|=(uint32_t)(0xffu)<<24;
-    turbo_color|=(int)(fmin(turbo_t*0.5,1)*0xffu)<<24;
-  }
+  line_color|=(int)(opacity*0xff)<<24;
+  line_color2|=(int)(opacity*0xff)<<24;
+  sel_color|=(int)(opacity*0x80)<<24;
+  hold_color|=(uint32_t)(0xffu)<<24;
+  turbo_color|=(int)(fmin(opacity+turbo_t*0.5,1)*0xffu)<<24;
+
   float themed_scale = 1.05;
   int line_w0 = 1; 
   int line_w1 = 3; 
@@ -3916,10 +3937,13 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   }
   float row_h = 0.32*size_scalar ;
   float rect_width_scalar = 1;
+  float rect_offset = 0;
   float lr_y = 0*full_h;
   float start_sel_row_y = full_h-row_h;
   if(full_h<row_h*2+1.0){
     rect_width_scalar = 0.3;
+    row_h*=0.5;
+    start_sel_row_y+=row_h;
   }
   float full_row_w = rect_width_scalar*0.99;
   float start_sel_row_w = (ht_en?0.66:0.99);
@@ -3927,17 +3951,17 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   if(hold_turbo_w>full_row_w)hold_turbo_w = full_row_w; 
   if(start_sel_row_w>full_row_w)start_sel_row_w = full_row_w;
   se_button_info_t buttons[]={
-    {SE_KEY_L      ,SE_REGION_KEY_L,      SE_GAMEPAD_LEFT, lr_en,RECT, {0,lr_y}, {full_row_w,row_h}}, 
+    {SE_KEY_L      ,SE_REGION_KEY_L,      SE_GAMEPAD_LEFT, lr_en,RECT, {0+rect_offset,lr_y}, {full_row_w,row_h}}, 
     {SE_KEY_UP     ,SE_REGION_DPAD_CENTER,SE_GAMEPAD_LEFT, true, DPAD, {0.5,dpad_y}, {dpad_r,0.8}},
-    {SE_KEY_SELECT ,SE_REGION_KEY_SELECT, SE_GAMEPAD_LEFT,true, RECT, {0,start_sel_row_y}, {start_sel_row_w,row_h}},
-    {SE_KEY_HOLD   ,SE_REGION_KEY_HOLD,   SE_GAMEPAD_LEFT,ht_en,RECT, {0.68+0.3-hold_turbo_w,start_sel_row_y}, {hold_turbo_w,row_h}},
-    {SE_KEY_R      ,SE_REGION_KEY_R,      SE_GAMEPAD_RIGHT,lr_en,RECT, {0.01+0.99-full_row_w,lr_y}, {full_row_w,row_h}},
+    {SE_KEY_SELECT ,SE_REGION_KEY_SELECT, SE_GAMEPAD_LEFT,true, RECT, {0+rect_offset,start_sel_row_y}, {start_sel_row_w,row_h}},
+    {SE_KEY_HOLD   ,SE_REGION_KEY_HOLD,   SE_GAMEPAD_LEFT,ht_en,RECT, {0.68+0.3-hold_turbo_w+rect_offset,start_sel_row_y}, {hold_turbo_w,row_h}},
+    {SE_KEY_R      ,SE_REGION_KEY_R,      SE_GAMEPAD_RIGHT,lr_en,RECT, {0.01+0.99-full_row_w-rect_offset,lr_y}, {full_row_w,row_h}},
     {SE_KEY_A      ,SE_REGION_KEY_A,      SE_GAMEPAD_RIGHT,true, ROUND,{a_pos[0],a_pos[1]},{button_r,0.2}},
     {SE_KEY_B      ,SE_REGION_KEY_B,      SE_GAMEPAD_RIGHT,true, ROUND,{b_pos[0],b_pos[1]},{button_r,0.2}},
     {SE_KEY_X      ,SE_REGION_KEY_X,      SE_GAMEPAD_RIGHT,abxy, ROUND,{0.5,0.5*full_h-button_r*1.5},{button_r,0.2}},
     {SE_KEY_Y      ,SE_REGION_KEY_Y,      SE_GAMEPAD_RIGHT,abxy, ROUND,{0.5-button_r*1.5,0.5*full_h},{button_r,0.2}},
-    {SE_KEY_START  ,SE_REGION_KEY_START,  SE_GAMEPAD_RIGHT, true, RECT, {(ht_en?0.33:0.00)+(ht_en?0.67:1.01)-start_sel_row_w,start_sel_row_y}, {start_sel_row_w,row_h}},
-    {SE_KEY_TURBO  ,SE_REGION_KEY_TURBO,  SE_GAMEPAD_RIGHT, ht_en,RECT, {0.01,start_sel_row_y}, {hold_turbo_w,row_h}},
+    {SE_KEY_START  ,SE_REGION_KEY_START,  SE_GAMEPAD_RIGHT, true, RECT, {(ht_en?0.33:0.00)+(ht_en?0.67:1.01)-start_sel_row_w-rect_offset,start_sel_row_y}, {start_sel_row_w,row_h}},
+    {SE_KEY_TURBO  ,SE_REGION_KEY_TURBO,  SE_GAMEPAD_RIGHT, ht_en,RECT, {0.01-rect_offset,start_sel_row_y}, {hold_turbo_w,row_h}},
   };
   bool touch_only_key_pressed[3] = {0};
 
@@ -3972,6 +3996,7 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
     }
     float x_off = 0;
     if(b->mode&SE_GAMEPAD_RIGHT)x_off+=right_x_off;
+    bool show_labels = gui_state.settings.touch_screen_show_button_labels;
     if(b->type ==RECT){
       int region =b->theme_region;
       bool pressed = b->input_id>=0 && emu_state.prev_frame_joy.inputs[b->input_id]>0.1;
@@ -3992,15 +4017,17 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
           pressed=true;
         }
       }
-      if(se_draw_theme_region_tint(region+pressed,x,y,w,h,col)){
-      }else if(se_draw_theme_region_tint(region,x,y,w,h,col)){
+      int orig_region = show_labels? region : SE_REGION_KEY_RECT_BLANK;
+      int fallback_region = show_labels?SE_REGION_KEY_RECT_BLANK :region;
+      if(se_draw_theme_region_tint(orig_region+pressed,x,y,w,h,col)){
+      }else if(se_draw_theme_region_tint(orig_region,x,y,w,h,col)){
         if(pressed){
-          se_draw_theme_region_tint(region,x,y,w,h,sel_color);
+          se_draw_theme_region_tint(orig_region,x,y,w,h,sel_color);
         }
-      }else if(se_draw_theme_region_tint(SE_REGION_KEY_L+pressed,x,y,w,h,col)){
-      }else if(se_draw_theme_region_tint(SE_REGION_KEY_L,x,y,w,h,col)){
+      }else if(se_draw_theme_region_tint(fallback_region+pressed,x,y,w,h,col)){
+      }else if(se_draw_theme_region_tint(fallback_region,x,y,w,h,col)){
         if(pressed){
-          se_draw_theme_region_tint(SE_REGION_KEY_L,x,y,w,h,sel_color);
+          se_draw_theme_region_tint(fallback_region,x,y,w,h,sel_color);
         }
       }else{
         ImDrawList_AddRect(dl,(ImVec2){x,y},(ImVec2){x+w,y+h},line_color2,0,ImDrawCornerFlags_None,line_w1);  
@@ -4032,39 +4059,40 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
           pressed=true;
         }
       }
-
-      if(se_draw_theme_region_tint(region+(pressed?1:0),
+      int orig_region = show_labels? region : SE_REGION_KEY_BLANK;
+      int fallback_region = show_labels?SE_REGION_KEY_BLANK :region;
+      if(se_draw_theme_region_tint(orig_region+(pressed?1:0),
                               pos[0]-r*themed_scale,
                               pos[1]-r*themed_scale,
                               r*2*themed_scale,
                               r*2*themed_scale,
                               col));
-      else if(se_draw_theme_region_tint(region,
+      else if(se_draw_theme_region_tint(orig_region,
                               pos[0]-r*themed_scale,
                               pos[1]-r*themed_scale,
                               r*2*themed_scale,
                               r*2*themed_scale,
                               col)){
-        if(pressed) se_draw_theme_region_tint(region,
+        if(pressed) se_draw_theme_region_tint(orig_region,
                                                pos[0]-r*themed_scale,
                                                pos[1]-r*themed_scale,
                                                r*2*themed_scale,
                                                r*2*themed_scale,
                                                sel_color);
 
-      }else if(se_draw_theme_region_tint(SE_REGION_KEY_BLANK+(pressed?1:0),
+      }else if(se_draw_theme_region_tint(fallback_region+(pressed?1:0),
                               pos[0]-r*themed_scale,
                               pos[1]-r*themed_scale,
                               r*2*themed_scale,
                               r*2*themed_scale,
                               col));
-      else if(se_draw_theme_region_tint(SE_REGION_KEY_BLANK,
+      else if(se_draw_theme_region_tint(fallback_region,
                               pos[0]-r*themed_scale,
                               pos[1]-r*themed_scale,
                               r*2*themed_scale,
                               r*2*themed_scale,
                               col)){
-        if(pressed)  se_draw_theme_region_tint(SE_REGION_KEY_BLANK,
+        if(pressed)  se_draw_theme_region_tint(fallback_region,
                                                pos[0]-r*themed_scale,
                                                pos[1]-r*themed_scale,
                                                r*2*themed_scale,
@@ -5438,137 +5466,77 @@ void se_imgui_theme()
   colors[ImGuiCol_NavWindowingDimBg]      = (ImVec4){1.00f, 0.00f, 0.00f, 0.20f};
   colors[ImGuiCol_ModalWindowDimBg]       = (ImVec4){1.00f, 0.00f, 0.00f, 0.35f};
 
-  if(gui_state.settings.theme == SE_THEME_CUSTOM){
-    uint8_t *palette = gui_state.theme.palettes;
-    //Base color
-    if(palette[0*4+3]){
-      float r = palette[0*4+0]/255.;
-      float g = palette[0*4+1]/255.;
-      float b = palette[0*4+2]/255.;
-      float a = palette[0*4+3]/255.;
-      colors[ImGuiCol_WindowBg]               = (ImVec4){r, g, b, a};
-      colors[ImGuiCol_ChildBg]                = (ImVec4){r, g, b, a};
-      colors[ImGuiCol_PopupBg]                = (ImVec4){r, g, b, a};
-      colors[ImGuiCol_MenuBarBg]              = (ImVec4){r, g, b, a};
-    }
-    //Text Color
-    if(palette[1*4+3]){
-      float r = palette[1*4+0]/255.;
-      float g = palette[1*4+1]/255.;
-      float b = palette[1*4+2]/255.;
-      float a = palette[1*4+3]/255.;
-      colors[ImGuiCol_PlotLinesHovered]   =
-      colors[ImGuiCol_PlotHistogramHovered]   =
-      colors[ImGuiCol_Text]                   = (ImVec4){r,g,b,a};
-      colors[ImGuiCol_TextDisabled]           = (ImVec4){r,g,b,a*0.4f};
-      colors[ImGuiCol_ScrollbarGrabHovered]           = (ImVec4){r,g,b,a*0.6f};
-      colors[ImGuiCol_SliderGrabActive] = colors[ImGuiCol_ScrollbarGrabActive]           = (ImVec4){r,g,b,a*0.8f};
-    }
-    //Second Color
-    if(palette[2*4+3]){
-      float r = palette[2*4+0]/255.;
-      float g = palette[2*4+1]/255.;
-      float b = palette[2*4+2]/255.;
-      float a = palette[2*4+3]/255.;
-      colors[ImGuiCol_FrameBg]                = (ImVec4){r,g,b,a*0.5};
-      colors[ImGuiCol_ScrollbarBg]            = (ImVec4){r,g,b,a};
-      colors[ImGuiCol_Button] = (ImVec4){r, g, b, a};
-      colors[ImGuiCol_ButtonHovered]          = (ImVec4){r,g,b, a*0.54f};
-      colors[ImGuiCol_ButtonActive]           = (ImVec4){r*2,g*2,b*2, a*1.00f};
-    }
-    //Tab/Header
-    if(palette[3*4+3]){
-      float r = palette[3*4+0]/255.;
-      float g = palette[3*4+1]/255.;
-      float b = palette[3*4+2]/255.;
-      float a = palette[3*4+3]/255.;
-      colors[ImGuiCol_TitleBg]                = 
-      colors[ImGuiCol_TitleBgActive]          = 
-      colors[ImGuiCol_TitleBgCollapsed]       = 
-      colors[ImGuiCol_TableHeaderBg]          =
-      colors[ImGuiCol_TableBorderStrong]      = (ImVec4){r,g,b,a};
-
-      colors[ImGuiCol_SliderGrab] = colors[ImGuiCol_ScrollbarGrab]           = (ImVec4){r,g,b,a};
-
-      colors[ImGuiCol_FrameBgHovered]         = (ImVec4){r,g,b,a*0.75};
-      colors[ImGuiCol_FrameBgActive]          = (ImVec4){r,g,b,a};
-
-      colors[ImGuiCol_Tab]                    = 
-      colors[ImGuiCol_Header]                 = (ImVec4){r,g,b,a*0.5};
-      colors[ImGuiCol_TabHovered]             = 
-      colors[ImGuiCol_HeaderHovered]          = (ImVec4){r,g,b,a*0.75};
-      colors[ImGuiCol_TabActive]              = 
-      colors[ImGuiCol_HeaderActive]           = (ImVec4){r,g,b,a};
-
-    }
-    //Accent color (checkmark, bar/line graph)
-    if(palette[4*4+3]){
-      float r = palette[4*4+0]/255.;
-      float g = palette[4*4+1]/255.;
-      float b = palette[4*4+2]/255.;
-      float a = palette[4*4+3]/255.;
-      colors[ImGuiCol_PlotLines]              = 
-      colors[ImGuiCol_PlotHistogram]          =
-      colors[ImGuiCol_CheckMark]              = (ImVec4){r,g,b,a};
-    }
+  uint8_t *palette = gui_state.theme.palettes;
+  //Base color
+  if(palette[0*4+3]){
+    float r = palette[0*4+0]/255.;
+    float g = palette[0*4+1]/255.;
+    float b = palette[0*4+2]/255.;
+    float a = palette[0*4+3]/255.;
+    colors[ImGuiCol_WindowBg]               = (ImVec4){r, g, b, a};
+    colors[ImGuiCol_ChildBg]                = (ImVec4){r, g, b, a};
+    colors[ImGuiCol_PopupBg]                = (ImVec4){r, g, b, a};
+    colors[ImGuiCol_MenuBarBg]              = (ImVec4){r, g, b, a};
   }
-  
-  if(gui_state.settings.theme == SE_THEME_LIGHT){
-    int invert_list[]={
-      ImGuiCol_Text,
-      ImGuiCol_TextDisabled,
-      ImGuiCol_WindowBg,
-      ImGuiCol_ChildBg,
-      ImGuiCol_PopupBg,
-      ImGuiCol_Border,
-      ImGuiCol_BorderShadow,
-      ImGuiCol_FrameBg,
-      ImGuiCol_FrameBgHovered,
-      ImGuiCol_FrameBgActive,
-      ImGuiCol_TitleBg,
-      ImGuiCol_TitleBgActive,
-      ImGuiCol_TitleBgCollapsed,
-      ImGuiCol_MenuBarBg,
-      ImGuiCol_ScrollbarBg,
-      ImGuiCol_ScrollbarGrab,
-      ImGuiCol_ScrollbarGrabHovered,
-      ImGuiCol_ScrollbarGrabActive,
-      ImGuiCol_SliderGrab,
-      ImGuiCol_SliderGrabActive,
-      ImGuiCol_Button,
-      ImGuiCol_ButtonHovered,
-      ImGuiCol_ButtonActive,
-      ImGuiCol_Header,
-      ImGuiCol_HeaderHovered,
-      ImGuiCol_HeaderActive,
-      ImGuiCol_Separator,
-      ImGuiCol_SeparatorHovered,
-      ImGuiCol_SeparatorActive,
-      ImGuiCol_ResizeGrip,
-      ImGuiCol_ResizeGripHovered,
-      ImGuiCol_ResizeGripActive,
-      ImGuiCol_Tab,
-      ImGuiCol_TabHovered,
-      ImGuiCol_TabActive,
-      ImGuiCol_TabUnfocused,
-      ImGuiCol_TabUnfocusedActive,
-      ImGuiCol_TableHeaderBg,
-      ImGuiCol_TableBorderStrong,
-      ImGuiCol_TableBorderLight,
-      ImGuiCol_TableRowBg,
-      ImGuiCol_TableRowBgAlt,
-      ImGuiCol_TextSelectedBg,
-      ImGuiCol_DragDropTarget,
-      ImGuiCol_NavHighlight,
-      ImGuiCol_NavWindowingHighlight,
-      ImGuiCol_NavWindowingDimBg,
-      ImGuiCol_ModalWindowDimBg,
-    };
-    for(int i=0;i<sizeof(invert_list)/sizeof(invert_list[0]);++i){
-      colors[invert_list[i]].x=1.0-colors[invert_list[i]].x;
-      colors[invert_list[i]].y=1.0-colors[invert_list[i]].y;
-      colors[invert_list[i]].z=1.0-colors[invert_list[i]].z;
-    }
+  //Text Color
+  if(palette[1*4+3]){
+    float r = palette[1*4+0]/255.;
+    float g = palette[1*4+1]/255.;
+    float b = palette[1*4+2]/255.;
+    float a = palette[1*4+3]/255.;
+    colors[ImGuiCol_PlotLinesHovered]   =
+    colors[ImGuiCol_PlotHistogramHovered]   =
+    colors[ImGuiCol_Text]                   = (ImVec4){r,g,b,a};
+    colors[ImGuiCol_TextDisabled]           = (ImVec4){r,g,b,a*0.4f};
+    colors[ImGuiCol_ScrollbarGrabHovered]           = (ImVec4){r,g,b,a*0.6f};
+    colors[ImGuiCol_SliderGrabActive] = colors[ImGuiCol_ScrollbarGrabActive]           = (ImVec4){r,g,b,a*0.8f};
+  }
+  //Second Color
+  if(palette[2*4+3]){
+    float r = palette[2*4+0]/255.;
+    float g = palette[2*4+1]/255.;
+    float b = palette[2*4+2]/255.;
+    float a = palette[2*4+3]/255.;
+    colors[ImGuiCol_FrameBg]                = (ImVec4){r,g,b,a};
+    colors[ImGuiCol_ScrollbarBg]            = (ImVec4){r,g,b,a};
+    colors[ImGuiCol_Button] = (ImVec4){r, g, b, a};
+    colors[ImGuiCol_ButtonHovered]          = (ImVec4){r,g,b, a*0.54f};
+    colors[ImGuiCol_ButtonActive]           = (ImVec4){r*2,g*2,b*2, a*1.00f};
+  }
+  //Tab/Header
+  if(palette[3*4+3]){
+    float r = palette[3*4+0]/255.;
+    float g = palette[3*4+1]/255.;
+    float b = palette[3*4+2]/255.;
+    float a = palette[3*4+3]/255.;
+    colors[ImGuiCol_TitleBg]                = 
+    colors[ImGuiCol_TitleBgActive]          = 
+    colors[ImGuiCol_TitleBgCollapsed]       = 
+    colors[ImGuiCol_TableHeaderBg]          =
+    colors[ImGuiCol_TableBorderStrong]      = (ImVec4){r,g,b,a};
+
+    colors[ImGuiCol_SliderGrab] = colors[ImGuiCol_ScrollbarGrab]           = (ImVec4){r,g,b,a};
+
+    colors[ImGuiCol_FrameBgHovered]         = (ImVec4){r,g,b,a*0.75};
+    colors[ImGuiCol_FrameBgActive]          = (ImVec4){r,g,b,a};
+
+    colors[ImGuiCol_Tab]                    = 
+    colors[ImGuiCol_Header]                 = (ImVec4){r,g,b,a*0.25};
+    colors[ImGuiCol_TabHovered]             = 
+    colors[ImGuiCol_HeaderHovered]          = (ImVec4){r,g,b,a*0.75};
+    colors[ImGuiCol_TabActive]              = 
+    colors[ImGuiCol_HeaderActive]           = (ImVec4){r,g,b,a};
+
+  }
+  //Accent color (checkmark, bar/line graph)
+  if(palette[4*4+3]){
+    float r = palette[4*4+0]/255.;
+    float g = palette[4*4+1]/255.;
+    float b = palette[4*4+2]/255.;
+    float a = palette[4*4+3]/255.;
+    colors[ImGuiCol_PlotLines]              = 
+    colors[ImGuiCol_PlotHistogram]          =
+    colors[ImGuiCol_CheckMark]              = (ImVec4){r,g,b,a};
   }
 
   ImGuiStyle* style = igGetStyle();
@@ -5602,8 +5570,6 @@ void se_imgui_theme()
       ImGuiCol_ChildBg,
       ImGuiCol_PopupBg,
       //ImGuiCol_FrameBg,
-      ImGuiCol_TitleBg,
-      ImGuiCol_MenuBarBg,
       //ImGuiCol_ScrollbarBg,
     };
     colors[ImGuiCol_Button]                 = (ImVec4){0.18f, 0.18f, 0.18f, 1.00f};
@@ -5883,8 +5849,12 @@ void se_draw_touch_controls_settings(){
   gui_state.settings.touch_controls_show_turbo = show_turbo;
   
   bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
-  se_checkbox("Avoid NDS Touchscreen",&avoid_touchscreen);
+  se_checkbox("Never Overlap Screen",&avoid_touchscreen);
   gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
+
+  bool button_labels = gui_state.settings.touch_screen_show_button_labels;
+  se_checkbox("Button Labels",&button_labels);
+  gui_state.settings.touch_screen_show_button_labels = button_labels;
   igPopItemWidth();
 }
 void se_draw_save_states(bool cloud){
@@ -5915,9 +5885,7 @@ void se_draw_save_states(bool cloud){
     se_text(se_localize_and_cache("Save Slot %d"),i);
     bool cloud_busy = cloud&&cloud_state.save_states_busy[i];
     if(cloud_busy)se_push_disabled();
-    char capture_text[32];
-    snprintf(capture_text,32,"%s%s",cloud?ICON_FK_CLOUD_UPLOAD" ":"",se_localize_and_cache("Capture"));
-    if(se_button(capture_text,(ImVec2){button_w,0})){
+    if(se_button("Capture",(ImVec2){button_w,0})){
       if (cloud) {
         se_capture_state_slot_cloud(i);
       } else {
@@ -5925,9 +5893,7 @@ void se_draw_save_states(bool cloud){
       }
     }
     if(!states[i].valid)se_push_disabled();
-    char restore_text[32];
-    snprintf(restore_text,32,"%s%s",cloud?ICON_FK_CLOUD_DOWNLOAD" ":"",se_localize_and_cache("Restore"));
-    if(se_button(restore_text,(ImVec2){button_w,0})){
+    if(se_button("Restore",(ImVec2){button_w,0})){
       if (cloud) {
         se_restore_state_slot_cloud(i);
       } else {
@@ -6409,12 +6375,13 @@ void se_draw_menu_panel(){
   igPushItemWidth(-1);
   bool load = se_combo_str("##Theme",&theme,"Dark\0Light\0Black\0Custom\0",0);
   igPopItemWidth();
+  gui_state.settings.theme = theme;
   if(gui_state.settings.theme==SE_THEME_CUSTOM){
     static const char *types[]={"*.png",NULL};
     load|= se_input_file("Theme Path", gui_state.paths.theme,types,ImGuiInputTextFlags_None);
     load|= strncmp(gui_state.loaded_theme_path,gui_state.paths.theme,SB_FILE_PATH_SIZE)!=0;
     if(load){
-      if(se_load_theme_from_file(gui_state.paths.theme)) {
+      if(se_reload_theme()) {
         se_save_search_paths();
       }else strncpy(gui_state.paths.theme,"INVALID",SB_FILE_PATH_SIZE);
     }
@@ -6458,10 +6425,34 @@ void se_draw_menu_panel(){
       p.y+=v.y-igGetScrollY();
       se_draw_theme_region(SE_REGION_AUTHOR, p.x,p.y,w,h);
       igDummy((ImVec2){0,h});
-    }
+    }/*
+    for(int i=0;i<5;++i){
+      igPushIDInt(i);
+      float color[4];
+      color[0] = gui_state.theme.palettes[i*4+0]/255.;
+      color[1] = gui_state.theme.palettes[i*4+1]/255.;
+      color[2] = gui_state.theme.palettes[i*4+2]/255.;
+      color[3] = gui_state.theme.palettes[i*4+3]/255.;
+      if(i)igSameLine(0,2);
+      float w = (win_w-20)*0.20-2;
+      if(igColorButton("##color-button2",(ImVec4){color[0],color[1],color[2],1.0},ImGuiColorEditFlags_NoInputs| ImGuiColorEditFlags_NoLabel,(ImVec2){w,20})){
+        igOpenPopup("##picker-popup2",ImGuiWindowFlags_None);
+      }
+      if (igBeginPopup("##picker-popup2",ImGuiWindowFlags_None)){
+        igColorPicker4("##picker2", color, ImGuiColorEditFlags_None,color);
+        igEndPopup();
+      }
+      gui_state.theme.palettes[i*4+0]=color[0]*255;
+      gui_state.theme.palettes[i*4+1]=color[1]*255;
+      gui_state.theme.palettes[i*4+2]=color[2]*255;
+      gui_state.theme.palettes[i*4+3]=color[3]*255;
+
+      igPopID();
+    }*/
+  }else{
+    if(load)se_reload_theme();
   }
 
-  gui_state.settings.theme = theme;
 
   {
     se_text("GUI Scale");igSameLine(SE_FIELD_INDENT,0);
@@ -7578,6 +7569,7 @@ void se_load_settings(){
       gui_state.settings.enable_download_cache=1;
       https_set_cache_enabled(gui_state.settings.enable_download_cache);
       gui_state.settings.nds_layout = 0; 
+      gui_state.settings.touch_screen_show_button_labels= true;
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
@@ -7588,7 +7580,7 @@ void se_load_settings(){
     if(gui_state.settings.touch_controls_opacity<0||gui_state.settings.touch_controls_opacity>1.0)gui_state.settings.touch_controls_opacity=0.5;
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
     gui_state.last_saved_settings=gui_state.settings;
-    if(gui_state.settings.theme==SE_THEME_CUSTOM)se_load_theme_from_file(gui_state.paths.theme);
+    se_reload_theme();
   }
   {
     memset(&cloud_state,0,sizeof(se_cloud_state_t));
@@ -7812,7 +7804,6 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
   }
 }
 static int se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint){
-  if(gui_state.settings.theme!=SE_THEME_CUSTOM)return 0;
   se_theme_region_t* r = &gui_state.theme.regions[region];
   if(!r->active)return 0; 
   if(gui_state.theme.image.id==SG_INVALID_ID)return 0;
@@ -7829,14 +7820,33 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   float screen_gamepad_pixels[2]={0,0};
   float screen_no_gamepad_pixels[2]={0,0};
   float non_screen[2]={0,0};
+
+  float native_w = w, native_h = h;
+  int nds_layout = gui_state.settings.nds_layout;
+  se_compute_draw_lcd_rect(&native_w, &native_h, &nds_layout);
+  float min_dim = (w<h?w:h)*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
+  bool portrait= (w-min_dim)/native_w<(h-min_dim)/native_h;
+
+  int gamepad_mask = portrait? 0x30 : 0xC0;
+  int skip_mask = portrait? SE_RESIZE_ONLY_LANDSCAPE : SE_RESIZE_ONLY_PORTRAIT;
+  //When overlap is allowed, just render gamepad over screen
+  if(gui_state.settings.avoid_overlaping_touchscreen==false)gamepad_mask = 0x0;
+  if(gui_state.settings.auto_hide_touch_controls && gui_state.last_touch_time<0.01){
+    skip_mask = SE_RESIZE_ONLY_LANDSCAPE | SE_RESIZE_ONLY_PORTRAIT;
+    gamepad_mask = 0;
+  }
+
   //Categorize pixels
+  float rdims[2]={0,0};
   for(int axis=0;axis<2;++axis)
     for(int i=0;i<SE_MAX_CONTROL_POINTS;++i){
       se_control_point_t *cp = axis? r->control_points_y+i:r->control_points_x+i;
-      bool fixed = cp->resize_control== SE_RESIZE_FIXED;
+      bool fixed = (cp->resize_control& SE_RESIZE_FIXED);
       bool screen = cp->screen_control== SE_SCREEN_BOTH;
-      bool gamepad = cp->gamepad_control!=0;
+      bool gamepad = (cp->gamepad_control&gamepad_mask)!=0;
       float pixels = cp->end_pixel-cp->start_pixel;
+      if(cp->resize_control&skip_mask)pixels*=0;
+
       if(fixed&& cp->screen_control==0)fixed_pixels[axis] +=pixels;
       if(screen) screen_pixels[axis]+=pixels;
       if(!screen) non_screen[axis]+=pixels;
@@ -7848,9 +7858,10 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
         else if(screen)gamepad_screen_stretch[axis]+=pixels;
         else gamepad_stretch[axis]+=pixels; 
       }
+      rdims[axis]+=pixels;
     }
 
-  float uniform_scale_factor = fmin(w/r->w, h/r->h);
+  float uniform_scale_factor = fmin(w/rdims[0], h/rdims[1]);
   for(int r=0;r<2;++r){
     fixed_pixels[r]*=uniform_scale_factor;
     screen_pixels[r]*=uniform_scale_factor;
@@ -7867,17 +7878,15 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   float non_fixed_pixels_scale[2]={1,1};
   float lcd_dims[2];
   SE_RPT2 lcd_dims[r]=screen_pixels[r]? dims[r]-fixed_pixels[r]:0;
-  int nds_layout = gui_state.settings.nds_layout;
-  bool disallow_controller_overlap = !screen_pixels[0]||true;
 
-  if(disallow_controller_overlap){
+  {
     float min_dim = (dims[0]<dims[1]?dims[0]:dims[1])*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
     bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
     if(!touch_controller_active)min_dim = 0;
 
     for(int i=0;i<2;++i){
       float gamepad_size = (gamepad_screen_stretch[i]+gamepad_fixed[i])/(gamepad_stretch[i]/(dims[i]-fixed_pixels[i]-screen_pixels[i]));
-      if(min_dim>gamepad_size&&lcd_dims[i]&&disallow_controller_overlap){
+      if(min_dim>gamepad_size&&lcd_dims[i]){
         lcd_dims[i]-=min_dim-gamepad_size;
       }
     }
@@ -7888,47 +7897,7 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
 
     float non_fixed_pixels[2];
     SE_RPT2 non_fixed_pixels[r]= dims[r]-fixed_pixels[r]-lcd_dims[r];
-    int rdims[2]={r->w,r->h};
     SE_RPT2 non_fixed_pixels_scale[r]= (non_fixed_pixels[r])/(rdims[r]*uniform_scale_factor-fixed_pixels[r]-screen_pixels[r]);
-  }else{
-    lcd_dims[0]=w;
-    lcd_dims[1]=h;
-    if(region==SE_REGION_BEZEL_LANDSCAPE)lcd_dims[1]=h-non_screen[1];
-    else lcd_dims[0]=w-non_screen[0];
-    se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
-    SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
-
-    float lcd_pos[2] = {0.0f,0.0f};
-    float bezel_dims[2]={0,0};
-    for(int ax=0;ax<2;++ax){
-      float off =0;
-      for(int c = 0;c<SE_MAX_CONTROL_POINTS;++c){
-        se_control_point_t *cp = ax==0? &r->control_points_x[c] :&r->control_points_y[c];
-        if(cp->start_pixel>=cp->end_pixel)continue;
-        float rh = (cp->end_pixel-cp->start_pixel)*uniform_scale_factor;
-        if(cp->screen_control){
-          if(cp->resize_control!=SE_RESIZE_FIXED){
-            rh*=lcd_non_fixed_scale[ax];
-          }
-        }else if(cp->resize_control!=SE_RESIZE_FIXED){
-          rh*=non_fixed_pixels_scale[ax];
-        }
-        if(cp->screen_control&&lcd_pos[ax]==0.0f){
-          lcd_pos[ax]=off;
-        }
-        off += rh;
-      }      
-      bezel_dims[ax]=off;
-    }
-
-    //When bezel is larger than window, center emulated screen
-    x+=fmin(0,(dims[0]-lcd_dims[0])/2-lcd_pos[0]);
-    y+=fmin(0,(dims[1]-lcd_dims[1])/2-lcd_pos[1]);
-    //When bezel is smaller than window, center bezel
-    x+=fmax(0,(dims[0]-bezel_dims[0])/2);
-    y+=fmax(0,(dims[1]-bezel_dims[1])/2);
-    w_ratio=100;
-    h_ratio=100;
   }
 
   float x_clamp = x+w*w_ratio;
@@ -7944,12 +7913,13 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
     pmax.x=pmin.x=x;
     float rh = (ycp->end_pixel-ycp->start_pixel)*uniform_scale_factor;
     if(ycp->screen_control){
-      if(ycp->resize_control!=SE_RESIZE_FIXED){
+      if(!(ycp->resize_control&SE_RESIZE_FIXED)){
         rh*=lcd_non_fixed_scale[1];
       }
-    }else if(ycp->resize_control!=SE_RESIZE_FIXED){
+    }else if(!(ycp->resize_control&SE_RESIZE_FIXED)){
       rh*=non_fixed_pixels_scale[1];
     }
+    if(ycp->resize_control&skip_mask)rh*=0;
     pmax.y += rh;
     for(int xc=0;xc<SE_MAX_CONTROL_POINTS;++xc){
       se_control_point_t *xcp = &r->control_points_x[xc];
@@ -7958,12 +7928,13 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
       ImVec2 uv1 = {(xcp->end_pixel)/tex_w, (ycp->end_pixel)/tex_h};
       float rw= (xcp->end_pixel-xcp->start_pixel)*uniform_scale_factor;
       if(xcp->screen_control){
-        if(xcp->resize_control!=SE_RESIZE_FIXED){
+        if(!(xcp->resize_control&SE_RESIZE_FIXED)){
           rw*=lcd_non_fixed_scale[0];
         }
-      }else if(xcp->resize_control!=SE_RESIZE_FIXED){
+      }else if(!(xcp->resize_control&SE_RESIZE_FIXED)){
         rw*=non_fixed_pixels_scale[0];
       }
+      if(xcp->resize_control&skip_mask)rw*=0;
 
       pmax.x += rw;
       if(pmin.x>x_clamp||pmin.y>y_clamp)continue; 
@@ -7986,38 +7957,40 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
       ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image.id,pmin,pmax,uv0,uv1,tint);
       //ImDrawList_AddRect(igGetWindowDrawList(),pmin,pmax,t,0,ImDrawCornerFlags_None, 2);
 
-      if(xcp->gamepad_control&&ycp->gamepad_control){
+      if((xcp->gamepad_control&gamepad_mask)&&(ycp->gamepad_control&gamepad_mask)){
         //This needs to run when exiting the gamepad region so the game pad doesnt get covered by other sub regions
-        if((xc==SE_MAX_CONTROL_POINTS-1||r->control_points_x[xc+1].gamepad_control==0)&&(yc==SE_MAX_CONTROL_POINTS-1||r->control_points_y[yc+1].gamepad_control==0)){
+        if((xc==SE_MAX_CONTROL_POINTS-1||(r->control_points_x[xc+1].gamepad_control&gamepad_mask)==0)&&(yc==SE_MAX_CONTROL_POINTS-1||(r->control_points_y[yc+1].gamepad_control&gamepad_mask)==0)){
           float width=0;
           float height=0; 
           for(int xc2=xc;xc2>=0;--xc2){
             se_control_point_t* p = &r->control_points_x[xc2];
-            if(p->gamepad_control==0)break;
+            if((p->gamepad_control&gamepad_mask)==0)break;
             float span = (p->end_pixel-p->start_pixel)*uniform_scale_factor;
             if(p->screen_control){
-              if(p->resize_control!=SE_RESIZE_FIXED){
+              if(!(p->resize_control&SE_RESIZE_FIXED)){
                 span*=lcd_non_fixed_scale[0];
               }
-            }else if(p->resize_control!=SE_RESIZE_FIXED)span*=non_fixed_pixels_scale[0];
+            }else if(!(p->resize_control&SE_RESIZE_FIXED))span*=non_fixed_pixels_scale[0];
             width+= span;
           }
           for(int yc2=yc;yc2>=0;--yc2){
             se_control_point_t* p = &r->control_points_y[yc2];
-            if(p->gamepad_control==0)break;
+            if((p->gamepad_control&gamepad_mask)==0)break;
             float span = (p->end_pixel-p->start_pixel)*uniform_scale_factor;
             if(p->screen_control){
-              if(p->resize_control!=SE_RESIZE_FIXED){
+              if(!(p->resize_control&SE_RESIZE_FIXED)){
                 span*=lcd_non_fixed_scale[1];
               }
-            }else if(p->resize_control!=SE_RESIZE_FIXED){
+            }else if(!(p->resize_control&SE_RESIZE_FIXED)){
               span*=non_fixed_pixels_scale[1];
             }
             height+= span;
           }
           ImVec2 pmin_gamepad = {pmax.x-width,pmax.y-height};
           //ImDrawList_AddRect(igGetWindowDrawList(),pmin_gamepad,pmax,0xffffffff,0,ImDrawCornerFlags_None, 2);
-          se_draw_onscreen_controller(&emu_state,xcp->gamepad_control&ycp->gamepad_control,pmin_gamepad.x,pmin_gamepad.y,width,height,true);
+          int gc_mode = xcp->gamepad_control&ycp->gamepad_control;
+          gc_mode = (gc_mode|(gc_mode<<2))&0xc0;
+          se_draw_onscreen_controller(&emu_state,gc_mode,pmin_gamepad.x,pmin_gamepad.y,width,height,true);
           drew_controller = true;
         }
       }
@@ -8207,7 +8180,7 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   for(int button=0;button<2;++button)
   for(int state=0;state<2;++state){
     se_theme_region_t * region = &theme->regions[(button?SE_REGION_BLANK:SE_REGION_MENU)+state*2];
-    region->x=687+button*(220+7);
+    region->x=1027+button*(220+7);
     region->y=2500+state*(160+7);
     region->w=220;
     region->h=160;
@@ -8217,7 +8190,7 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   //Volume Bar
   for(int y=0;y<2;++y){
     se_theme_region_t * region = &theme->regions[SE_REGION_VOL_EMPTY+y*2];
-    region->x=1141;
+    region->x=1481;
     region->y=2500+y*(160+7);
     region->w=500;
     region->h=160;
@@ -8227,7 +8200,7 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   //Volume Knob
   for(int y=0;y<2;++y){
     se_theme_region_t * region = &theme->regions[SE_REGION_VOL_KNOB+y*2];
-    region->x=1648;
+    region->x=1988;
     region->y=2500+y*(160+7);
     region->w=160;
     region->h=160;
@@ -8266,6 +8239,14 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
     key->w = 333;
     key->h = 320;
   }
+  //Rect Blank
+  {
+    se_theme_region_t * key = &theme->regions[SE_REGION_KEY_RECT_BLANK];
+    key->x = 7 +2*(333+7);
+    key->y = 2500;
+    key->w = 333;
+    key->h = 320;
+  }
   //Blank
   {
     se_theme_region_t * key = &theme->regions[SE_REGION_KEY_BLANK];
@@ -8292,7 +8273,7 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   }
   return true;
 }
-static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
+static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, bool invert){
   if(!im){return false; }
   bool loaded = false; 
   se_custom_theme_t* theme = &gui_state.theme;
@@ -8309,7 +8290,7 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
     return false; 
   }
   if(loaded){
-    int num_mips = 3;
+    int num_mips = 8;
     for(int i=0; i<SE_TOTAL_REGIONS;++i){
       se_theme_region_t * region = &theme->regions[i];
       region->active = false; 
@@ -8348,31 +8329,38 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
           int end_y = region->y+region->h; 
           int inc_x = 1;
           int inc_y = 0; 
-          int gamepad_offset_x = 0; 
-          int gamepad_offset_y = -1; 
           if(dir){
             cp = region->control_points_y;
             start_x = region->x-3;
             start_y = region->y;
             inc_x = 0;
             inc_y = 1; 
-            gamepad_offset_x=-1;
-            gamepad_offset_y=0;
           }
           int curr_x = start_x;
           int curr_y = start_y; 
+          
+
           cp->start_pixel=dir? curr_y : curr_x;
+
+          int p = (curr_x+curr_y*im_w)*4;
+          for(int i=-2;i<3;++i){
+            int p2= p+(inc_x*im_w+inc_y)*4*i;
+            if(im[p2+0])cp->resize_control|=im[p2+0];
+            if(im[p2+1])cp->screen_control|=im[p2+1];
+            if(im[p2+2])cp->gamepad_control|=im[p2+2];
+          }
+
+          
           while(curr_x<end_x&&curr_y<end_y){
             int p = (curr_x+curr_y*im_w)*4;
-            int p_gamepad = (curr_x+gamepad_offset_x+(curr_y+gamepad_offset_y)*im_w)*4;
             int resize = 0;
             int screen = 0;
             int gamepad = 0;
-            for(int i=-1;i<2;++i){
+            for(int i=-2;i<3;++i){
               int p2= p+(inc_x*im_w+inc_y)*4*i;
-              if(resize<im[p2+0])resize=im[p2+0];
-              if(screen<im[p2+1])screen=im[p2+1];
-              if(gamepad<im[p2+2])gamepad=im[p2+2];
+              if(im[p2+0])resize|=im[p2+0];
+              if(im[p2+1])screen|=im[p2+1];
+              if(im[p2+2])gamepad|=im[p2+2];
             }
             if(resize!=cp->resize_control||screen!=cp->screen_control||gamepad!=cp->gamepad_control){
               ++current_point;
@@ -8391,22 +8379,38 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h){
             cp->end_pixel=dir? curr_y : curr_x;
           }
         }
-        for(int y = region->y-7; y<region->y+region->h+7;++y){
-          for(int x = region->x-7;x<=region->x;++x){
-            SE_RPT4 im[(x+y*im_w)*4+r]=0;
-          }
-          for(int x = region->x+region->w;x<region->x+region->w+7;++x){
-            SE_RPT4 im[(x+y*im_w)*4+r]=0;
-          }
+      }
+    }
+    for(int i=0; i<SE_TOTAL_REGIONS;++i){
+      se_theme_region_t * region = &theme->regions[i];
+      if(!region->active)continue;
+      for(int y = region->y-7; y<region->y+region->h+7;++y){
+        for(int x = region->x-7;x<=region->x;++x){
+          SE_RPT4 im[(x+y*im_w)*4+r]=0;
         }
-        for(int x = region->x-7; x<region->x+region->w+7;++x){
-          for(int y = region->y-7;y<region->y;++y){
-            SE_RPT4 im[(x+y*im_w)*4+r]=0;
-          }
-          for(int y = region->y+region->h;y<region->y+region->h+7;++y){
-            SE_RPT4 im[(x+y*im_w)*4+r]=0;
-          }
+        for(int x = region->x+region->w;x<region->x+region->w+7;++x){
+          SE_RPT4 im[(x+y*im_w)*4+r]=0;
         }
+      }
+      for(int x = region->x-7; x<region->x+region->w+7;++x){
+        for(int y = region->y-7;y<region->y;++y){
+          SE_RPT4 im[(x+y*im_w)*4+r]=0;
+        }
+        for(int y = region->y+region->h;y<region->y+region->h+7;++y){
+          SE_RPT4 im[(x+y*im_w)*4+r]=0;
+        }
+      }
+    }
+    if(invert){
+      for(int p=0;p<im_w*im_h;++p){
+        im[(p*4)+0]=255-im[(p*4)+0];
+        im[(p*4)+1]=255-im[(p*4)+1];
+        im[(p*4)+2]=255-im[(p*4)+2];
+      }
+      for(int i=0;i<sizeof(theme->palettes)/4;++i){
+        theme->palettes[i*4+0]= 255-theme->palettes[i*4+0];
+        theme->palettes[i*4+1]= 255-theme->palettes[i*4+1];
+        theme->palettes[i*4+2]= 255-theme->palettes[i*4+2];
       }
     }
     sg_image_data im_data={0};
@@ -8470,12 +8474,33 @@ static bool se_load_theme_from_file(const char * filename){
     printf("Failed to open theme image %s\n",filename);
     return false;
   }
-  bool ret = se_load_theme_from_image(imdata, im_w, im_h);
+  bool ret = se_load_theme_from_image(imdata, im_w, im_h,false);
   stbi_image_free(imdata);
   if(ret){
     printf("Successfully loaded theme: %s\n",filename);
   }
   return ret; 
+}
+static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert){
+  int im_w, im_h, im_c; 
+  uint8_t *imdata = stbi_load_from_memory((const stbi_uc*)data,size, &im_w, &im_h, &im_c, 4);
+  if(!imdata){
+    printf("Failed to open theme from memory\n");
+    return false;
+  }
+  bool ret = se_load_theme_from_image(imdata, im_w, im_h,invert);
+  stbi_image_free(imdata);
+  return ret; 
+}
+static bool se_reload_theme(){
+  if(gui_state.settings.theme ==SE_THEME_CUSTOM){
+    return se_load_theme_from_file(gui_state.paths.theme);
+  }else{
+    uint64_t size; 
+    const uint8_t* theme_data = se_get_resource(SE_THEME_DEFAULT,&size);
+    return se_load_theme_from_memory(theme_data,size, gui_state.settings.theme==SE_THEME_LIGHT);
+  }
+  return false;
 }
 static void se_init(){
   printf("SkyEmu %s\n",GIT_COMMIT_HASH);
