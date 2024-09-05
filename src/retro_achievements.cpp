@@ -184,12 +184,14 @@ namespace
 
         if (achievement_count == 0)
         {
-            notification.submessage = "This game has no achievements";
+            notification.submessage = se_localize_and_cache("This game has no achievements");
         }
         else
         {
-            notification.submessage = "You have " + std::to_string(unlocked_achievement_count) + " of " + std::to_string(achievement_count) + " achievements unlocked.";
-            notification.submessage2 = "Points: " + std::to_string(summary.points_unlocked) + "/" + std::to_string(summary.points_core);
+            notification.submessage.resize(256);
+            snprintf(&notification.submessage[0], notification.submessage.size(), se_localize_and_cache("You have %d of %d achievements unlocked."), unlocked_achievement_count, achievement_count);
+            notification.submessage2.resize(256);
+            snprintf(&notification.submessage2[0], notification.submessage2.size(), se_localize_and_cache("Points: %d/%d"), summary.points_unlocked, summary.points_core);
         }
 
         notification.tile = game_state->game_image;
@@ -285,11 +287,11 @@ namespace
 
         if (rc_achievement->category == RC_CLIENT_ACHIEVEMENT_CATEGORY_UNOFFICIAL)
         {
-            notification->title = "Unofficial achievement unlocked!";
+            notification->title = se_localize_and_cache("Unofficial achievement unlocked!");
         }
         else
         {
-            notification->title = "Achievement unlocked!";
+            notification->title = se_localize_and_cache("Achievement unlocked!");
         }
 
         notification->submessage = rc_achievement->title;
@@ -314,7 +316,7 @@ namespace
     retro_achievements_progress_indicator_updated(ra_game_state_ptr game_state,
                                                   const rc_client_achievement_t* rc_achievement)
     {
-        game_state->progress_indicator.title = std::string("Progress: ") + rc_achievement->title;
+        game_state->progress_indicator.title = std::string("Progress: ") + rc_achievement->title; // unused
         game_state->progress_indicator.measured_progress = rc_achievement->measured_progress;
         game_state->progress_indicator.measured_percent = rc_achievement->measured_percent;
 
@@ -446,30 +448,30 @@ namespace
 
                 if (current_notification)
                 {
-                    std::string score_type = "score";
-                    std::string score_type_caps = "Score";
+                    std::string score_type = se_localize_and_cache("score");
+                    std::string score_type_caps = se_localize_and_cache("Score");
                     switch (current_notification->leaderboard_format)
                     {
                         case RC_CLIENT_LEADERBOARD_FORMAT_VALUE:
                         case RC_CLIENT_LEADERBOARD_FORMAT_SCORE: {
-                            score_type = "score";
-                            score_type_caps = "Score";
                             break;
                         }
 
                         case RC_CLIENT_LEADERBOARD_FORMAT_TIME: {
-                            score_type = "time";
-                            score_type_caps = "Time";
+                            score_type = se_localize_and_cache("time");
+                            score_type_caps = se_localize_and_cache("Time");
                             break;
                         }
                     }
 
+                    std::string submessage;
+                    submessage.resize(256);
+                    snprintf(&submessage[0], submessage.size(), se_localize_and_cache("Your best %s: %s"), score_type.c_str(), event->leaderboard_scoreboard->best_score);
                     current_notification->submessage = score_type_caps + ": " +
-                        std::string(event->leaderboard_scoreboard->submitted_score) + "\nYour best " + score_type + ": " +
-                        std::string(event->leaderboard_scoreboard->best_score);
-                    current_notification->submessage2 = ICON_FK_TROPHY " Ranked " +
-                        std::to_string(event->leaderboard_scoreboard->new_rank) + " out of " +
-                        std::to_string(event->leaderboard_scoreboard->num_entries);
+                        std::string(event->leaderboard_scoreboard->submitted_score) + "\n" + submessage;
+
+                    snprintf(&submessage[0], submessage.size(), se_localize_and_cache("Ranked %d out of %d"), event->leaderboard_scoreboard->new_rank, event->leaderboard_scoreboard->num_entries);
+                    current_notification->submessage2 = std::string(ICON_FK_TROPHY) + " " + submessage;
                 }
                 break;   
             }
@@ -480,7 +482,7 @@ namespace
                 std::unique_lock<std::mutex> lock(game_state->mutex);
                 ra_notification_t notification;
                 notification.title =
-                    std::string("Leaderboard attempt started: ") + event->leaderboard->title;
+                    std::string(se_localize_and_cache("Leaderboard attempt started: ")) + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
                 game_state->notifications.push_back(notification);
@@ -493,7 +495,7 @@ namespace
                 std::unique_lock<std::mutex> lock(game_state->mutex);
                 ra_notification_t notification;
                 notification.title =
-                    std::string("Leaderboard attempt failed: ") + event->leaderboard->title;
+                    std::string(se_localize_and_cache("Leaderboard attempt failed: ")) + event->leaderboard->title;
                 notification.submessage = event->leaderboard->description;
                 notification.tile = game_state->game_image;
                 game_state->notifications.push_back(notification);
@@ -505,8 +507,8 @@ namespace
 
                 std::unique_lock<std::mutex> lock(game_state->mutex);
                 ra_notification_t notification;
-                notification.title = std::string("Leaderboard attempt submitted: ") + event->leaderboard->title;
-                notification.submessage = std::string(event->leaderboard->tracker_value) + " for " +
+                notification.title = std::string(se_localize_and_cache("Leaderboard attempt submitted: ")) + event->leaderboard->title;
+                notification.submessage = std::string(event->leaderboard->tracker_value) + se_localize_and_cache(" for ") +
                                           event->leaderboard->title;
                 notification.tile = game_state->game_image;
                 notification.leaderboard_id = event->leaderboard->id;
@@ -592,15 +594,14 @@ namespace
 
                 std::unique_lock<std::mutex> lock(game_state->mutex);
                 std::string completed =
-                    rc_client_get_hardcore_enabled(ra_state->rc_client) ? "Mastered" : "Completed";
+                    rc_client_get_hardcore_enabled(ra_state->rc_client) ? se_localize_and_cache("Mastered") : se_localize_and_cache("Completed");
                 const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
                 rc_client_user_game_summary_t summary;
                 rc_client_get_user_game_summary(ra_state->rc_client, &summary);
                 ra_notification_t notification;
                 notification.title = completed + " " + game->title + "!";
-                notification.submessage = std::string("All ") +
-                                          std::to_string(summary.num_core_achievements) +
-                                          " achievements unlocked";
+                notification.submessage.resize(256);
+                snprintf(&notification.submessage[0], notification.submessage.size(), se_localize_and_cache("All %d achievements unlocked"), summary.num_core_achievements);
                 notification.tile = game_state->game_image;
                 game_state->notifications.push_back(notification);
                 break;
@@ -685,21 +686,24 @@ namespace
         {
             rc_client_user_game_summary_t summary;
             rc_client_get_user_game_summary(ra_state->rc_client, &summary);
-            auto title = std::string("Playing ") + game->title;
-            auto description = std::to_string(summary.points_unlocked) + "/" +
-                            std::to_string(summary.points_core) + " points, " +
-                            std::to_string(summary.num_unlocked_achievements) + "/" +
-                            std::to_string(summary.num_core_achievements) + " achievements";
+            std::string title;
+            title.resize(512);
+            snprintf(&title[0], title.size(), se_localize_and_cache("Playing %s"), game->title);
+            std::string description;
+            description.resize(512);
+            snprintf(&description[0], description.size(), se_localize_and_cache("%d/%d points, %d/%d achievements"),
+                     summary.points_unlocked, summary.points_core,
+                     summary.num_unlocked_achievements, summary.num_core_achievements);
             bool hardcore = rc_client_get_hardcore_enabled(ra_state->rc_client);
             bool encore = rc_client_get_encore_mode_enabled(ra_state->rc_client);
-            auto hardcore_str = hardcore ? "Hardcore mode" : "Softcore mode";
+            std::string hardcore_str = hardcore ? se_localize_and_cache("Hardcore mode") : se_localize_and_cache("Softcore mode");
             uint32_t hardcore_color = hardcore ? 0xff0000ff : 0xff00ff00; // TODO: make me nicer
             if (encore)
             {
-                hardcore_str = "Encore mode";
+                hardcore_str = se_localize_and_cache("Encore mode");
                 hardcore_color = 0xff00ffff;
             }
-            se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str,hardcore_color,ICON_FK_GAMEPAD, game_state->game_image, false);
+            se_boxed_image_triple_label(title.c_str(), description.c_str(), hardcore_str.c_str(), hardcore_color, ICON_FK_GAMEPAD, game_state->game_image, false);
         }
         for (int i = 0; i < game_state->achievement_list.buckets.size(); i++)
         {
