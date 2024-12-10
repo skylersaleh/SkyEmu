@@ -15,6 +15,7 @@ android {
             storeFile = file("../skyemu-open-signing-store")
         }
     }
+    namespace = "com.sky.SkyEmu"
     compileSdk = 34
     ndkVersion = "22.1.7171670"
 
