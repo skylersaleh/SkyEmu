@@ -12,7 +12,7 @@
       android:label="@string/app_name"
       android:supportsRtl="true"
       tools:targetApi="34"
-      android:theme="@android:style/Theme.SkyEmu.Main">
+      android:theme="@style/Theme.SkyEmu.Main">
     <!-- Declare your content provider -->
     <provider
         android:name="androidx.core.content.FileProvider"
