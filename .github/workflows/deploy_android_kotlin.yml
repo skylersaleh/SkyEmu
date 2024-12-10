@@ -16,7 +16,7 @@ jobs:
       - name: Build Release apk
         run: |
           cd tools/android_project_kotlin/
-          ./gradlew assembleRelease
+          chmod ./gradlew && ./gradlew assembleRelease
           ls app/build/outputs/apk/release/
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
