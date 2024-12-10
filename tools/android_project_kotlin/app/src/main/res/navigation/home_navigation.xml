@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/home_navigation"
+    app:startDestination="@id/gamesFragment">
+
+    <fragment
+        android:id="@+id/gamesFragment"
+        android:name="com.sky.SkyEmu.fragments.GamesFragment"
+        android:label="GamesFragment" />
+
+    <activity
+        android:id="@+id/emulationActivity"
+        android:name="com.sky.SkyEmu.EmulationActivity"
+        android:label="EmulationActivity">
+        <argument
+            android:name="game"
+            android:defaultValue="@null"
+            app:argType="com.sky.SkyEmu.models.Game"
+            app:nullable="true" />
+    </activity>
+
+    <action
+        android:id="@+id/action_global_emulationActivity"
+        app:destination="@id/emulationActivity"
+        app:launchSingleTop="true" />
+</navigation>
