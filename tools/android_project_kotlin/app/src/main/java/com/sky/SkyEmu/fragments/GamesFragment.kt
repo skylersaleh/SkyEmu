@@ -84,6 +84,16 @@ class GamesFragment : Fragment() {
                 binding.swipeRefresh.isRefreshing = false
             }
         }
+
+        pickFileRequest = registerForActivityResult(openRomContract) { uri: Uri? ->
+            if (uri != null) {
+                GameUtils.addGame(uri)
+            }
+        }
+
+        binding.add.setOnClickListener {
+           pickFileRequest.launch(arrayOf("*/*")) 
+        }
         setInsets()
     }
 
