@@ -155,6 +155,7 @@ class EmulationActivity : NativeActivity() {
         }
     }
 
+    // TODO: Implement SAF
     fun loadURI(selectedFileUri: Uri, isRom: Boolean) {
         val filename = getFileName(selectedFileUri)
         val externalDirPath = getExternalFilesDir(null)?.absolutePath ?: return
