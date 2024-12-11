@@ -17,6 +17,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.MaterialColors
+import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.navigation.NavigationBarView
 import com.sky.SkyEmu.R
 import com.sky.SkyEmu.databinding.MainActivityBinding
@@ -32,5 +34,13 @@ class MainActivity : AppCompatActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+
+        val navHostFragment =
+            supportFragmentManager.findFragmentById(R.id.fragment_container) as NavHostFragment
+        setUpNavigation(navHostFragment.navController)
+    }
+
+    private fun setUpNavigation(navController: NavController) {
+        (binding.navigationView as NavigationBarView).setupWithNavController(navController)
     }
 }
