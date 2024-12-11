@@ -47,7 +47,7 @@ object GameUtils {
         val games = serializedGames.map { Json.decodeFromString<Game>(it) }.toMutableList()
         games.add(getGame(uri))
         val newSerializedGames = mutableSetOf<String>()
-        games.forEach { serializedGames.add(Json.encodeToString(it)) }
+        games.forEach { newSerializedGames.add(Json.encodeToString(it)) }
 
         preferences.edit()
             .remove(KEY_GAMES)
