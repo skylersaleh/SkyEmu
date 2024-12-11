@@ -44,7 +44,7 @@ object FileUtil {
             )
             return c!!.count > 0
         } catch (e: Exception) {
-            Log.info("[FileUtil] Cannot find file from given path, error: " + e.message)
+            Log.i("FileUtil", "Cannot find file from given path, error: " + e.message)
         } finally {
             // do nothing
         }
@@ -69,7 +69,7 @@ object FileUtil {
             val mimeType = c.getString(0)
             isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR
         } catch (e: Exception) {
-            Log.error("[FileUtil]: Cannot list files, error: " + e.message)
+            Log.e("FileUtil", "Cannot list files, error: " + e.message)
         } finally {
             // do nothing 
         }
@@ -98,7 +98,7 @@ object FileUtil {
             c!!.moveToNext()
             filename = c.getString(0)
         } catch (e: Exception) {
-            Log.error("[FileUtil]: Cannot get file name, error: " + e.message)
+            Log.error("FileUtil", "Cannot get file name, error: " + e.message)
         } finally {
             // do nothing 
         }
@@ -128,7 +128,7 @@ object FileUtil {
             c!!.moveToNext()
             size = c.getLong(0)
         } catch (e: Exception) {
-            Log.error("[FileUtil]: Cannot get file size, error: " + e.message)
+            Log.error("FileUtil", "Cannot get file size, error: " + e.message)
         } finally {
             // do nothing 
         }
