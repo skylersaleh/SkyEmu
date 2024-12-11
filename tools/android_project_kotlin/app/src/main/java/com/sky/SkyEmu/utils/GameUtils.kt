@@ -17,7 +17,7 @@ object GameUtils {
     private lateinit var preferences: SharedPreferences
 
     fun getGames(): List<Game> {
-        val games = mutableListOf<Game>()
+        var games = mutableListOf<Game>()
         val context = SkyEmuApplication.appContext
         preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val serializedGames = preferences.getStringSet(KEY_GAMES, emptySet()) ?: emptySet()
