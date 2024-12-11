@@ -93,7 +93,7 @@ class GameAdapter(private val activity: AppCompatActivity) :
         lateinit var game: Game
 
         init {
-            binding.tag = this
+            binding.itemClickLayout.tag = this
         }
 
         fun bind(game: Game) {
@@ -120,7 +120,7 @@ class GameAdapter(private val activity: AppCompatActivity) :
 
     private fun gameExists(holder: GameViewHolder): Boolean {
         val gamePath = holder.game.path
-        val file = DocumentFile.fromSingleUri(requireActivity(), Uri.parse(gamePath))
+        val file = DocumentFile.fromSingleUri(SkyEmuApplication.appContext, Uri.parse(gamePath))
         return file?.exists() == true
     }
 
