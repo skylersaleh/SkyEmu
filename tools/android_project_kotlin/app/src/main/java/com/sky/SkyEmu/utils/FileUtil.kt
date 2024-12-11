@@ -98,7 +98,7 @@ object FileUtil {
             c!!.moveToNext()
             filename = c.getString(0)
         } catch (e: Exception) {
-            Log.error("FileUtil", "Cannot get file name, error: " + e.message)
+            Log.e("FileUtil", "Cannot get file name, error: " + e.message)
         } finally {
             // do nothing 
         }
@@ -128,7 +128,7 @@ object FileUtil {
             c!!.moveToNext()
             size = c.getLong(0)
         } catch (e: Exception) {
-            Log.error("FileUtil", "Cannot get file size, error: " + e.message)
+            Log.e("FileUtil", "Cannot get file size, error: " + e.message)
         } finally {
             // do nothing 
         }
