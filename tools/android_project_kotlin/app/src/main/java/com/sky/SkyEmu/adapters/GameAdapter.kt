@@ -85,7 +85,6 @@ class GameAdapter(private val activity: AppCompatActivity) :
      */
     override fun onLongClick(view: View): Boolean {
         val context = view.context
-        val holder = view.tag as GameViewHolder
         return true
     }
 
@@ -94,7 +93,7 @@ class GameAdapter(private val activity: AppCompatActivity) :
         lateinit var game: Game
 
         init {
-            binding..tag = this
+            binding.tag = this
         }
 
         fun bind(game: Game) {
@@ -118,6 +117,13 @@ class GameAdapter(private val activity: AppCompatActivity) :
             )
         }
     }
+
+    private fun gameExists(holder: GameViewHolder): Boolean {
+        val gamePath = holder.game.path
+        val file = DocumentFile.fromSingleUri(requireActivity(), Uri.parse(gamePath))
+        return file?.exists() == true
+    }
+
 
     private fun isValidGame(extension: String): Boolean {
         return extension == "gba"
