@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import androidx.browser.customtabs.CustomTabsIntent
 import java.io.*
+import java.util.Locale
 
 class EmulationActivity : NativeActivity() {
 
