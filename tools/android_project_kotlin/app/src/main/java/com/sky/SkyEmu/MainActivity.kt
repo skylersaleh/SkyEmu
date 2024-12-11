@@ -18,6 +18,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.MaterialColors
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.NavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.navigation.NavigationBarView
 import com.sky.SkyEmu.R
