@@ -25,6 +25,7 @@ import com.sky.SkyEmu.R
 import com.sky.SkyEmu.adapters.GameAdapter
 import com.sky.SkyEmu.databinding.FragmentGamesBinding
 import com.sky.SkyEmu.models.Game
+import com.sky.SkyEmu.utils.GameUtils
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -60,7 +61,7 @@ class GamesFragment : Fragment() {
         binding.swipeRefresh.apply {
             // Add swipe down to refresh gesture
             setOnRefreshListener {
-                // TODO: Implement refreshing games
+                setAdapter(GameUtils.getGames())
             }
 
             // Set theme color to the refresh animation's background
