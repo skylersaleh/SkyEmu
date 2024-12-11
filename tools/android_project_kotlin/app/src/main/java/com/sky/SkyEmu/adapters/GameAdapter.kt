@@ -34,6 +34,7 @@ import com.sky.SkyEmu.R
 import com.sky.SkyEmu.adapters.GameAdapter.GameViewHolder
 import com.sky.SkyEmu.databinding.AppItemBinding
 import com.sky.SkyEmu.models.Game
+import com.sky.SkyEmu.SkyEmuApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
