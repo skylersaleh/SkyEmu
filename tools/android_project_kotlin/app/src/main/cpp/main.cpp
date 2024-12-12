@@ -279,11 +279,11 @@ ASensorManager* AcquireASensorManagerInstance(android_app* app) {
     JNIEnv* env = nullptr;
     app->activity->vm->AttachCurrentThread(&env, nullptr);
 
-    jclass android_content_Context = env->GetObjectClass(app->activity->clazz);
+    jclass android_content_Context = env->GetObjectClass(app->activity->javaGameActivity);
     jmethodID midGetPackageName = env->GetMethodID(android_content_Context,
                                                    "getPackageName",
                                                    "()Ljava/lang/String;");
-    auto packageName= (jstring)env->CallObjectMethod(app->activity->clazz,
+    auto packageName= (jstring)env->CallObjectMethod(app->activity->javaGameActivity,
                                                         midGetPackageName);
 
     const char *nativePackageName = env->GetStringUTFChars(packageName, nullptr);
