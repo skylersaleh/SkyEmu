@@ -31,7 +31,11 @@ class EmulationActivity : NativeActivity() {
         private const val TAG = "SkyEmu"
 
         init {
-            System.loadLibrary("SkyEmu")
+            try {
+                System.loadLibrary("SkyEmu")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e("EmulationActivity", "$e")
+            }
         }
 
         @JvmStatic
