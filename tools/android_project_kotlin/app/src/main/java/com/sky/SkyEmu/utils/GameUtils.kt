@@ -43,7 +43,7 @@ object GameUtils {
     }
 
     fun addGame(uri: Uri) {
-        preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences = PreferenceManager.getDefaultSharedPreferences(SkyEmuApplication.appContext)
         val serializedGames = preferences.getStringSet(KEY_GAMES, emptySet()) ?: emptySet()
         val games = serializedGames.map { Json.decodeFromString<Game>(it) }.toMutableList()
         games.add(getGame(uri))
