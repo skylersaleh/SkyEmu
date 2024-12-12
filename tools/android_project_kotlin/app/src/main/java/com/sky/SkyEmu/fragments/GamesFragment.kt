@@ -144,7 +144,7 @@ class GamesFragment : Fragment() {
 
             val leftInsets = barInsets.left + cutoutInsets.left
             val rightInsets = barInsets.right + cutoutInsets.right
-            val mlpSwipe = binding.swipeRefresh.layoutParams as MarginLayoutParams
+            val mlpSwipe = binding.coordinatorMain.layoutParams as MarginLayoutParams
             if (view.layoutDirection == View.LAYOUT_DIRECTION_LTR) {
                 mlpSwipe.leftMargin = leftInsets + spacingNavigationRail
                 mlpSwipe.rightMargin = rightInsets
@@ -152,7 +152,7 @@ class GamesFragment : Fragment() {
                 mlpSwipe.leftMargin = leftInsets
                 mlpSwipe.rightMargin = rightInsets + spacingNavigationRail
             }
-            binding.swipeRefresh.layoutParams = mlpSwipe
+            binding.coordinatorMain.layoutParams = mlpSwipe
 
             binding.noticeText.updatePadding(bottom = spacingNavigation)
 
