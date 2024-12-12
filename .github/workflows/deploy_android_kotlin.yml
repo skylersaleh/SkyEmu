@@ -29,6 +29,7 @@ jobs:
             
       - name: Build Release apk
         run: |
+          sudo apt-get install ccache
           export NDK_CCACHE=$(which ccache)
           cd tools/android_project_kotlin/
           chmod +x ./gradlew && ./gradlew assembleRelease
