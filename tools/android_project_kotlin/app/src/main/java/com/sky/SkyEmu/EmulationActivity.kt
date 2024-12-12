@@ -99,10 +99,6 @@ class EmulationActivity : NativeActivity() {
     }
 
     fun requestPermissions() {}
-    
-    fun getLanguage(): String {
-        return Locale.getDefault().toString()
-    }
 
     fun getVisibleBottom(): Float {
         return visibleRect.bottom.toFloat()
