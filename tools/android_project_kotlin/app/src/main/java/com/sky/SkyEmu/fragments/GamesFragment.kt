@@ -30,6 +30,7 @@ import com.sky.SkyEmu.adapters.GameAdapter
 import com.sky.SkyEmu.databinding.FragmentGamesBinding
 import com.sky.SkyEmu.models.Game
 import com.sky.SkyEmu.utils.GameUtils
+import com.sky.SkyEmu.viewmodels.GamesViewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -39,6 +40,8 @@ class GamesFragment : Fragment() {
 
     private val openRomContract = ActivityResultContracts.OpenDocument()
     private lateinit var pickFileRequest: ActivityResultLauncher<Array<String>>
+
+    private val gamesViewModel: GamesViewModel by activityViewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,7 +71,7 @@ class GamesFragment : Fragment() {
         binding.swipeRefresh.apply {
             // Add swipe down to refresh gesture
             setOnRefreshListener {
-                setAdapter(GameUtils.getGames())
+                gamesViewModel.reloadGames(false)
             }
 
             // Set theme color to the refresh animation's background
@@ -88,7 +91,7 @@ class GamesFragment : Fragment() {
                 if (_binding == null) {
                     return@post
                 }
-                binding.swipeRefresh.isRefreshing = false
+                binding.swipeRefresh.isRefreshing = gamesViewModel.isReloading.value
             }
         }
 
@@ -100,6 +103,46 @@ class GamesFragment : Fragment() {
 
         binding.add.setOnClickListener {
            pickFileRequest.launch(arrayOf("*/*")) 
+        }
+
+        viewLifecycleOwner.lifecycleScope.apply {
+            launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    gamesViewModel.isReloading.collect { isReloading ->
+                        binding.swipeRefresh.isRefreshing = isReloading
+                        if (gamesViewModel.games.value.isEmpty() && !isReloading) {
+                            binding.noticeText.visibility = View.VISIBLE
+                        } else {
+                            binding.noticeText.visibility = View.INVISIBLE
+                        }
+                    }
+                }
+            }
+            launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    gamesViewModel.games.collectLatest { setAdapter(it) }
+                }
+            }
+            launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    gamesViewModel.shouldSwapData.collect {
+                        if (it) {
+                            setAdapter(gamesViewModel.games.value)
+                            gamesViewModel.setShouldSwapData(false)
+                        }
+                    }
+                }
+            }
+            launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    gamesViewModel.shouldScrollToTop.collect {
+                        if (it) {
+                            scrollToTop()
+                            gamesViewModel.setShouldScrollToTop(false)
+                        }
+                    }
+                }
+            }
         }
         setInsets()
     }
