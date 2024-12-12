@@ -40,6 +40,32 @@ class EmulationActivity : NativeActivity() {
 
         @JvmStatic
         fun getLanguage(): String = Locale.getDefault().toString()
+
+        @JvmStatic
+        fun getVisibleBottom(): Float {
+            return visibleRect.bottom.toFloat()
+        }
+
+        @JvmStatic
+        fun getVisibleTop(): Float {
+            return visibleRect.top.toFloat()
+        }
+
+        @JvmStatic
+        fun getEvent(): Int {
+            if (firstEvent) {
+                val intent = intent
+                val data = intent.data
+                if (intent.action == Intent.ACTION_VIEW && data != null) {
+                    loadURI(data, true)
+                }
+                firstEvent = false
+            }
+            if (keyboardEvents.isEmpty()) return -1
+            val value = keyboardEvents[0]
+            keyboardEvents.removeAt(0)
+            return value
+        }
     }
 
     private lateinit var visibleRect: Rect
@@ -99,29 +125,6 @@ class EmulationActivity : NativeActivity() {
     }
 
     fun requestPermissions() {}
-
-    fun getVisibleBottom(): Float {
-        return visibleRect.bottom.toFloat()
-    }
-
-    fun getVisibleTop(): Float {
-        return visibleRect.top.toFloat()
-    }
-
-    fun getEvent(): Int {
-        if (firstEvent) {
-            val intent = intent
-            val data = intent.data
-            if (intent.action == Intent.ACTION_VIEW && data != null) {
-                loadURI(data, true)
-            }
-            firstEvent = false
-        }
-        if (keyboardEvents.isEmpty()) return -1
-        val value = keyboardEvents[0]
-        keyboardEvents.removeAt(0)
-        return value
-    }
 
     fun showKeyboard() {
         runOnUiThread {
