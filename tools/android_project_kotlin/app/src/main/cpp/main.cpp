@@ -279,14 +279,14 @@ ASensorManager* AcquireASensorManagerInstance(android_app* app) {
     JNIEnv* env = nullptr;
     app->activity->vm->AttachCurrentThread(&env, nullptr);
 
-    /*jclass android_content_Context = env->FindClass("android.app.Context");
+    jclass android_content_Context = env->FindClass("android.app.Context");
     jmethodID midGetPackageName = env->GetMethodID(android_content_Context,
                                                    "getPackageName",
                                                    "()Ljava/lang/String;");
-    auto packageName= (jstring)env->CallObjectMethod(app->activity->javaGameActivity,
-                                                        midGetPackageName);*/
+    auto packageName= (jstring)env->CallObjectMethod(app->activity->clazz,
+                                                        midGetPackageName);
 
-    const char *nativePackageName = env->GetStringUTFChars("com.sky.SkyEmu", nullptr);
+    const char *nativePackageName = env->GetStringUTFChars(packageName, nullptr);
     ASensorManager* mgr = getInstanceForPackageFunc(nativePackageName);
     env->ReleaseStringUTFChars(packageName, nativePackageName);
     app->activity->vm->DetachCurrentThread();
