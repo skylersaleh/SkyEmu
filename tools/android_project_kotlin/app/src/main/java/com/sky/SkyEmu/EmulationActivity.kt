@@ -105,11 +105,11 @@ class EmulationActivity : NativeActivity() {
     }
 
     fun getVisibleBottom(): Float {
-        return visibleRect.bottom
+        return visibleRect.bottom.toFloat()
     }
 
     fun getVisibleTop(): Float {
-        return visibleRect.top
+        return visibleRect.top.toFloat()
     }
 
     fun getEvent(): Int {
