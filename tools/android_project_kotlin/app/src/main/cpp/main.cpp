@@ -279,7 +279,7 @@ ASensorManager* AcquireASensorManagerInstance(android_app* app) {
     JNIEnv* env = nullptr;
     app->activity->vm->AttachCurrentThread(&env, nullptr);
 
-    jclass android_content_Context = env->FindClass("android.app.Context");
+    jclass android_content_Context = env->GetObjectClass(app->activity->clazz);
     jmethodID midGetPackageName = env->GetMethodID(android_content_Context,
                                                    "getPackageName",
                                                    "()Ljava/lang/String;");
