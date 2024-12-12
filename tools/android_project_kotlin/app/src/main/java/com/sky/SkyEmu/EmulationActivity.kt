@@ -29,6 +29,7 @@ class EmulationActivity : NativeActivity() {
         private const val STORAGE_PERMISSION_CODE = 501
         private const val FILE_PICKER_REQUEST_CODE = 123
         private const val TAG = "SkyEmu"
+        private lateinit var instance: EmulationActivity
 
         init {
             try {
@@ -40,6 +41,32 @@ class EmulationActivity : NativeActivity() {
 
         @JvmStatic
         fun getLanguage(): String = Locale.getDefault().toString()
+
+        @JvmStatic
+        fun getVisibleBottom(): Float {
+            return instance.visibleRect.bottom.toFloat()
+        }
+
+        @JvmStatic
+        fun getVisibleTop(): Float {
+            return instance.visibleRect.top.toFloat()
+        }
+
+        @JvmStatic
+        fun getEvent(): Int {
+            if (instance.firstEvent) {
+                val intent = instance.intent
+                val data = intent.data
+                if (intent.action == Intent.ACTION_VIEW && data != null) {
+                    instance.loadURI(data, true)
+                }
+                instance.firstEvent = false
+            }
+            if (instance.keyboardEvents.isEmpty()) return -1
+            val value = instance.keyboardEvents[0]
+            instance.keyboardEvents.removeAt(0)
+            return value
+        }
     }
 
     private lateinit var visibleRect: Rect
@@ -55,6 +82,7 @@ class EmulationActivity : NativeActivity() {
         val mRootWindow = window
         mRootView = mRootWindow.decorView.findViewById(android.R.id.content)
         invisibleEditText = null
+        instance = this
 
         mRootView.viewTreeObserver.addOnGlobalLayoutListener {
             val r = Rect()
@@ -99,32 +127,6 @@ class EmulationActivity : NativeActivity() {
     }
 
     fun requestPermissions() {}
-
-    @JvmStatic
-    fun getVisibleBottom(): Float {
-        return visibleRect.bottom.toFloat()
-    }
-
-    @JvmStatic
-    fun getVisibleTop(): Float {
-        return visibleRect.top.toFloat()
-    }
-
-    @JvmStatic
-    fun getEvent(): Int {
-        if (firstEvent) {
-            val intent = intent
-            val data = intent.data
-            if (intent.action == Intent.ACTION_VIEW && data != null) {
-                loadURI(data, true)
-            }
-            firstEvent = false
-        }
-        if (keyboardEvents.isEmpty()) return -1
-        val value = keyboardEvents[0]
-        keyboardEvents.removeAt(0)
-        return value
-    }
 
     fun showKeyboard() {
         runOnUiThread {
@@ -185,7 +187,6 @@ class EmulationActivity : NativeActivity() {
         }
     }
 
-    // TODO: Implement SAF
     fun loadURI(selectedFileUri: Uri, isRom: Boolean) {
         val filename = getFileName(selectedFileUri)
         val externalDirPath = getExternalFilesDir(null)?.absolutePath ?: return
