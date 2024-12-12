@@ -99,6 +99,33 @@ class EmulationActivity : NativeActivity() {
     }
 
     fun requestPermissions() {}
+    
+    fun getLanguage(): String {
+        return Locale.getDefault().toString()
+    }
+
+    fun getVisibleBottom(): Float {
+        return visibleRect.bottom
+    }
+
+    fun getVisibleTop(): Float {
+        return visibleRect.top
+    }
+
+    fun getEvent(): Int {
+        if (firstEvent) {
+            val intent = intent
+            val data = intent.data
+            if (intent.action == Intent.ACTION_VIEW && data != null) {
+                loadURI(data, true)
+            }
+            firstEvent = false
+        }
+        if (keyboardEvents.isEmpty()) return -1
+        val value = keyboardEvents[0]
+        keyboardEvents.removeAt(0)
+        return value
+    }
 
     fun showKeyboard() {
         runOnUiThread {
