@@ -56,16 +56,19 @@ public class EnhancedNativeActivity extends NativeActivity {
     static {
         System.loadLibrary("SkyEmu");
     }
-    public void requestPermissions() {
-    }
-    public float getDPIScale(){
+    
+    public void requestPermissions() {}
+    
+    public float getDPIScale() {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         return metrics.xdpi/120.0f;
     }
+    
     public static String getLanguage() {
         return Locale.getDefault().toString();
     }
+    
     /*Handle permission request results*/
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
@@ -88,13 +91,15 @@ public class EnhancedNativeActivity extends NativeActivity {
         }
     }
 
-    public float getVisibleBottom(){
+    public float getVisibleBottom() {
         return visibleRect.bottom;
     }
-    public float getVisibleTop(){
+    
+    public float getVisibleTop() {
         return visibleRect.top;
     }
-    public int getEvent(){
+    
+    public int getEvent() {
         if(first_event){
             Intent intent = getIntent();
             Uri data = intent.getData();
@@ -108,7 +113,8 @@ public class EnhancedNativeActivity extends NativeActivity {
         keyboardEvents.remove(0);
         return val;
     }
-    public void showKeyboard(){
+    
+    public void showKeyboard() {
         Window win =this.getWindow();
         NativeActivity activity = this;
         runOnUiThread(new Runnable() {
@@ -138,8 +144,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         });
     }
 
-    public void hideKeyboard()
-    {
+    public void hideKeyboard() {
         Window win =this.getWindow();
         runOnUiThread(new Runnable() {
             @Override
@@ -149,6 +154,7 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         });
     }
+    
     public void pollKeyboard(){
         runOnUiThread(new Runnable() {
             @Override
@@ -205,6 +211,7 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         });
     }
+    
     private File copyFileToExternalDirectory(Uri sourceFilePath, String destinationDirectoryPath, String filename) {
         File sourceFile = new File(sourceFilePath.getPath());
         if(sourceFile!=null)Log.i("FilePicker","Source File Exists\n");
@@ -232,6 +239,7 @@ public class EnhancedNativeActivity extends NativeActivity {
             return null;
         }
     }
+    
     protected void onCreate(Bundle savedInstanceState) {
         first_event=true;
         super.onCreate(savedInstanceState);
@@ -296,7 +304,16 @@ public class EnhancedNativeActivity extends NativeActivity {
                         }
                     });
         }
+
+        Bundle extras = getIntent().getExtras();
+        if (extras != null) {
+            Game game = extras.getParcelable("game");
+            if (game != null) {
+                loadURI(Uri.parse(game.path), true);
+            }
+        }
     }
+    
     public void openFile(){
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("*/*");
@@ -306,6 +323,7 @@ public class EnhancedNativeActivity extends NativeActivity {
                 | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         startActivityForResult(intent, FILE_PICKER_REQUEST_CODE);
     }
+    
     public String getFileName(Uri uri) {
         String result = null;
         if (uri.getScheme().equals("content")) {
@@ -327,6 +345,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         }
         return result;
     }
+    
     @Override
     public boolean onKeyDown(int keycode, KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
@@ -343,6 +362,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         // If the event is not the back button press, let it propagate as usual
         return false;
     }
+    
     @Override
     public boolean onKeyUp(int keycode, KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
@@ -359,6 +379,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         // If the event is not the back button press, let it propagate as usual
         return false;
     }
+    
     public void loadURI(Uri selectedFileUri, boolean is_rom){
         String filename = getFileName(selectedFileUri);
         File file = new File(selectedFileUri.getPath());//create path from uri
@@ -378,11 +399,13 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         }
     }
+    
     public void openCustomTab(String url){
         authIntent = new CustomTabsIntent.Builder().build();
         authIntent.intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         authIntent.launchUrl(EnhancedNativeActivity.this, Uri.parse(url));
     }
+    
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         // If the selection didn't work
@@ -396,6 +419,7 @@ public class EnhancedNativeActivity extends NativeActivity {
             }
         }
     }
+    
     public native void se_android_load_file(String filePath);
     public native void se_android_load_rom(String filePath);
 }
