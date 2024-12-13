@@ -310,7 +310,7 @@ public class EnhancedNativeActivity extends NativeActivity {
         if (extras != null) {
             Game game = extras.getParcelable("game");
             if (game != null) {
-                loadURI(Uri.parse(game.path), true);
+                loadURI(Uri.parse(game.getPath()), true);
             }
         }
     }
