@@ -14,7 +14,7 @@ import java.util.HashSet
 class Game(
     val title: String = "",
     val description: String = "",
-    val path: String = "",
+    val path: Uri,
     val icon: IntArray? = null,
     val filename: String
 ) : Parcelable {
