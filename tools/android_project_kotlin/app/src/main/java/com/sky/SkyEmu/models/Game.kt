@@ -14,7 +14,7 @@ import java.util.HashSet
 class Game(
     val title: String = "",
     val description: String = "",
-    val path: Uri,
+    val path: String,
     val icon: IntArray? = null,
     val filename: String
 ) : Parcelable {
@@ -22,7 +22,7 @@ class Game(
         val supportedExtensions: Set<String> get() = extensions
 
         val extensions: Set<String> = HashSet(
-            listOf("gb", "gba")
+            listOf("gb", "gba", "zip", "nds")
         )
     }
 }
