@@ -389,8 +389,8 @@ public class EnhancedNativeActivity extends NativeActivity {
         if (selectedFileUri != null) {
             // Get the original file's path using its URI
             // Copy the file to the external directory
-            String externalDirectoryPath = getExternalFilesDir(null).getAbsolutePath();
-            File copiedFile = copyFileToExternalDirectory(selectedFileUri, externalDirectoryPath,filename);
+            String externalDirectoryPath = getFilesDir().getAbsolutePath(); // Use app private path for now
+            File copiedFile = copyFileToExternalDirectory(selectedFileUri, externalDirectoryPath, filename); // TODO: Implement SAF
 
             if (copiedFile != null) {
                 String copiedFilePath = copiedFile.getAbsolutePath();
