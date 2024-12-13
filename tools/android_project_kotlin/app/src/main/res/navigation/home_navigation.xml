@@ -10,9 +10,9 @@
         android:label="GamesFragment" />
 
     <activity
-        android:id="@+id/emulationActivity"
-        android:name="com.sky.SkyEmu.EmulationActivity"
-        android:label="EmulationActivity">
+        android:id="@+id/enhancedNativeActivity"
+        android:name="com.sky.SkyEmu.EnhancedNativeActivity"
+        android:label="EnhancedNativeActivity">
         <argument
             android:name="game"
             android:defaultValue="@null"
@@ -22,6 +22,6 @@
 
     <action
         android:id="@+id/action_global_emulationActivity"
-        app:destination="@id/emulationActivity"
+        app:destination="@id/enhancedNativeActivity"
         app:launchSingleTop="true" />
 </navigation>
