@@ -22,14 +22,14 @@ import androidx.browser.customtabs.CustomTabsIntent
 import java.io.*
 import java.util.Locale
 
-class EmulationActivity : NativeActivity() {
+class EnhancedNativeActivity : NativeActivity() {
 
     companion object {
         private const val APP_STORAGE_ACCESS_REQUEST_CODE = 501
         private const val STORAGE_PERMISSION_CODE = 501
         private const val FILE_PICKER_REQUEST_CODE = 123
         private const val TAG = "SkyEmu"
-        private lateinit var instance: EmulationActivity
+        private lateinit var instance: EnhancedNativeActivity
 
         init {
             try {
