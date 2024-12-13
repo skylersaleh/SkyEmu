@@ -97,6 +97,8 @@ class GamesFragment : Fragment() {
 
         pickFileRequest = registerForActivityResult(openRomContract) { uri: Uri? ->
             if (uri != null) {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                requireContext().contentResolver.takePersistableUriPermission(uri, flags)
                 GameUtils.addGame(uri)
             }
         }
