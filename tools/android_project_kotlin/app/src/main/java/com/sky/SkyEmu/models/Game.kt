@@ -4,7 +4,7 @@ package com.sky.SkyEmu.models
 import android.content.Intent
 import android.net.Uri
 import android.os.Parcelable
-import com.sky.SkyEmu.EmulationActivity
+import com.sky.SkyEmu.EnhancedNativeActivity
 import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
 import java.util.HashSet
