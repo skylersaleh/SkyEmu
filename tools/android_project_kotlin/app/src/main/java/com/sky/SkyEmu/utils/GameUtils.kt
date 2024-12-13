@@ -34,7 +34,7 @@ object GameUtils {
                 " "
             ),
             filePath.replace("\n", " "),
-            filePath,
+            uri,
             null,
             FileUtil.getFilename(Uri.parse(filePath))
         )
