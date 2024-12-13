@@ -1,6 +1,5 @@
 package com.sky.SkyEmu;
 
-
 import static android.view.InputDevice.SOURCE_GAMEPAD;
 import static android.view.InputDevice.SOURCE_JOYSTICK;
 import static android.view.KeyEvent.*;
@@ -31,6 +30,8 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import androidx.browser.customtabs.CustomTabsIntent;
+
+import com.sky.SkyEmu.models.Game;
 
 import java.io.File;
 import java.io.FileOutputStream;
