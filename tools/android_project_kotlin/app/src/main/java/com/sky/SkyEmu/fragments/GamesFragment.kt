@@ -200,6 +200,13 @@ class GamesFragment : Fragment() {
             }
             binding.coordinatorMain.layoutParams = mlpSwipe
 
+            val fab = binding.add.layoutParams as MarginLayoutParams
+            val fabPadding = requireActivity().resources.getDimensionPixelSize(R.dimen.spacing_large)
+            fab.leftMargin = leftInsets + fabPadding
+            fab.bottomMargin = barInsets.bottom + fabPadding
+            fab.rightMargin = rightInsets + fabPadding
+            binding.add.layoutParams = fab
+
             binding.noticeText.updatePadding(bottom = spacingNavigation)
 
             windowInsets
