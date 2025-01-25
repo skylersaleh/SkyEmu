@@ -3,6 +3,10 @@ on: [push,pull_request,workflow_dispatch]
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      CMAKE_VERSION: 3.18.1
+      NDK_VERSION: 22.1.7171670
+      
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v4
@@ -26,6 +30,9 @@ jobs:
           key: ${{ runner.os }}-android-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-android-
+
+      - name: Install CMake & Android NDK
+        run: echo "yes" | $ANDROID_HOME/tools/bin/sdkmanager "cmake;${{ env.CMAKE_VERSION }}" "ndk;${{ env.NDK_VERSION }}" --channel=3 | grep -v = || true
             
       - name: Build Release apk
         run: |
