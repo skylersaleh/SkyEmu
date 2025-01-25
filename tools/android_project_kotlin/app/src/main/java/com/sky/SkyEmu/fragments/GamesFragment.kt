@@ -25,12 +25,14 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.transition.MaterialFadeThrough
+import com.google.android.material.snackbar.Snackbar
 import com.sky.SkyEmu.SkyEmuApplication
 import com.sky.SkyEmu.R
 import com.sky.SkyEmu.adapters.GameAdapter
 import com.sky.SkyEmu.databinding.FragmentGamesBinding
 import com.sky.SkyEmu.models.Game
 import com.sky.SkyEmu.utils.GameUtils
+import com.sky.SkyEmu.utils.LoaderResult
 import com.sky.SkyEmu.viewmodels.GamesViewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -100,7 +102,8 @@ class GamesFragment : Fragment() {
             if (uri != null) {
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 requireContext().contentResolver.takePersistableUriPermission(uri, flags)
-                GameUtils.addGame(uri)
+                val result = GameUtils.addGame(uri)
+                if (result == LoaderResult.Error) Snackbar.make(binding.root, "Unsupported extension", Snackbar.LENGTH_SHORT).show()
             }
         }
 
