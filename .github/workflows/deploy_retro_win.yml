@@ -21,7 +21,7 @@ jobs:
           Compress-Archive -Destination skyemu_libretro.zip -Path skyemu_libretro_zip
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
            name: WindowsRelease (Libretro)
            path: build/skyemu_libretro.zip

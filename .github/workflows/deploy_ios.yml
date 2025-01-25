@@ -17,7 +17,7 @@ jobs:
           zip -r SkyEmu.ipa Payload
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
            name: iOSRelease
            path: build/SkyEmu.ipa
