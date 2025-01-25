@@ -3,6 +3,7 @@ package com.sky.SkyEmu.utils
 
 import android.content.SharedPreferences
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.preference.PreferenceManager
@@ -79,7 +80,7 @@ object GameUtils {
     }
 }
 
-enum class LoaderResult() {
+enum class LoaderResult(val code: Int) {
     Success(0),
     Error(1);
 }
