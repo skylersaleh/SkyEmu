@@ -26,7 +26,6 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            ${{ github.workspace }}/.ccache
           key: ${{ runner.os }}-android-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-android-
@@ -36,12 +35,9 @@ jobs:
             
       - name: Build Release apk
         run: |
-          sudo apt-get install ccache
-          export NDK_CCACHE=$(which ccache)
           cd tools/android_project_kotlin/
           chmod +x ./gradlew && ./gradlew assembleRelease
           ls app/build/outputs/apk/release/
-          ccache -s -v
           
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
