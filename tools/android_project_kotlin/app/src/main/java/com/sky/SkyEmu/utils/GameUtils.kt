@@ -2,7 +2,9 @@
 package com.sky.SkyEmu.utils
 
 import android.content.SharedPreferences
+import android.content.ContentResolver
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.preference.PreferenceManager
 import com.sky.SkyEmu.SkyEmuApplication
 import com.sky.SkyEmu.models.Game
@@ -42,7 +44,10 @@ object GameUtils {
         return newGame
     }
 
-    fun addGame(uri: Uri) {
+    fun addGame(uri: Uri) : LoaderResult {
+        if (!isSupportedExtension(SkyEmuApplication.appContext, uri)) {
+            return LoaderResult.Error
+        }
         preferences = PreferenceManager.getDefaultSharedPreferences(SkyEmuApplication.appContext)
         val serializedGames = preferences.getStringSet(KEY_GAMES, emptySet()) ?: emptySet()
         val games = serializedGames.map { Json.decodeFromString<Game>(it) }.toMutableList()
@@ -54,5 +59,27 @@ object GameUtils {
             .remove(KEY_GAMES)
             .putStringSet(KEY_GAMES, newSerializedGames)
             .apply()
+
+        return LoaderResult.Success
      }
+
+     private fun isSupportedExtension(context: Context, uri: Uri): Boolean {
+        val contentResolver: ContentResolver = context.contentResolver
+        val cursor = contentResolver.query(uri, null, null, null, null)
+
+        cursor?.use {
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+                val fileName = cursor.getString(nameIndex) ?: return false
+                val fileExtension = fileName.substringAfterLast('.', "").lowercase()
+                return fileExtension in Game.supportedExtensions
+           }
+        }
+        return false
+    }
+}
+
+enum class LoaderResult() {
+    Success(0),
+    Error(1);
 }
