@@ -2796,7 +2796,10 @@ static void se_draw_emulated_system_screen(bool preview){
     se_draw_lcd_in_rect(win_pos.x+dims[0]*0.5,win_pos.y+dims[1]*0.5,render_w,render_h,nds_layout);
   }
   float pad_x = scr_h/se_dpi_scale()*0.025;
-  if(!(result&SE_THEME_DREW_CONTROLLER)&&(!gui_state.block_touchscreen||preview))se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_BOTH,win_pos.x+pad_x,win_pos.y+pad_x, scr_w/se_dpi_scale()-pad_x*2, scr_h/se_dpi_scale()-pad_x*2, preview,false);
+  // Handle themes where there is no controller region, or when screen overlap is allowed. 
+  if(!(result&SE_THEME_DREW_CONTROLLER)&&(!gui_state.block_touchscreen||preview)){
+    se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_BOTH,win_pos.x+pad_x,win_pos.y+pad_x, scr_w/se_dpi_scale()-pad_x*2, scr_h/se_dpi_scale()-pad_x*2, preview,false);
+  }
 }
 static uint8_t gba_byte_read(uint64_t address){return gba_read8_debug(&core.gba,address);}
 static void gba_byte_write(uint64_t address, uint8_t data){gba_store8_debug(&core.gba,address,data);}
@@ -3848,31 +3851,9 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
     win_w*=0.5;
     right_x_off = win_w;
   }
-  float size_scalar = 1.0;
-  if(gui_state.settings.touch_controls_scale){
-    float scale = (gui_state.settings.touch_controls_scale);
-    float old_win_w = win_w, old_win_h = win_h;
-    win_w*=scale;
-    if(win_h*scale>win_w*2.)win_h*=scale;
 
-    win_y+=old_win_h-win_h;
-    right_x_off += old_win_w-win_w;
-  }
-  if(center){
-    if(win_h>win_w*2){
-      win_y+=(win_h-win_w*2)*0.5;
-      win_h = win_w*2;
-    }
-  }else{
-    if(win_h>win_w*2){
-      win_y+=win_h-win_w*2;
-      win_h = win_w*2;
-    }
-  }
-  if(win_w>win_h){
-    right_x_off +=win_w-win_h;
-    win_w= win_h;
-  }
+  bool half_height = (win_h<win_w*1.6);
+  float size_scalar = 1.0;
 
   ImU32 line_color = 0xffffff;
   ImU32 line_color2 =0x000000;
@@ -3946,7 +3927,7 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   float rect_offset = 0;
   float lr_y = 0*full_h;
   float start_sel_row_y = full_h-row_h;
-  if(full_h<row_h*2+1.0){
+  if(half_height){
     rect_width_scalar = 0.3;
     row_h*=0.5;
     start_sel_row_y+=row_h;
@@ -4195,28 +4176,6 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
 
 }
 
-void sb_draw_onscreen_controller(sb_emu_state_t*state, int controller_h, int controller_y_pad,bool preview){
-  controller_h*=gui_state.settings.touch_controls_scale;
-  float win_w = igGetWindowWidth();
-  float win_h = igGetWindowHeight();
-  if(preview==false){
-    win_w /=se_dpi_scale();
-    win_h /=se_dpi_scale();
-  }
-  controller_h/=se_dpi_scale();
-  controller_y_pad/=se_dpi_scale();
-  float border = win_h*0.025;
-  if(win_w<win_h)border = win_w*0.025;
-
-  ImVec2 pos; 
-  igGetWindowPos(&pos);
-  float win_x = pos.x+border;
-  win_w-=border*2;
-  win_h=controller_h;
-  float win_y = pos.y+win_h-controller_h-controller_y_pad+border;
-  win_h-=border*2;
-  se_draw_onscreen_controller(state,SE_GAMEPAD_BOTH, win_x,win_y,win_w,win_h,preview,false);
-}
 void se_update_key_turbo(sb_emu_state_t *state){
   double t = se_time()*15;
   bool turbo_press = (t-(int)t)>0.5;
@@ -7809,6 +7768,9 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
     se_draw_lcd_defer(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lx,ly, lw, lh,rotation,false);
   }
 }
+static float se_compute_touchscreen_controls_min_dim(float w, float h){
+  return fmax(w,h)*0.6*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale;
+}
 static int se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint){
   se_theme_region_t* r = &gui_state.theme.regions[region];
   if(!r->active)return 0; 
@@ -7830,8 +7792,10 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   float native_w = w, native_h = h;
   int nds_layout = gui_state.settings.nds_layout;
   se_compute_draw_lcd_rect(&native_w, &native_h, &nds_layout);
-  float min_dim = (w<h?w:h)*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
+  float min_dim = se_compute_touchscreen_controls_min_dim(w,h);
   bool portrait= (w-min_dim)/native_w<(h-min_dim)/native_h;
+
+  bool has_gamepad = false;
 
   int gamepad_mask = portrait? 0x30 : 0xC0;
   int skip_mask = portrait? SE_RESIZE_ONLY_LANDSCAPE : SE_RESIZE_ONLY_PORTRAIT;
@@ -7860,9 +7824,10 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
       if(screen&&!gamepad&&!fixed)screen_no_gamepad_pixels[axis]+=pixels;
       if(fixed&&screen) fixed_screen_pixels[axis]+=pixels;
       if(gamepad){
-        if(fixed)gamepad_fixed[axis]+=pixels;
+        if(fixed)   gamepad_fixed[axis]+=pixels;
         else if(screen)gamepad_screen_stretch[axis]+=pixels;
         else gamepad_stretch[axis]+=pixels; 
+        has_gamepad=true;
       }
       rdims[axis]+=pixels;
     }
@@ -7886,22 +7851,27 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   SE_RPT2 lcd_dims[r]=screen_pixels[r]? dims[r]-fixed_pixels[r]:0;
 
   {
-    float min_dim = (dims[0]<dims[1]?dims[0]:dims[1])*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
+    float   non_fixed_pixels[2];
+    SE_RPT2 non_fixed_pixels[r]      = dims[r]-fixed_pixels[r]-lcd_dims[r];
+    SE_RPT2 non_fixed_pixels_scale[r]= (non_fixed_pixels[r])/(rdims[r]*uniform_scale_factor-fixed_pixels[r]-screen_pixels[r]);
+
     bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
     if(!touch_controller_active)min_dim = 0;
-
-    for(int i=0;i<2;++i){
-      float gamepad_size = (gamepad_screen_stretch[i]+gamepad_fixed[i])/(gamepad_stretch[i]/(dims[i]-fixed_pixels[i]-screen_pixels[i]));
-      if(min_dim>gamepad_size&&lcd_dims[i]){
-        lcd_dims[i]-=min_dim-gamepad_size;
+    float adj[2]={0,0};
+    //Shrink screen to fit gamepad
+    if(gamepad_mask){
+      int i = portrait;
+      float md = i? min_dim*0.5:min_dim;
+      float gamepad_size = (gamepad_screen_stretch[i]+gamepad_fixed[i])+gamepad_stretch[i]*non_fixed_pixels_scale[i];
+      if(md>gamepad_size&&lcd_dims[i]){
+        lcd_dims[i]-=md-gamepad_size;
+        adj[i] = md-gamepad_size;
       }
     }
-
     se_compute_draw_lcd_rect(&lcd_dims[0],&lcd_dims[1],&nds_layout);
 
     SE_RPT2 lcd_non_fixed_scale[r]=(lcd_dims[r]-fixed_screen_pixels[r])/(screen_pixels[r]-fixed_screen_pixels[r]);
 
-    float non_fixed_pixels[2];
     SE_RPT2 non_fixed_pixels[r]= dims[r]-fixed_pixels[r]-lcd_dims[r];
     SE_RPT2 non_fixed_pixels_scale[r]= (non_fixed_pixels[r])/(rdims[r]*uniform_scale_factor-fixed_pixels[r]-screen_pixels[r]);
   }
@@ -7993,11 +7963,32 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
             height+= span;
           }
           ImVec2 pmin_gamepad = {pmax.x-width,pmax.y-height};
-          //ImDrawList_AddRect(igGetWindowDrawList(),pmin_gamepad,pmax,0xffffffff,0,ImDrawCornerFlags_None, 2);
           int gc_mode = xcp->gamepad_control&ycp->gamepad_control;
           gc_mode = (gc_mode|(gc_mode<<2))&0xc0;
           int off_y = 0;
-          se_draw_onscreen_controller(&emu_state,gc_mode,pmin_gamepad.x,pmin_gamepad.y-off_y,width,height,true, true);
+          if(height>min_dim){
+            off_y-=(height-min_dim)*0.5;
+            height = min_dim;
+          }
+          float min_dim_new = min_dim; 
+          if(gc_mode==SE_GAMEPAD_BOTH){
+            if(min_dim>width)min_dim=width;
+          }else{
+            if(width>min_dim*0.5){
+              if(gc_mode==SE_GAMEPAD_RIGHT){
+                pmin_gamepad.x+=width-min_dim*0.5;
+              }
+              width = min_dim*0.5;
+            }else if(min_dim*0.5>width)min_dim_new=width*2.0;
+          }
+  
+          pmin_gamepad.y-=off_y;
+          ImVec2 pmax_gamepad = pmin_gamepad;
+          pmax_gamepad.x+=width;
+          pmax_gamepad.y+=height;
+          //ImDrawList_AddRect(igGetWindowDrawList(),pmin_gamepad,pmax_gamepad,0xffffffff,0,ImDrawCornerFlags_None, 2);
+          if(gc_mode&SE_GAMEPAD_LEFT)se_draw_onscreen_controller(&emu_state,SE_GAMEPAD_LEFT,pmin_gamepad.x,pmin_gamepad.y,min_dim_new*0.5,height,true, true);
+          if(gc_mode&SE_GAMEPAD_RIGHT)se_draw_onscreen_controller(&emu_state,SE_GAMEPAD_RIGHT,pmax_gamepad.x-min_dim_new*0.5,pmin_gamepad.y,min_dim_new*0.5,height,true, true);
           drew_controller = true;
         }
       }
