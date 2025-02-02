@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
+cmake_minimum_required(VERSION 3.27) # Needed to set MSVC Runtime type
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
-include("cmake/FindOpenGL.cmake")
+include("cmake/RPi.cmake")
 
 if(APPLE AND (NOT IOS) AND (NOT ANDROID))
   set(MACOS 1)
@@ -21,35 +21,7 @@ else()
     set(IS_ARM FALSE)
 endif()
 
-# Function to check if a command exists
-function(command_exists CMD RESULT_VAR)
-    execute_process(COMMAND which ${CMD} OUTPUT_VARIABLE CMD_PATH RESULT_VARIABLE CMD_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(CMD_RESULT EQUAL 0)
-        set(${RESULT_VAR} TRUE PARENT_SCOPE)
-    else()
-        set(${RESULT_VAR} FALSE PARENT_SCOPE)
-    endif()
-endfunction()
-
 command_exists("vcgencmd" IS_VIDEOCORE)
-
-function(check_gles3_support SUPPORTS_GLES3)
-    # Initialize variable
-    set(${SUPPORTS_GLES3} OFF PARENT_SCOPE)
-
-    # Run the Bash one-liner to get the SoC version as a decimal number
-    execute_process(
-        COMMAND bash -c "awk '/Revision/ { rev = \"0x\" substr(\$3, length(\$3)-3, 4); printf \"%d\n\", (rev / 4096) % 16 }' /proc/cpuinfo"
-        OUTPUT_VARIABLE SOC_VERSION_DEC
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    # Determine GLES3 support based on the SoC version
-    if(SOC_VERSION_DEC GREATER_EQUAL 3)
-        # BCM2711 or newer
-        set(${SUPPORTS_GLES3} ON PARENT_SCOPE)
-    endif()
-endfunction()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
@@ -134,9 +106,11 @@ if ((CMAKE_SYSTEM_NAME STREQUAL Linux) AND NOT EMSCRIPTEN AND NOT ANDROID)
     if (IS_ARM AND IS_VIDEOCORE)
         check_gles3_support(SUPPORTS_GLES3)
         if(SUPPORTS_GLES3)
+           message("GLES3 supported")
            set(SE_FORCE_GLES3 TRUE)
            add_definitions(-DSE_FORCE_GLES3=1)
         else()
+           message("GLES3 supported")
            set(SE_FORCE_GLES2 TRUE)
            add_definitions(-DSE_FORCE_GLES2=1)
         endif()
