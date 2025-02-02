@@ -18,12 +18,9 @@ function(check_gles3_support SUPPORTS_GLES3)
         OUTPUT_VARIABLE SOC_VERSION_DEC
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    message(STATUS, "soc verision: ${SOC_VERSION_DEC}")
 
     # Determine GLES3 support based on the SoC version
     if(SOC_VERSION_DEC GREATER_EQUAL 3)
-        # BCM2711 or newer
-        message(STATUS, "GLES3 supported")
         set(SUPPORTS_GLES3 ON PARENT_SCOPE)
     endif()
 endfunction()
