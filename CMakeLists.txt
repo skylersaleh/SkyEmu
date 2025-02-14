@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.27) # Needed to set MSVC Runtime type
+cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
-include("cmake/RPi.cmake")
+include(RPi)
 
 if(APPLE AND (NOT IOS) AND (NOT ANDROID))
   set(MACOS 1)
@@ -91,7 +92,13 @@ if(ANDROID)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 if(NOT IOS)
-  find_package(OpenGL)
+  if(IS_ARM AND IS_VIDEOCORE)
+    # For Raspberry Pi, use OpenGLES
+    find_package(OpenGLES REQUIRED)
+  else()
+    # For other platforms, use regular OpenGL
+    find_package(OpenGL)
+  endif()
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -275,11 +282,17 @@ else()
     if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
         target_include_directories(sokol PRIVATE "${X11_INCLUDE_DIR}")
         if(SE_FORCE_GLES2)
-          target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::GLES2 EGL dl)
+        find_package(OpenGLES COMPONENTS V2 REQUIRED)
+        if(OpenGLES_V2_FOUND)
+            target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGLES::OpenGLESv2 EGL dl)
+        endif()
         elseif(SE_FORCE_GLES3)
-          target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::GLES3 EGL dl)
+        find_package(OpenGLES COMPONENTS V3 REQUIRED)
+        if(OpenGLES_V3_FOUND)
+            target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGLES::OpenGLESv3 EGL dl)
+        endif()
         else()
-          target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
+        target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
         endif()
     endif()
     if (CMAKE_SYSTEM_NAME STREQUAL Linux)
@@ -499,4 +512,5 @@ endif()
 
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
-  BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")
+  BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications"
+)
