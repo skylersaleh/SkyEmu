@@ -5,7 +5,7 @@
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_ios/dev/iOSRelease.zip" rel="Download iOS">![iOS Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_ios.yml/badge.svg)</a>
 <a href="https://nightly.link/skylersaleh/SkyEmu/workflows/deploy_freebsd/dev/FreeBSDRelease.zip" rel="Download FreeBSD">![FreeBSD Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_freebsd.yml/badge.svg)</a>
 <a href="https://web.skyemu.app/branch/dev" rel="Web Build">![Web Build](https://github.com/skylersaleh/SkyEmu/actions/workflows/deploy_web.yml/badge.svg)</a>
-<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield)</a> 
+<a href="https://discord.gg/tnUEtmJgA5" rel="Join Discord Server">![Discord Shield](https://discordapp.com/api/guilds/1131322341645893783/widget.png?style=shield)</a>
 
 ![SkyEmu](https://github.com/skylersaleh/SkyEmu/assets/7118296/03d74d15-070c-4353-8f37-263847bc0750)
 
@@ -21,7 +21,7 @@ SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and DS emulator.
 - Game Controller and Rumble Support with configureable keybinds
 - 4x Persistent Save State Slots with screenshot preview
 - Game fastforward and rewind support (supporting [very long rewind times](https://www.youtube.com/watch?v=Sfc_1NKbiKg))
-- Action Replay Cheat Code Engine 
+- Action Replay Cheat Code Engine
 - Localization in Armenian, Chinese, Danish, Dutch, English, German, Greek, Italian, Polish, and Russian
 - Support for emulating the Real Time Clock and Solar Sensor
 - CPU, MMIO, and Memory Debuggers
@@ -37,11 +37,11 @@ The latest version of the emulator can also be played without installing at the 
 
 [https://web.skyemu.app/](https://web.skyemu.app/)
 
-The web app emulates everything locally on your machine using web assembly and javascript. Because of this all files stay local to your machine like the regular native build, however there is a performance cost to performing the emulation inside a web browser. 
+The web app emulates everything locally on your machine using web assembly and javascript. Because of this all files stay local to your machine like the regular native build, however there is a performance cost to performing the emulation inside a web browser.
 
 On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen.
 
-Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open source replacement BIOS/stubs. However, it is strongly recommended to dump official BIOS/firmware as the open source replacements lack many of the features of the native firmware/BIOS (such as colorizing GB games and the startup splashes) and are not as accurate. 
+Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open source replacement BIOS/stubs. However, it is strongly recommended to dump official BIOS/firmware as the open source replacements lack many of the features of the native firmware/BIOS (such as colorizing GB games and the startup splashes) and are not as accurate.
 
 ## Discord Server
 
@@ -57,11 +57,11 @@ Note: Platform BIOS/Firmware files are not required as SkyEmu bundles open sourc
 - U: L shoulder
 - I: R shoulder
 
-On mobile platforms an onscreen touch screen controller is provided. 
+On mobile platforms an onscreen touch screen controller is provided.
 
 ## Loading save files and BIOSs
 
-On web builds save files and the BIOS can be loaded by dragging them onto the page or loading them using the ROM file picker. The GBA BIOS must be named `gba_bios.bin` for the emulator to pick it up. Save files must be named the name of the rom file with the extension `.sav`. So for example if the ROM was `MyRomFile.gba` the save file must be called `MyRomFile.sav`. 
+On web builds save files and the BIOS can be loaded by dragging them onto the page or loading them using the ROM file picker. The GBA BIOS must be named `gba_bios.bin` for the emulator to pick it up. Save files must be named the name of the rom file with the extension `.sav`. So for example if the ROM was `MyRomFile.gba` the save file must be called `MyRomFile.sav`.
 
 On native builds the above naming convention still applies, but the save/BIOS files must be instead located in the same folder as the ROM file, instead of being dragged or loaded in the emulator itself.
 
@@ -69,27 +69,35 @@ On native builds the above naming convention still applies, but the save/BIOS fi
 
 Native builds are experimental currently but can be built using the following commands:
 
-```
+```bash
 mkdir build
 cd build
-cmake .. 
-cmake --build . 
+cmake ..
+cmake --build .
+```
+
+For Raspberry Pi, you'll want to enable OpenGLES support:
+```bash
+mkdir build
+cd build
+cmake .. -DUSE_GLES3=ON  # or -DUSE_GLES2=ON if GLES3 isn't supported
+cmake --build .
 ```
 
 The output binaries should be in the build/bin folder
 
-Native builds support loading roms through the command line by specifying the path to the ROM as the first argument: 
+Native builds support loading roms through the command line by specifying the path to the ROM as the first argument:
 
-```
+```bash
 ./SkyEmu path/to/rom.gba
 ```
 
 ## Accuracy/Compatibility
 
-SkyEmu has been tested on 100s of ROMs and most common games should be playable with no to minor bugs currently. However, the GBA emulation is significantly more accurate than the GB/GBC emulation. 
+SkyEmu has been tested on 100s of ROMs and most common games should be playable with no to minor bugs currently. However, the GBA emulation is significantly more accurate than the GB/GBC emulation.
 
 **GBA**:
-- Per Pixel PPU Implementation capable of both scan line and mid scan line effects (SkyEmu and NanoBoyAdvance are the only GBA emulators released to support this) 
+- Per Pixel PPU Implementation capable of both scan line and mid scan line effects (SkyEmu and NanoBoyAdvance are the only GBA emulators released to support this)
 - Passes the AGS Aging Test ROM (SkyEmu is the second SW based GBA emulator to ever pass this)
 - Can run difficult to emulate GBA games such as the NES Classics Series, Golden Sun and Hello Kitty Miracle Fashion Maker
 - 100% Passes all ArmWrestler Tests
@@ -98,7 +106,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - Passes 2020/2020 GBA Suite timing tests when utilizing the official GBA BIOS (SkyEmu is one of the few emulators capable of passing this test).
 - Full instruction pipeline and prefetch emulation
 
-**GB**: 
+**GB**:
 - Passes all of Blargg's CPU instruction tests
 - Passes DMG and GBC acid2 PPU conformance tests
 - Passes MBCtest
@@ -106,7 +114,7 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - Anti-aliased audio synthesis with support for APU changes per sample (supports Pikachu's voice in Pokemon Yellow/Pokemon Pinball)
 
 ## Birds of a Feather
-- [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games. 
+- [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games.
 - [**Panda3DS**](https://github.com/wheremyfoodat/Panda3DS): Panda themed HLE 3DS emulator
 - [**NanoBoyAdvance**](https://github.com/nba-emu/NanoBoyAdvance): A Game Boy Advance emulator focusing on hardware research and cycle-accurate emulation
 - [**Dust**](https://github.com/kelpsyberry/dust): DS emulator for desktop devices and the web
