@@ -15,7 +15,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake ..-DUSE_GLES3=ON && cmake --build .
+          cmake .. -DUSE_GLES3=ON && cmake --build .
 
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
