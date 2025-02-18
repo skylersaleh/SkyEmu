@@ -1666,12 +1666,13 @@ typedef enum sapp_html5_fetch_error {
 } sapp_html5_fetch_error;
 
 typedef struct sapp_html5_fetch_response {
-    bool succeeded;         // true if the loading operation has succeeded
+    bool succeeded;         /* true if the loading operation has succeeded */
     sapp_html5_fetch_error error_code;
-    int file_index;         // index of the dropped file (0..sapp_get_num_dropped_filed()-1)
-    sapp_range data;        // pointer and size of the fetched data (data.ptr == buffer.ptr, data.size <= buffer.size)
-    sapp_range buffer;      // the user-provided buffer ptr/size pair (buffer.ptr == data.ptr, buffer.size >= data.size)
-    void* user_data;        // user-provided user data pointer
+    int file_index;         /* index of the dropped file (0..sapp_get_num_dropped_filed()-1) */
+    uint32_t fetched_size;  /* size in bytes of loaded data */
+    void* buffer_ptr;       /* pointer to user-provided buffer which contains the loaded data */
+    uint32_t buffer_size;   /* size of user-provided buffer (buffer_size >= fetched_size) */
+    void* user_data;        /* user-provided user data pointer */
 } sapp_html5_fetch_response;
 
 typedef struct sapp_html5_fetch_request {
@@ -4702,8 +4703,8 @@ EMSCRIPTEN_KEEPALIVE void _sapp_emsc_invoke_fetch_cb(int index, int success, int
     response.file_index = index;
     response.data.ptr = buf_ptr;
     response.data.size = fetched_size;
-    response.buffer.ptr = buf_ptr;
-    response.buffer.size = buf_size;
+    response.buffer_ptr = buf_ptr;
+    response.buffer_size = buf_size;
     response.user_data = user_data;
     callback(&response);
 }
