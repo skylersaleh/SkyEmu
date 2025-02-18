@@ -1675,10 +1675,11 @@ typedef struct sapp_html5_fetch_response {
 } sapp_html5_fetch_response;
 
 typedef struct sapp_html5_fetch_request {
-    int dropped_file_index; // 0..sapp_get_num_dropped_files()-1
-    void (*callback)(const sapp_html5_fetch_response*);     // response callback function pointer (required)
-    sapp_range buffer;      // ptr/size of a memory buffer to load the data into
-    void* user_data;        // optional userdata pointer
+    int dropped_file_index;                 /* 0..sapp_get_num_dropped_files()-1 */
+    void (*callback)(const sapp_html5_fetch_response*);     /* response callback function pointer (required) */
+    void* buffer_ptr;                       /* pointer to buffer to load data into */
+    uint32_t buffer_size;                   /* size in bytes of buffer */
+    void* user_data;                        /* optional userdata pointer */
 } sapp_html5_fetch_request;
 
 /*
