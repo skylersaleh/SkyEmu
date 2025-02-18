@@ -4697,12 +4697,11 @@ EMSCRIPTEN_KEEPALIVE void _sapp_emsc_end_drop(int x, int y) {
 
 EMSCRIPTEN_KEEPALIVE void _sapp_emsc_invoke_fetch_cb(int index, int success, int error_code, _sapp_html5_fetch_callback callback, uint32_t fetched_size, void* buf_ptr, uint32_t buf_size, void* user_data) {
     sapp_html5_fetch_response response;
-    _sapp_clear(&response, sizeof(response));
+    memset(&response, 0, sizeof(response));
     response.succeeded = (0 != success);
     response.error_code = (sapp_html5_fetch_error) error_code;
     response.file_index = index;
-    response.data.ptr = buf_ptr;
-    response.data.size = fetched_size;
+    response.fetched_size = fetched_size;
     response.buffer_ptr = buf_ptr;
     response.buffer_size = buf_size;
     response.user_data = user_data;
