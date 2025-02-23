@@ -7268,7 +7268,8 @@ static void frame(void) {
       igPopStyleColor(1);
     }
     gui_state.block_touchscreen = draw_sidebars_over_screen;
-
+    // The menubar shouldn't resize the screen when it autohides as it re-layouts the controls. 
+    if(gui_state.settings.always_show_menubar==false&&screen_width==width)menu_height=0;
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -7515,7 +7516,7 @@ void se_load_settings(){
       gui_state.settings.settings_file_version = 2; 
       gui_state.settings.auto_hide_touch_controls=true;
       gui_state.settings.touch_controls_opacity = 0.5;
-      gui_state.settings.always_show_menubar=false;
+      gui_state.settings.always_show_menubar=true;
       gui_state.settings.language=SE_LANG_DEFAULT;
       gui_state.settings.touch_controls_scale=1.0;
       gui_state.settings.touch_controls_show_turbo = 1; 
