@@ -206,7 +206,8 @@ typedef struct{
   uint32_t enable_download_cache;
   uint32_t nds_layout; 
   uint32_t touch_screen_show_button_labels;
-  uint32_t padding[219];
+  uint32_t show_screen_bezel;
+  uint32_t padding[218];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -342,7 +343,8 @@ typedef struct{
 #define SE_REGION_MENUBAR              65
 #define SE_REGION_KEY_RECT_BLANK         66
 #define SE_REGION_KEY_RECT_BLANK_PRESSED 67
-#define SE_TOTAL_REGIONS                 68
+#define SE_REGION_NO_BEZEL               68
+#define SE_TOTAL_REGIONS                 69
 
 #define SE_RESIZE_STRETCH  0
 #define SE_RESIZE_ONLY_PORTRAIT  0x20
@@ -396,9 +398,9 @@ typedef struct{
   se_control_point_t control_points_x[SE_MAX_CONTROL_POINTS];
   se_control_point_t control_points_y[SE_MAX_CONTROL_POINTS];
 }se_theme_region_t;
-
+#define SE_THEME_IMAGE_MIPS 5
 typedef struct{
-  sg_image image;
+  sg_image image[SE_THEME_IMAGE_MIPS];
   uint32_t im_w;
   uint32_t im_h;
   uint32_t version_code; 
@@ -570,6 +572,7 @@ void se_draw_image(uint8_t *data, int im_width, int im_height,int x, int y, int 
 void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int render_width, int render_height, float rotation,bool is_touch);
 void se_load_rom_overlay(bool visible);
 void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, float win_y, float win_w, float win_h, bool preview, bool center);
+static float se_compute_touchscreen_controls_min_dim(float w, float h, bool *portrait);
 void se_reset_save_states();
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
@@ -582,7 +585,7 @@ void se_open_file_browser(bool clicked, float x, float y, float w, float h, void
 void se_file_browser_accept(const char * path);
 static void se_reset_core();
 static bool se_load_theme_from_file(const char * filename);
-static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert);
+static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert, bool blacken);
 static bool se_reload_theme();
 
 double se_time();
@@ -2776,29 +2779,44 @@ static void se_draw_emulated_system_screen(bool preview){
   float rotation = gui_state.settings.screen_rotation*0.5*3.14159;
 
   float dims[2]={scr_w/se_dpi_scale(),scr_h/se_dpi_scale()};
-
-  float min_dim = (dims[0]<dims[1]?dims[0]:dims[1])*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale*0.5;
+  bool portrait = false; 
+  float min_dim = se_compute_touchscreen_controls_min_dim(scr_w,scr_h, &portrait);
   bool touch_controller_active = gui_state.last_touch_time>=0||gui_state.settings.auto_hide_touch_controls==false;
   if(!touch_controller_active)min_dim = 0;
 
   float native_w = dims[0], native_h = dims[1];
   se_compute_draw_lcd_rect(&native_w, &native_h, &nds_layout);
   
-  bool portrait= (dims[0]-min_dim)/native_w<(dims[1]-min_dim)/native_h;
   ImVec2 win_pos;
   igGetWindowPos(&win_pos);
 
-  int result = se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,dims[0],dims[1]);
-  if(!result) result = se_draw_theme_region(SE_REGION_BEZEL_PORTRAIT, win_pos.x,win_pos.y,dims[0],dims[1]);
-  if(!result){ 
-    float render_w = dims[0], render_h = dims[1];
-    se_compute_draw_lcd_rect(&render_w, &render_h, &nds_layout);
-    se_draw_lcd_in_rect(win_pos.x+dims[0]*0.5,win_pos.y+dims[1]*0.5,render_w,render_h,nds_layout);
-  }
+  int result =0;
+  if(!gui_state.settings.show_screen_bezel)result = se_draw_theme_region(SE_REGION_NO_BEZEL, win_pos.x,win_pos.y,dims[0],dims[1]);
+
+  if(!result)result =  se_draw_theme_region(portrait?SE_REGION_BEZEL_PORTRAIT:SE_REGION_BEZEL_LANDSCAPE, win_pos.x,win_pos.y,dims[0],dims[1]);
+  if(!result)result = se_draw_theme_region(SE_REGION_BEZEL_PORTRAIT, win_pos.x,win_pos.y,dims[0],dims[1]);
+  
   float pad_x = scr_h/se_dpi_scale()*0.025;
   // Handle themes where there is no controller region, or when screen overlap is allowed. 
   if(!(result&SE_THEME_DREW_CONTROLLER)&&(!gui_state.block_touchscreen||preview)){
-    se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_BOTH,win_pos.x+pad_x,win_pos.y+pad_x, scr_w/se_dpi_scale()-pad_x*2, scr_h/se_dpi_scale()-pad_x*2, preview,false);
+    float x = win_pos.x+pad_x; 
+    float y = win_pos.y+pad_x; 
+    float w = scr_w/se_dpi_scale()-pad_x*2;
+    float h = scr_h/se_dpi_scale()-pad_x*2;
+    float min_dim_adj=min_dim*0.5;
+  
+    if(h>min_dim_adj){
+      if(portrait)y+=h-min_dim_adj;
+      else y+=(h-min_dim_adj)*0.5;
+      h=min_dim_adj;
+    }
+
+    
+    
+    float adj_w = w;
+    if(adj_w>min_dim_adj)adj_w=min_dim_adj;
+    se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_LEFT,x,y,adj_w*0.5,h, preview,false);
+    se_draw_onscreen_controller(&emu_state, SE_GAMEPAD_RIGHT,x+w-adj_w*0.5,y,adj_w*0.5,h, preview,false);
   }
 }
 static uint8_t gba_byte_read(uint64_t address){return gba_read8_debug(&core.gba,address);}
@@ -3880,7 +3898,7 @@ void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, fl
   int line_w0 = 1; 
   int line_w1 = 3; 
 
-  float dpad_r = size_scalar*0.5;
+  float dpad_r = size_scalar*0.45;
   float button_r = dpad_r*0.39;
 
   enum{max_points = 5};
@@ -5463,6 +5481,8 @@ void se_imgui_theme()
     float b = palette[2*4+2]/255.;
     float a = palette[2*4+3]/255.;
     colors[ImGuiCol_FrameBg]                = (ImVec4){r,g,b,a};
+    colors[ImGuiCol_Border]                 = (ImVec4){r,g,b,a};
+
     colors[ImGuiCol_ScrollbarBg]            = (ImVec4){r,g,b,a};
     colors[ImGuiCol_Button] = (ImVec4){r, g, b, a};
     colors[ImGuiCol_ButtonHovered]          = (ImVec4){r,g,b, a*0.54f};
@@ -5516,39 +5536,18 @@ void se_imgui_theme()
   style->GrabMinSize                       = 10;
   style->WindowBorderSize                  = 0;
   style->ChildBorderSize                   = 0;
-  style->PopupBorderSize                   = 0;
+  style->PopupBorderSize                   = 1;
   style->FrameBorderSize                   = 0;
   style->TabBorderSize                     = 0;
   style->WindowRounding                    = 0;
   style->ChildRounding                     = 4;
-  style->FrameRounding                     = 0;
+  style->FrameRounding                     = 1;
   style->PopupRounding                     = 0;
   style->ScrollbarRounding                 = 9;
   style->GrabRounding                      = 100;
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
   style->ButtonTextAlign = (ImVec2){0.5,0.5};
-
-  if(gui_state.settings.theme == SE_THEME_BLACK){
-    int black_list[]={
-      ImGuiCol_WindowBg,
-      ImGuiCol_ChildBg,
-      ImGuiCol_PopupBg,
-      //ImGuiCol_FrameBg,
-      //ImGuiCol_ScrollbarBg,
-    };
-    colors[ImGuiCol_Button]                 = (ImVec4){0.18f, 0.18f, 0.18f, 1.00f};
-    colors[ImGuiCol_FrameBg]                = (ImVec4){0.15f, 0.15f, 0.15f, 0.9f};
-    colors[ImGuiCol_ScrollbarBg]                = (ImVec4){0.1f, 0.1f, 0.1f, 0.6f};
-
-    for(int i=0;i<sizeof(black_list)/sizeof(black_list[0]);++i){
-      colors[black_list[i]].x=0;
-      colors[black_list[i]].y=0;
-      colors[black_list[i]].z=0;
-    }
-  
-  }
-
 }
 #if defined(EMSCRIPTEN)
   //Setup the offline file system
@@ -5801,7 +5800,7 @@ void se_draw_touch_controls_settings(){
 
   se_text("Scale");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
-  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.0,"Scale: %.2f");
+  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.,"Scale: %.2f");
 
   se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
@@ -6261,6 +6260,13 @@ void se_draw_menu_panel(){
     bool b = gui_state.settings.stretch_to_fit;
     se_checkbox("Stretch Screen to Fit", &b);
     gui_state.settings.stretch_to_fit = b;
+  }
+  {
+    if(gui_state.theme.regions[SE_REGION_NO_BEZEL].active){
+      bool b = gui_state.settings.show_screen_bezel;
+      se_checkbox("Show Screen Bezel", &b);
+      gui_state.settings.show_screen_bezel = b;
+    }
   }
   {
     se_text("NDS Screen Layout");
@@ -7526,6 +7532,7 @@ void se_load_settings(){
       gui_state.settings.draw_progress_indicators=1;
       gui_state.settings.draw_leaderboard_trackers=1;
       gui_state.settings.draw_notifications=1;
+      gui_state.settings.show_screen_bezel=true;
 
       bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
       if(is_mobile){
@@ -7768,14 +7775,35 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
     se_draw_lcd_defer(core.gb.lcd.framebuffer,SB_LCD_W,SB_LCD_H,lx,ly, lw, lh,rotation,false);
   }
 }
-static float se_compute_touchscreen_controls_min_dim(float w, float h){
-  return fmax(w,h)*0.6*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale;
+static float se_compute_touchscreen_controls_min_dim(float w, float h, bool * portrait){
+  float min_dim = fmax(w,h*0.5)*0.6*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale;
+  int nds_layout =0; 
+  //Shrink width if height is too small
+  if(h*2<min_dim)min_dim=h*2;
+
+
+  // Choose portrait or not based on which direction makes the screen largest
+  float lcd_w_p=w, lcd_h_p = h;
+  float lcd_w_l=w, lcd_h_l = h;
+  lcd_h_p-=min_dim*0.5;
+  lcd_w_l-=min_dim;
+
+  se_compute_draw_lcd_rect(&lcd_w_p,&lcd_h_p,&nds_layout);
+  se_compute_draw_lcd_rect(&lcd_w_l,&lcd_h_l,&nds_layout);
+  *portrait = lcd_w_p*lcd_h_p> lcd_w_l*lcd_h_l;
+  
+  return min_dim; 
 }
 static int se_draw_theme_region_tint_partial(int region, float x, float y, float w, float h, float w_ratio, float h_ratio, uint32_t tint){
   se_theme_region_t* r = &gui_state.theme.regions[region];
   if(!r->active)return 0; 
-  if(gui_state.theme.image.id==SG_INVALID_ID)return 0;
   if(w==0||h==0)return 0;
+
+  int lod = log2(fmin(r->w/w,r->h/h))-0.5;
+  if(lod<0)lod =0;
+  else if (lod>=SE_THEME_IMAGE_MIPS)lod = SE_THEME_IMAGE_MIPS-1;
+  if(gui_state.theme.image[lod].id==SG_INVALID_ID)return 0;
+
   float tex_w = gui_state.theme.im_w;
   float tex_h = gui_state.theme.im_h;
 
@@ -7792,8 +7820,8 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
   float native_w = w, native_h = h;
   int nds_layout = gui_state.settings.nds_layout;
   se_compute_draw_lcd_rect(&native_w, &native_h, &nds_layout);
-  float min_dim = se_compute_touchscreen_controls_min_dim(w,h);
-  bool portrait= (w-min_dim)/native_w<(h-min_dim)/native_h;
+  bool portrait = false;
+  float min_dim = se_compute_touchscreen_controls_min_dim(w,h,&portrait);
 
   bool has_gamepad = false;
 
@@ -7930,7 +7958,7 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
       }
 
       int t = 0xff000000; 
-      ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image.id,pmin,pmax,uv0,uv1,tint);
+      ImDrawList_AddImage(igGetWindowDrawList(),(ImTextureID)(uintptr_t)gui_state.theme.image[lod].id,pmin,pmax,uv0,uv1,tint);
       //ImDrawList_AddRect(igGetWindowDrawList(),pmin,pmax,t,0,ImDrawCornerFlags_None, 2);
 
       if((xcp->gamepad_control&gamepad_mask)&&(ycp->gamepad_control&gamepad_mask)){
@@ -7972,7 +8000,7 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
           }
           float min_dim_new = min_dim; 
           if(gc_mode==SE_GAMEPAD_BOTH){
-            if(min_dim>width)min_dim=width;
+            if(min_dim_new>width)min_dim_new=width;
           }else{
             if(width>min_dim*0.5){
               if(gc_mode==SE_GAMEPAD_RIGHT){
@@ -8087,6 +8115,15 @@ static bool se_load_theme_from_image_format_full(uint8_t* im, uint32_t im_w, uin
     region->y=250;
     region->w=2160;
     region->h=3840;
+  }
+  //NoBezel
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_NO_BEZEL];
+    region->x=7;
+    region->y=7;
+    region->w=1;
+    region->h=1;
+    region->active=false;
   }
   //Bezel Landscape
   {
@@ -8221,6 +8258,15 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
     region->w=2021;
     region->h=1802;
   }
+
+  //No Bezel
+  {
+    se_theme_region_t * region = &theme->regions[SE_REGION_NO_BEZEL];
+    region->x=-5;
+    region->y=-5;
+    region->w=-5;
+    region->h=-5;
+  }
   //ABXY
   for(int k = 0; k<4;++k){
     se_theme_region_t * key = &theme->regions[k*2+SE_REGION_KEY_A];
@@ -8283,7 +8329,7 @@ static uint8_t * se_pad_image_to_size(uint8_t* im, uint32_t im_w, uint32_t im_h,
     }
   return new_image;
 } 
-static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, bool invert){
+static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, bool invert, bool blacken){
   if(!im){return false; }
   bool loaded = false; 
   se_custom_theme_t* theme = &gui_state.theme;
@@ -8300,11 +8346,12 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
     return false; 
   }
   if(loaded){
+
     for(int i=0; i<SE_TOTAL_REGIONS;++i){
       se_theme_region_t * region = &theme->regions[i];
       region->active = false; 
       //Determine if region is active
-      if(region->x+region->w>=im_w&&region->y+region->h>=im_h||region->y<0||region->x<0)continue;
+      if(region->x+region->w>=im_w&&region->y+region->h>=im_h||region->y<=0||region->x<=0)continue;
       for(int y=1;y<region->h-1;++y){
         for(int x=1;x<region->w-1;++x){
           int pixel = (x+region->x)+(y+region->y)*im_w;
@@ -8328,68 +8375,68 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
         region->control_points_y[i].gamepad_control=0;
       }
       //Load Control Points
-      if(region->active){
-        for(int dir = 0; dir<2;++dir){
-          int current_point = 0; 
-          se_control_point_t * cp = region->control_points_x;
-          int start_x = region->x;
-          int start_y = region->y-3;
-          int end_x = region->x+region->w;
-          int end_y = region->y+region->h; 
-          int inc_x = 1;
-          int inc_y = 0; 
-          if(dir){
-            cp = region->control_points_y;
-            start_x = region->x-3;
-            start_y = region->y;
-            inc_x = 0;
-            inc_y = 1; 
-          }
-          int curr_x = start_x;
-          int curr_y = start_y; 
-          
+      for(int dir = 0; dir<2;++dir){
+        int current_point = 0; 
+        se_control_point_t * cp = region->control_points_x;
+        int start_x = region->x;
+        int start_y = region->y-3;
+        int end_x = region->x+region->w;
+        int end_y = region->y+region->h; 
+        int inc_x = 1;
+        int inc_y = 0; 
+        if(dir){
+          cp = region->control_points_y;
+          start_x = region->x-3;
+          start_y = region->y;
+          inc_x = 0;
+          inc_y = 1; 
+        }
+        int curr_x = start_x;
+        int curr_y = start_y; 
+        
 
-          cp->start_pixel=dir? curr_y : curr_x;
+        cp->start_pixel=dir? curr_y : curr_x;
 
+        int p = (curr_x+curr_y*im_w)*4;
+        for(int i=-2;i<3;++i){
+          int p2= p+(inc_x*im_w+inc_y)*4*i;
+          if(im[p2+0])cp->resize_control|=im[p2+0];
+          if(im[p2+1])cp->screen_control|=im[p2+1];
+          if(im[p2+2])cp->gamepad_control|=im[p2+2];
+        }
+
+        
+        while(curr_x<end_x&&curr_y<end_y){
           int p = (curr_x+curr_y*im_w)*4;
+          int resize = 0;
+          int screen = 0;
+          int gamepad = 0;
           for(int i=-2;i<3;++i){
             int p2= p+(inc_x*im_w+inc_y)*4*i;
-            if(im[p2+0])cp->resize_control|=im[p2+0];
-            if(im[p2+1])cp->screen_control|=im[p2+1];
-            if(im[p2+2])cp->gamepad_control|=im[p2+2];
+            if(im[p2+0])resize|=im[p2+0];
+            if(im[p2+1])screen|=im[p2+1];
+            if(im[p2+2])gamepad|=im[p2+2];
           }
-
-          
-          while(curr_x<end_x&&curr_y<end_y){
-            int p = (curr_x+curr_y*im_w)*4;
-            int resize = 0;
-            int screen = 0;
-            int gamepad = 0;
-            for(int i=-2;i<3;++i){
-              int p2= p+(inc_x*im_w+inc_y)*4*i;
-              if(im[p2+0])resize|=im[p2+0];
-              if(im[p2+1])screen|=im[p2+1];
-              if(im[p2+2])gamepad|=im[p2+2];
+          if(resize!=cp->resize_control||screen!=cp->screen_control||gamepad!=cp->gamepad_control){
+            ++current_point;
+            if(current_point>=SE_MAX_CONTROL_POINTS){
+              printf("Error: Theme requires more control points than the %d limit for region:%d\n",SE_MAX_CONTROL_POINTS,i);
+              break;
             }
-            if(resize!=cp->resize_control||screen!=cp->screen_control||gamepad!=cp->gamepad_control){
-              ++current_point;
-              if(current_point>=SE_MAX_CONTROL_POINTS){
-                printf("Error: Theme requires more control points than the %d limit for region:%d\n",SE_MAX_CONTROL_POINTS,i);
-                break;
-              }
-              cp++;
-              cp->start_pixel=dir? curr_y : curr_x;
-              cp->screen_control=screen;
-              cp->resize_control=resize;
-              cp->gamepad_control=gamepad; 
-            }
-            curr_x+=inc_x; 
-            curr_y+=inc_y; 
-            cp->end_pixel=dir? curr_y : curr_x;
+            region->active=true;
+            cp++;
+            cp->start_pixel=dir? curr_y : curr_x;
+            cp->screen_control=screen;
+            cp->resize_control=resize;
+            cp->gamepad_control=gamepad; 
           }
+          curr_x+=inc_x; 
+          curr_y+=inc_y; 
+          cp->end_pixel=dir? curr_y : curr_x;
         }
       }
     }
+  
     for(int i=0; i<SE_TOTAL_REGIONS;++i){
       se_theme_region_t * region = &theme->regions[i];
       if(!region->active)continue;
@@ -8430,73 +8477,72 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h, 
         theme->palettes[i*4+2]= 255-theme->palettes[i*4+2];
       }
     }
-    //WebGL and Android don't support mip mapping of NPOT, so pad them to a power of two. 
-    bool free_mip0 = false; 
-    //#if defined(EMSCRIPTEN)
-    int pad_pow2 = 1;
-    while(pad_pow2 < im_w ||pad_pow2<im_h)pad_pow2<<=1;
-    if(pad_pow2!=im_w ||pad_pow2!=im_h){
-      uint8_t * old = im;
-      im = se_pad_image_to_size(im,im_w,im_h,pad_pow2,pad_pow2);
-      printf("Padding npot texture from {%d, %d} -> {%d %d}\n",im_w,im_h,pad_pow2,pad_pow2);
-      im_w = pad_pow2;
-      im_h = pad_pow2; 
-      free_mip0 = true; 
+    if(blacken){
+      int thresh = 40;
+      for(int p=0;p<im_w*im_h;++p){
+        if(im[(p*4)+0]<thresh&&im[(p*4)+1]<thresh&&im[(p*4)+0]<thresh){
+          im[(p*4)+0]=0;
+          im[(p*4)+1]=0;
+          im[(p*4)+2]=0;
+        }
+      }
+      for(int i=0;i<sizeof(theme->palettes)/4;++i){
+        if(theme->palettes[(i*4)+0]<thresh&&theme->palettes[(i*4)+1]<thresh&&theme->palettes[(i*4)+0]<thresh){
+          theme->palettes[(i*4)+0]=0;
+          theme->palettes[(i*4)+1]=0;
+          theme->palettes[(i*4)+2]=0;
+        }
+      }
     }
-    //#endif 
+  
     theme->im_h=im_h;
     theme->im_w=im_w;
-    sg_image_data im_data={0};
   
-    im_data.subimage[0][0].ptr = im;
-    im_data.subimage[0][0].size = im_w*im_h*4;
-    int max_dim = im_h>im_w? im_h:im_w;
     int num_mips = 0;
-    while(max_dim>=(1<<num_mips))++num_mips;
-
-    for(int m = 1; m<num_mips;++m){
+    uint8_t* data2 = im;
+    for(int m = 0; m<SE_THEME_IMAGE_MIPS;++m){
       int mip_w = (im_w)>>(m);
       int mip_h = (im_h)>>(m);
-      im_data.subimage[0][m].size =mip_h*mip_w*4;
-      uint8_t* data =(uint8_t*)malloc(im_data.subimage[0][m].size);
-      im_data.subimage[0][m].ptr = data;
-      uint8_t* data2 = (uint8_t*)im_data.subimage[0][m-1].ptr;
-      printf("Gen Mip-layer %d %d\n",mip_w,mip_h);
-      for(int y=0;y<mip_h;++y){
-        for(int x=0;x<mip_w;++x){
-          for(int c = 0; c<4;++c){
-            int parent_w = im_w>>(m-1);
-            data[(x+y*mip_w)*4+c]=(data2[((x*2+0)+(y*2+0)*parent_w)*4+c]+
-                                  data2[((x*2+1)+(y*2+0)*parent_w)*4+c]+
-                                  data2[((x*2+0)+(y*2+1)*parent_w)*4+c]+
-                                  data2[((x*2+1)+(y*2+1)*parent_w)*4+c])/4;
-            
+      uint8_t* data = data2;
+      if(m!=0){
+        data =(uint8_t*)malloc(mip_w*mip_h*4);
+        printf("Gen Mip-layer %d %d\n",mip_w,mip_h);
+        for(int y=0;y<mip_h;++y){
+          for(int x=0;x<mip_w;++x){
+            for(int c = 0; c<4;++c){
+              int parent_w = im_w>>(m-1);
+              data[(x+y*mip_w)*4+c]=(data2[((x*2+0)+(y*2+0)*parent_w)*4+c]+
+                                    data2[((x*2+1)+(y*2+0)*parent_w)*4+c]+
+                                    data2[((x*2+0)+(y*2+1)*parent_w)*4+c]+
+                                    data2[((x*2+1)+(y*2+1)*parent_w)*4+c])/4;
+              
+            }
           }
         }
       }
-    } 
-    //#endif
-    sg_image_desc desc={
-      .type=              SG_IMAGETYPE_2D,
-      .render_target=     false,
-      .width=             im_w,
-      .height=            im_h,
-      .num_slices=        1,
-      .num_mipmaps=       num_mips,
-      .usage=             SG_USAGE_IMMUTABLE,
-      .pixel_format=      SG_PIXELFORMAT_RGBA8,
-      .sample_count=      1,
-      .min_filter=        num_mips>1 ? SG_FILTER_LINEAR_MIPMAP_LINEAR : SG_FILTER_LINEAR,
-      .mag_filter=        SG_FILTER_LINEAR,
-      .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
-      .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
-      .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
-      .data=              im_data,
-    };
-    gui_state.theme.image=  sg_make_image(&desc);
-    if(free_mip0)free((uint8_t*)im_data.subimage[0][0].ptr);
-    for(int m = 1; m<num_mips;++m){
-      free((uint8_t*)im_data.subimage[0][m].ptr);
+      sg_image_data im_data={0};
+      im_data.subimage[0][0].ptr =data;
+      im_data.subimage[0][0].size =mip_h*mip_w*4;
+      sg_image_desc desc={
+        .type=              SG_IMAGETYPE_2D,
+        .render_target=     false,
+        .width=             mip_w,
+        .height=            mip_h,
+        .num_slices=        1,
+        .num_mipmaps=       0,
+        .usage=             SG_USAGE_IMMUTABLE,
+        .pixel_format=      SG_PIXELFORMAT_RGBA8,
+        .sample_count=      1,
+        .min_filter=        SG_FILTER_LINEAR,
+        .mag_filter=        SG_FILTER_LINEAR,
+        .wrap_u=            SG_WRAP_CLAMP_TO_EDGE,
+        .wrap_v=            SG_WRAP_CLAMP_TO_EDGE,
+        .border_color=      SG_BORDERCOLOR_OPAQUE_BLACK,
+        .data=              im_data,
+      };
+      gui_state.theme.image[m]=  sg_make_image(&desc);
+      if(m>1)free((uint8_t*)data2);
+      data2=data;
     }
   }
 
@@ -8510,21 +8556,21 @@ static bool se_load_theme_from_file(const char * filename){
     printf("Failed to open theme image %s\n",filename);
     return false;
   }
-  bool ret = se_load_theme_from_image(imdata, im_w, im_h,false);
+  bool ret = se_load_theme_from_image(imdata, im_w, im_h,false,false);
   stbi_image_free(imdata);
   if(ret){
     printf("Successfully loaded theme: %s\n",filename);
   }
   return ret; 
 }
-static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert){
+static bool se_load_theme_from_memory(const uint8_t* data, int64_t size, bool invert, bool blacken){
   int im_w, im_h, im_c; 
   uint8_t *imdata = stbi_load_from_memory((const stbi_uc*)data,size, &im_w, &im_h, &im_c, 4);
   if(!imdata){
     printf("Failed to open theme from memory\n");
     return false;
   }
-  bool ret = se_load_theme_from_image(imdata, im_w, im_h,invert);
+  bool ret = se_load_theme_from_image(imdata, im_w, im_h,invert,blacken);
   stbi_image_free(imdata);
   return ret; 
 }
@@ -8534,7 +8580,7 @@ static bool se_reload_theme(){
   }else{
     uint64_t size; 
     const uint8_t* theme_data = se_get_resource(SE_THEME_DEFAULT,&size);
-    return se_load_theme_from_memory(theme_data,size, gui_state.settings.theme==SE_THEME_LIGHT);
+    return se_load_theme_from_memory(theme_data,size, gui_state.settings.theme==SE_THEME_LIGHT,gui_state.settings.theme==SE_THEME_BLACK);
   }
   return false;
 }
