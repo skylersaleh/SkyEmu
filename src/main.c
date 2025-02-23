@@ -6052,6 +6052,7 @@ void se_draw_menu_panel(){
       static char username[256] = {0};
       static char password[256] = {0};
       bool pending_login = retro_achievements_is_pending_login();
+      igPushItemWidth(-1);
       se_text("Username");
       igSameLine(win_w - 150, 0);
       if (pending_login)
@@ -6067,6 +6068,7 @@ void se_draw_menu_panel(){
       enter |= igInputText("##Password", password, sizeof(password),
                         ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                         NULL, NULL);
+      igPopItemWidth();
       const char* error_message = retro_achievements_get_login_error();
       if (error_message) {
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.0f, 0.0f, 0.0f, 1.0f});
@@ -7267,9 +7269,10 @@ static void frame(void) {
       screen_width = width;
       igPopStyleColor(1);
     }
+    bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND && !draw_sidebars_over_screen&& (gui_state.overlay_open||!emu_state.rom_loaded);
     gui_state.block_touchscreen = draw_sidebars_over_screen;
     // The menubar shouldn't resize the screen when it autohides as it re-layouts the controls. 
-    if(gui_state.settings.always_show_menubar==false&&screen_width==width)menu_height=0;
+    if(gui_state.settings.always_show_menubar==false&&screen_width==width&&draw_sidebars_over_screen==false&&draw_click_region==false)menu_height=0;
     igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
     igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
     igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -7310,7 +7313,6 @@ static void frame(void) {
     igPopStyleVar(2);
     igPopStyleColor(1);
     igEnd();
-    bool draw_click_region = emu_state.run_mode!=SB_MODE_RUN&&emu_state.run_mode!=SB_MODE_REWIND && !draw_sidebars_over_screen&& (gui_state.overlay_open||!emu_state.rom_loaded);
     if(draw_click_region){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){screen_width, height-menu_height*se_dpi_scale()}, ImGuiCond_Always);
