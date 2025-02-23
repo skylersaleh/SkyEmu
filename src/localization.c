@@ -29,6 +29,7 @@
 // - "NDS Screen Layout"
 // - "Never Overlap Screen"
 // - "Button Labels"
+// - "Show Screen Bezel"
 
 // Strings removed in v4:
 // - "Controller"
