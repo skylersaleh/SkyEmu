@@ -8375,7 +8375,7 @@ static void headless_mode(){
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1rom(JNIEnv *env, jobject thiz, jstring filePath) {
     const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
     gui_state.ran_from_launcher=true;
-    gui_state.settings.save_to_path = true;
+    gui_state.settings.save_to_path = false;
     se_load_rom(nativeFilePath);
     (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
 }
