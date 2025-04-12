@@ -585,7 +585,7 @@ if(USE_GCC OR USE_CLANG)
   endif()
 
   if(APPLE)
-    list(APPEND EXTRA_LDFLAGS "-Wl,-undefined,error")
+    # SkyEmu: This warning is deprecated list(APPEND EXTRA_LDFLAGS "-Wl,-undefined,error")
     list(APPEND EXTRA_LDFLAGS "-Wl,-compatibility_version,${DYLIB_COMPATIBILITY_VERSION}")
     list(APPEND EXTRA_LDFLAGS "-Wl,-current_version,${DYLIB_CURRENT_VERSION}")
   elseif(NOT OPENBSD)
