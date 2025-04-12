@@ -8265,10 +8265,10 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   //No Bezel
   {
     se_theme_region_t * region = &theme->regions[SE_REGION_NO_BEZEL];
-    region->x=-5;
-    region->y=-5;
-    region->w=-5;
-    region->h=-5;
+    region->x=879;
+    region->y=7;
+    region->w=127;
+    region->h=170;
   }
   //ABXY
   for(int k = 0; k<4;++k){
