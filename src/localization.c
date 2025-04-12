@@ -870,6 +870,7 @@ static char* nl_localization_array[]={
     "Cheat Code Path", "Cheat Code Pad",
     NULL,NULL
 };
+
 // Danish Translation by https://github.com/nadiaholmquist
 static char* da_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Åbn spil",
@@ -957,7 +958,6 @@ static char* da_localization_array[]={
     ICON_FK_DOWNLOAD " Export Save", ICON_FK_DOWNLOAD  " Eksporter gemt spil",
     "No recently played games", "Ingen nyligt spillede spil",
     ICON_FK_GAMEPAD " Controllers", ICON_FK_GAMEPAD " Controllere",
-    "Controller", "Controller",
     "No Controller", "Ingen controller",
     "Reset Default Controller Bindings", "Nulstil til standard-controllerknapper",
     "Rumble Supported", "Vibration understøttet",
@@ -978,8 +978,6 @@ static char* da_localization_array[]={
     "Force Integer Scaling", "Tving heltalsskalering",
     "Stretch Screen to Fit", "Stræk skærmen til at udfylde",
     "Game Boy Color Palette", "Game Boy Color-palet",
-    "GB Palette %d", "GB-palet %d",
-    "Reset Palette to Defaults", "Nulstil palet til standard",
     ICON_FK_KEYBOARD_O " Keybinds", ICON_FK_KEYBOARD_O " Tastaturbindinger",
     "Reset Default Keybinds", "Nulstil til standard-tastaturbindinger",
     ICON_FK_WRENCH " Advanced",ICON_FK_WRENCH " Avanceret",
@@ -1029,7 +1027,7 @@ static char* da_localization_array[]={
     "Theme", "Tema",
     "Solar Sensor", "Solsensor",
     "Brightness: %.2f", "Lysstyrke: %.2f",
-    "Dark\0Light\0Black\0", "Mørkt\0Lyst\0Sort\0",
+    "Dark\0Light\0Black\0Custom\0", "Mørkt\0Lyst\0Sort\0Brugerdefineret\0",
     "Always Show Menu/Nav Bar", "Vis altid menu/navigeringslinje",
     "Language", "Sprog",
     "SPACE", "MELLEMRUM",
@@ -1061,7 +1059,6 @@ static char* da_localization_array[]={
     "Save File/State Path","Sti til gem/snapshots",
     "BIOS/Firmware Path","Sti til BIOS/firmware",
     "Create new save files in Save Path","Opret nye gemt spil-filer under gemte-stien",
-    ICON_FK_CROSSHAIRS " Located BIOS/Firmware Files",ICON_FK_CROSSHAIRS " Fundne BIOS/firmware-filer",
     "Force GB games to run in DMG mode","Gennemtving GB-spil at køre i DMG-tilstand",
     "Enable HTTP Control Server","Aktiver HTTP-kontrolserver",
     "Server Port","Serverport",
@@ -1074,8 +1071,33 @@ static char* da_localization_array[]={
     ICON_FK_KEY " Action Replay Codes", ICON_FK_KEY " Action Replay-koder",
     "Create new files in paths", "Opret nye filer under stierne",
     "Cheat Code Path", "Snydekode-sti",
+    "Disabled in Hardcore Mode", "Deaktiveret i hardcore-tilstand",
+    "Rewind", "Spol tilbage",
+    "Slow", "Langsom",
+    "Fast Forward", "Spol frem",
+    "Save File", "Gemt spil-fil",
+    ICON_FK_CROSSHAIRS " Located files", ICON_FK_CROSSHAIRS "Filer fundet",
+    "GUI Scale", "GUI-skalering",
+    "Auto\0Vertical\0Horizontal\0Hybrid Large Top\0Hybrid Large Bottom\0Vertical Large Top\0Vertical Large Bottom\0Horizontal Large Top\0Horizontal Large Bottom\0\0", "Auto\0Lodret\0Vandret\0Hybrid: øverst stor\0Hybrid: nederst stor\0Lodret: øverst stor\0Lodret: nederst stor\0Vandret: øverst stor\0Vandret: nederst stor\0\0",
+    "NDS Screen Layout", "NDS-skærmlayout",
+    "Never Overlap Screen", "Overlap aldrig skærmen",
+    "Button Labels", "Knapetiketter",
+    "Show Screen Bezel", "Vis skærmkanter",
+    "Theme Path", "Tema-sti",
+    "Custom Font", "Brugerdef. skrifttype",
+    "Font Scale", "Skrifttype-skalering",
+    "Custom Theme Name", "Navn på brugerdefineret tema",
+    "Custom Theme Author", "Brugerdefineret tema skabt af",
+    "Scale: %.2fx", "Skala: %.2fx",
+    ICON_FK_CLOUD " Google Drive", ICON_FK_CLOUD " Google Drev",
+    ICON_FK_SIGN_IN " Login", ICON_FK_SIGN_IN " Log ind",
+    ICON_FK_SIGN_OUT " Logout", ICON_FK_SIGN_OUT " Log ud",
+    ICON_FK_USER_PLUS " Register", ICON_FK_USER_PLUS " Opret bruger",
+    "Username", "Brugernavn",
+    "Password", "Adgangskode",
     NULL,NULL
 };
+
 // German translation https://github.com/ladystarbreeze
 static char* de_localization_array[]={
     ICON_FK_FILE_O " Load Game", ICON_FK_FILE_O " Lade Spiel",
