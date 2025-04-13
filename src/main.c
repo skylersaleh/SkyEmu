@@ -3141,7 +3141,7 @@ static void se_draw_debug_menu(){
             debug_menu_open = false;
           }
           char tmp_str[256];
-          snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+          snprintf(tmp_str,sizeof(tmp_str),se_localize_and_cache("Show/Hide %s Panel"),se_localize_and_cache(desc->label));
           se_tooltip(tmp_str);
           igSeparator();
           desc++;
@@ -3162,7 +3162,7 @@ static void se_draw_debug_menu(){
       }
       igSameLine(0,1);
       char tmp_str[256];
-      snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+      snprintf(tmp_str,sizeof(tmp_str),se_localize_and_cache("Show/Hide %s Panel"),se_localize_and_cache(desc->label));
       se_tooltip(tmp_str);
       desc++;
       igPopID();
@@ -8265,10 +8265,10 @@ static bool se_load_theme_from_image_format_mini(uint8_t* im, uint32_t im_w, uin
   //No Bezel
   {
     se_theme_region_t * region = &theme->regions[SE_REGION_NO_BEZEL];
-    region->x=-5;
-    region->y=-5;
-    region->w=-5;
-    region->h=-5;
+    region->x=879;
+    region->y=7;
+    region->w=127;
+    region->h=170;
   }
   //ABXY
   for(int k = 0; k<4;++k){
