@@ -6072,7 +6072,7 @@ void se_draw_menu_panel(){
       const char* error_message = retro_achievements_get_login_error();
       if (error_message) {
         igPushStyleColorVec4(ImGuiCol_Text, (ImVec4){1.0f, 0.0f, 0.0f, 1.0f});
-        se_text("%s", error_message);
+        se_text("%s", se_localize_and_cache(error_message));
         igPopStyleColor(1);
       }
       if (se_button(ICON_FK_SIGN_IN " Login", (ImVec2){0, 0}) || enter)
