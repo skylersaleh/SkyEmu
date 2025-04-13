@@ -7008,11 +7008,11 @@ static void frame(void) {
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
     float menu_bar_y = igGetCursorPosY();
-    se_panel_toggle(SE_REGION_MENU,&gui_state.sidebar_open,ICON_FK_BARS,"Show/Hide Menu Panel");
+    se_panel_toggle(SE_REGION_MENU,&gui_state.sidebar_open,ICON_FK_BARS,se_localize_and_cache("Show/Hide Menu Panel"));
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
     if(retro_achievements_has_game_loaded()){
-      se_panel_toggle(SE_REGION_BLANK,&gui_state.ra_sidebar_open,ICON_FK_TROPHY,"Show/Hide RetroAchievements Panel");
+      se_panel_toggle(SE_REGION_BLANK,&gui_state.ra_sidebar_open,ICON_FK_TROPHY,se_localize_and_cache("Show/Hide RetroAchievements Panel"));
     }
 #endif
 

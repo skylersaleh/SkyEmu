@@ -1556,6 +1556,8 @@ static char* it_localization_array[]={
   "Unsupported", "Non supportato",
   "Unlocked", "Sbloccato",
   "Locked", "Bloccato",
+  "Show/Hide Menu Panel", "Mostra/Nascondi Pannello Menu",
+  "Show/Hide RetroAchievements Panel", "Mostra/Nascondi Pannello RetroAchievements",
   NULL,NULL
 };
 
