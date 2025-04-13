@@ -3141,7 +3141,7 @@ static void se_draw_debug_menu(){
             debug_menu_open = false;
           }
           char tmp_str[256];
-          snprintf(tmp_str,sizeof(tmp_str),"Show/Hide %s Panel\n",desc->label);
+          snprintf(tmp_str,sizeof(tmp_str),se_localize_and_cache("Show/Hide %s Panel"),se_localize_and_cache(desc->label));
           se_tooltip(tmp_str);
           igSeparator();
           desc++;
