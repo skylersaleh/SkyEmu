@@ -7,7 +7,7 @@ jobs:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1
       - name: Setup emsdk                 
-        uses: mymindstorm/setup-emsdk@v10
+        uses: mymindstorm/setup-emsdk@v14
         with:
           version: 2.0.21
           actions-cache-folder: 'emsdk-cache'
