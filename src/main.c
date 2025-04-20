@@ -3786,7 +3786,7 @@ bool se_handle_keybind_settings(int keybind_type, se_keybind_state_t * state){
     if(state->bind_being_set==k)active=true;
     if(active)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
     const char* button_label = "Not bound"; 
-    char buff[32];
+    char buff[128];
     if(state->bound_id[k]!=-1){
       switch(keybind_type){
         case SE_BIND_KEYBOARD: button_label=se_keycode_to_string(state->bound_id[k]);break;
