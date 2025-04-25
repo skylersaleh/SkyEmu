@@ -9,6 +9,10 @@
 #define SOKOL_GLES3
 #elif defined(__APPLE__)
 #error "Must use sokol.m on macOS"
+#elif defined(SE_FORCE_GLES2)
+#define SOKOL_GLES2
+#elif defined(SE_FORCE_GLES3)
+#define SOKOL_GLES3
 #else
 #define SOKOL_GLCORE33
 #endif

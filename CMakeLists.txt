@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15) # Needed to set MSVC Runtime type
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 
 if(APPLE AND (NOT IOS) AND (NOT ANDROID))
@@ -14,6 +15,9 @@ else()
   project(SkyEmu C CXX)
 endif()
 
+if(UNIX AND NOT APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"))
+    set(SE_PLATFORM_ARM64_LINUX 1)
+endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
@@ -27,6 +31,9 @@ option(ENABLE_RETRO_ACHIEVEMENTS "Enable Retro Achievements" ON)
 option(USE_SYSTEM_CURL "Use the system's libcurl package" OFF)
 option(USE_SYSTEM_OPENSSL "Use the system's OpenSSL package" OFF)
 option(USE_SYSTEM_SDL2 "Use the system's SDL2 package" OFF)
+
+option(USE_GLES3 "Use OpenGLES3" OFF)
+option(USE_GLES2 "Use OpenGLES2" OFF)
 
 if (EMSCRIPTEN)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
@@ -49,7 +56,7 @@ if (MSVC)
     # No secure development lifecycle features
     # Exception handling model: Catch C++ exceptions only, assume that "extern C" functions will never throw a C++ exception.
     # Disable all forms of MSVC debug iterator checking in new and old Visual Studios.
-    # Causes the application to use the multithread, static version of the run-time library. 
+    # Causes the application to use the multithread, static version of the run-time library.
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 ")
 
@@ -64,9 +71,9 @@ if (NOT EMSCRIPTEN)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -O3 ")
   set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -g -O3 ")
   set(UNICODE_GUI 1)
-else () 
+else ()
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O3 -DNDEBUG")
-  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O3 -DNDEBUG") 
+  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
 endif ()
 if(IOS)
     set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum iOS deployment version" FORCE)
@@ -79,11 +86,17 @@ if(WIN32)
 endif()
 if(ANDROID)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}")
-  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS}") 
+  set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS}")
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 if(NOT IOS)
-  find_package(OpenGL)
+  if(SE_PLATFORM_ARM64_LINUX AND USE_GLES3)
+    # For Raspberry Pi, use OpenGLES
+    find_package(OpenGLES REQUIRED)
+  else()
+    # For other platforms, use regular OpenGL
+    find_package(OpenGL)
+  endif()
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -93,6 +106,15 @@ if ((CMAKE_SYSTEM_NAME STREQUAL Linux) AND NOT EMSCRIPTEN AND NOT ANDROID)
     find_package(Threads REQUIRED)
     find_package(ALSA REQUIRED)
     set(SE_PLATFORM_LINUX TRUE)
+
+    # GLES3 support on the Raspberry Pi
+    if (SE_PLATFORM_ARM64_LINUX AND USE_GLES3)
+        set(SE_FORCE_GLES3 TRUE)
+        add_definitions(-DSE_FORCE_GLES3=1)
+    elseif (SE_PLATFORM_ARM64_LINUX AND USE_GLES2)
+        set(SE_FORCE_GLES2 TRUE)
+        add_definitions(-DSE_FORCE_GLES2=1)
+    endif()
     add_definitions(-DSE_PLATFORM_LINUX=1)
 endif()
 if (UNIX AND NOT APPLE AND NOT SE_PLATFORM_LINUX AND NOT EMSCRIPTEN AND NOT ANDROID)
@@ -148,8 +170,8 @@ endif()
 # TinyFileDialogs
 if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT SE_PLATFORM_LINUX) AND (NOT SE_PLATFORM_FREEBSD))
     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
-    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
-    add_library(tinyfd STATIC 
+    set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS")
+    add_library(tinyfd STATIC
         src/tinyfiledialogs/tinyfiledialogs.h
         src/tinyfiledialogs/tinyfiledialogs.c
     )
@@ -163,13 +185,13 @@ if(NOT EMSCRIPTEN)
 endif()
 
 #=== LIBRARY: cimgui + Dear ImGui
-add_library(cimgui STATIC 
-    src/cimgui/cimgui.cpp 
-    src/cimgui/cimgui.h 
+add_library(cimgui STATIC
+    src/cimgui/cimgui.cpp
+    src/cimgui/cimgui.h
     src/cimgui/imgui/imgui.cpp
     src/cimgui/imgui/imgui.h
-    src/cimgui/imgui/imgui_widgets.cpp 
-    src/cimgui/imgui/imgui_draw.cpp 
+    src/cimgui/imgui/imgui_widgets.cpp
+    src/cimgui/imgui/imgui_draw.cpp
     src/cimgui/imgui/imgui_tables.cpp
     src/cimgui/imgui/imgui_demo.cpp
     )
@@ -186,12 +208,12 @@ if(USE_SDL)
     set(SDL_SHARED OFF CACHE BOOL "Build Shared" FORCE)
     set(SDL_STATIC ON CACHE BOOL "Build Static" FORCE)
     set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "USE LIBC" FORCE)
-    set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)    
+    set(SDL_LIBC ON CACHE BOOL "USE LIBC" FORCE)
     set(SDL_STATIC_PIC ON CACHE BOOL "Build Static PIC" FORCE)
     # Allow some projects to be built conditionally.
     set(SDL2_DISABLE_SDL2MAIN  ON CACHE BOOL "Disable building/installation of SDL2main" FORCE)
     set(SDL2_DISABLE_INSTALL    ON CACHE BOOL "Disable installation of SDL2" FORCE)
-    set(SDL2_DISABLE_UNINSTALL  ON CACHE BOOL "Disable uninstallation of SDL2" FORCE)    
+    set(SDL2_DISABLE_UNINSTALL  ON CACHE BOOL "Disable uninstallation of SDL2" FORCE)
 
     set(SDL_LIBC               ON CACHE BOOL "Use the system C library" ${OPT_DEF_LIBC} FORCE)
     set(SDL_ATOMIC OFF CACHE BOOL "SDL Video support" FORCE)
@@ -199,7 +221,7 @@ if(USE_SDL)
     set(SDL_FILE OFF CACHE BOOL "SDL Video support" FORCE)
     set(SDL_THREAD OFF CACHE BOOL "SDL Video support" FORCE)
     set(SDL_RENDER OFF CACHE BOOL "SDL Video support" FORCE)
-    set(SDL_LOCALE OFF CACHE BOOL "SDL Video support" FORCE)    
+    set(SDL_LOCALE OFF CACHE BOOL "SDL Video support" FORCE)
 
     add_definitions(-DSDL_LEAN_AND_MEAN=1)
     add_subdirectory(src/SDL2)
@@ -252,7 +274,19 @@ else()
     set_property(TARGET sokol PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
         target_include_directories(sokol PRIVATE "${X11_INCLUDE_DIR}")
+        if(SE_FORCE_GLES2)
+            find_package(OpenGLES COMPONENTS V2 REQUIRED)
+            if(OpenGLES_V2_FOUND)
+                target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGLES::OpenGLESv2 EGL dl)
+            endif()
+        elseif(SE_FORCE_GLES3)
+            find_package(OpenGLES COMPONENTS V3 REQUIRED)
+            if(OpenGLES_V3_FOUND)
+                target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGLES::OpenGLESv3 EGL dl)
+            endif()
+        else()
         target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
+        endif()
     endif()
     if (CMAKE_SYSTEM_NAME STREQUAL Linux)
         target_link_libraries(sokol INTERFACE m)
@@ -471,4 +505,5 @@ endif()
 
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
-  BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")
+  BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications"
+)
