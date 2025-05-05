@@ -2,11 +2,10 @@
 #include "sokol_app.h"
 #include <stdio.h>
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 
-@interface SelectorDelegate : UIViewController
 
-@end
-@interface SelectorDelegate () <UIDocumentPickerDelegate>
+@interface SelectorDelegate : NSObject <UIDocumentPickerDelegate>
 
 @end
 
@@ -15,7 +14,7 @@
 extern void se_file_browser_accept(const char *filename);
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url {
-    if (controller.documentPickerMode == UIDocumentPickerModeImport) {
+    if (controller.documentPickerMode == UIDocumentPickerModeImport||controller.documentPickerMode== UIDocumentPickerModeOpen) {
         /*NSString *alertMessage = [NSString stringWithFormat:@"Successfully imported %@", [url lastPathComponent]];
         dispatch_async(dispatch_get_main_queue(), ^{
             UIAlertController *alertController = [UIAlertController
@@ -44,6 +43,11 @@ extern void se_file_browser_accept(const char *filename);
         se_file_browser_accept([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
       }
     }
+}
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)array {
+  for(NSURL* url in array){
+    [self documentPicker:controller didPickDocumentAtURL:url];
+  }
 }
 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
@@ -93,14 +97,16 @@ void se_ios_set_documents_working_directory(){
   documentsPath = [documentsPath stringByAppendingString:@"/"];
   chdir([documentsPath cStringUsingEncoding:NSUTF8StringEncoding]);
 }
+static SelectorDelegate * sel_del = nil;
 void se_ios_open_file_picker( int num_extensions, const char ** extensions){
+  if(sel_del ==nil)sel_del =[[SelectorDelegate alloc]init];
   printf("Open iOS file picker");
     UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.item"]
         inMode:UIDocumentPickerModeImport];
 
     UIViewController * view = (UIViewController*)sapp_ios_get_view_ctrl();
     documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
-  documentPicker.delegate = [SelectorDelegate alloc];
+  documentPicker.delegate = sel_del;
     [view presentViewController:documentPicker animated:YES completion:nil];
 }
 void se_ios_get_safe_ui_padding(float *top, float* bottom,float* left, float *right){
@@ -116,31 +122,41 @@ void se_ios_get_safe_ui_padding(float *top, float* bottom,float* left, float *ri
     if(right)*right = window.safeAreaInsets.right;
   }
 }
-UIViewController* webViewController = nil;
+UIViewController* get_web_view_controller(){
+  static UIViewController* wvc = nil;
+  if(wvc==nil)wvc = [[UIViewController alloc] init];
+  return wvc;
+}
 void se_ios_open_modal(const char * url){
-  NSDictionary *dictionary = @{@"UserAgent": @"SkyEmu Browser"};
-  [[NSUserDefaults standardUserDefaults] registerDefaults:dictionary];
-  [[NSUserDefaults standardUserDefaults] synchronize];
+  //Make a URL here so that the block captures a copy of the variable instead of a copy of the pointer
+  NSURL* nsurl = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
   
   [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
-    UIViewController* view = (UIViewController*)sapp_ios_get_view_ctrl();
-    UIWebView* webView = [[UIWebView alloc] initWithFrame:view.view.frame];
-        
-    // Create a UIViewController to present modally
-    webViewController = [[UIViewController alloc] init];
-    [webViewController.view addSubview:webView];
-        
-    // Load a URL
-    NSURL* nsurl = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
-    NSURLRequest* request = [NSURLRequest requestWithURL:nsurl];
-    [webView loadRequest:request];
-        
-    // Present the UIViewController modally
-    [view presentViewController:webViewController animated:YES completion:nil];
+   UIViewController *rootViewController = (UIViewController *)sapp_ios_get_view_ctrl();
+       
+       // Create a WKWebView configuration
+       WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+       WKWebView *webView = [[WKWebView alloc] initWithFrame:rootViewController.view.bounds configuration:configuration];
+       webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+
+       // Create a UIViewController to present modally
+       UIViewController *webViewController =get_web_view_controller();
+       webViewController.view.backgroundColor = [UIColor whiteColor]; // Optional
+       [webViewController.view addSubview:webView];
+       
+       // Load the request
+       NSURLRequest *request = [NSURLRequest requestWithURL:nsurl
+                                                cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                            timeoutInterval:30.0];
+
+       [webView loadRequest:request];
+
+       // Present the controller modally
+       [rootViewController presentViewController:webViewController animated:YES completion:nil];
    }];
 }
 void se_ios_close_modal(){
   [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
-    [webViewController dismissViewControllerAnimated:YES completion:nil];
+    [get_web_view_controller() dismissViewControllerAnimated:YES completion:nil];
   }];
 }
