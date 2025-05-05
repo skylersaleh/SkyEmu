@@ -5800,7 +5800,7 @@ void se_draw_touch_controls_settings(){
 
   se_text("Scale");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
-  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.,"Scale: %.2f");
+  se_slider_float("##TouchControlsScale",&gui_state.settings.touch_controls_scale,0.3,1.2,"Scale: %.2f");
 
   se_text("Opacity");igSameLine(SE_FIELD_INDENT,0);
   se_slider_float("##TouchControlsOpacity",&gui_state.settings.touch_controls_opacity,0,1.0,"Opacity: %.2f");
