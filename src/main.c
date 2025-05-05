@@ -4673,7 +4673,7 @@ void se_download_emscripten_file(const char * path){
     const a = document.createElement('a');
     a.style = 'display:none';
     document.body.appendChild(a);
-    const view = new Uint8Array(Module.HEAPU8.buffer, data, data_size);
+    const view = new Uint8Array(HEAPU8.buffer, data, data_size);
     const blob = new Blob([view], {
         type: 'octet/stream'
     });
