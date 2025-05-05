@@ -6599,7 +6599,9 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
   *mime_type = "text/html";
   printf("Got HCS Cmd: %s\n",cmd);
   const char* str_result = NULL;
-  if(strcmp(cmd,"/ping")==0)str_result="pong";
+  if(gui_state.settings.hardcore_mode&& gui_state.ra_logged_in){
+    str_result="Error: The HTTP Control Server is unavailable in Hardcore Mode";
+  }else if(strcmp(cmd,"/ping")==0)str_result="pong";
   else if(strcmp(cmd,"/load_rom")==0){
     while(*params){
       if(strcmp(params[0],"path")==0)se_load_rom(params[1]);
@@ -8767,6 +8769,8 @@ static void event(const sapp_event* ev) {
   }
 }
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
+  // AR Cheats are not allowed to be ran in Hardcore mode
+  if(gui_state.settings.hardcore_mode&& gui_state.ra_logged_in)return false; 
   if(emu_state.system ==SYSTEM_GBA)return gba_run_ar_cheat(&core.gba, buffer, size);
   if(emu_state.system ==SYSTEM_GB)return sb_run_ar_cheat(&core.gb, buffer, size);
   if(emu_state.system ==SYSTEM_NDS)return nds_run_ar_cheat(&core.nds, buffer, size);
