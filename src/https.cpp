@@ -116,7 +116,7 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
         var xhr = new XMLHttpRequest();
         var method = UTF8ToString(type);
         var url_str = UTF8ToString(url);
-        var body_arr = new Uint8Array(Module.HEAPU8.buffer, body, body_size);
+        var body_arr = new Uint8Array(HEAPU8.buffer, body, body_size);
         xhr.open(method, url_str);
         xhr.responseType = "arraybuffer";
         xhr.timeout = 5000; // set timeout to 5 seconds
@@ -139,7 +139,7 @@ EM_JS(void, em_https_request, (const char* type, const char* url, const char* bo
                 var response_size = xhr.response.byteLength;
                 var response_buffer = Module._malloc(response_size);
                 var response_view = new Uint8Array(xhr.response);
-                Module.HEAPU8.set(response_view, response_buffer);
+                HEAPU8.set(response_view, response_buffer);
                 Module.ccall('em_https_request_callback_wrapper', 'void', ['number', 'number', 'number', 'number'], [callback, response_buffer, response_size, do_cache ? url : 0]);
                 Module._free(response_buffer);
             } else {
