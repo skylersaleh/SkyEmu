@@ -7779,17 +7779,18 @@ static void se_draw_lcd_in_rect(float lcd_render_x, float lcd_render_y, float lc
   }
 }
 static float se_compute_touchscreen_controls_min_dim(float w, float h, bool * portrait){
-  float min_dim = fmax(w,h*0.5)*0.6*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale;
+  float min_dim = fmax(w,h)*0.6*gui_state.settings.touch_controls_scale*gui_state.settings.touch_controls_scale;
   int nds_layout =0; 
   //Shrink width if height is too small
   if(h*2<min_dim)min_dim=h*2;
-
 
   // Choose portrait or not based on which direction makes the screen largest
   float lcd_w_p=w, lcd_h_p = h;
   float lcd_w_l=w, lcd_h_l = h;
   lcd_h_p-=min_dim*0.5;
   lcd_w_l-=min_dim;
+  if(lcd_w_l<0.)lcd_w_l=0;
+  if(lcd_h_p<0.)lcd_h_p=0;
 
   se_compute_draw_lcd_rect(&lcd_w_p,&lcd_h_p,&nds_layout);
   se_compute_draw_lcd_rect(&lcd_w_l,&lcd_h_l,&nds_layout);
