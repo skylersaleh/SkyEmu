@@ -476,6 +476,10 @@ typedef struct {
     se_custom_theme_t theme;
     bool ran_from_launcher;
     char search_buffer[32];
+    //Used when screen is too small to support multiple panels
+    bool single_panel_mode;    
+    //Points to the most recently opened panel. When single panel mode is enabled all other panels should be closed. 
+    bool * last_opened_panel;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -955,7 +959,10 @@ static void se_panel_toggle(int region, bool * is_open, const char* icon, const 
     if(se_button_themed(region+2,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
     igPopStyleColor(1);
   }else{
-    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
+    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){
+      *is_open=!*is_open;
+      gui_state.last_opened_panel=is_open;
+    }
   }
   igPopID();
   igSameLine(0,1);
@@ -3125,6 +3132,7 @@ static void se_draw_debug_menu(){
     igSetNextItemWidth(SE_MENU_BAR_BUTTON_WIDTH);
     static bool debug_menu_open; 
     se_panel_toggle(SE_REGION_BLANK,&debug_menu_open,ICON_FK_BUG,"Debuggers");
+    if(gui_state.single_panel_mode&&gui_state.last_opened_panel!=&debug_menu_open)debug_menu_open=false;
     if(debug_menu_open){
       igSetNextWindowSize((ImVec2){gui_state.screen_width/se_dpi_scale(),0},ImGuiCond_Always);
       ImVec2 win;
@@ -3139,6 +3147,7 @@ static void se_draw_debug_menu(){
           if (igSelectableBool(se_localize_and_cache(desc->label), is_selected,ImGuiSelectableFlags_None,(ImVec2){0,30})){
             desc->visible=!desc->visible;
             debug_menu_open = false;
+            gui_state.last_opened_panel= &desc->visible;
           }
           char tmp_str[256];
           snprintf(tmp_str,sizeof(tmp_str),se_localize_and_cache("Show/Hide %s Panel"),se_localize_and_cache(desc->label));
@@ -3158,7 +3167,10 @@ static void se_draw_debug_menu(){
         if(se_button_themed(SE_REGION_BLANK_ACTIVE,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){desc->visible=!desc->visible;}
         igPopStyleColor(1);
       }else{
-        if(se_button_themed(SE_REGION_BLANK,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){desc->visible=!desc->visible;}
+        if(se_button_themed(SE_REGION_BLANK,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){
+          desc->visible=!desc->visible;
+          gui_state.last_opened_panel = &desc->visible;
+        }
       }
       igSameLine(0,1);
       char tmp_str[256];
@@ -3173,6 +3185,7 @@ static float se_draw_debug_panels(float screen_x, float sidebar_w, float y, floa
   se_debug_tool_desc_t* desc= se_get_debug_description();
   if(!desc)return screen_x;
   while(desc->label){
+    if(gui_state.single_panel_mode&&gui_state.last_opened_panel!=&desc->visible)desc->visible=false;
     if(desc->visible){
       gui_state.menubar_hide_timer=se_time();
       int w = sidebar_w+screen_x-(int)screen_x;
@@ -7228,6 +7241,7 @@ static void frame(void) {
         ++desc;
       }
     }
+    gui_state.single_panel_mode = scaled_screen_width-sidebar_w*2<0;
     bool draw_sidebars_over_screen = scaled_screen_width-sidebar_w*num_sidebars_open<sidebar_w*0.5;
     if(draw_sidebars_over_screen){
       sidebar_w = scaled_screen_width/num_sidebars_open;
@@ -7237,6 +7251,7 @@ static void frame(void) {
     }
     screen_x = left_padding;
     screen_width-=(left_padding+right_padding)*se_dpi_scale();
+    if(gui_state.single_panel_mode&&gui_state.last_opened_panel!=&gui_state.sidebar_open)gui_state.sidebar_open=false;
     if(gui_state.sidebar_open){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
@@ -7250,6 +7265,7 @@ static void frame(void) {
     }
     #ifdef ENABLE_RETRO_ACHIEVEMENTS
     bool logged_in = rc_client_get_user_info(retro_achievements_get_client());
+    if(gui_state.single_panel_mode&&gui_state.last_opened_panel!=&gui_state.ra_sidebar_open)gui_state.ra_sidebar_open=false;
     if(gui_state.ra_sidebar_open&&logged_in){
       igSetNextWindowPos((ImVec2){screen_x,menu_height}, ImGuiCond_Always, (ImVec2){0,0});
       igSetNextWindowSize((ImVec2){sidebar_w, (gui_state.screen_height-menu_height*se_dpi_scale())/se_dpi_scale()}, ImGuiCond_Always);
