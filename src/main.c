@@ -3405,11 +3405,11 @@ void se_draw_lcd(uint8_t *data, int im_width, int im_height,int x, int y, int re
     ry/=render_height;
     rx+=0.5;
     ry+=0.5;
-
-    emu_state.joy.touch_pos[0]=rx;
-    emu_state.joy.touch_pos[1]=ry;
-    if(gui_state.mouse_button[0]&&rx>=0&&rx<=1.0&&ry>=0.&&ry<=1.0)emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
-
+    if(rx>=0.&&rx<=1.0&&ry>=0.&&ry<=1.0){
+      emu_state.joy.touch_pos[0]=rx;
+      emu_state.joy.touch_pos[1]=ry;
+      if(gui_state.mouse_button[0])emu_state.joy.inputs[SE_KEY_PEN_DOWN]=true;
+    }
     for(int i=0;i<SAPP_MAX_TOUCHPOINTS;++i){
       if(gui_state.touch_points[i].active==false)continue;
 
