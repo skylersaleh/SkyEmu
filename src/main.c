@@ -3159,7 +3159,7 @@ static void se_draw_debug_menu(){
           igSeparator();
           desc++;
         }
-        igEndPopup();
+        igEnd();
       }
     }
     igSameLine(0,1);
