@@ -5092,16 +5092,19 @@ void se_load_rom_overlay(bool visible){
   h = win_max.y-win_p.y;
   y+=w_pos.y;
   x+=w_pos.x;
-  const char * prompt1 = "Load ROM from file (.gb, .gbc, .gba, .zip)";
+  const char * prompt1 = "Load ROM from file (%s)";
   const char * prompt2= "You can also drag & drop a ROM to load it";
   if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
     prompt2 = "";
   }else if (gui_state.ui_type==SE_UI_WEB){
-    prompt1 = "Load ROM(.gb, .gbc, .gba, .zip), save(.sav), or GBA bios (gba_bios.bin) from file";
+    prompt1 = "Load ROM(%s), save(.sav), or GBA bios (gba_bios.bin) from file";
     prompt2 = "You can also drag & drop a ROM/save file to load it";
   }
+  char prompt1_buff[512];
+  snprintf(prompt1_buff,512,se_localize_and_cache(prompt1),se_localize_and_cache(".gb, .gbc, .gba, .nds, .zip"));
+
   float y1 = igGetCursorPosY();
-  bool clicked = se_selectable_with_box(prompt1,prompt2,ICON_FK_FOLDER_OPEN,false,0);
+  bool clicked = se_selectable_with_box(prompt1_buff,prompt2,ICON_FK_FOLDER_OPEN,false,0);
   float y2 = igGetCursorPosY();
   se_open_file_browser(clicked, x,y,w,y2-y1, se_load_rom,valid_rom_file_types,NULL);
   
