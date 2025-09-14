@@ -3,6 +3,7 @@
 #include <stdio.h>
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
+#import <SafariServices/SafariServices.h> // added for secure browser support
 
 
 @interface SelectorDelegate : NSObject <UIDocumentPickerDelegate>
@@ -127,36 +128,65 @@ UIViewController* get_web_view_controller(){
   if(wvc==nil)wvc = [[UIViewController alloc] init];
   return wvc;
 }
+
+// add a static to hold the presented secure browser so se_ios_close_modal can dismiss it
+static UIViewController *g_presented_secure_vc = nil;
+
 void se_ios_open_modal(const char * url){
   //Make a URL here so that the block captures a copy of the variable instead of a copy of the pointer
   NSURL* nsurl = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
   
   [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
-   UIViewController *rootViewController = (UIViewController *)sapp_ios_get_view_ctrl();
+       UIViewController *rootViewController = (UIViewController *)sapp_ios_get_view_ctrl();
        
-       // Create a WKWebView configuration
-       WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
-       WKWebView *webView = [[WKWebView alloc] initWithFrame:rootViewController.view.bounds configuration:configuration];
-       webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+       // Use SFSafariViewController for remote (http/https) URLs to comply with secure browser policy.
+       // Use an embedded WKWebView only for local/file content.
+       NSString *scheme = [[nsurl scheme] lowercaseString] ?: @"";
+       if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
+           if (@available(iOS 9.0, *)) {
+               SFSafariViewController *safariVC = [[SFSafariViewController alloc] initWithURL:nsurl];
+               safariVC.modalPresentationStyle = UIModalPresentationFullScreen;
+               g_presented_secure_vc = safariVC;
+               [rootViewController presentViewController:safariVC animated:YES completion:nil];
+           } else {
+               // Fallback: open the URL in the system browser for older iOS versions.
+               if ([[UIApplication sharedApplication] respondsToSelector:@selector(openURL:options:completionHandler:)]) {
+                   [[UIApplication sharedApplication] openURL:nsurl options:@{} completionHandler:nil];
+               } else {
+                   [[UIApplication sharedApplication] openURL:nsurl];
+               }
+           }
+       } else {
+           // Treat non-http(s) as local/in-app content: present with a WKWebView embedded controller.
+           // This preserves the previous embedded view behavior for file:// or app-local content.
+           WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+           WKWebView *webView = [[WKWebView alloc] initWithFrame:rootViewController.view.bounds configuration:configuration];
+           webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
-       // Create a UIViewController to present modally
-       UIViewController *webViewController =get_web_view_controller();
-       webViewController.view.backgroundColor = [UIColor whiteColor]; // Optional
-       [webViewController.view addSubview:webView];
-       
-       // Load the request
-       NSURLRequest *request = [NSURLRequest requestWithURL:nsurl
-                                                cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
-                                            timeoutInterval:30.0];
+           UIViewController *webViewController = get_web_view_controller();
+           webViewController.view.backgroundColor = [UIColor whiteColor];
+           // remove any previous subviews to avoid duplicates
+           for (UIView *v in [webViewController.view subviews]) { [v removeFromSuperview]; }
+           [webViewController.view addSubview:webView];
 
-       [webView loadRequest:request];
+           NSURLRequest *request = [NSURLRequest requestWithURL:nsurl
+                                                    cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                                timeoutInterval:30.0];
+           [webView loadRequest:request];
 
-       // Present the controller modally
-       [rootViewController presentViewController:webViewController animated:YES completion:nil];
+           g_presented_secure_vc = webViewController;
+           [rootViewController presentViewController:webViewController animated:YES completion:nil];
+       }
    }];
 }
 void se_ios_close_modal(){
   [[NSOperationQueue mainQueue] addOperationWithBlock:^ {
-    [get_web_view_controller() dismissViewControllerAnimated:YES completion:nil];
-  }];
+    if (g_presented_secure_vc) {
+      [g_presented_secure_vc dismissViewControllerAnimated:YES completion:nil];
+      g_presented_secure_vc = nil;
+    } else {
+      // best-effort fallback
+      [get_web_view_controller() dismissViewControllerAnimated:YES completion:nil];
+    }
+   }];
 }
