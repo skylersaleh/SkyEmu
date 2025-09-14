@@ -494,8 +494,9 @@ typedef struct {
 #define SE_THEME_BLACK 2
 #define SE_THEME_CUSTOM 3
 
-#define SE_MENU_BAR_HEIGHT 24
+#define SE_MENU_BAR_HEIGHT 26
 #define SE_MENU_BAR_BUTTON_WIDTH 30
+#define SE_MENU_BAR_BUTTON_HEIGHT (SE_MENU_BAR_HEIGHT-2)
 #define SE_TOGGLE_WIDTH 35
 #define SE_VOLUME_SLIDER_WIDTH 100
 
@@ -956,10 +957,10 @@ static void se_panel_toggle(int region, bool * is_open, const char* icon, const 
   igPushIDStr(icon);
   if(*is_open){
     igPushStyleColorVec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-    if(se_button_themed(region+2,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
+    if(se_button_themed(region+2,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_BUTTON_HEIGHT},region!=SE_REGION_MENU)){*is_open=!*is_open;}
     igPopStyleColor(1);
   }else{
-    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},region!=SE_REGION_MENU)){
+    if(se_button_themed(region,icon,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_BUTTON_HEIGHT},region!=SE_REGION_MENU)){
       *is_open=!*is_open;
       gui_state.last_opened_panel=is_open;
     }
@@ -3164,10 +3165,10 @@ static void se_draw_debug_menu(){
       igPushIDInt(id++);
       if(desc->visible){
         igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-        if(se_button_themed(SE_REGION_BLANK_ACTIVE,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){desc->visible=!desc->visible;}
+        if(se_button_themed(SE_REGION_BLANK_ACTIVE,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_BUTTON_HEIGHT},true)){desc->visible=!desc->visible;}
         igPopStyleColor(1);
       }else{
-        if(se_button_themed(SE_REGION_BLANK,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_HEIGHT},true)){
+        if(se_button_themed(SE_REGION_BLANK,desc->short_label,(ImVec2){SE_MENU_BAR_BUTTON_WIDTH,SE_MENU_BAR_BUTTON_HEIGHT},true)){
           desc->visible=!desc->visible;
           gui_state.last_opened_panel = &desc->visible;
         }
@@ -4252,7 +4253,6 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   se_text(text);
   igSetCursorPos(backup_cursor);
 }
-//CPU: 73%->48
 bool se_selectable_with_box(const char * first_label, const char* second_label, const char* box, bool force_hover, int reduce_width){
   ImVec2 win_min,win_sz,win_max;
   win_min.x=0;
@@ -4262,7 +4262,7 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   win_max.x = win_min.x+win_sz.x; 
   win_max.y = win_min.y+win_sz.y; 
 
-  int item_height = 40; 
+  int item_height = 45; 
   int padding = 4; 
 
   float disp_y_min = igGetCursorPosY();
@@ -5556,7 +5556,7 @@ void se_imgui_theme()
   style->ChildRounding                     = 4;
   style->FrameRounding                     = 1;
   style->PopupRounding                     = 0;
-  style->ScrollbarRounding                 = 9;
+  style->ScrollbarRounding                 = 2;
   style->GrabRounding                      = 100;
   style->LogSliderDeadzone                 = 4;
   style->TabRounding                       = 4;
@@ -7023,6 +7023,9 @@ static void frame(void) {
   if (gui_state.test_runner_mode==false&&se_begin_menu_bar())
   {
     float menu_bar_y = igGetCursorPosY();
+    igSetCursorPosX(igGetCursorPosX()+(SE_MENU_BAR_HEIGHT-SE_MENU_BAR_BUTTON_HEIGHT)/2.0);
+    igSetCursorPosY(top_padding+(SE_MENU_BAR_HEIGHT-SE_MENU_BAR_BUTTON_HEIGHT)/4.0);
+    
     se_panel_toggle(SE_REGION_MENU,&gui_state.sidebar_open,ICON_FK_BARS,se_localize_and_cache("Show/Hide Menu Panel"));
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
@@ -7165,7 +7168,7 @@ static void frame(void) {
       if(hardcore_disabled)se_push_disabled();
       bool active_button = i==curr_toggle;
       if(active_button)igPushStyleColorVec4(ImGuiCol_Button, style->Colors[ImGuiCol_ButtonActive]);
-      if(se_button_themed(SE_REGION_BLANK+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_HEIGHT},true))next_toggle_id = i;
+      if(se_button_themed(SE_REGION_BLANK+ (active_button? 2:0),toggle_labels[i],(ImVec2){sel_width, SE_MENU_BAR_BUTTON_HEIGHT},true))next_toggle_id = i;
       igSameLine(0,1);
       if(hardcore_disabled) se_tooltip("Disabled in Hardcore Mode");
       else se_tooltip(toggle_tooltips[i]);
