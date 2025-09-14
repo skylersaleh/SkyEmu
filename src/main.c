@@ -4267,8 +4267,8 @@ bool se_selectable_with_box(const char * first_label, const char* second_label, 
   win_max.x = win_min.x+win_sz.x; 
   win_max.y = win_min.y+win_sz.y; 
 
-  int item_height = 45; 
-  int padding = 4; 
+  int item_height = 48; 
+  int padding = 2; 
 
   float disp_y_min = igGetCursorPosY();
   float disp_y_max = disp_y_min+item_height+padding*2;
@@ -5872,7 +5872,9 @@ void se_draw_save_states(bool cloud){
     int screen_w = 64;
     int screen_h = 64+style->FramePadding.y*2; 
     int button_w = 55; 
+    igSetCursorPosY(igGetCursorPosY()+1.0);
     se_text(se_localize_and_cache("Save Slot %d"),i);
+    igSetCursorPosY(igGetCursorPosY()-2.0);
     bool cloud_busy = cloud&&cloud_state.save_states_busy[i];
     if(cloud_busy)se_push_disabled();
     if(se_button("Capture",(ImVec2){button_w,0})){
@@ -5895,6 +5897,10 @@ void se_draw_save_states(bool cloud){
     if(states[i].valid){
       float w_scale = 1.0;
       float h_scale = 1.0;
+      float border_screen_x=screen_x+button_w+(slot_w-screen_w-button_w)*0.5;
+      float border_screen_y=screen_y+(slot_h-screen_h)*0.5-style->FramePadding.y;
+      ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){border_screen_x-2,border_screen_y},(ImVec2){border_screen_x+screen_w+2,border_screen_y+screen_h},color,0,ImDrawCornerFlags_None);
       if(states[i].screenshot_width>states[i].screenshot_height){
         h_scale = (float)states[i].screenshot_height/(float)states[i].screenshot_width;
       }else{
