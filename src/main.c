@@ -494,7 +494,7 @@ typedef struct {
 #define SE_THEME_BLACK 2
 #define SE_THEME_CUSTOM 3
 
-#define SE_MENU_BAR_HEIGHT 26
+#define SE_MENU_BAR_HEIGHT 25
 #define SE_MENU_BAR_BUTTON_WIDTH 30
 #define SE_MENU_BAR_BUTTON_HEIGHT (SE_MENU_BAR_HEIGHT-2)
 #define SE_TOGGLE_WIDTH 35
@@ -5799,13 +5799,13 @@ void se_draw_touch_controls_settings(){
   float scale = (igGetWindowContentRegionWidth()-2)/(aspect_ratio+1.0/aspect_ratio);
 
   igDummy((ImVec2){0,(igGetWindowContentRegionWidth()*0.5-2-scale)*0.5});
-  if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_None)){
+  if(igBeginChildFrame(1,(ImVec2){scale*aspect_ratio,scale},ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoDecoration)){
     se_draw_emulated_system_screen(true);
   }
   igEndChildFrame();
   igSameLine(0,2);
 
-  if(igBeginChildFrame(2,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_None)){
+  if(igBeginChildFrame(2,(ImVec2){scale/aspect_ratio,scale},ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoDecoration)){
     se_draw_emulated_system_screen(true);
   }
   igEndChildFrame();
@@ -6245,102 +6245,6 @@ void se_draw_menu_panel(){
       }
     }
   }
-  se_section(ICON_FK_DESKTOP " Display Settings");
-  int v = gui_state.settings.screen_shader;
-  igPushItemWidth(-1);
-  se_text("Screen Shader");igSameLine(SE_FIELD_INDENT,0);
-  se_combo_str("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
-  gui_state.settings.screen_shader=v;
-  v = gui_state.settings.screen_rotation;
-  se_text("Screen Rotation");igSameLine(SE_FIELD_INDENT,0);
-  se_combo_str("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
-  gui_state.settings.screen_rotation=v;
-  se_text("Color Correction");igSameLine(SE_FIELD_INDENT,0);
-  se_slider_float("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f");
-  int color_correct = gui_state.settings.gba_color_correction_mode;
-  se_text("GBA Color Correction Type");igSameLine(180,0);
-  se_combo_str("##ColorAlgorithm",&color_correct,"SkyEmu\0Higan\0",0);
-  gui_state.settings.gba_color_correction_mode=color_correct;
-  {
-    bool b = gui_state.settings.ghosting;
-    se_checkbox("Screen Ghosting", &b);
-    gui_state.settings.ghosting=b;
-  }
-  {
-    bool b = gui_state.settings.integer_scaling;
-    se_checkbox("Force Integer Scaling", &b);
-    gui_state.settings.integer_scaling = b;
-  }
-  {
-    bool b = gui_state.settings.stretch_to_fit;
-    se_checkbox("Stretch Screen to Fit", &b);
-    gui_state.settings.stretch_to_fit = b;
-  }
-  {
-    if(gui_state.theme.regions[SE_REGION_NO_BEZEL].active){
-      bool b = gui_state.settings.show_screen_bezel;
-      se_checkbox("Show Screen Bezel", &b);
-      gui_state.settings.show_screen_bezel = b;
-    }
-  }
-  {
-    se_text("NDS Screen Layout");
-    int layout = gui_state.settings.nds_layout;
-    igSameLine(SE_FIELD_INDENT,0);
-    se_combo_str("##NDSLayout",&layout,"Auto\0Vertical\0Horizontal\0Hybrid Large Top\0Hybrid Large Bottom\0Vertical Large Top\0Vertical Large Bottom\0Horizontal Large Top\0Horizontal Large Bottom\0\0",0);
-    gui_state.settings.nds_layout=layout; 
-  }
-  igPopItemWidth();
-  se_text("Game Boy Color Palette");
-  for(int i=0;i<4;++i){
-    igPushIDInt(i);
-    float color[4]; 
-    uint32_t col = gui_state.settings.gb_palette[i];
-    color[0]= SB_BFE(col,0,8)/255.;
-    color[1]= SB_BFE(col,8,8)/255.;
-    color[2]= SB_BFE(col,16,8)/255.;
-    float w = (win_w-20)*0.25-2;
-    if(i)igSameLine(0,2);
-    if(igColorButton("##color-button",(ImVec4){color[0],color[1],color[2],1.0},ImGuiColorEditFlags_NoInputs| ImGuiColorEditFlags_NoLabel,(ImVec2){w,20})){
-      igOpenPopup("##picker-popup",ImGuiWindowFlags_None);
-    }
-    if (igBeginPopup("##picker-popup",ImGuiWindowFlags_None)){
-      igColorPicker3("##picker", color, ImGuiColorEditFlags_None);
-      igEndPopup();
-    }
-    col = (((int)(color[0]*255))&0xff);
-    col |= (((int)(color[1]*255))&0xff)<<8;
-    col |= (((int)(color[2]*255))&0xff)<<16;
-    gui_state.settings.gb_palette[i]=col;
-    igPopID();
-  }
-  igSameLine(0,2);
-  if(se_button(ICON_FK_REPEAT,(ImVec2){20,20}))se_reset_default_gb_palette();
-  if(gui_state.ui_type==SE_UI_ANDROID||gui_state.ui_type==SE_UI_IOS){
-    se_draw_touch_controls_settings();
-  }else{
-    se_section(ICON_FK_KEYBOARD_O " Keybinds");
-    bool value= true; 
-    bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
-    if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
-      se_set_default_keybind(&gui_state);
-      modified=true;
-    }
-
-    if(modified){
-      char settings_path[SB_FILE_PATH_SIZE];
-      snprintf(settings_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
-      sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
-      se_emscripten_flush_fs();
-    }
-  }
-  #if defined( USE_SDL) ||defined(SE_PLATFORM_ANDROID)
-  se_draw_controller_config(&gui_state);
-  #endif
-
-  if(gui_state.ui_type!=SE_UI_ANDROID&&gui_state.ui_type!=SE_UI_IOS){
-    se_draw_touch_controls_settings();
-  }
   se_section(ICON_FK_TEXT_HEIGHT " GUI");
   se_text("Language");igSameLine(SE_FIELD_INDENT,0);
   igPushItemWidth(-1);
@@ -6466,6 +6370,102 @@ void se_draw_menu_panel(){
     bool fullscreen = sapp_is_fullscreen();
     se_checkbox("Full Screen",&fullscreen);
     if(fullscreen!=sapp_is_fullscreen())sapp_toggle_fullscreen();
+  }
+  
+  se_section(ICON_FK_DESKTOP " Display Settings");
+  int v = gui_state.settings.screen_shader;
+  igPushItemWidth(-1);
+  se_text("Screen Shader");igSameLine(SE_FIELD_INDENT,0);
+  se_combo_str("##Screen Shader",&v,"Pixelate\0Bilinear\0LCD\0LCD & Subpixels\0Smooth Upscale (xBRZ)\0",0);
+  gui_state.settings.screen_shader=v;
+  v = gui_state.settings.screen_rotation;
+  se_text("Screen Rotation");igSameLine(SE_FIELD_INDENT,0);
+  se_combo_str("##Screen Rotation",&v,"0 degrees\00090 degrees\000180 degrees\000270 degrees\0",0);
+  gui_state.settings.screen_rotation=v;
+  se_text("Color Correction");igSameLine(SE_FIELD_INDENT,0);
+  se_slider_float("##Color Correction",&gui_state.settings.color_correction,0,1.0,"Strength: %.2f");
+  int color_correct = gui_state.settings.gba_color_correction_mode;
+  se_text("GBA Color Correction Type");igSameLine(180,0);
+  se_combo_str("##ColorAlgorithm",&color_correct,"SkyEmu\0Higan\0",0);
+  gui_state.settings.gba_color_correction_mode=color_correct;
+  {
+    bool b = gui_state.settings.ghosting;
+    se_checkbox("Screen Ghosting", &b);
+    gui_state.settings.ghosting=b;
+  }
+  {
+    bool b = gui_state.settings.integer_scaling;
+    se_checkbox("Force Integer Scaling", &b);
+    gui_state.settings.integer_scaling = b;
+  }
+  {
+    bool b = gui_state.settings.stretch_to_fit;
+    se_checkbox("Stretch Screen to Fit", &b);
+    gui_state.settings.stretch_to_fit = b;
+  }
+  {
+    if(gui_state.theme.regions[SE_REGION_NO_BEZEL].active){
+      bool b = gui_state.settings.show_screen_bezel;
+      se_checkbox("Show Screen Bezel", &b);
+      gui_state.settings.show_screen_bezel = b;
+    }
+  }
+  {
+    se_text("NDS Screen Layout");
+    int layout = gui_state.settings.nds_layout;
+    igSameLine(SE_FIELD_INDENT,0);
+    se_combo_str("##NDSLayout",&layout,"Auto\0Vertical\0Horizontal\0Hybrid Large Top\0Hybrid Large Bottom\0Vertical Large Top\0Vertical Large Bottom\0Horizontal Large Top\0Horizontal Large Bottom\0\0",0);
+    gui_state.settings.nds_layout=layout; 
+  }
+  igPopItemWidth();
+  se_text("Game Boy Color Palette");
+  for(int i=0;i<4;++i){
+    igPushIDInt(i);
+    float color[4]; 
+    uint32_t col = gui_state.settings.gb_palette[i];
+    color[0]= SB_BFE(col,0,8)/255.;
+    color[1]= SB_BFE(col,8,8)/255.;
+    color[2]= SB_BFE(col,16,8)/255.;
+    float w = (win_w-20)*0.25-2;
+    if(i)igSameLine(0,2);
+    if(igColorButton("##color-button",(ImVec4){color[0],color[1],color[2],1.0},ImGuiColorEditFlags_NoInputs| ImGuiColorEditFlags_NoLabel,(ImVec2){w,20})){
+      igOpenPopup("##picker-popup",ImGuiWindowFlags_None);
+    }
+    if (igBeginPopup("##picker-popup",ImGuiWindowFlags_None)){
+      igColorPicker3("##picker", color, ImGuiColorEditFlags_None);
+      igEndPopup();
+    }
+    col = (((int)(color[0]*255))&0xff);
+    col |= (((int)(color[1]*255))&0xff)<<8;
+    col |= (((int)(color[2]*255))&0xff)<<16;
+    gui_state.settings.gb_palette[i]=col;
+    igPopID();
+  }
+  igSameLine(0,2);
+  if(se_button(ICON_FK_REPEAT,(ImVec2){20,20}))se_reset_default_gb_palette();
+
+  se_draw_touch_controls_settings();
+
+  if(gui_state.ui_type!=SE_UI_ANDROID&&gui_state.ui_type!=SE_UI_IOS){
+    se_section(ICON_FK_KEYBOARD_O " Keybinds");
+    bool value= true; 
+    bool modified = se_handle_keybind_settings(SE_BIND_KEYBOARD,&gui_state.key);
+    if(se_button("Reset Default Keybinds",(ImVec2){0,0})){
+      se_set_default_keybind(&gui_state);
+      modified=true;
+    }
+
+    if(modified){
+      char settings_path[SB_FILE_PATH_SIZE];
+      snprintf(settings_path,SB_FILE_PATH_SIZE,"%skeyboard-bindings.bin",se_get_pref_path());
+      sb_save_file_data(settings_path,(uint8_t*)gui_state.key.bound_id,sizeof(gui_state.key.bound_id));
+      se_emscripten_flush_fs();
+    }
+  }
+  #if defined( USE_SDL) ||defined(SE_PLATFORM_ANDROID)
+  se_draw_controller_config(&gui_state);
+  #endif
+  if(gui_state.ui_type==SE_UI_DESKTOP){
     se_section(ICON_FK_CODE_FORK " Additional Search Paths");
     se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
     se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
