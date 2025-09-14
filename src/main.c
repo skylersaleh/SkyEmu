@@ -4245,7 +4245,9 @@ void se_text_centered_in_box(ImVec2 p, ImVec2 size, const char* text){
   curr_cursor_screen.x+=p.x;
   curr_cursor_screen.y+=p.y;
   ImU32 color = igColorConvertFloat4ToU32(igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-  ImDrawList_AddRectFilled(igGetWindowDrawList(),curr_cursor_screen,(ImVec2){curr_cursor_screen.x+size.x,curr_cursor_screen.y+size.y},color,0,ImDrawCornerFlags_None);
+  if(se_draw_theme_region(SE_REGION_BLANK,curr_cursor_screen.x,curr_cursor_screen.y,size.x,size.y)==0){
+    ImDrawList_AddRectFilled(igGetWindowDrawList(),curr_cursor_screen,(ImVec2){curr_cursor_screen.x+size.x,curr_cursor_screen.y+size.y},color,0,ImDrawCornerFlags_None);
+  }
 
   ImVec2 text_sz; 
   igCalcTextSize(&text_sz, text,NULL,0,0);
