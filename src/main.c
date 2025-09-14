@@ -194,7 +194,7 @@ typedef struct{
   uint32_t gba_color_correction_mode; // 0 = SkyEmu, 1 = Higan
   uint32_t http_control_server_port; 
   uint32_t http_control_server_enable;
-  uint32_t avoid_overlaping_touchscreen;
+  uint32_t avoid_overlaping_touchscreen; // 1=Avoid Overlap in Portrait, 2=Avoid Overlap in Landscape, 3=Avoid Overlap in Both
   float custom_font_scale;
   uint32_t hardcore_mode;
   uint32_t draw_challenge_indicators;
@@ -267,6 +267,9 @@ _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_
 #define SE_UI_ANDROID 1 
 #define SE_UI_IOS     2
 #define SE_UI_WEB     3
+
+#define SE_AVOID_OVERLAP_PORTRAIT 1
+#define SE_AVOID_OVERLAP_LANDSCAPE 2
 
 typedef struct{
   char path[SE_MAX_BIOS_FILES][SB_FILE_PATH_SIZE];
@@ -5825,9 +5828,17 @@ void se_draw_touch_controls_settings(){
   se_checkbox("Enable Turbo and Hold Button Modifiers",&show_turbo);
   gui_state.settings.touch_controls_show_turbo = show_turbo;
   
-  bool avoid_touchscreen = gui_state.settings.avoid_overlaping_touchscreen;
-  se_checkbox("Never Overlap Screen",&avoid_touchscreen);
-  gui_state.settings.avoid_overlaping_touchscreen = avoid_touchscreen;
+  bool avoid_portrait = gui_state.settings.avoid_overlaping_touchscreen & SE_AVOID_OVERLAP_PORTRAIT;
+  bool avoid_landscape = gui_state.settings.avoid_overlaping_touchscreen & SE_AVOID_OVERLAP_LANDSCAPE;
+
+  se_checkbox("Prevent Overlap in Portrait",&avoid_portrait);
+  se_checkbox("Prevent Overlap in Landscape",&avoid_landscape);
+
+  if(avoid_portrait)gui_state.settings.avoid_overlaping_touchscreen |= SE_AVOID_OVERLAP_PORTRAIT;
+  else gui_state.settings.avoid_overlaping_touchscreen &=(~SE_AVOID_OVERLAP_PORTRAIT);
+
+  if(avoid_landscape)gui_state.settings.avoid_overlaping_touchscreen |= SE_AVOID_OVERLAP_LANDSCAPE;
+  else gui_state.settings.avoid_overlaping_touchscreen &=(~SE_AVOID_OVERLAP_LANDSCAPE);
 
   bool button_labels = gui_state.settings.touch_screen_show_button_labels;
   se_checkbox("Button Labels",&button_labels);
@@ -7546,7 +7557,7 @@ void se_load_settings(){
       gui_state.settings.save_to_path = false;
       gui_state.settings.http_control_server_enable = false; 
       gui_state.settings.http_control_server_port=8080;
-      gui_state.settings.avoid_overlaping_touchscreen = true;
+      gui_state.settings.avoid_overlaping_touchscreen = SE_AVOID_OVERLAP_PORTRAIT;
     }
     if(gui_state.settings.settings_file_version<3){
       gui_state.settings.gui_scale_factor = 1.0; 
@@ -7852,8 +7863,9 @@ static int se_draw_theme_region_tint_partial(int region, float x, float y, float
 
   int gamepad_mask = portrait? 0x30 : 0xC0;
   int skip_mask = portrait? SE_RESIZE_ONLY_LANDSCAPE : SE_RESIZE_ONLY_PORTRAIT;
+  int overlap_mask = w<h? SE_AVOID_OVERLAP_PORTRAIT : SE_AVOID_OVERLAP_LANDSCAPE;
   //When overlap is allowed, just render gamepad over screen
-  if(gui_state.settings.avoid_overlaping_touchscreen==false)gamepad_mask = 0x0;
+  if((gui_state.settings.avoid_overlaping_touchscreen&overlap_mask)==0)gamepad_mask = 0x0;
   if(gui_state.settings.auto_hide_touch_controls && gui_state.last_touch_time<0.01){
     skip_mask = SE_RESIZE_ONLY_LANDSCAPE | SE_RESIZE_ONLY_PORTRAIT;
     gamepad_mask = 0;
