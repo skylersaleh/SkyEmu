@@ -5867,7 +5867,7 @@ void se_draw_save_states(bool cloud){
     int slot_h = 64; 
     if(i%2)igSameLine(0,style->FramePadding.x);
 
-    igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoDecoration);
+    igBeginChildFrame(i+100, (ImVec2){slot_w,slot_h},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollWithMouse);
     ImVec2 screen_p;
     igGetCursorScreenPos(&screen_p);
     int screen_x = screen_p.x;
