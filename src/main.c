@@ -1525,6 +1525,14 @@ void se_load_search_paths(){
   char settings_path[SB_FILE_PATH_SIZE];
   snprintf(settings_path,SB_FILE_PATH_SIZE,"%ssearch_paths.bin",se_get_pref_path());
   if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.paths,sizeof(gui_state.paths)))memset(&gui_state.paths,0,sizeof(gui_state.paths));
+	
+  #ifdef PLATFORM_ANDROID
+  const char *android_private_path = "/data/data/com.sky.SkyEmu/files/";
+  snprintf(gui_state.paths.save, SB_FILE_PATH_SIZE, "%s/save/", android_private_path);
+  snprintf(gui_state.paths.bios, SB_FILE_PATH_SIZE, "%s/bios/", android_private_path);
+  snprintf(gui_state.paths.cheat_codes, SB_FILE_PATH_SIZE, "%s/cheat_codes/", android_private_path);
+  #endif
+	
   char * paths[]={
     gui_state.paths.save,
     gui_state.paths.bios,
@@ -8833,6 +8841,7 @@ static void headless_mode(){
 void Java_com_sky_SkyEmu_EnhancedNativeActivity_se_1android_1load_1rom(JNIEnv *env, jobject thiz, jstring filePath) {
     const char *nativeFilePath = (*env)->GetStringUTFChars(env, filePath, 0);
     gui_state.ran_from_launcher=true;
+    gui_state.settings.save_to_path = false;
     se_load_rom(nativeFilePath);
     (*env)->ReleaseStringUTFChars(env, filePath, nativeFilePath);
 }
