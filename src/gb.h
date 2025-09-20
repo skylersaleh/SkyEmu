@@ -1335,10 +1335,15 @@ void gb_tick_rtc(sb_gb_t*gb){
   gb->rtc.hour= tm->tm_hour;
   gb->rtc.day = (tm->tm_wday-1)%7;
 }
-void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
+
+void sb_ptrs_init(sb_gb_t* gb, gb_scratch_t* scratch, uint8_t* rom_data) {
   gb->lcd.framebuffer = scratch->framebuffer; 
-  gb->cart.data = emu->rom_data; 
+  gb->cart.data = rom_data; 
   gb->bios = scratch->bios;
+}
+
+void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
+  sb_ptrs_init(gb, scratch, emu->rom_data);
   int instructions_to_execute = emu->step_instructions;
   if(instructions_to_execute==0)instructions_to_execute=70224/2;
   int frames_to_draw = 1;
@@ -1446,13 +1451,14 @@ void sb_tick(sb_emu_state_t* emu, sb_gb_t* gb,gb_scratch_t* scratch){
     total_cylces+=delta_cycles_after_speed;
     sb_tick_components(emu,gb,delta_cycles_after_speed);
 
-    if (gb->cpu.pc == emu->pc_breakpoint||gb->cpu.trigger_breakpoint){
+    if (gb->cpu.trigger_breakpoint){
       gb->cpu.trigger_breakpoint = false;
       emu->run_mode = SB_MODE_PAUSE;
       break;
     }
     if(gb->lcd.finished_frame){break;}
     if(total_cylces>=70224&&emu->step_instructions==0)break;
+    emu->step_instructions=0;
   }
   emu->joy.rumble = (double)rumble_cycles/(double)total_cylces;
 }

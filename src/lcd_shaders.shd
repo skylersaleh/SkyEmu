@@ -1,6 +1,7 @@
 // Shader compilation instructions: 
 // sokol-shdc -i lcd_shaders.shd -o lcd_shaders.h -l glsl330:glsl100:glsl300es:hlsl4:metal_macos:metal_ios:metal_sim:wgpu -b
 // (note that for Metal and D3D11 byte code, sokol-shdc must be run on macOS and Windows)
+// sokol-shdc is in tools/sokol-tools/bin
 
 @vs lcdvs
 uniform lcd_params {
@@ -12,6 +13,7 @@ uniform lcd_params {
     vec2 emu_lcd_size;
     float display_mode;
     float lcd_is_grayscale;
+    float integer_scaling;
     float color_correction_strength;
     vec3 red_color;
     vec3 green_color;
@@ -42,6 +44,7 @@ uniform lcd_params_fs {
     vec2 emu_lcd_size;
     float display_mode;
     float lcd_is_grayscale;
+    float integer_scaling;
     float color_correction_strength;
     vec3 red_color;
     vec3 green_color;
@@ -366,8 +369,9 @@ void main() {
   int mode = int(display_mode+0.5);
 
   if(lcd_is_grayscale>0.5&&mode ==3)mode = 2; 
-
- {
+  if(integer_scaling>0.5){
+     val = frag_color = sample_color_correct(uv);
+  }else{
     vec4 v[4];
     vec2 ip = floor(uv*emu_lcd_size.xy-0.5)+0.5;
     vec2 residual = fract(uv*emu_lcd_size.xy+0.5);

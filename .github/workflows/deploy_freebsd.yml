@@ -2,18 +2,18 @@ name: Build FreeBSD
 on: [push,pull_request]
 jobs:
   build-and-deploy:
-    runs-on: macos-12
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1
       - name: Configure & Build 🔧
         id: test
-        uses: vmactions/freebsd-vm@v0
+        uses: vmactions/freebsd-vm@v1
         with:
           envs: 'MYTOKEN MYTOKEN2'
           usesh: true
           prepare: |
-            pkg install -y curl cmake libX11 libXi libXrandr libXinerama libXcursor libglvnd alsa-lib
+            pkg install -y cmake libX11 libXi libXrandr libXinerama libXcursor libglvnd alsa-lib
 
 
           run: |
@@ -22,7 +22,7 @@ jobs:
             cmake .. && cmake --build .
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
            name: FreeBSDRelease
            path: build/bin/

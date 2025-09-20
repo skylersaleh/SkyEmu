@@ -44,6 +44,8 @@ typedef void (*arm_write16_fn_t)(void* user_data, uint32_t address, uint16_t dat
 typedef void (*arm_write8_fn_t)(void* user_data, uint32_t address, uint8_t data);
 typedef uint32_t (*arm_coproc_read_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp);
 typedef void (*arm_coproc_write_fn_t)(void* user_data, int coproc,int opcode,int Cn, int Cm,int Cp, uint32_t data);
+typedef void (*arm_trigger_breakpoint_fn_t)(void* user_data);
+
 
 #define ARM_DEBUG_BRANCH_RING_SIZE 32
 #define ARM_DEBUG_SWI_RING_SIZE 32
@@ -71,12 +73,11 @@ typedef struct {
   uint32_t debug_swi_ring_offset;
   uint32_t prefetch_pc;
   uint32_t step_instructions;//Instructions to step before triggering a breakpoint
-  uint32_t prefetch_opcode[3]; 
+  uint32_t prefetch_opcode[5]; 
   uint32_t i_cycles;//Executed i-cycles minus 1
   bool next_fetch_sequential;
   uint32_t registers[37];
   uint64_t executed_instructions;
-  bool trigger_breakpoint;
   bool print_instructions;
   void* user_data;
   FILE* log_cmp_file;
@@ -90,8 +91,20 @@ typedef struct {
   arm_write8_fn_t     write8;
   arm_coproc_read_fn_t coprocessor_read;
   arm_coproc_write_fn_t coprocessor_write;
+  arm_trigger_breakpoint_fn_t trigger_breakpoint; 
   bool wait_for_interrupt; 
   uint32_t irq_table_address; 
+  uint32_t phased_opcode; 
+  uint32_t phased_op_id; 
+  uint32_t phase; 
+  struct{
+    uint32_t addr;
+    uint32_t r15_off;
+    uint32_t last_bank;
+    uint32_t base_addr;
+    uint32_t cycle;
+    uint32_t num_regs;
+  }block;
 } arm7_t;     
 
 typedef void (*arm7_handler_t)(arm7_t *cpu, uint32_t opcode);
@@ -100,6 +113,10 @@ typedef struct{
 	char name[12];
 	char bitfield[33];
 }arm7_instruction_t;
+
+#define ARM_PHASED_NONE      0 
+#define ARM_PHASED_FILL_PIPE 1
+#define ARM_PHASED_BLOCK_TRANSFER 2
 
 ////////////////////////
 // User API Functions //
@@ -112,7 +129,7 @@ static void arm7_exec_instruction(arm7_t* cpu);
 // Write the dissassembled opcode from mem_address into the out_disasm string up to out_size characters
 static void arm7_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size);
 // Used to send an interrupt to the emulated CPU. The n'th set bit triggers the n'th interrupt
-static void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts);
+static void arm7_process_interrupts(arm7_t* cpu);
 ///////////////////////////////////////////
 // Functions for Internal Implementation //
 ///////////////////////////////////////////
@@ -429,8 +446,8 @@ static FORCE_INLINE unsigned arm7_reg_index(arm7_t* cpu, unsigned reg){
      8, 9,10,11,12,13,14,15,16,16, //mode 0xF (system)
   };
   int8_t r = lookup[mode*10+reg];
-  if(SB_LIKELY(r!=-1))return r; 
-  cpu->trigger_breakpoint=true;
+  if(SB_LIKELY(r!=-1))return r;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
   printf("Undefined ARM mode: %d\n",mode);
   return 0;
 }
@@ -566,6 +583,8 @@ static arm7_t arm7_init(void* user_data){
   }
   arm7_t arm = {.user_data = user_data};
   arm.prefetch_pc=-1;
+  arm.phase=0;
+  arm.phased_op_id = ARM_PHASED_FILL_PIPE;
   return arm;
 
 }
@@ -574,12 +593,12 @@ static FORCE_INLINE void arm7_set_thumb_bit(arm7_t* cpu, bool value){
   cpu->registers[CPSR] &= ~(1<<5);
   if(value)cpu->registers[CPSR]|= 1<<5;
 }
-static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupts){
+static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu){
   cpu->wait_for_interrupt=false;
-  if(cpu->log_cmp_file||interrupts==0)return; //Log drives interrupts when enabled
   uint32_t cpsr = cpu->registers[CPSR];
   bool I = ARM7_BFE(cpsr,7,1);
-  if(I==0){
+  if(I==0&&cpu->phased_op_id==0){
+    if(SB_UNLIKELY(cpu->log_cmp_file))return;
     //Interrupts are enabled when I ==0
     bool thumb = arm7_get_thumb_bit(cpu);
     cpu->registers[R14_irq] = cpu->registers[PC]+4;
@@ -589,8 +608,10 @@ static FORCE_INLINE void arm7_process_interrupts(arm7_t* cpu, uint32_t interrupt
     cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x12;
     //Disable interrupts(set I bit)
     cpu->registers[CPSR] |= 1<<7;
-    cpu->i_cycles=1;
+    cpu->i_cycles+=1;
     arm7_set_thumb_bit(cpu,false); 
+    cpu->phased_op_id = ARM_PHASED_FILL_PIPE;
+    cpu->phase=0;
   }
 }
 static void arm9_get_disasm(arm7_t * cpu, uint32_t mem_address, char* out_disasm, size_t out_size){
@@ -704,7 +725,7 @@ static void arm_check_log_file(arm7_t*cpu){
     for(int i=0;i<18;++i)matches &= cmp_regs[i]==regs[i];
     if(!matches){
       static int last_pc_break =0;
-      if(last_pc_break!=cpu->registers[PC])cpu->trigger_breakpoint =true;
+      if(last_pc_break!=cpu->registers[PC])  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
       last_pc_break = cpu->registers[PC];
       printf("Log mismatch detected\n");
       printf("=====================\n");
@@ -744,7 +765,7 @@ static void arm_check_log_file(arm7_t*cpu){
       int prev_mode = prev_cpsr&0x1f;
       if(log_mode==0x12&&prev_mode!=0x12){
         printf("Interrupt!\n");
-        cpu->trigger_breakpoint=false;       
+      if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
       }
       thumb = arm7_get_thumb_bit(cpu);
       if(thumb){
@@ -780,105 +801,147 @@ static void arm_check_log_file(arm7_t*cpu){
   }
   cpu->executed_instructions++;
 }
-static void arm9_exec_instruction(arm7_t* cpu){
-  if(cpu->wait_for_interrupt){
-    cpu->i_cycles=1; 
-    return;
-  }
+static FORCE_INLINE void arm7_fill_pipeline(arm7_t*cpu){
   bool thumb = arm7_get_thumb_bit(cpu);
-  if(cpu->prefetch_pc!=cpu->registers[PC]){
-    if(thumb){
-      cpu->registers[PC]&=~1;
-      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
-      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
-    }else{
-      cpu->registers[PC]&=~3;
-      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
-    }
-    cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
-  }
-  if(cpu->log_cmp_file){
-    arm_check_log_file(cpu);
-    thumb = arm7_get_thumb_bit(cpu);
-  }
-
-  cpu->next_fetch_sequential=true;
-  uint32_t opcode = cpu->prefetch_opcode[0];
-  cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
-  cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
-  if(thumb==false){
-    cpu->registers[PC] += 4;
-    cpu->prefetch_pc = cpu->registers[PC];
-    if(arm7_check_cond_code(cpu,opcode)){
-      uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-      arm9_lookup_table[key](cpu,opcode);
-    }
-    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+  if(thumb){
+    cpu->registers[PC]&=~1;
+    cpu->prefetch_opcode[cpu->phase]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2*cpu->phase,cpu->phase!=0);
   }else{
-    cpu->registers[PC] += 2;
-    cpu->prefetch_pc = cpu->registers[PC];
-    uint32_t key = ((opcode>>8)&0xff);
-    arm9t_lookup_table[key](cpu,opcode);
-    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
-    if(cpu->prefetch_pc==cpu->registers[PC])cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    cpu->registers[PC]&=~3;
+    cpu->prefetch_opcode[cpu->phase]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4*cpu->phase,cpu->phase!=0);
   }
-  if(SB_UNLIKELY(cpu->step_instructions)){
-    --cpu->step_instructions;
-    if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
+  ++cpu->phase;
+  if(cpu->phase!=2)return;
+  cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
+  cpu->phase = 0; 
+  cpu->phased_op_id = 0;
+  cpu->prefetch_pc=cpu->registers[PC];
+  cpu->next_fetch_sequential=true;
+}
+static FORCE_INLINE bool arm7_run_phased_opcode(arm7_t* cpu){
+  switch(cpu->phased_op_id){
+    case ARM_PHASED_NONE: return true;
+    case ARM_PHASED_FILL_PIPE: arm7_fill_pipeline(cpu);break;
+    case ARM_PHASED_BLOCK_TRANSFER: arm7_block_transfer(cpu,cpu->phased_opcode);break;
+    default: cpu->phased_op_id=0;return true;
   }
+  return false; 
 }
 static FORCE_INLINE void arm7_exec_instruction(arm7_t* cpu){
-  if(SB_UNLIKELY(cpu->wait_for_interrupt)){
-    cpu->i_cycles=1; 
-    return;
-  }
-  if(SB_UNLIKELY(cpu->log_cmp_file)){
-    arm_check_log_file(cpu);
-  }
   bool thumb = arm7_get_thumb_bit(cpu);
-  if(SB_UNLIKELY(cpu->prefetch_pc!=cpu->registers[PC])){
-    if(thumb){
-      cpu->registers[PC]&=~1;
-      cpu->prefetch_opcode[0]=cpu->read16_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2,true);
-      cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,true);
+  if(SB_LIKELY(arm7_run_phased_opcode(cpu))){
+    if(SB_UNLIKELY(cpu->wait_for_interrupt)){
+      cpu->i_cycles+=1; 
+      return;
+    }
+    if(SB_UNLIKELY(cpu->log_cmp_file)){
+      arm_check_log_file(cpu);
+    }
+    cpu->next_fetch_sequential=true;
+    uint32_t opcode = cpu->prefetch_opcode[0];
+    cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
+    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
+    if(thumb==false){
+      cpu->registers[PC] += 4;
+      cpu->prefetch_pc = cpu->registers[PC];
+      if(SB_LIKELY(arm7_check_cond_code(cpu,opcode))){
+        uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
+        arm7_lookup_table[key](cpu,opcode);
+      }
     }else{
-      cpu->registers[PC]&=~3;
-      cpu->prefetch_opcode[0]=cpu->read32_seq(cpu->user_data,cpu->registers[PC],false);
-      cpu->prefetch_opcode[1]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4,true);
-      cpu->prefetch_opcode[2]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,true);
+      cpu->registers[PC] += 2;
+      cpu->prefetch_pc = cpu->registers[PC];
+      uint32_t key = ((opcode>>8)&0xff);
+      arm7t_lookup_table[key](cpu,opcode);
     }
-    cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
+    if(SB_UNLIKELY(cpu->step_instructions)){
+      --cpu->step_instructions;
+      if(cpu->step_instructions==0){
+        if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
+      }
+    }
   }
-
-  cpu->next_fetch_sequential=true;
-  uint32_t opcode = cpu->prefetch_opcode[0];
-  cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
-  cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
+  if(SB_UNLIKELY(cpu->phased_op_id))return;
   if(thumb==false){
-    cpu->registers[PC] += 4;
-    cpu->prefetch_pc = cpu->registers[PC];
-    if(SB_LIKELY(arm7_check_cond_code(cpu,opcode))){
-      uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
-    	arm7_lookup_table[key](cpu,opcode);
-    }
-    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    else cpu->phased_op_id=ARM_PHASED_FILL_PIPE;
   }else{
-    cpu->registers[PC] += 2;
-    cpu->prefetch_pc = cpu->registers[PC];
-    uint32_t key = ((opcode>>8)&0xff);
-    arm7t_lookup_table[key](cpu,opcode);
-    //Simulate the pipelined fetch(this needs to be here since the other HW state should be computed after the instruction fetch)
     if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    else cpu->phased_op_id=ARM_PHASED_FILL_PIPE;
   }
-  if(SB_UNLIKELY(cpu->step_instructions)){
-    --cpu->step_instructions;
-    if(cpu->step_instructions==0)cpu->trigger_breakpoint =true;
+}
+static FORCE_INLINE void arm9_fill_pipeline(arm7_t*cpu){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  if(thumb){
+    cpu->registers[PC]&=~1;
+    cpu->prefetch_opcode[cpu->phase]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+2*cpu->phase,cpu->phase!=0);
+  }else{
+    cpu->registers[PC]&=~3;
+    cpu->prefetch_opcode[cpu->phase]=cpu->read32_seq(cpu->user_data,cpu->registers[PC]+4*cpu->phase,cpu->phase!=0);
+  }
+  ++cpu->phase;
+  if(cpu->phase!=4)return;
+  cpu->debug_branch_ring[(cpu->debug_branch_ring_offset++)%ARM_DEBUG_BRANCH_RING_SIZE]=cpu->registers[PC];
+  cpu->phase = 0; 
+  cpu->phased_op_id = 0;
+  cpu->prefetch_pc=cpu->registers[PC];
+  cpu->next_fetch_sequential=true;
+}
+static FORCE_INLINE bool arm9_run_phased_opcode(arm7_t* cpu){
+  switch(cpu->phased_op_id){
+    case ARM_PHASED_NONE: return true;
+    case ARM_PHASED_FILL_PIPE: arm9_fill_pipeline(cpu);break;
+    case ARM_PHASED_BLOCK_TRANSFER: arm9_block_transfer(cpu,cpu->phased_opcode);break;
+    default: cpu->phased_op_id=0;return true;
+  }
+  return false; 
+}
+static void arm9_exec_instruction(arm7_t* cpu){
+  bool thumb = arm7_get_thumb_bit(cpu);
+  if(SB_LIKELY(arm9_run_phased_opcode(cpu))){
+    if(cpu->wait_for_interrupt){
+      cpu->i_cycles+=1; 
+      return;
+    }
+    
+    if(SB_UNLIKELY(cpu->log_cmp_file)){
+      arm_check_log_file(cpu);
+      thumb = arm7_get_thumb_bit(cpu);
+    }
+
+    cpu->next_fetch_sequential=true;
+    uint32_t opcode = cpu->prefetch_opcode[0];
+    cpu->prefetch_opcode[0] = cpu->prefetch_opcode[1];
+    cpu->prefetch_opcode[1] = cpu->prefetch_opcode[2];
+    cpu->prefetch_opcode[2] = cpu->prefetch_opcode[3];
+    cpu->prefetch_opcode[3] = cpu->prefetch_opcode[4];
+    if(thumb==false){
+      cpu->registers[PC] += 4;
+      cpu->prefetch_pc = cpu->registers[PC];
+      if(arm7_check_cond_code(cpu,opcode)){
+        uint32_t key = ((opcode>>4)&0xf)| ((opcode>>16)&0xff0);
+        arm9_lookup_table[key](cpu,opcode);
+      }
+    }else{
+      cpu->registers[PC] += 2;
+      cpu->prefetch_pc = cpu->registers[PC];
+      uint32_t key = ((opcode>>8)&0xff);
+      arm9t_lookup_table[key](cpu,opcode);
+    }
+    if(SB_UNLIKELY(cpu->step_instructions)){
+      --cpu->step_instructions;
+      if(cpu->step_instructions==0){
+        if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
+      }
+    }
+  }
+  if(SB_UNLIKELY(cpu->phased_op_id))return;
+  if(thumb==false){
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2] =cpu->read32_seq(cpu->user_data,cpu->registers[PC]+8,cpu->next_fetch_sequential);
+    else cpu->phased_op_id=ARM_PHASED_FILL_PIPE;
+  }else{
+    if(SB_LIKELY(cpu->prefetch_pc==cpu->registers[PC]))cpu->prefetch_opcode[2]=cpu->read16_seq(cpu->user_data,cpu->registers[PC]+4,cpu->next_fetch_sequential);
+    else cpu->phased_op_id=ARM_PHASED_FILL_PIPE;
   }
 }
 static FORCE_INLINE uint32_t arm7_rotr(uint32_t value, uint32_t rotate) {
@@ -972,7 +1035,7 @@ static FORCE_INLINE void arm7_data_processing(arm7_t* cpu, uint32_t opcode){
         // Only the first byte is used
         shift_value = arm7_reg_read_r15_adj(cpu, rs,r15_off)&0xff;
         r15_off+=4; //Using r15 for a shift adds 4 cycles
-        cpu->i_cycles=1;
+        cpu->i_cycles+=1;
       }else shift_value = ARM7_BFE(opcode,7,5);  
       uint32_t value = arm7_reg_read_r15_adj(cpu, ARM7_BFE(opcode,0,4),r15_off); 
       Rm = arm7_shift(cpu, opcode, value, shift_value, &barrel_shifter_carry); 
@@ -1069,10 +1132,10 @@ static FORCE_INLINE void arm7_multiply(arm7_t* cpu, uint32_t opcode){
   int64_t Rs = arm7_reg_read(cpu,ARM7_BFE(opcode,8,4));
   int64_t Rm = arm7_reg_read(cpu,ARM7_BFE(opcode,0,4));
 
-  if(SB_BFE(Rs,8,24)== 0 || SB_BFE(Rs,8,24)==0x00ffffff)cpu->i_cycles = 1; 
-  else if(SB_BFE(Rs,16,16)== 0 || SB_BFE(Rs,16,16)==0x0000ffff)cpu->i_cycles = 2; 
-  else if(SB_BFE(Rs,24,8) == 0 || SB_BFE(Rs,24,8)== 0x000000ff)cpu->i_cycles = 3; 
-  else cpu->i_cycles = 4; 
+  if(SB_BFE(Rs,8,24)== 0 || SB_BFE(Rs,8,24)==0x00ffffff)cpu->i_cycles += 1; 
+  else if(SB_BFE(Rs,16,16)== 0 || SB_BFE(Rs,16,16)==0x0000ffff)cpu->i_cycles += 2; 
+  else if(SB_BFE(Rs,24,8) == 0 || SB_BFE(Rs,24,8)== 0x000000ff)cpu->i_cycles += 3; 
+  else cpu->i_cycles += 4; 
 
   int64_t result = Rm*Rs;
   if(A){result+=Rn;cpu->i_cycles+=1;}
@@ -1131,7 +1194,7 @@ static FORCE_INLINE void arm9_signed_halfword_multiply(arm7_t* cpu, uint32_t opc
         RdLo = result&0xffffffff;
         arm7_reg_write(cpu,Rd,RdHi);
         arm7_reg_write(cpu,ARM7_BFE(opcode,12,4),RdLo);
-        cpu->i_cycles=1;
+        cpu->i_cycles+=1;
       }
       return;
     case 3: //SMULxy
@@ -1159,15 +1222,15 @@ static FORCE_INLINE void arm7_multiply_long(arm7_t* cpu, uint32_t opcode){
   if(U){
     Rm = (int32_t)Rm;
     Rs = (int32_t)Rs;
-    if(SB_BFE(Rs,8,24)== 0 || SB_BFE(Rs,8,24)==0x00ffffff)cpu->i_cycles = 2; 
-    else if(SB_BFE(Rs,16,16)== 0 || SB_BFE(Rs,16,16)==0x0000ffff)cpu->i_cycles = 3; 
-    else if(SB_BFE(Rs,24,8) == 0 || SB_BFE(Rs,24,8)== 0x000000ff)cpu->i_cycles = 4; 
-    else cpu->i_cycles = 5; 
+    if(SB_BFE(Rs,8,24)== 0 || SB_BFE(Rs,8,24)==0x00ffffff)cpu->i_cycles += 2; 
+    else if(SB_BFE(Rs,16,16)== 0 || SB_BFE(Rs,16,16)==0x0000ffff)cpu->i_cycles += 3; 
+    else if(SB_BFE(Rs,24,8) == 0 || SB_BFE(Rs,24,8)== 0x000000ff)cpu->i_cycles += 4; 
+    else cpu->i_cycles += 5; 
   }else{
-     if(SB_BFE(Rs,8,24)== 0 )cpu->i_cycles = 2; 
-     else if(SB_BFE(Rs,16,16)== 0 )cpu->i_cycles = 3; 
-     else if(SB_BFE(Rs,24,8) == 0 )cpu->i_cycles = 4; 
-     else cpu->i_cycles = 5; 
+     if(SB_BFE(Rs,8,24)== 0 )cpu->i_cycles += 2; 
+     else if(SB_BFE(Rs,16,16)== 0 )cpu->i_cycles += 3; 
+     else if(SB_BFE(Rs,24,8) == 0 )cpu->i_cycles += 4; 
+     else cpu->i_cycles += 5; 
    }
    
 
@@ -1207,7 +1270,7 @@ static FORCE_INLINE void arm7_single_data_swap(arm7_t* cpu, uint32_t opcode){
   else cpu->write32(cpu->user_data,addr,store_data);
 
   arm7_reg_write(cpu,Rd,read_data);
-  cpu->i_cycles=1;    
+  cpu->i_cycles+=1;    
 }
 static FORCE_INLINE void arm7_branch_exchange(arm7_t* cpu, uint32_t opcode){
   int v = arm7_reg_read_r15_adj(cpu,ARM7_BFE(opcode,0,4),4);
@@ -1248,7 +1311,7 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
   if(P) addr += increment;
   // Store before writeback
   if(L==0){ 
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(H==1)cpu->write16(cpu->user_data,addr,data);
     else cpu->write8(cpu->user_data,addr,data);
   }
@@ -1266,7 +1329,7 @@ static FORCE_INLINE void arm7_half_word_transfer(arm7_t* cpu, uint32_t opcode){
       else  data|= 0xffffff00*ARM7_BFE(data,7,1);
     }
     arm7_reg_write(cpu,Rd,data);  
-    cpu->i_cycles=1;
+    cpu->i_cycles+=1;
   }
   
 }
@@ -1303,7 +1366,7 @@ static FORCE_INLINE void arm7_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   if(L==1){ // Load
     uint32_t data = B ? cpu->read8(cpu->user_data,addr): arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
     arm7_reg_write(cpu,Rd,data); 
-    cpu->i_cycles=1; 
+    cpu->i_cycles+=1; 
   }
 }
 static FORCE_INLINE void arm9_single_word_transfer(arm7_t* cpu, uint32_t opcode){
@@ -1339,7 +1402,7 @@ static FORCE_INLINE void arm9_single_word_transfer(arm7_t* cpu, uint32_t opcode)
   if(L==1){ // Load
     uint32_t data = B ? cpu->read8(cpu->user_data,addr): arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
     arm9_reg_write_r15_thumb(cpu,Rd,data); 
-    cpu->i_cycles=1; 
+    cpu->i_cycles+=1; 
   }
 }
 static FORCE_INLINE void arm9_double_word_transfer(arm7_t* cpu, uint32_t opcode){
@@ -1379,7 +1442,7 @@ static FORCE_INLINE void arm9_double_word_transfer(arm7_t* cpu, uint32_t opcode)
     uint32_t data1 = cpu->read32(cpu->user_data,addr+4);
     arm9_reg_write_r15_thumb(cpu,Rd,data0);   
     arm9_reg_write_r15_thumb(cpu,Rd+1,data1); 
-    cpu->i_cycles=1; 
+    cpu->i_cycles+=1; 
   }
 }
 static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
@@ -1392,8 +1455,7 @@ static FORCE_INLINE void arm7_undefined(arm7_t* cpu, uint32_t opcode){
   cpu->registers[CPSR] = (cpsr&0xffffffE0)| 0x1b|0x80;
   arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Instruction Class (arm7_undefined) Opcode: %x PC:%08x\n",opcode, cpu->registers[R14_und]);
-  cpu->i_cycles=1;
-  //cpu->trigger_breakpoint = true;
+  cpu->i_cycles+=1;
 }
 static FORCE_INLINE void arm9_clz(arm7_t* cpu, uint32_t opcode){
   int Rd = ARM7_BFE(opcode,12,4);
@@ -1461,34 +1523,37 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
   //   mem[Rn+12] = R7
   //   Rn+=12
 
-  int addr = arm7_reg_read_r15_adj(cpu,Rn,4);
-  int increment = U? 4: -4;
-  int num_regs = 0; 
-  for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
-  int base_addr = addr;
-  if(reglist==0){
-    // Handle Empty Rlist case: R15 loaded/stored (ARMv4 only), and Rb=Rb+/-40h (ARMv4-v5).
-    reglist = 1<<15;
-    num_regs = 16;
+  if(cpu->phase==0){
+
+    int addr = arm7_reg_read_r15_adj(cpu,Rn,4);
+    int increment = U? 4: -4;
+    int num_regs = 0; 
+    for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
+    int base_addr = addr;
+    if(reglist==0){
+      // Handle Empty Rlist case: R15 loaded/stored (ARMv4 only), and Rb=Rb+/-40h (ARMv4-v5).
+      reglist = 1<<15;
+      num_regs = 16;
+    }
+    if(!U)base_addr+=(num_regs)*increment;
+    addr = base_addr; 
+    if(U)base_addr+= (num_regs)*increment;
+    cpu->block.base_addr=base_addr;
+    
+    if(!(P^U))addr+=4;
+    cpu->block.cycle=0;
+    cpu->block.addr = addr;
+    // TODO: For some reason r15 is only offset by 4 in thumb mode. 
+    // Check if other people do this to. 
+    cpu->block.r15_off = arm7_get_thumb_bit(cpu)? 4:8;
+    // Address are word aligned
+    //addr&=~3;
+    cpu->block.last_bank = -1;
+    
   }
-  if(!U)base_addr+=(num_regs)*increment;
-  addr = base_addr; 
-  if(U)base_addr+= (num_regs)*increment;
-
-  
-  if(!(P^U))addr+=4;
-
-  // TODO: For some reason r15 is only offset by 4 in thumb mode. 
-  // Check if other people do this to. 
-  int r15_off = arm7_get_thumb_bit(cpu)? 4:8;
-  // Address are word aligned
-  //addr&=~3;
-  int cycle = 0; 
-  int last_bank = -1;
-
   bool user_bank_transfer = S && (!L || !SB_BFE(reglist,15,1));
 
-  for(int i=0;i<16;++i){
+  for(int i=cpu->phase;i<16;++i){
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
 
@@ -1497,32 +1562,38 @@ static FORCE_INLINE void arm7_block_transfer(arm7_t* cpu, uint32_t opcode){
     // When S is set the registers are read from the user bank
     int reg_index = user_bank_transfer ? i : arm7_reg_index(cpu,i);
     //Store happens before writeback 
-    int a = addr;
+    int a = cpu->block.addr;
     //Inexplicablly SRAM accesses are not DWORD aligned. GBA suite memory test can be used to verify this. 
     if((a&0xfe000000)!=0x0e000000)a&=~3;
-    if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
+    if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?cpu->block.r15_off:0));
 
     //Writeback happens on second cycle
-    if(++cycle==1 && w){
-      arm7_reg_write(cpu,Rn,base_addr); 
+    if(++cpu->block.cycle==1 && w){
+      arm7_reg_write(cpu,Rn,cpu->block.base_addr); 
     }
 
     // R15 is stored at PC+12
    if(L){
-      int bank = ARM7_BFE(addr,24,8);
-      cpu->registers[reg_index]=cpu->read32_seq(cpu->user_data, a,bank==last_bank);
-      last_bank=bank;
+      int bank = ARM7_BFE(a,24,8);
+      cpu->registers[reg_index]=cpu->read32_seq(cpu->user_data, a,bank==cpu->block.last_bank);
+      cpu->block.last_bank=bank;
    }
 
-    addr+=4;
+    cpu->block.addr+=4;
     
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
     if(L&& S&& i==15){
       cpu->registers[CPSR] = arm7_reg_read(cpu,SPSR);
     }
+    cpu->phased_op_id=ARM_PHASED_BLOCK_TRANSFER;
+    cpu->phased_opcode=opcode;
+    cpu->phase = i+1;
+    return;
   }
-  if(L)cpu->i_cycles=1;
+  if(L)cpu->i_cycles+=1;
+  cpu->phase=0;
+  cpu->phased_op_id=0;
 }
 static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
   int P = ARM7_BFE(opcode,24,1);
@@ -1557,33 +1628,34 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
   //   mem[Rn+8] = R5
   //   mem[Rn+12] = R7
   //   Rn+=12
+  if(cpu->phase==0){
+    int addr = arm7_reg_read_r15_adj(cpu,Rn,4);
+    int increment = U? 4: -4;
+    int num_regs = 0; 
+    for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
+    int base_addr = addr;
+    if(reglist==0){
+      // Handle Empty Rlist case: R15 loaded/stored (ARMv4 only), and Rb=Rb+/-40h (ARMv4-v5).
+      num_regs = 16;
+    }
+    if(!U)base_addr+=(num_regs)*increment;
+    addr = base_addr; 
+    if(U)base_addr+= (num_regs)*increment;
+    
+    if(!(P^U))addr+=4;
 
-  int addr = arm7_reg_read_r15_adj(cpu,Rn,4);
-  int increment = U? 4: -4;
-  int num_regs = 0; 
-  for(int i=0;i<16;++i) if(ARM7_BFE(reglist,i,1)==1)num_regs+=1;
-  int base_addr = addr;
-  if(reglist==0){
-    // Handle Empty Rlist case: R15 loaded/stored (ARMv4 only), and Rb=Rb+/-40h (ARMv4-v5).
-    num_regs = 16;
+    cpu->block.base_addr=base_addr;
+    cpu->block.cycle=0;
+    cpu->block.addr = addr;
+    // TODO: For some reason r15 is only offset by 4 in thumb mode. 
+    // Check if other people do this to. 
+    cpu->block.r15_off = arm7_get_thumb_bit(cpu)? 4:8;
+    cpu->block.last_bank = -1;
+    cpu->block.num_regs=num_regs;
   }
-  if(!U)base_addr+=(num_regs)*increment;
-  addr = base_addr; 
-  if(U)base_addr+= (num_regs)*increment;
-
-  
-  if(!(P^U))addr+=4;
-
-  // TODO: For some reason r15 is only offset by 4 in thumb mode. 
-  // Check if other people do this to. 
-  int r15_off = arm7_get_thumb_bit(cpu)? 4:8;
-  // Address are word aligned
-  //addr&=~3;
-  int cycle = 0; 
-  int last_bank = -1;
 
   bool user_bank_transfer = S && (!L || !SB_BFE(reglist,15,1));
-  for(int i=0;i<16;++i){
+  for(int i=cpu->phase;i<16;++i){
     //Writeback happens on second cycle
     //Todo, does post increment force writeback? 
 
@@ -1592,34 +1664,39 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
     // When S is set the registers are read from the user bank
     int reg_index = user_bank_transfer ? i : arm7_reg_index(cpu,i);
     //Store happens before writeback 
-    int a = addr;
-    if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?r15_off:0));
+    int a = cpu->block.addr;
+    if(!L) cpu->write32(cpu->user_data, a,cpu->registers[reg_index] + (i==15?cpu->block.r15_off:0));
 
     // R15 is stored at PC+12
    if(L){
-      int bank = ARM7_BFE(addr,24,8);
-      cpu->registers[reg_index]=cpu->read32_seq(cpu->user_data, a,bank==last_bank);
-      last_bank=bank;
+      int bank = ARM7_BFE(a,24,8);
+      cpu->registers[reg_index]=cpu->read32_seq(cpu->user_data, a,bank==cpu->block.last_bank);
+      cpu->block.last_bank=bank;
       if(PC==reg_index)arm7_set_thumb_bit(cpu,cpu->registers[PC]&1);
    }
     //Writeback happens on second cycle
-    if(++cycle==1&& w){
-      arm7_reg_write(cpu,Rn,base_addr); 
+    if(++cpu->block.cycle==1&& w){
+      arm7_reg_write(cpu,Rn,cpu->block.base_addr); 
     }
-    addr+=4;
+    cpu->block.addr+=4;
     
     // If the instruction is a LDM then SPSR_<mode> is transferred to CPSR at
     // the same time as R15 is loaded.
     if(L&& S&& i==15){
       cpu->registers[CPSR] = arm7_reg_read(cpu,SPSR);
-
     }
+    cpu->phased_op_id=ARM_PHASED_BLOCK_TRANSFER;
+    cpu->phased_opcode=opcode;
+    cpu->phase = i+1;
+    return;
   }
   //Writeback happens on second cycle
-  if((reglist>= (1<<(Rn+1))||num_regs<=1||reglist==0)&& w){
-    arm7_reg_write(cpu,Rn,base_addr); 
+  if((reglist>= (1<<(Rn+1))||cpu->block.num_regs<=1||reglist==0)&& w){
+    arm7_reg_write(cpu,Rn,cpu->block.base_addr); 
   }
-  if(L)cpu->i_cycles=1;
+  if(L)cpu->i_cycles+=1;
+  cpu->phase=0;
+  cpu->phased_op_id=0;
 }
 static FORCE_INLINE void arm7_branch(arm7_t* cpu, uint32_t opcode){
   //Write Link Register if L=1
@@ -1654,11 +1731,11 @@ static FORCE_INLINE void arm9_branch(arm7_t* cpu, uint32_t opcode){
 }
 static FORCE_INLINE void arm7_coproc_data_transfer(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_coproc_data_transfer) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 static FORCE_INLINE void arm7_coproc_data_op(arm7_t* cpu, uint32_t opcode){
   printf("Unhandled Instruction Class (arm7_coproc_data_op) Opcode: %x\n",opcode);
-  cpu->trigger_breakpoint = true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 static FORCE_INLINE void arm7_coproc_reg_transfer(arm7_t* cpu, uint32_t opcode){
   int coprocessor_opcode = SB_BFE(opcode,21,3);
@@ -1997,7 +2074,7 @@ static FORCE_INLINE void arm7t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   if(!B)offset*=4;
   addr += offset;
   if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(B==1)cpu->write8(cpu->user_data,addr,data);
     else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
@@ -2018,7 +2095,7 @@ static FORCE_INLINE void arm9t_imm_off_ldst(arm7_t* cpu, uint32_t opcode){
   if(!B)offset*=4;
   addr += offset;
   if(L==0){ // Store
-    uint32_t data = arm7_reg_read(cpu,Rd);
+    uint32_t data = arm7_reg_read_r15_adj(cpu,Rd,8);
     if(B==1)cpu->write8(cpu->user_data,addr,data);
     else cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
@@ -2038,7 +2115,7 @@ static FORCE_INLINE void arm7t_imm_off_ldst_bh(arm7_t* cpu, uint32_t opcode){
   addr += offset*2;
   uint32_t data=0;
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write16(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read16(cpu->user_data,addr),(addr&0x1)*8);
@@ -2055,7 +2132,7 @@ static FORCE_INLINE void arm7t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   addr += offset*4;
   uint32_t data; 
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
@@ -2072,7 +2149,7 @@ static FORCE_INLINE void arm9t_stack_off_ldst(arm7_t* cpu, uint32_t opcode){
   addr += offset*4;
   uint32_t data; 
   if(L==0){ // Store
-    data = arm7_reg_read(cpu,Rd);
+    data = arm7_reg_read_r15_adj(cpu,Rd,8);
     cpu->write32(cpu->user_data,addr,data);
   }else{ // Load
     data = arm7_rotr(cpu->read32(cpu->user_data,addr),(addr&0x3)*8);
@@ -2196,7 +2273,7 @@ static FORCE_INLINE void arm7t_unknown(arm7_t* cpu, uint32_t opcode){
   arm7_set_thumb_bit(cpu,false);
   printf("Unhandled Thumb Instruction Class: (arm7t_unknown) Opcode %x\n",opcode);
   printf("PC: %08x\n",cpu->registers[PC]);
-  //cpu->trigger_breakpoint=true;
+  if(cpu->trigger_breakpoint)cpu->trigger_breakpoint(cpu->user_data); 
 }
 
 #endif

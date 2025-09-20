@@ -106,7 +106,8 @@
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define SB_AUDIO_RING_BUFFER_SIZE (2048*8)
 
-#define SYSTEM_UNKNOWN 0
+#define SYSTEM_UNKNOWN 0xff
+#define SYSTEM_NONE 0
 #define SYSTEM_GB 1
 #define SYSTEM_GBA 2
 #define SYSTEM_NDS 3
@@ -140,7 +141,6 @@ typedef struct {
   int run_mode;          // [0: Reset, 1: Pause, 2: Run, 3: Step ]
   int step_instructions; // Number of instructions to advance while stepping
   int step_frames; 
-  int pc_breakpoint;     // PC to run until
   bool rom_loaded;
   int system;            // Enum to emulated system Ex. SYSTEM_GB, SYSTEM_GBA
   sb_joy_t joy;
@@ -163,6 +163,7 @@ typedef struct {
   uint8_t *rom_data;
   char rom_path[SB_FILE_PATH_SIZE]; 
   bool force_dmg_mode; 
+  uint64_t game_checksum;
 } sb_emu_state_t;
 typedef struct{
   bool read_since_reset;
@@ -201,7 +202,6 @@ static inline bool sb_path_has_file_ext(const char * path, const char * ext){
 static bool sb_file_exists(const char * path){
   FILE * f = fopen(path,"r");
   if(f){fclose(f);return true;}
-  printf("%s does not exist\n",path);
   return false; 
 }
 static bool sb_load_file_data_into_buffer(const char* path, void* buffer, size_t buffer_size){
@@ -238,13 +238,14 @@ static uint8_t* sb_load_file_data(const char* path, size_t *file_size){
     if(size==EOF){size = 0; free(data);} 
     if(file_size)*file_size = size;
     printf("Loaded file %s file_size %zu\n",path,*file_size);
+    fclose(f);
     return data;
   }else{
     printf("Failed to open file %s\n",path);
   }
   return NULL;
 }
-static bool sb_save_file_data(const char* path, uint8_t* data, size_t file_size){
+static bool sb_save_file_data(const char* path, const uint8_t* data, size_t file_size){
   FILE *f = fopen(path, "wb");
   size_t written = -1; 
   if(f){
@@ -264,8 +265,7 @@ static void sb_free_file_data(uint8_t* data){
 }
 static const char* sb_parent_path(const char* path){
   static char tmp_path[SB_FILE_PATH_SIZE];
-  strncpy(tmp_path,path,SB_FILE_PATH_SIZE-1);
-  tmp_path[SB_FILE_PATH_SIZE-1]='\0';
+  snprintf(tmp_path, SB_FILE_PATH_SIZE, "%s", path);
   size_t sz = strlen(tmp_path);
   while(sz>1){
     char c = tmp_path[sz-1];
@@ -280,14 +280,14 @@ static const char* sb_parent_path(const char* path){
       bool is_slash = c=='\\'||c=='/';
       if(found_dir&&!is_slash)break;
       if(is_slash)found_dir = true;
-      tmp_path[sz]='\0';
+      if(sz>0)tmp_path[sz]='\0';
     }
   }
   return tmp_path;
 }
 static const char *sb_get_home_path(){
   static char homedir[SB_FILE_PATH_SIZE];
-#ifdef PLATFORM_ANDROID
+#ifdef SE_PLATFORM_ANDROID
   return "/sdcard/";
 #elif defined(_WIN32)
   snprintf(homedir, SB_FILE_PATH_SIZE, "%s%s", getenv("HOMEDRIVE"), getenv("HOMEPATH"));
@@ -322,7 +322,7 @@ static void sb_breakup_path(const char* path, const char** base_path, const char
   }
 }
 static void se_join_path(char * dest_path, int dest_size, const char * base_path, const char* file_name, const char* add_extension){
-  char * seperator = base_path[0]==0? "" : "/"; 
+  const char * seperator = base_path[0]==0? "" : "/"; 
   if(strlen(base_path)!=0){
     char last_base_char = base_path[strlen(base_path)-1];
     if(last_base_char=='/'||last_base_char=='\\')seperator="";

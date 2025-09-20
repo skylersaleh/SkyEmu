@@ -18,9 +18,19 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
 set(LINK_LIBS "")
+
+# Set compile_commands.json generation for clangd on by default
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+option(ENABLE_RETRO_ACHIEVEMENTS "Enable Retro Achievements" ON)
+
+option(USE_SYSTEM_CURL "Use the system's libcurl package" OFF)
+option(USE_SYSTEM_OPENSSL "Use the system's OpenSSL package" OFF)
+option(USE_SYSTEM_SDL2 "Use the system's SDL2 package" OFF)
+
 if (EMSCRIPTEN)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DPLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=0 ")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html  -s USE_CLOSURE_COMPILER=0 ")
 endif ()
 if (MSVC)
     # Perform extremely aggressive optimization on Release builds:
@@ -40,12 +50,13 @@ if (MSVC)
     # Exception handling model: Catch C++ exceptions only, assume that "extern C" functions will never throw a C++ exception.
     # Disable all forms of MSVC debug iterator checking in new and old Visual Studios.
     # Causes the application to use the multithread, static version of the run-time library. 
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 ")
+    # Enable C11 conformance (/std:c11)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 /std:c11 ")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT /Ox /Ob2 /Oi /Ot /GT /GF /GS- /fp:fast /fp:except- /MP /sdl- /EHsc /D_SECURE_SCL=0 /D_SCL_SECURE_NO_WARNINGS /D_ITERATOR_DEBUG_LEVEL=0 /D_HAS_ITERATOR_DEBUGGING=0 /std:c11 ")
 
 endif()
 
-if( (NOT ANDROID))
+if(NOT ANDROID)
     set(USE_SDL 1)
     add_definitions(-DUSE_SDL=1)
 endif()
@@ -59,13 +70,13 @@ else ()
   set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -O3 -DNDEBUG") 
 endif ()
 if(IOS)
-    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum iOS deployment version" FORCE)
+    set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment version" FORCE)
     set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO" FORCE)
     set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO" FORCE)
 endif()
 if(WIN32)
   message("Building for Windows")
-  add_definitions(-DPLATFORM_WINDOWS=1)
+  add_definitions(-DSE_PLATFORM_WINDOWS=1)
 endif()
 if(ANDROID)
   set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}")
@@ -82,19 +93,61 @@ if ((CMAKE_SYSTEM_NAME STREQUAL Linux) AND NOT EMSCRIPTEN AND NOT ANDROID)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     find_package(ALSA REQUIRED)
-    set(PLATFORM_LINUX TRUE)
+    set(SE_PLATFORM_LINUX TRUE)
+    add_definitions(-DSE_PLATFORM_LINUX=1)
 endif()
-if (UNIX AND NOT APPLE AND NOT PLATFORM_LINUX AND NOT EMSCRIPTEN AND NOT ANDROID)
-  set(PLATFORM_FREEBSD TRUE)
+if (UNIX AND NOT APPLE AND NOT SE_PLATFORM_LINUX AND NOT EMSCRIPTEN AND NOT ANDROID)
+  set(SE_PLATFORM_FREEBSD TRUE)
+  add_definitions(-DSE_PLATFORM_FREEBSD=1)
   find_package(ALSA REQUIRED)
   link_directories(/usr/local/lib)
 endif()
 
-if (PLATFORM_LINUX OR PLATFORM_FREEBSD)
+if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
     find_package(X11 REQUIRED)
 endif()
+
+if (USE_SYSTEM_CURL OR USE_SYSTEM_OPENSSL)
+  find_package(PkgConfig REQUIRED)
+endif()
+
+if(NOT EMSCRIPTEN)
+  if (USE_SYSTEM_CURL)
+    pkg_check_modules(Curl REQUIRED IMPORTED_TARGET libcurl)
+  else()
+    set(WITH_APPS OFF CACHE BOOL "" FORCE) # don't build executable
+    set(CURL_USE_LIBSSH2 OFF)
+    set(CURL_USE_LIBPSL OFF)
+    set(CURL_USE_OPENSSL ON)
+    set(CURL_DISABLE_LDAP ON)
+    set(USE_LIBIDN2 OFF)
+    set(CURL_ENABLE_EXPORT_TARGET OFF)
+    set(BUILD_TESTING OFF)
+    set(BUILD_CURL_EXE OFF)
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_STATIC_LIBS ON)
+    if (WIN32)
+      set(CURL_STATIC_CRT ON)
+    endif()
+    # see "Important static libcurl usage note" in INSTALL.md
+    add_definitions(-DCURL_STATICLIB)
+    add_subdirectory(src/curl)
+    set_property(TARGET libcurl_static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  endif()
+
+  if(USE_SYSTEM_OPENSSL)
+    pkg_check_modules(OpenSSL REQUIRED IMPORTED_TARGET openssl)
+  else()
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_STATIC_LIBS ON)
+    add_subdirectory(src/openssl)
+    set_property(TARGET ssl PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET crypto PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  endif()
+endif()
+
 # TinyFileDialogs
-if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT PLATFORM_LINUX) AND (NOT PLATFORM_FREEBSD))
+if ((NOT IOS) AND (NOT EMSCRIPTEN) AND (NOT ANDROID) AND (NOT SE_PLATFORM_LINUX) AND (NOT SE_PLATFORM_FREEBSD))
     set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DUSE_TINY_FILE_DIALOGS")
     set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -DUSE_TINY_FILE_DIALOGS") 
     add_library(tinyfd STATIC 
@@ -122,9 +175,12 @@ add_library(cimgui STATIC
     src/cimgui/imgui/imgui_demo.cpp
     )
 set_property(TARGET cimgui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-
 target_include_directories(cimgui INTERFACE src/cimgui)
+
 if(USE_SDL)
+  if (USE_SYSTEM_SDL2)
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+  else()
     message("Build with SDL!")
 
     #=== LIBRARY: SDL2
@@ -149,12 +205,13 @@ if(USE_SDL)
     add_definitions(-DSDL_LEAN_AND_MEAN=1)
     add_subdirectory(src/SDL2)
     set_property(TARGET SDL2-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  endif()
 endif()
 
 if (EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html") # This line is used to set your executable to build with the emscripten html template so taht you can directly open it.
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_main] -sEXPORTED_RUNTIME_METHODS=ccall ")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_main] -sEXPORTED_RUNTIME_METHODS=ccall ")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_https_open_url,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sEXPORTED_FUNCTIONS=[_se_load_settings,_se_login_cloud,_https_open_url,_main,_malloc,_free,_em_oath_sign_in_callback,_em_https_request_callback_wrapper,_gsecret_web] -sEXPORTED_RUNTIME_METHODS=ccall")
 endif ()
 
 #=== LIBRARY: sokol
@@ -167,14 +224,14 @@ set(SOKOL_HEADERS
     src/sokol/sokol_audio.h
     src/sokol/sokol_glue.h)
 if(ANDROID)
-    add_definitions(-DPLATFORM_ANDROID)
+    add_definitions(-DSE_PLATFORM_ANDROID)
     set(LINK_LIBS ${LINK_LIBS}  GLESv3 EGL OpenSLES log android)
     message("Android Build!")
 endif()
 if(MACOS OR IOS)
     add_library(sokol STATIC src/sokol/sokol.m ${SOKOL_HEADERS})
     if(MACOS AND (NOT IOS))
-        add_definitions(-DPLATFORM_MACOS)
+        add_definitions(-DSE_PLATFORM_MACOS)
         target_link_libraries(sokol PUBLIC
             "-framework QuartzCore"
             "-framework Cocoa"
@@ -183,7 +240,7 @@ if(MACOS OR IOS)
             "-framework Metal")
     endif()
     if(IOS)
-        set(system_libs ${system_libs} "-framework Foundation" "-framework UIKit" "-framework AudioToolbox" "-framework AVFoundation -framework GameController")
+        set(system_libs ${system_libs} "-framework Foundation" "-framework UIKit" "-framework AudioToolbox" "-framework AVFoundation -framework GameController -framework WebKit -framework SafariServices")
         if (SOKOL_BACKEND STREQUAL SOKOL_METAL)
             set(system_libs ${system_libs} "-framework Metal" "-framework MetalKit")
         else()
@@ -194,7 +251,7 @@ if(MACOS OR IOS)
 else()
     add_library(sokol STATIC src/sokol/sokol.c ${SOKOL_HEADERS})
     set_property(TARGET sokol PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-    if (PLATFORM_LINUX OR PLATFORM_FREEBSD)
+    if (SE_PLATFORM_LINUX OR SE_PLATFORM_FREEBSD)
         target_include_directories(sokol PRIVATE "${X11_INCLUDE_DIR}")
         target_link_libraries(sokol INTERFACE ${X11_X11_LIB} ${X11_Xi_LIB} ${X11_Xcursor_LIB} OpenGL::OpenGL dl)
     endif()
@@ -252,28 +309,72 @@ add_definitions(-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\")
 add_definitions(-DGIT_BRANCH=\"${GIT_BRANCH}\")
 add_definitions(-DGIT_TAG=\"${GIT_TAG}\")
 
-set(SKYEMU_SRC src/main.c src/stb.c src/miniz.c src/res.c src/localization.c)
+set(SKYEMU_SRC src/main.c src/shared.c src/cloud.cpp src/https.cpp src/stb.c src/miniz.c src/res.c src/localization.c src/mutex.cpp)
 
 if(ENABLE_HTTP_CONTROL_SERVER)
   add_definitions(-DENABLE_HTTP_CONTROL_SERVER=1)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/http_control_server.cpp)
 endif()
 
+set(SKYEMU_SRC ${SKYEMU_SRC} src/cloud.cpp src/https.cpp src/atlas.cpp)
+
 if(UNICODE_GUI)
   set(SKYEMU_SRC ${SKYEMU_SRC} src/utf8proc/utf8proc.c)
   include_directories(src/utf8proc/)
   add_definitions(-DUNICODE_GUI=1)
   add_definitions(-DUTF8PROC_STATIC=1)
-
 endif()
 
-if(USE_SDL)
+if(USE_SDL AND NOT USE_SYSTEM_SDL2)
     include_directories(${SDL2_INCLUDE_DIRS})
+endif()
+
+if(ENABLE_RETRO_ACHIEVEMENTS)
+  add_definitions(-DENABLE_RETRO_ACHIEVEMENTS=1)
+  add_definitions(-DRC_CLIENT_SUPPORTS_HASH)
+  add_library(Lua STATIC src/lua/onelua.c)
+  if(IOS)
+    target_compile_definitions(Lua PRIVATE LUA_USE_IOS) # makes it so system is not used
+  endif()
+  set_property(TARGET Lua PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+  set(LINK_LIBS ${LINK_LIBS} Lua)
+  set(RCHEEVOS_SRC src/rcheevos/src/rapi/rc_api_common.c
+    src/rcheevos/src/rapi/rc_api_editor.c
+    src/rcheevos/src/rapi/rc_api_info.c
+    src/rcheevos/src/rapi/rc_api_runtime.c
+    src/rcheevos/src/rapi/rc_api_user.c
+    src/rcheevos/src/rapi/rc_api_common.c
+    src/rcheevos/src/rcheevos/alloc.c
+    src/rcheevos/src/rcheevos/condition.c
+    src/rcheevos/src/rcheevos/condset.c
+    src/rcheevos/src/rcheevos/consoleinfo.c
+    src/rcheevos/src/rcheevos/format.c
+    src/rcheevos/src/rcheevos/lboard.c
+    src/rcheevos/src/rcheevos/memref.c
+    src/rcheevos/src/rcheevos/operand.c
+    src/rcheevos/src/rc_compat.c
+    src/rcheevos/src/rc_client.c
+    src/rcheevos/src/rc_util.c
+    src/rcheevos/src/rc_client_raintegration.c
+    src/rcheevos/src/rcheevos/rc_validate.c
+    src/rcheevos/src/rcheevos/richpresence.c
+    src/rcheevos/src/rcheevos/runtime.c
+    src/rcheevos/src/rcheevos/runtime_progress.c
+    src/rcheevos/src/rcheevos/trigger.c
+    src/rcheevos/src/rcheevos/value.c
+    src/rcheevos/src/rhash/cdreader.c
+    src/rcheevos/src/rhash/hash.c
+    src/rcheevos/src/rhash/md5.c
+    src/rcheevos/src/rhash/aes.c
+    src/rcheevos/src/rurl/url.c
+  )
+  set(SKYEMU_SRC ${SKYEMU_SRC} ${RCHEEVOS_SRC} src/retro_achievements.cpp)
+  include_directories(src/rcheevos/include src/lua)
 endif()
 
 if(IOS)
     set(SKYEMU_SRC ${SKYEMU_SRC} src/ios_support.m)
-    add_definitions(-DPLATFORM_IOS)
+    add_definitions(-DSE_PLATFORM_IOS)
 endif()
 
 if(WIN32)
@@ -302,13 +403,38 @@ elseif(ANDROID)
 else()
     add_executable(${PROJECT_NAME} ${SKYEMU_SRC})
 endif()
+
+add_library(skyemu_libretro SHARED EXCLUDE_FROM_ALL src/libretro.c src/shared.c src/localization.c)
+set_target_properties(skyemu_libretro PROPERTIES PREFIX "")
+if (MACOS OR IOS)
+    find_library(FoundationLib CoreFoundation)
+    target_link_libraries(skyemu_libretro ${FoundationLib})
+endif()
+
 if (${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-s TOTAL_MEMORY=1024MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=0 --closure 0 ")
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-sALLOW_MEMORY_GROWTH -s TOTAL_MEMORY=192MB -lidbfs.js -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -flto -s USE_CLOSURE_COMPILER=0 --closure 0 ")
 endif ()
 if (EMSCRIPTEN)
   configure_file(src/sw.js.in ${CMAKE_CURRENT_BINARY_DIR}/bin/sw.js)
 endif ()
+
 set(LINK_LIBS ${LINK_LIBS} sokol ${ALSA_LIBRARIES})
+
+if(NOT EMSCRIPTEN)
+  if (USE_SYSTEM_OPENSSL)
+    set(LINK_LIBS ${LINK_LIBS} PkgConfig::OpenSSL)
+  else()
+    target_include_directories(${PROJECT_NAME} PRIVATE src/openssl/include)
+    # OpenSSL autogenerates some header file such as openssl/opensslconf.h and we want to include them
+    target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/openssl/include)
+  endif()
+  if (USE_SYSTEM_CURL)
+    set(LINK_LIBS ${LINK_LIBS} PkgConfig::Curl)
+  else()
+    target_include_directories(${PROJECT_NAME} PRIVATE src/curl/include)
+    set(LINK_LIBS ${LINK_LIBS} libcurl_static ssl crypto)
+  endif()
+endif()
 
 set(CAPSTONE_BUILD_TESTS OFF CACHE BOOL "Build capstone tests" FORCE)
 set(CAPSTONE_BUILD_CSTOOL OFF CACHE BOOL "Build capstone cstool" FORCE)
@@ -316,12 +442,16 @@ set(CAPSTONE_BUILD_SHARED OFF CACHE BOOL "Build capstone shared library" FORCE)
 set(CAPSTONE_ARCHITECTURE_DEFAULT OFF CACHE BOOL "Include all CAPSTONE architectures" FORCE)
 set(CAPSTONE_ARM_SUPPORT ON CACHE BOOL "ARM disasm support")
 set(CAPSTONE_BUILD_STATIC_RUNTIME ON CACHE BOOL "Capstone static runtime" FORCE)
-add_subdirectory(src/capstone)
+add_subdirectory(src/capstone EXCLUDE_FROM_ALL)
 set_property(TARGET capstone-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 set(LINK_LIBS ${LINK_LIBS} capstone-static ${ALSA_LIBRARIES})
 if(USE_SDL)
-  set(LINK_LIBS ${LINK_LIBS} SDL2-static)
+  if(USE_SYSTEM_SDL2)
+    set(LINK_LIBS ${LINK_LIBS} PkgConfig::SDL2)
+  else()
+    set(LINK_LIBS ${LINK_LIBS} SDL2-static)
+  endif()
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
@@ -340,3 +470,6 @@ elseif(EMSCRIPTEN)
                 ${CMAKE_CURRENT_BINARY_DIR}/bin)
 endif()
 
+install(TARGETS ${PROJECT_NAME}
+  RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+  BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")

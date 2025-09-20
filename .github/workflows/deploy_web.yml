@@ -7,9 +7,9 @@ jobs:
       - name: Checkout 🛎️
         uses: actions/checkout@v2.3.1
       - name: Setup emsdk                 
-        uses: mymindstorm/setup-emsdk@v10
+        uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 2.0.21
+          version: 4.0.7
           actions-cache-folder: 'emsdk-cache'
       - name: Install and Build 🔧 # This example project is built using npm and outputs the result to the 'build' folder. Replace with the commands required to build your project, or remove this step entirely if your site is pre-built.
         run: |
@@ -27,6 +27,7 @@ jobs:
           force: false
           clean: false
       - name: Post PR Comment
+        continue-on-error: true
         if: github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v1
         with:
