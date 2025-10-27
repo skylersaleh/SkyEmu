@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.6...4.0)
 project(capstone)
 
 set(VERSION_MAJOR 4)
@@ -15,7 +15,7 @@ if (POLICY CMP0048)
   # compatibility. change OLD to NEW when minimum cmake version is updated to 3.* and
   # set VERSION using project(capstone VERSION 4.0.0).
   # http://www.cmake.org/cmake/help/v3.0/policy/CMP0048.html
-  cmake_policy (SET CMP0048 OLD)
+  # SkyEmu: This policy is no longer supported cmake_policy (SET CMP0048 OLD)
 endif()
 
 # to configure the options specify them in in the command line or change them in the cmake UI.

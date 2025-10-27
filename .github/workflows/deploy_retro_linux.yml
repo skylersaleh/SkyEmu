@@ -20,7 +20,7 @@ jobs:
           zip skyemu_libretro.zip skyemu_libretro.so ../skyemu_libretro.info
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
            name: LinuxRelease (Libretro)
            path: build/skyemu_libretro.zip

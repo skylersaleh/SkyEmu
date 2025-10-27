@@ -37,6 +37,8 @@ The latest version of the emulator can also be played without installing at the 
 
 [https://web.skyemu.app/](https://web.skyemu.app/)
 
+Development builds(both web and native) that contain the latest features (but are less stable) can be acquired here: https://github.com/skylersaleh/SkyEmu/pull/321
+
 The web app emulates everything locally on your machine using web assembly and javascript. Because of this all files stay local to your machine like the regular native build, however there is a performance cost to performing the emulation inside a web browser. 
 
 On Mobile platforms it is recommended to add this to the home screen and launch from there. This will prevent the web browser from auto deleting save files and will make the app full screen.
