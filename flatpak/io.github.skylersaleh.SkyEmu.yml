@@ -22,17 +22,17 @@ modules:
         tag: v5
         commit: 46efbcbdb3b902373a09f4724e6d3b1a5acc4af3
       - type: file
-        path: flatpak/io.github.skylersaleh.SkyEmu.metainfo.xml
+        path: io.github.skylersaleh.SkyEmu.metainfo.xml
       - type: file
-        path: flatpak/io.github.skylersaleh.SkyEmu.desktop
+        path: io.github.skylersaleh.SkyEmu.desktop
       - type: file
-        path: flatpak/io.github.skylersaleh.SkyEmu.svg
+        path: io.github.skylersaleh.SkyEmu.svg
       - type: file
-        path: flatpak/search_paths.bin 
+        path: search_paths.bin 
       - type: file
-        path: flatpak/user_settings.bin
+        path: user_settings.bin
       - type: file
-        path: flatpak/skyemu-wrapper.sh
+        path: skyemu-wrapper.sh
     post-install:
       - install -Dm644 ../io.github.skylersaleh.SkyEmu.metainfo.xml /app/share/metainfo/io.github.skylersaleh.SkyEmu.metainfo.xml
       - install -Dm644 ../io.github.skylersaleh.SkyEmu.desktop /app/share/applications/io.github.skylersaleh.SkyEmu.desktop
