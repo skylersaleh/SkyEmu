@@ -11,6 +11,7 @@ finish-args:
   - --filesystem=/mnt:ro
   - --filesystem=/media:ro
   - --filesystem=/run/media:ro
+  - --filesystem=home:ro
 
 modules:
   - name: SkyEmu
