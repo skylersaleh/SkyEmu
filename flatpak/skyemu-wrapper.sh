@@ -18,4 +18,5 @@ if [ ! -f "$DATA_DIR/user_settings.bin" ]; then
 fi
 
 # Launch the actual program
+cd "$DATA_DIR"
 exec /app/bin/SkyEmu "$@"
