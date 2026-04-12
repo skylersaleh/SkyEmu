@@ -17,6 +17,8 @@ modules:
   - name: SkyEmu
     buildsystem: cmake
     builddir: true
+    config-opts:
+      - -DPLATFORM_FLATPAK=ON
     sources:
       - type: git
         url: https://github.com/skylersaleh/SkyEmu.git

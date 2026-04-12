@@ -2446,6 +2446,10 @@ void se_load_rom(const char *filename){
   se_reset_bios_info();
   emu_state.force_dmg_mode=gui_state.settings.force_dmg_mode;
   //Compute Save File Path
+  bool force_writes_to_paths = false;
+  #ifdef SE_PLATFORM_FLATPAK
+  force_writes_to_paths = true;
+  #endif
   {
     char *save_file=emu_state.save_file_path; 
     save_file[0] = '\0';
@@ -2463,13 +2467,13 @@ void se_load_rom(const char *filename){
       se_join_path(emu_state.save_data_base_path, SB_FILE_PATH_SIZE, base, c, NULL);
   #endif
     snprintf(save_file, SB_FILE_PATH_SIZE, "%s.sav",emu_state.save_data_base_path);
-    if(!sb_file_exists(save_file)){
+    if(!sb_file_exists(save_file)||force_writes_to_paths){
       const char* base, *c, *ext; 
       sb_breakup_path(filename,&base, &c, &ext);
       char tmp_path[SB_FILE_PATH_SIZE];
       se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,".sav");
 
-      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
+      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path||force_writes_to_paths){
         se_join_path(emu_state.save_data_base_path,SB_FILE_PATH_SIZE,gui_state.paths.save,c,NULL);
         strncpy(save_file,tmp_path,SB_FILE_PATH_SIZE);
       }
@@ -2482,12 +2486,12 @@ void se_load_rom(const char *filename){
     const char* base, *c, *ext; 
     sb_breakup_path(filename,&base, &c, &ext);
     snprintf(cheat_path, SB_FILE_PATH_SIZE, "%s.code",emu_state.save_data_base_path);
-    if(!sb_file_exists(cheat_path)){
+    if(!sb_file_exists(cheat_path)||force_writes_to_paths){
       const char* base, *c, *ext; 
       sb_breakup_path(filename,&base, &c, &ext);
       char tmp_path[SB_FILE_PATH_SIZE];
       se_join_path(tmp_path,SB_FILE_PATH_SIZE,gui_state.paths.cheat_codes,c,".code");
-      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path){
+      if(sb_file_exists(tmp_path)||gui_state.settings.save_to_path||force_writes_to_paths){
         strncpy(cheat_path,tmp_path,SB_FILE_PATH_SIZE);
       }
     }
@@ -6503,9 +6507,13 @@ void se_draw_menu_panel(){
     se_input_path("Save File/State Path", gui_state.paths.save,ImGuiInputTextFlags_None);
     se_input_path("BIOS/Firmware Path", gui_state.paths.bios,ImGuiInputTextFlags_None);
     se_input_path("Cheat Code Path", gui_state.paths.cheat_codes,ImGuiInputTextFlags_None);
+    #ifndef SE_PLATFORM_FLATPAK
     bool save_to_path=gui_state.settings.save_to_path;
     se_checkbox("Create new files in paths",&save_to_path);
     gui_state.settings.save_to_path=save_to_path;
+    #else
+    gui_state.settings.save_to_path = true;
+    #endif
     if(memcmp(&gui_state.last_saved_paths, &gui_state.paths,sizeof(gui_state.paths))){
       se_save_search_paths();
       gui_state.last_saved_paths=gui_state.paths;
