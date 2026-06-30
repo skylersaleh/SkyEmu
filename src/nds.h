@@ -6,7 +6,7 @@
 #include "freebios/drastic_bios_arm7.h"
 #include "freebios/drastic_bios_arm9.h"
 
-#define NDS_SCANLINE_PPU 1
+#define NDS_SCANLINE_PPU 0
 
 typedef enum{
   kARM7,
@@ -2748,9 +2748,10 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, ui
       return *ret; 
     }
   }
-  //int old_slow_bus_cycles = nds->mem.slow_bus_cycles;
+  int old_slow_bus_cycles = nds->mem.slow_bus_cycles;
   uint32_t ret_data = nds9_process_memory_transaction(nds,addr,data,transaction_type);
-  /*int bus = addr>>24;
+  int bus = addr>>24;
+  
   if((bus==0x02&& SB_BFE(addr,0,24)<0x00800000)||(bus==0xff&& SB_BFE(addr,0,24)<0x00008000)){
     if(!(transaction_type&NDS_MEM_WRITE)){
       bool found = false; 
@@ -2772,7 +2773,8 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, ui
         }
       }
       if(!found){
-        int seq_words = 4; 
+        // Cache can stream results out as they are fetched from memory, so wait is dependent on what word in cacheline issues the request. 
+        int seq_words = 1+(addr%32)/4; 
         if(code)nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
         else nds->mem.slow_bus_cycles=old_slow_bus_cycles+seq_words;
       }else{
@@ -2781,7 +2783,8 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction_cpu(nds_t * nds, ui
     }else{
       nds->mem.slow_bus_cycles= old_slow_bus_cycles;
     }
-  }*/
+  }
+    
   return ret_data; 
 }
 
@@ -5563,7 +5566,7 @@ static FORCE_INLINE int nds_ppu_compute_max_fast_forward(nds_t *nds){
   //If inside hblank, can fastforward to outside of hblank
   if(scanline_clock>=NDS_LCD_W*NDS_CLOCKS_PER_DOT&&scanline_clock<=355*NDS_CLOCKS_PER_DOT) return 355*NDS_CLOCKS_PER_DOT-scanline_clock-1;
   //If inside hrender, can fastforward to hblank if not the first pixel and not visible
-  bool not_visible = nds->ppu[0].scan_clock>NDS_LCD_H*355*NDS_CLOCKS_PER_DOT|| NDS_SCANLINE_PPU; 
+  bool not_visible = NDS_SCANLINE_PPU || nds->ppu[0].scan_clock>NDS_LCD_H*355*NDS_CLOCKS_PER_DOT; 
   if(not_visible&& (scanline_clock>=1 && scanline_clock<=NDS_LCD_W*NDS_CLOCKS_PER_DOT))return NDS_LCD_W*NDS_CLOCKS_PER_DOT-scanline_clock-1; 
   return (NDS_CLOCKS_PER_DOT-1)-((nds->ppu[0].scan_clock)%NDS_CLOCKS_PER_DOT);
 }
@@ -5571,12 +5574,12 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
   if(SB_LIKELY(nds->ppu_fast_forward_ticks-->0))return;
   //if(SB_LIKELY(nds->ppu[0].scan_clock%NDS_CLOCKS_PER_DOT))return;
   int clocks_per_frame = 355*263*NDS_CLOCKS_PER_DOT;
-  nds->ppu[0].scan_clock%=clocks_per_frame;
   nds->ppu_fast_forward_ticks=nds_ppu_compute_max_fast_forward(nds);
   int clocks_per_line = 355*NDS_CLOCKS_PER_DOT;
   int lcd_y = (nds->ppu[0].scan_clock)/clocks_per_line;
   int lcd_x = ((nds->ppu[0].scan_clock)%clocks_per_line)/NDS_CLOCKS_PER_DOT;
   nds->ppu[0].scan_clock+=nds->ppu_fast_forward_ticks+1;
+  nds->ppu[0].scan_clock%=clocks_per_frame;
   for(int ppu_id=0;ppu_id<2;++ppu_id){
     nds_ppu_t * ppu = nds->ppu+ppu_id;
     uint32_t dispcapcnt = nds9_io_read32(nds,NDS_DISPCAPCNT);
