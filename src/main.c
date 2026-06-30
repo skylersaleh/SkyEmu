@@ -590,6 +590,7 @@ static uint32_t se_save_best_effort_state(se_core_state_t* state);
 static bool se_load_best_effort_state(se_core_state_t* state,uint8_t *save_state_data, uint32_t size, uint32_t bess_offset);
 static size_t se_get_core_size();
 uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_size, const char** mime_type);
+uint8_t* se_hcs_stream_callback(uint64_t* result_size);
 void se_open_file_browser(bool clicked, float x, float y, float w, float h, void (*file_open_fn)(const char* dir), const char ** file_types,char * output_path);
 void se_file_browser_accept(const char * path);
 static void se_reset_core();
@@ -5327,6 +5328,7 @@ void se_update_frame() {
   #ifdef ENABLE_HTTP_CONTROL_SERVER
   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
   if(gui_state.settings.http_control_server_enable){
+    hcs_set_stream_callback(se_hcs_stream_callback);
     for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]+=gui_state.hcs_joypad.inputs[i];
   }
   hcs_suspend_callbacks();
@@ -6985,6 +6987,29 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
     return (uint8_t*)result;
   }
   return NULL;
+}
+
+uint8_t* se_hcs_stream_callback(uint64_t* result_size){
+  *result_size = 0;
+  
+  // Return NULL if no ROM is loaded
+  if(!emu_state.rom_loaded) {
+    return NULL;
+  }
+  
+  // Get the current screen data
+  uint8_t* imdata = (uint8_t*)malloc(SE_MAX_SCREENSHOT_SIZE);
+  int out_width = 0, out_height = 0;
+  se_screenshot(imdata, &out_width, &out_height);
+  
+  // Encode as JPEG (more efficient for streaming than PNG)
+  // Note: se_png_write_context_t is used for both PNG and JPEG encoding
+  se_png_write_context_t jpeg_write_ctx = {0};
+  stbi_write_jpg_to_func(se_png_write_mem, &jpeg_write_ctx, out_width, out_height, 4, imdata, 85);
+  free(imdata);
+  
+  *result_size = jpeg_write_ctx.size;
+  return jpeg_write_ctx.data;
 }
 
 #endif 
