@@ -1,0 +1,5 @@
+io.github.skylersaleh.SkyEmu.yml 
+- update version to download 
+
+io.github.skylersaleh.SkyEmu.metainfo.xml
+- update release version info
