@@ -88,9 +88,89 @@
         to {transform: rotate(360deg);}
       }
 
+      /* PWA Install Popup Styles */
+      #pwaInstallPopup {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.8);
+        z-index: 10000;
+        justify-content: center;
+        align-items: center;
+      }
+      #pwaInstallPopup.show {
+        display: flex;
+      }
+      .pwa-popup-content {
+        background-color: #2c2c2c;
+        color: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        max-width: 90%;
+        width: 400px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .pwa-popup-content h2 {
+        margin: 0 0 15px 0;
+        font-size: 22px;
+        color: #759091;
+      }
+      .pwa-popup-content p {
+        margin: 10px 0;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .pwa-popup-content ol {
+        text-align: left;
+        margin: 15px 0;
+        padding-left: 20px;
+      }
+      .pwa-popup-content li {
+        margin: 8px 0;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .pwa-popup-button {
+        background-color: #759091;
+        color: #ffffff;
+        border: none;
+        padding: 12px 24px;
+        margin: 10px 5px 0 5px;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .pwa-popup-button:hover {
+        background-color: #5a7071;
+      }
+      .pwa-popup-button.secondary {
+        background-color: #555555;
+      }
+      .pwa-popup-button.secondary:hover {
+        background-color: #666666;
+      }
+
     </style>
   </head>
   <body>
+    <!-- PWA Install Popup -->
+    <div id="pwaInstallPopup">
+      <div class="pwa-popup-content">
+        <h2>Add SkyEmu to Home Screen</h2>
+        <p>Adding to the Home Screen tells the OS to avoid deleting your saves and allows us to enter full screen mode.</p>
+        <div id="pwaInstructions">
+          <!-- Instructions will be dynamically inserted here -->
+        </div>
+        <button class="pwa-popup-button" id="pwaGotItBtn">Got it!</button>
+        <button class="pwa-popup-button secondary" id="pwaDontShowBtn">Don't show again</button>
+      </div>
+    </div>
     <figure style="overflow:visible;" id="spinner"><div class="spinner"></div><center style="margin-top:0.5em"><strong>emscripten</strong></center></figure>
     <div class="emscripten" id="status">Downloading...</div>
     <div class="emscripten">
@@ -108,7 +188,118 @@
       if ('serviceWorker' in navigator) {
           navigator.serviceWorker.register('sw.js').then(worker => {
           }).catch(e => console.log('Failed to register service worker', e));
-      }                      
+      }
+
+      // PWA Install Popup Logic
+      var pwaEventListenersAttached = false;
+
+      function isMobileDevice() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+               navigator.maxTouchPoints > 0;
+      }
+
+      function isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches ||
+               window.navigator.standalone === true;
+      }
+
+      function getInstallInstructions() {
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        
+        // iOS Safari
+        if (/iPhone|iPad|iPod/i.test(userAgent) && !window.MSStream) {
+          return `
+            <p><strong>For iOS (Safari):</strong></p>
+            <ol>
+              <li>Tap the Share button <span style="font-size: 18px;">⎙</span></li>
+              <li>Scroll down and tap "Add to Home Screen"</li>
+              <li>Tap "Add" in the top right corner</li>
+            </ol>
+          `;
+        }
+        // Android Chrome
+        else if (/Android/i.test(userAgent)) {
+          return `
+            <p><strong>For Android (Chrome):</strong></p>
+            <ol>
+              <li>Tap the menu button (⋮) in the top right</li>
+              <li>Tap "Add to Home screen" or "Install app"</li>
+              <li>Tap "Add" or "Install" to confirm</li>
+            </ol>
+          `;
+        }
+        // Generic mobile
+        else {
+          return `
+            <p><strong>To install:</strong></p>
+            <ol>
+              <li>Look for the browser's menu (usually ⋮ or ⎙)</li>
+              <li>Select "Add to Home Screen" or "Install"</li>
+              <li>Follow the prompts to complete installation</li>
+            </ol>
+          `;
+        }
+      }
+
+      function closePWAPopup() {
+        document.getElementById('pwaInstallPopup').classList.remove('show');
+      }
+
+      function dontShowAgain() {
+        try {
+          localStorage.setItem('skyemu_hide_pwa_popup', 'true');
+        } catch (e) {
+          console.log('Could not save preference', e);
+        }
+        closePWAPopup();
+      }
+
+      function showPWAInstallPopup() {
+        // Only show on mobile devices
+        if (!isMobileDevice()) {
+          return;
+        }
+
+        // Don't show if already installed (running in standalone mode)
+        if (isStandalone()) {
+          return;
+        }
+
+        // Don't show if user dismissed it before
+        try {
+          if (localStorage.getItem('skyemu_hide_pwa_popup') === 'true') {
+            return;
+          }
+        } catch (e) {
+          console.log('Could not check localStorage', e);
+        }
+
+        // Ensure event listeners are attached (only once)
+        if (!pwaEventListenersAttached) {
+          var gotItBtn = document.getElementById('pwaGotItBtn');
+          var dontShowBtn = document.getElementById('pwaDontShowBtn');
+          
+          if (gotItBtn) {
+            gotItBtn.addEventListener('click', closePWAPopup);
+          }
+          if (dontShowBtn) {
+            dontShowBtn.addEventListener('click', dontShowAgain);
+          }
+          pwaEventListenersAttached = true;
+        }
+
+        // Set the instructions based on device
+        document.getElementById('pwaInstructions').innerHTML = getInstallInstructions();
+
+        // Show the popup after a short delay
+        setTimeout(function() {
+          document.getElementById('pwaInstallPopup').classList.add('show');
+        }, 2000);
+      }
+
+      // Show popup when page fully loads
+      window.addEventListener('load', showPWAInstallPopup);
+
       window.scroll(0,1);
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');
