@@ -118,6 +118,15 @@ libretro-build-linux-x64:
     - .core-defs-linux
   image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-amd64-ubuntu:backports
 
+# Linux aarch64
+# No image override here: the :backports tag only exists for the amd64 image,
+# and the aarch64 one ships gcc-12 in its main Dockerfile, so the gcc-12 that
+# .core-defs-linux asks for is already present.
+libretro-build-linux-aarch64:
+  extends:
+    - .libretro-linux-cmake-aarch64
+    - .core-defs-linux
+
 # Linux 32-bit
 libretro-build-linux-i686:
   extends:
