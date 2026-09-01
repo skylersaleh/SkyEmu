@@ -6,6 +6,7 @@
 #include <math.h>
 #include "arm7.h"
 #include "gba_bios.h"
+#include "se_solar_sensor.h"
 #include <time.h>
 //Should be power of 2 for perf, 8192 samples gives ~85ms maximal latency for 48kHz
 #define LR 14
@@ -3764,10 +3765,11 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
 
   gba_tick_keypad(&emu->joy,gba);
   gba->frame_in_progress=true;
-  float solar_value = emu->joy.solar_sensor;
-  if(!(solar_value <1.00))solar_value=1.00;
-  if(!(solar_value >0.00))solar_value=0.00;
-  gba->solar_sensor.value = 0xE7-solar_value*(0xE7-0x32);
+  // solar_sensor is a normalized [0,1] brightness (slider or, later, the phone
+  // light sensor). se_solar_float_to_byte() maps it linearly onto the game's
+  // "calibrated" 0..140 range, then to the inverted 8-bit trip count. See
+  // se_solar_sensor.h. (Fixes: 0.0 now yields an empty gauge; travel is even.)
+  gba->solar_sensor.value = se_solar_float_to_byte(emu->joy.solar_sensor);
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(gba->frame_in_progress){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
