@@ -115,6 +115,36 @@ int main(void){
     }
   }
 
+  /* --- calibrated -> lux (inverse map, used by the debug bar ladder) ------- */
+  {
+    float lfloor = SOLAR_LUX_FLOOR, lsat = SOLAR_LUX_SATURATION_DEFAULT;
+    CHECK(se_solar_calibrated_to_lux(0,lfloor,lsat)==lfloor,   "calibrated 0 -> floor lux");
+    CHECK(se_solar_calibrated_to_lux(140,lfloor,lsat)==lsat,   "calibrated 140 -> saturation lux");
+    /* round-trips with the forward map at every Boktai 1 bar threshold */
+    for(int i=0;i<8;i++){
+      int t = SE_SOLAR_BOKTAI1_THRESH[i];
+      float lux = se_solar_calibrated_to_lux(t,lfloor,lsat);
+      int back = se_solar_lux_to_calibrated(lux,lfloor,lsat);
+      CHECK(back==t, "bar ladder round-trip failed at threshold %d (got %d)", t, back);
+    }
+  }
+
+  /* --- saturation headroom: the top bar must have a usable plateau ---------
+     This is the bug that pinned Boktai 1 at 7/8 bars: with saturation set to the
+     exact observed peak, calibrated only reaches 140 at that single lux value. */
+  {
+    float peak = 100000.0f, lfloor = 1500.0f;
+    int no_headroom = se_solar_lux_to_calibrated(peak*0.97f, lfloor, peak);
+    CHECK(no_headroom < 140, "without headroom, 3%% below peak should miss max (got %d)", no_headroom);
+    float lsat = peak*SOLAR_SATURATION_HEADROOM;
+    CHECK(se_solar_lux_to_calibrated(peak, lfloor, lsat)==140,       "with headroom, peak -> 140");
+    CHECK(se_solar_lux_to_calibrated(peak*0.90f, lfloor, lsat)==140, "with headroom, 10%% below peak still 140");
+    CHECK(se_solar_calibrated_to_bars_boktai1(
+            se_solar_lux_to_calibrated(peak*0.90f,lfloor,lsat))==8,  "with headroom, Boktai 1 reaches 8 bars");
+    /* and the low end must not become trivially reachable indoors */
+    CHECK(se_solar_lux_to_calibrated(800.0f, lfloor, lsat)==0,       "lit indoor room stays at calibrated 0");
+  }
+
   if(g_failures){ printf("\n%d CHECK(s) FAILED\n", g_failures); return 1; }
   printf("All solar-sensor self-tests passed (%d reference points, both games).\n", n);
   return 0;

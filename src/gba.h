@@ -3770,6 +3770,26 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   // "calibrated" 0..140 range, then to the inverted 8-bit trip count. See
   // se_solar_sensor.h. (Fixes: 0.0 now yields an empty gauge; travel is even.)
   gba->solar_sensor.value = se_solar_float_to_byte(emu->joy.solar_sensor);
+  // Boktai RTC sanity: the cartridge's S3511 is battery-backed, so on real
+  // hardware it keeps real time even while the GBA is switched off. Deriving it
+  // from emulated cycles instead means the clock FREEZES while the app is
+  // backgrounded and RUNS FAST under turbo. Boktai cross-checks the time it
+  // reads against the timestamp in its save; a discontinuity trips its tamper
+  // check, which the game reports -- misleadingly -- as "SOLAR SENSOR IS BROKEN".
+  //
+  // Fix: every frame, re-derive initial_rtc_time so the reported time equals the
+  // host wall clock, and never allow the reported time to move backwards (DST,
+  // timezone changes and NTP corrections are the other way this trips). No field
+  // is added to gba_t, so existing save states stay byte-compatible.
+  if(emu->rtc_wall_clock){
+    static uint64_t last_reported_rtc = 0;
+    uint64_t host_now = (uint64_t)time(NULL);
+    uint64_t emulated_elapsed = gba->rtc.total_clocks_ticked/(16*1024*1024);
+    uint64_t reported = host_now;
+    if(reported < last_reported_rtc) reported = last_reported_rtc; // monotonic
+    last_reported_rtc = reported;
+    if(reported >= emulated_elapsed) gba->rtc.initial_rtc_time = reported - emulated_elapsed;
+  }
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(gba->frame_in_progress){
     int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;

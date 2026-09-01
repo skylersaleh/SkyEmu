@@ -103,4 +103,31 @@ static inline int se_solar_lux_to_calibrated(float lux, float lux_floor, float l
   return calibrated;
 }
 
+/* Headroom applied when capturing "full sun" during two-point calibration.
+   Boktai's top bar is a CLAMP-ONLY state: after clamping, only calibrated==140
+   reports max bars (see the threshold tables above -- the last exclusive upper
+   bound IS 140). If saturation is set to exactly the brightest lux you ever
+   measured, calibrated only touches 140 at that single instantaneous peak, so
+   the top bar is unreachable in practice and flickers against the hysteresis
+   deadband. Setting saturation a little BELOW the observed peak creates a
+   plateau you can actually sit on -- which is what the real cartridge did, since
+   its UV photodiode saturated hard in bright sun and stayed pinned. */
+#define SOLAR_SATURATION_HEADROOM 0.85f
+
+/* Inverse of se_solar_lux_to_calibrated(): the lux required to reach a given
+   calibrated value. Used only by the debug readout to print the full bar ladder
+   for the current calibration, so you can see the whole curve rather than
+   inferring it from the gauge. */
+static inline float se_solar_calibrated_to_lux(int calibrated, float lux_floor, float lux_saturation){
+  if(lux_saturation < lux_floor + 1.0f) lux_saturation = lux_floor + 1.0f;
+  if(calibrated<0) calibrated=0;
+  if(calibrated>SE_SOLAR_CALIBRATED_MAX) calibrated=SE_SOLAR_CALIBRATED_MAX;
+  return lux_floor + ((float)calibrated/(float)SE_SOLAR_CALIBRATED_MAX)*(lux_saturation-lux_floor);
+}
+
+/* Boktai 1's 8-bar gauge, as exclusive upper bounds. Exposed so the debug
+   readout can print the lux needed for each bar. Boktai 2/3 use the 10 entries
+   in se_solar_calibrated_to_bars_boktai23(). */
+static const int SE_SOLAR_BOKTAI1_THRESH[8] = {1,7,16,28,44,67,98,140};
+
 #endif /* SE_SOLAR_SENSOR_H */

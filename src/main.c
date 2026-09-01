@@ -213,7 +213,8 @@ typedef struct{
   uint32_t solar_use_light_sensor;  // 0/1: drive the sun gauge from the ambient light sensor
   float    solar_lux_floor;         // lux mapped to calibrated 0   (indoor floor / "dark")
   float    solar_lux_saturation;    // lux mapped to calibrated 140 (full gauge / "open sky")
-  uint32_t padding[215];
+  uint32_t rtc_wall_clock;          // 0/1: anchor the cartridge RTC to host wall-clock time
+  uint32_t padding[214];
 }persistent_settings_t;
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -4322,6 +4323,15 @@ void se_update_solar_sensor(sb_emu_state_t*state){
     }
     // Sensor selected but no reading yet: fall through to the manual path so the
     // gauge is never stuck at zero while we wait for the first sample.
+  }else{
+    // Sensor mode is off (or the user grabbed the hotkeys). Drop the smoothing
+    // and hysteresis state: otherwise, re-enabling the sensor compares the fresh
+    // reading against a stale `calibrated` from minutes ago and the deadband can
+    // pin the gauge at the old value until the light changes by a large step.
+    smoothed_lux = -1.0f;
+    se_solar_runtime.calibrated = 0;
+    se_solar_runtime.smoothed_lux = 0.f;
+    se_solar_runtime.raw_lux = 0.f;
   }
 
   // Manual path: hotkey integrator + settings slider. Original behaviour intact.
@@ -5482,6 +5492,7 @@ void se_update_frame() {
   }
 
   emu_state.screen_ghosting_strength = gui_state.settings.ghosting;
+  emu_state.rtc_wall_clock = gui_state.settings.rtc_wall_clock!=0;
   const int frames_per_rewind_state = 8; 
   static double simulation_time = -1;
   double curr_time = se_time();
@@ -6657,20 +6668,41 @@ void se_draw_menu_panel(){
   if(!se_solar_runtime.sensor_present){
     se_text_disabled("No ambient light sensor on this device; slider stays in control.");
   }else if(solar_sensor_mode){
+    // getMaximumRange() is a fixed hardware property; cache it rather than making
+    // a JNI hop every frame the settings panel is open.
+    static float solar_als_ceiling = -2.f;
+    if(solar_als_ceiling<-1.5f) solar_als_ceiling = se_android_get_light_sensor_max_range();
+
     se_text("Light Calibration");igSameLine(SE_FIELD_INDENT,0);
+    // Both captures use the SMOOTHED lux, not a raw instantaneous sample: the ALS
+    // is noisy and a single spike at the moment you tap would bake a bad constant
+    // into your settings permanently.
     if(se_button("Set dark",(ImVec2){0,0})){
-      float lux = se_android_get_ambient_lux();
-      if(lux>=0.f)gui_state.settings.solar_lux_floor = lux;      // cover the sensor first
+      float lux = se_solar_runtime.smoothed_lux;                   // cover the sensor first
+      if(se_solar_runtime.active && lux>=0.f) gui_state.settings.solar_lux_floor = lux;
     }
     igSameLine(0,4);
     if(se_button("Set full sun",(ImVec2){0,0})){
-      float lux = se_android_get_ambient_lux();
-      if(lux>=0.f)gui_state.settings.solar_lux_saturation = lux; // point at open sky in full sun
+      // Apply headroom so the top bar has a plateau instead of being a knife edge
+      // at one instantaneous peak. See SOLAR_SATURATION_HEADROOM.
+      float lux = se_solar_runtime.smoothed_lux;                   // point at open sky in full sun
+      if(se_solar_runtime.active && lux>=0.f){
+        float sat = lux*SOLAR_SATURATION_HEADROOM;
+        if(sat < gui_state.settings.solar_lux_floor+1.f) sat = gui_state.settings.solar_lux_floor+1.f;
+        gui_state.settings.solar_lux_saturation = sat;
+      }
     }
     igSameLine(0,4);
     if(se_button("Reset",(ImVec2){0,0})){
       gui_state.settings.solar_lux_floor      = SOLAR_LUX_FLOOR;
       gui_state.settings.solar_lux_saturation = SOLAR_LUX_SATURATION_DEFAULT;
+    }
+    // The single most common reason this feature "works but never fills": the
+    // device's ALS clamps below the configured saturation, so calibrated can
+    // never reach 140 and the top bar is unreachable by construction.
+    if(solar_als_ceiling>0.f && solar_als_ceiling < gui_state.settings.solar_lux_saturation){
+      se_text("Warning: sensor maxes at %.0f lux but saturation is %.0f. The gauge can never fill; lower saturation.",
+        solar_als_ceiling,gui_state.settings.solar_lux_saturation);
     }
     if(gui_state.settings.draw_debug_menu){
       char buf[256];
@@ -6684,10 +6716,27 @@ void se_draw_menu_panel(){
       se_text("%s",buf);
       snprintf(buf,sizeof(buf),"floor %.0f  sat %.0f  sensor ceiling %.0f lux",
         gui_state.settings.solar_lux_floor,gui_state.settings.solar_lux_saturation,
-        se_android_get_light_sensor_max_range());
+        solar_als_ceiling);
       se_text("%s",buf);
+      // Full Boktai 1 ladder: the lux each of the 8 bars needs under the CURRENT
+      // calibration. Far more useful than inferring the curve from the gauge.
+      se_text("Boktai 1 bar ladder (lux needed):");
+      for(int i=0;i<8;i+=2){
+        snprintf(buf,sizeof(buf),"  %d bars: %.0f      %d bars: %.0f",
+          i+1,se_solar_calibrated_to_lux(SE_SOLAR_BOKTAI1_THRESH[i],
+                gui_state.settings.solar_lux_floor,gui_state.settings.solar_lux_saturation),
+          i+2,se_solar_calibrated_to_lux(SE_SOLAR_BOKTAI1_THRESH[i+1],
+                gui_state.settings.solar_lux_floor,gui_state.settings.solar_lux_saturation));
+        se_text("%s",buf);
+      }
     }
   }
+  // Boktai reports RTC trouble as "SOLAR SENSOR IS BROKEN". Keeping the cartridge
+  // clock anchored to host wall time (and monotonic) avoids the discontinuities
+  // that trip its tamper check. Leave this on unless you are debugging.
+  bool rtc_wall_clock = gui_state.settings.rtc_wall_clock;
+  se_checkbox("Anchor cartridge RTC to real time (Boktai)",&rtc_wall_clock);
+  gui_state.settings.rtc_wall_clock = rtc_wall_clock;
   bool force_dmg_mode = gui_state.settings.force_dmg_mode;
   se_checkbox("Force GB games to run in DMG mode",&force_dmg_mode);
   gui_state.settings.force_dmg_mode=force_dmg_mode;
@@ -7777,6 +7826,8 @@ void se_load_settings(){
       gui_state.settings.solar_use_light_sensor = 0; // default off: manual slider/hotkeys
       gui_state.settings.solar_lux_floor      = SOLAR_LUX_FLOOR;
       gui_state.settings.solar_lux_saturation = SOLAR_LUX_SATURATION_DEFAULT;
+      // On by default: Boktai misreports RTC discontinuities as a broken sensor.
+      gui_state.settings.rtc_wall_clock       = 1;
     }
     if(gui_state.settings.solar_lux_saturation < gui_state.settings.solar_lux_floor + 1.0f){
       gui_state.settings.solar_lux_floor      = SOLAR_LUX_FLOOR;

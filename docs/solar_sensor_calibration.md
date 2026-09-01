@@ -11,8 +11,29 @@ Many Android devices clamp `Sensor.TYPE_LIGHT` at ~10,000 lux; others report
 exceed ~1 bar and the feature is dead. Measure before writing any mapping code.
 
 - Device: _`<model>`_
-- `sensor.getMaximumRange()`: _`<lux>`_
+- `sensor.getMaximumRange()`: _`<lux>`_ — **read this from the debug readout line
+  ending `sensor ceiling ... lux`.** If it comes back as a suspiciously round
+  100000 or 65535, that is a driver clamp, and saturation must be set below it.
 - ALS location on device (front-top is typical; it faces up/toward you while playing): _`<notes>`_
+
+### Observed so far (Boktai 1, Los Angeles, September)
+
+With the shipped defaults (floor 1500, saturation 119400) the gauge pinned at
+**7 of 8 bars** with the phone held flat and unshadowed in direct sun. Working
+backwards through the Boktai 1 ladder, 7 bars means calibrated landed in
+[98,139], i.e. the ALS was reporting roughly **84,000–118,000 lux**. So the
+sensor is reporting real, uncapped sunlight — there is no 10k clamp on this
+device. The gauge could not fill because 119,400 lux (the UVI 13.1 anchor, which
+was tuned for a UV sensor aimed at open tropical sky) is not reachable at 34°N,
+and because Boktai's top bar requires calibrated to hit exactly 140.
+
+**Posture matters and must be recorded separately.** Laid flat and unshadowed is
+not how the game is played: held normally the screen tilts toward your face, your
+head shades the top bezel, and illuminance falls off with the cosine of the angle
+to the sun. A 40–60% drop between the two postures is normal. Calibrate against
+the *playing* posture — the original cartridge's sensor sat proud of the GBA's
+top edge pointing up and away from the player, so compensating for the phone's
+worse geometry restores parity rather than making the game easier.
 
 ## 2. Live lux in five conditions
 
@@ -39,6 +60,19 @@ direct sun charges it within a few seconds.
 | `SOLAR_UVI_SATURATION` | 13.1 | |
 | `SOLAR_EMA_ALPHA` | 0.15 | |
 | `SOLAR_BAR_HYSTERESIS` | 3 | |
+| `SOLAR_SATURATION_HEADROOM` | 0.85 | |
+
+### Why saturation needs headroom
+
+Boktai's top bar is a **clamp-only state**: after clamping, only calibrated == 140
+reports max bars. If saturation equals the brightest lux ever measured, calibrated
+touches 140 at exactly one input value, so the top bar is unreachable in practice
+and oscillates against the hysteresis deadband. Setting saturation to ~0.85x the
+observed playing-posture peak creates a plateau you can sit on — which is what the
+cartridge did, since its UV photodiode saturated hard and stayed pinned.
+
+The `Set full sun` button now applies this factor automatically and samples the
+smoothed lux rather than a raw instantaneous spike.
 
 ## 4. Two-point user calibration results (optional)
 
