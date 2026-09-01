@@ -73,4 +73,34 @@ static inline int se_solar_calibrated_to_bars_boktai23(int calibrated){
   return se_solar_calibrated_to_bars(calibrated, thresh, 10);
 }
 
+/* --- Light-sensor path: lux -> calibrated (spec S6) -------------------------
+   The phone's Sensor.TYPE_LIGHT reports illuminance in LUX (visible light);
+   the cartridge measured UV-A irradiance. They correlate well outdoors and not
+   at all indoors (bulbs/LEDs emit ~no UV-A), so we subtract an indoor floor and
+   scale up to a saturation point. Both points are user-calibratable (spec S6.3);
+   the constants below are only starting DEFAULTS and MUST be tuned on-device
+   (spec S7) -- do not treat them as correct for any particular phone. */
+#define SOLAR_LUX_FLOOR        1500.0f  /* below this, calibrated = 0            */
+#define SOLAR_LUX_PER_UVI      9000.0f  /* lux per unit of UV index in daylight  */
+#define SOLAR_UVI_SATURATION   13.1f    /* UVI at which the gauge maxes          */
+#define SOLAR_EMA_ALPHA        0.15f    /* per-sample smoothing (applied in C)   */
+#define SOLAR_BAR_HYSTERESIS   3        /* calibrated-unit deadband (applied in C)*/
+/* Default lux at which the gauge maxes: floor + the full UV span (~119k lux,
+   i.e. direct tropical/high-altitude sun -- see the spec S6.1 reference table). */
+#define SOLAR_LUX_SATURATION_DEFAULT (SOLAR_LUX_FLOOR + SOLAR_LUX_PER_UVI*SOLAR_UVI_SATURATION)
+
+/* Two-point linear map: lux in [lux_floor, lux_saturation] -> calibrated [0,140].
+   This is the two-point-calibration form of spec S6.2 (the UVI intermediate is
+   algebraically folded in: lux_saturation == floor + LUX_PER_UVI*UVI_SATURATION). */
+static inline int se_solar_lux_to_calibrated(float lux, float lux_floor, float lux_saturation){
+  if(lux_saturation < lux_floor + 1.0f) lux_saturation = lux_floor + 1.0f; /* guard /0 */
+  float t = (lux - lux_floor) / (lux_saturation - lux_floor);
+  if(t<0.0f) t=0.0f;
+  if(t>1.0f) t=1.0f;
+  int calibrated = (int)(t*(float)SE_SOLAR_CALIBRATED_MAX + 0.5f);
+  if(calibrated<0) calibrated=0;
+  if(calibrated>SE_SOLAR_CALIBRATED_MAX) calibrated=SE_SOLAR_CALIBRATED_MAX;
+  return calibrated;
+}
+
 #endif /* SE_SOLAR_SENSOR_H */

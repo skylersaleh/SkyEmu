@@ -94,6 +94,27 @@ int main(void){
   }
   for(int b=0;b<=10;b++) CHECK(seen23[b], "Boktai2/3 bar state %d unreachable via slider", b);
 
+  /* --- lux -> calibrated (Android light-sensor path, spec S6) ------------- */
+  {
+    float lfloor = SOLAR_LUX_FLOOR, lsat = SOLAR_LUX_SATURATION_DEFAULT;
+    CHECK(se_solar_lux_to_calibrated(0.0f, lfloor, lsat)==0,           "lux 0 -> calibrated 0");
+    CHECK(se_solar_lux_to_calibrated(lfloor, lfloor, lsat)==0,         "lux at floor -> calibrated 0");
+    CHECK(se_solar_lux_to_calibrated(lfloor-500.0f, lfloor, lsat)==0,  "lux below floor -> calibrated 0");
+    CHECK(se_solar_lux_to_calibrated(lsat, lfloor, lsat)==140,         "lux at saturation -> calibrated 140");
+    CHECK(se_solar_lux_to_calibrated(lsat*2.0f, lfloor, lsat)==140,    "lux above saturation -> clamped 140");
+    int mid = se_solar_lux_to_calibrated((lfloor+lsat)*0.5f, lfloor, lsat);
+    CHECK(mid==70, "lux at midpoint -> calibrated ~70, got %d", mid);
+    /* degenerate calibration (saturation <= floor) must not divide by zero */
+    CHECK(se_solar_lux_to_calibrated(5000.0f, 1000.0f, 1000.0f)>=0,    "degenerate calibration guarded");
+    /* monotonic in lux */
+    int plux=-1;
+    for(int l=0;l<=140000;l+=1000){
+      int c=se_solar_lux_to_calibrated((float)l, lfloor, lsat);
+      CHECK(c>=plux, "lux->calibrated not monotonic at %d lux", l);
+      plux=c;
+    }
+  }
+
   if(g_failures){ printf("\n%d CHECK(s) FAILED\n", g_failures); return 1; }
   printf("All solar-sensor self-tests passed (%d reference points, both games).\n", n);
   return 0;
