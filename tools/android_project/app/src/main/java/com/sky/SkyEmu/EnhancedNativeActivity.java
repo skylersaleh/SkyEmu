@@ -10,6 +10,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Rect;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -41,7 +45,7 @@ import java.security.Key;
 import java.util.Locale;
 import java.util.Vector;
 
-public class EnhancedNativeActivity extends NativeActivity {
+public class EnhancedNativeActivity extends NativeActivity implements SensorEventListener {
     final static int APP_STORAGE_ACCESS_REQUEST_CODE = 501; // Any value
     final static int STORAGE_PERMISSION_CODE = 501; // Any value
     final static int FILE_PICKER_REQUEST_CODE = 123;
@@ -297,6 +301,69 @@ public class EnhancedNativeActivity extends NativeActivity {
                     });
         }
     }
+
+    // --- Ambient light sensor (drives the Boktai solar sensor) ------------------
+    // Reads Sensor.TYPE_LIGHT (illuminance in lux) and exposes the latest value to
+    // the native emulator over JNI. TYPE_LIGHT needs NO manifest permission. The
+    // smoothing and lux->sun-gauge mapping happen on the C side (se_solar_sensor.h),
+    // not here -- this layer only samples. Devices without a light sensor report
+    // "unavailable" through the getters so the C layer can fall back to the slider.
+    private SensorManager solarSensorManager;
+    private Sensor solarLightSensor;
+    private volatile float solarLastLux = -1.0f;
+    private volatile boolean solarLuxValid = false;
+
+    private void ensureLightSensor(){
+        if(solarSensorManager==null){
+            solarSensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
+            if(solarSensorManager!=null){
+                solarLightSensor = solarSensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+            }
+        }
+    }
+    // JNI: latest illuminance in lux, or -1.0f if there is no reading yet / no sensor.
+    // Called from the emulator thread; reads a volatile, takes no locks, allocates nothing.
+    public float getAmbientLux(){
+        return solarLuxValid ? solarLastLux : -1.0f;
+    }
+    // JNI: whether this device has a usable ambient light sensor.
+    public boolean hasLightSensor(){
+        ensureLightSensor();
+        return solarLightSensor != null;
+    }
+    // JNI: the sensor's maximum reportable lux (its clamp ceiling), or -1.0f if none.
+    // Used to warn when the ALS ceiling is too low for the gauge to reach high bars.
+    public float getLightSensorMaxRange(){
+        ensureLightSensor();
+        return solarLightSensor != null ? solarLightSensor.getMaximumRange() : -1.0f;
+    }
+    @Override
+    public void onSensorChanged(SensorEvent event){
+        if(event.sensor.getType()==Sensor.TYPE_LIGHT){
+            solarLastLux = event.values[0];
+            solarLuxValid = true;
+        }
+    }
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy){ /* unused */ }
+    @Override
+    protected void onResume(){
+        super.onResume();
+        ensureLightSensor();
+        if(solarSensorManager!=null && solarLightSensor!=null){
+            // SENSOR_DELAY_NORMAL: the game polls infrequently and battery matters.
+            solarSensorManager.registerListener(this, solarLightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        }
+    }
+    @Override
+    protected void onPause(){
+        if(solarSensorManager!=null){
+            solarSensorManager.unregisterListener(this);
+        }
+        solarLuxValid = false; // discard the reading so we never serve a stale value after resume
+        super.onPause();
+    }
+
     public void openFile(){
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("*/*");

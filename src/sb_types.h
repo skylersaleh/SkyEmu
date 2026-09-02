@@ -159,6 +159,15 @@ typedef struct {
   char save_data_base_path[SB_FILE_PATH_SIZE];
   char save_file_path[SB_FILE_PATH_SIZE]; 
   float screen_ghosting_strength;  //0 = off 1 = full strength
+  // Re-anchor the cartridge RTC to host wall-clock time each frame instead of
+  // letting it be driven purely by emulated cycles. See gba_tick(). Fixes Boktai
+  // reporting "SOLAR SENSOR IS BROKEN" (which is really an RTC sanity check).
+  bool rtc_wall_clock;
+  // Diagnostics for the RTC anchor. rtc_backwards_events counts how many times
+  // the wall clock would have pulled the cartridge clock backwards (it is held
+  // instead). A steadily climbing count is normal; it means the guard is working.
+  uint32_t rtc_backwards_events;
+  uint64_t rtc_reported_time;
   size_t rom_size;
   uint8_t *rom_data;
   char rom_path[SB_FILE_PATH_SIZE]; 
