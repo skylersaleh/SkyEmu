@@ -6737,6 +6737,16 @@ void se_draw_menu_panel(){
   bool rtc_wall_clock = gui_state.settings.rtc_wall_clock;
   se_checkbox("Anchor cartridge RTC to real time (Boktai)",&rtc_wall_clock);
   gui_state.settings.rtc_wall_clock = rtc_wall_clock;
+  if(gui_state.settings.draw_debug_menu){
+    // If "backwards held" climbs while the cartridge clock stays in step with the
+    // host clock, the guard is doing its job. If the two clocks diverge by more
+    // than a couple of seconds, something else is driving the RTC.
+    time_t host_now = time(NULL);
+    long drift = (long)((int64_t)emu_state.rtc_reported_time - (int64_t)host_now);
+    se_text("RTC: cart %lld  host %lld  drift %lds  backwards held %u",
+      (long long)emu_state.rtc_reported_time,(long long)host_now,
+      drift,(unsigned)emu_state.rtc_backwards_events);
+  }
   bool force_dmg_mode = gui_state.settings.force_dmg_mode;
   se_checkbox("Force GB games to run in DMG mode",&force_dmg_mode);
   gui_state.settings.force_dmg_mode=force_dmg_mode;

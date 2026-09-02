@@ -3782,13 +3782,25 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   // timezone changes and NTP corrections are the other way this trips). No field
   // is added to gba_t, so existing save states stay byte-compatible.
   if(emu->rtc_wall_clock){
-    static uint64_t last_reported_rtc = 0;
-    uint64_t host_now = (uint64_t)time(NULL);
+    // The guard MUST be applied to the value the game observes, which is
+    //   initial_rtc_time + total_clocks_ticked/2^24
+    // evaluated whenever the game happens to read, not to host_now. Re-anchoring
+    // against host_now instead lets the observed value creep a second ahead
+    // mid-frame and then snap back at the next re-anchor. That backwards step
+    // happens under ANY mismatch between emulated and wall-clock speed -- which
+    // on a phone is always, since the GBA's 59.7275Hz never matches a 60/90/120Hz
+    // display -- and a backwards clock is precisely what trips Boktai's tamper
+    // check. Anchor off the current observed value instead: drift stays bounded
+    // to about a second and the sequence can never regress.
     uint64_t emulated_elapsed = gba->rtc.total_clocks_ticked/(16*1024*1024);
-    uint64_t reported = host_now;
-    if(reported < last_reported_rtc) reported = last_reported_rtc; // monotonic
-    last_reported_rtc = reported;
-    if(reported >= emulated_elapsed) gba->rtc.initial_rtc_time = reported - emulated_elapsed;
+    uint64_t observed_now = (uint64_t)gba->rtc.initial_rtc_time + emulated_elapsed;
+    uint64_t desired      = (uint64_t)time(NULL);
+    if(desired < observed_now){
+      emu->rtc_backwards_events++;   // would have regressed; diagnostic only
+      desired = observed_now;        // hold instead, let wall clock catch up
+    }
+    if(desired >= emulated_elapsed) gba->rtc.initial_rtc_time = desired - emulated_elapsed;
+    emu->rtc_reported_time = (uint64_t)gba->rtc.initial_rtc_time + emulated_elapsed;
   }
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(gba->frame_in_progress){
