@@ -30,6 +30,25 @@
 // - "Never Overlap Screen"
 // - "Button Labels"
 // - "Show Screen Bezel"
+// - "Auto Save State"
+// - "Periodically capture a save state into the selected slot,\nso little is lost if SkyEmu is closed unexpectedly."
+//   (the \n line breaks are part of the string; keep them when translating)
+// - ICON_FK_EXCLAMATION_TRIANGLE " Not recommended for NDS."
+// - "Capturing a DS save state briefly pauses emulation."
+// - "Slot"
+// - "Interval"
+// - "This slot is overwritten automatically while you play."
+// (combo options are looked up one at a time, so each of these is its own entry)
+// - "5 seconds"
+// - "10 seconds"
+// - "15 seconds"
+// - "30 seconds"
+// - "1 minute"
+// - "2 minutes"
+// - "5 minutes"
+// - "10 minutes"
+// - "15 minutes"
+// - "30 minutes"
 
 // Strings removed in v4:
 // - "Controller"
