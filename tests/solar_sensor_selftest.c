@@ -18,8 +18,10 @@
     - no top-end dead zone (the old 181-into-140 saturation regression)
     - monotonicity of the whole slider sweep
     - every gauge state is reachable across the sweep (mgba#523 regression)
+    - NaN / infinity clamp to defined values instead of trapping the int cast
 */
 #include <stdio.h>
+#include <math.h>
 #include "../src/se_solar_sensor.h"
 
 static int g_failures = 0;
@@ -180,6 +182,24 @@ int main(void){
     /* and the low end must not become trivially reachable indoors */
     CHECK(se_solar_lux_to_calibrated(800.0f, lfloor, lsat)==0,       "lit indoor room stays at calibrated 0");
   }
+
+  /* --- NaN / infinity hardening ------------------------------------------
+     Every comparison against NaN is false, so a naive `if(x>1.0f) x=1.0f;`
+     clamp leaves NaN intact and it reaches the float->int conversion, which is
+     undefined behaviour. Both mapping functions use the negated form instead,
+     so a NaN reading degrades to a dark gauge rather than to garbage. */
+  CHECK(se_solar_float_to_calibrated(NAN)==0,
+    "NaN brightness must clamp to calibrated 0, got %d", se_solar_float_to_calibrated(NAN));
+  CHECK(se_solar_float_to_byte(NAN)==0xE8,
+    "NaN brightness must give the dark byte 0xE8, got 0x%02X", se_solar_float_to_byte(NAN));
+  CHECK(se_solar_float_to_calibrated(INFINITY)==140,
+    "+inf brightness must clamp to calibrated 140, got %d", se_solar_float_to_calibrated(INFINITY));
+  CHECK(se_solar_float_to_calibrated(-INFINITY)==0,
+    "-inf brightness must clamp to calibrated 0, got %d", se_solar_float_to_calibrated(-INFINITY));
+  CHECK(se_solar_lux_to_calibrated(NAN, SOLAR_LUX_FLOOR, SOLAR_LUX_SATURATION_DEFAULT)==0,
+    "NaN lux must clamp to calibrated 0");
+  CHECK(se_solar_lux_to_calibrated(INFINITY, SOLAR_LUX_FLOOR, SOLAR_LUX_SATURATION_DEFAULT)==140,
+    "+inf lux must clamp to calibrated 140");
 
   if(g_failures){ printf("\n%d CHECK(s) FAILED\n", g_failures); return 1; }
   printf("All solar-sensor self-tests passed (%d reference points, both games).\n", n);

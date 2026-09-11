@@ -37,8 +37,12 @@
    Generating the game-visible unit directly is what makes brightness 1.0 land
    exactly on the 140 clamp instead of saturating at ~0.77 and wasting travel. */
 static inline int se_solar_float_to_calibrated(float norm){
-  if(norm<0.0f) norm=0.0f;
-  if(norm>1.0f) norm=1.0f;
+  /* Negated comparisons, matching the NaN-safe idiom gba_tick() used before this
+     change: a comparison against NaN is false, so `if(norm>1.0f)` would pass NaN
+     straight to the float->int conversion below (undefined behaviour). This way
+     NaN clamps to the dark end instead. Identical for every non-NaN input. */
+  if(!(norm>0.0f)) norm=0.0f;
+  if(!(norm<1.0f)) norm=1.0f;
   int calibrated = (int)(norm*(float)SE_SOLAR_CALIBRATED_MAX + 0.5f); /* round-to-nearest */
   if(calibrated<0) calibrated=0;
   if(calibrated>SE_SOLAR_CALIBRATED_MAX) calibrated=SE_SOLAR_CALIBRATED_MAX;
@@ -102,8 +106,11 @@ static inline int se_solar_calibrated_to_bars_boktai23(int calibrated){
 static inline int se_solar_lux_to_calibrated(float lux, float lux_floor, float lux_saturation){
   if(lux_saturation < lux_floor + 1.0f) lux_saturation = lux_floor + 1.0f; /* guard /0 */
   float t = (lux - lux_floor) / (lux_saturation - lux_floor);
-  if(t<0.0f) t=0.0f;
-  if(t>1.0f) t=1.0f;
+  /* Negated comparisons so a NaN operand lands on the dark end: every compare
+     against NaN is false, so the naive `if(t>1.0f)` form would let NaN reach the
+     float->int conversion below, which is undefined behaviour. */
+  if(!(t>0.0f)) t=0.0f;
+  if(!(t<1.0f)) t=1.0f;
   int calibrated = (int)(t*(float)SE_SOLAR_CALIBRATED_MAX + 0.5f);
   if(calibrated<0) calibrated=0;
   if(calibrated>SE_SOLAR_CALIBRATED_MAX) calibrated=SE_SOLAR_CALIBRATED_MAX;
