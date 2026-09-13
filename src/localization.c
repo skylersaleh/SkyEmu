@@ -35,9 +35,8 @@
 //   (the \n line breaks are part of the string; keep them when translating)
 // - ICON_FK_EXCLAMATION_TRIANGLE " Not recommended for NDS."
 // - "Capturing a DS save state briefly pauses emulation."
-// - "Slot"
+// - "Auto Save"
 // - "Interval"
-// - "This slot is overwritten automatically while you play."
 // (combo options are looked up one at a time, so each of these is its own entry)
 // - "5 seconds"
 // - "10 seconds"

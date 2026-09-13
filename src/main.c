@@ -209,8 +209,7 @@ typedef struct{
   uint32_t show_screen_bezel;
   uint32_t auto_save_state_enable;
   uint32_t auto_save_state_interval; //Seconds between automatic save state captures
-  uint32_t auto_save_state_slot;     //Slot that automatic save states are captured into
-  uint32_t padding[215];
+  uint32_t padding[216];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -606,7 +605,6 @@ void se_load_rom_overlay(bool visible);
 void se_draw_onscreen_controller(sb_emu_state_t*state, int mode, float win_x, float win_y, float win_w, float win_h, bool preview, bool center);
 static float se_compute_touchscreen_controls_min_dim(float w, float h, bool *portrait);
 void se_reset_save_states();
-void se_capture_state_slot(int slot);
 void se_set_new_controller(se_controller_state_t* cont, int index);
 bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size);
 void se_emscripten_flush_fs();
@@ -1190,6 +1188,10 @@ se_core_state_t core;
 se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
+//Automatic save states live outside the numbered slots so they can never overwrite one of the
+//player's own saves. Keeping them out of save_states[] also avoids growing SE_NUM_SAVE_STATES,
+//which SE_KEY_CAPTURE_STATE is indexed off and can't grow without invalidating saved keybinds.
+se_save_state_t auto_save_state;
 se_cloud_state_t cloud_state;
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
@@ -2603,6 +2605,18 @@ void se_load_rom(const char *filename){
       se_load_state_from_disk(save_states+i,save_state_path);
     }
   }
+  {
+    auto_save_state.valid=false;
+    char save_state_path[SB_FILE_PATH_SIZE];
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.png",emu_state.save_data_base_path);
+    se_load_state_from_disk(&auto_save_state,save_state_path);
+    if(!auto_save_state.valid){
+      const char* base, *file,*ext;
+      sb_breakup_path(emu_state.save_data_base_path,&base,&file,&ext);
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.autosave.state.png",gui_state.paths.save,file);
+      se_load_state_from_disk(&auto_save_state,save_state_path);
+    }
+  }
   //Hold off automatic captures until the player actually starts playing, so that loading a game
   //never overwrites the save state that was automatically captured for it last session before the
   //player has had the chance to restore it. The longer grace period on top of that only applies
@@ -2611,9 +2625,7 @@ void se_load_rom(const char *filename){
   //the selected interval.
   se_auto_save_state_interval_start = se_time();
   se_auto_save_state_armed = false;
-  uint32_t auto_save_slot = gui_state.settings.auto_save_state_slot;
-  if(auto_save_slot>=SE_NUM_SAVE_STATES)auto_save_slot=SE_NUM_SAVE_STATES-1;
-  se_auto_save_state_first_capture_pending = save_states[auto_save_slot].valid!=0;
+  se_auto_save_state_first_capture_pending = auto_save_state.valid!=0;
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
@@ -3168,6 +3180,7 @@ void se_ra_register(bool clicked, int x, int y, int w, int h){
 }
 void se_reset_save_states(){
   for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
+  auto_save_state.valid = false;
 }
 
 static void se_draw_debug_menu(){
@@ -4757,12 +4770,17 @@ void se_download_emscripten_save_states()
   const char* base, *file_name, *ext;
   sb_breakup_path(emu_state.rom_path,&base,&file_name,&ext);
   snprintf(archive_filename,SB_FILE_PATH_SIZE,"%s.save_states.zip",file_name);
-  for(int i=0;i<SE_NUM_SAVE_STATES;++i)
+  for(int i=0;i<SE_NUM_SAVE_STATES+1;++i)
   {
     char save_state_path[SB_FILE_PATH_SIZE];
     char save_state_name[SB_FILE_PATH_SIZE];
-    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
-    snprintf(save_state_name,SB_FILE_PATH_SIZE,"slot%d.state.png",i);
+    if(i==SE_NUM_SAVE_STATES){
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.png",emu_state.save_data_base_path);
+      snprintf(save_state_name,SB_FILE_PATH_SIZE,"autosave.state.png");
+    }else{
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
+      snprintf(save_state_name,SB_FILE_PATH_SIZE,"slot%d.state.png",i);
+    }
     if(!sb_file_exists(save_state_path))continue;
     size_t data_size;
     uint8_t* data = sb_load_file_data(save_state_path,&data_size);
@@ -5387,11 +5405,15 @@ static double se_auto_save_state_effective_interval(){
   return interval;
 }
 static void se_capture_auto_save_state(){
-  uint32_t slot = gui_state.settings.auto_save_state_slot;
-  if(slot>=SE_NUM_SAVE_STATES)slot=SE_NUM_SAVE_STATES-1;
-  se_capture_state_slot(slot);
+  se_capture_state(&core,&auto_save_state);
+  char save_state_path[SB_FILE_PATH_SIZE];
+  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.png",emu_state.save_data_base_path);
+  se_save_state_to_disk(&auto_save_state,save_state_path);
   se_auto_save_state_interval_start = se_time();
   se_auto_save_state_first_capture_pending = false;
+}
+static void se_restore_auto_save_state(){
+  if(auto_save_state.valid)se_restore_state(&core,&auto_save_state);
 }
 //True on the frame an input the emulated game can see is newly pressed. This is edge triggered on
 //purpose: a resting analog stick or a held button must not keep re-arming captures while the
@@ -6094,41 +6116,54 @@ void se_draw_menu_panel(){
     se_tooltip("Periodically capture a save state into the selected slot,\n"
                "so little is lost if SkyEmu is closed unexpectedly.");
     if(auto_save_state_enable){
-      //Build the slot list out of the same localized string that labels the slots above.
-      char slot_options[SE_NUM_SAVE_STATES*64+1];
-      int slot_options_size = 0;
-      for(int i=0;i<SE_NUM_SAVE_STATES;++i){
-        char slot_name[64];
-        snprintf(slot_name,sizeof(slot_name),se_localize_and_cache("Save Slot %d"),i);
-        slot_options_size+=snprintf(slot_options+slot_options_size,sizeof(slot_options)-slot_options_size,"%s",slot_name)+1;
-      }
-      slot_options[slot_options_size]='\0';
-
-      int slot = gui_state.settings.auto_save_state_slot;
-      if(slot<0||slot>=SE_NUM_SAVE_STATES)slot=SE_NUM_SAVE_STATES-1;
-      se_text("Slot");igSameLine(SE_FIELD_INDENT,0);
-      igPushItemWidth(-1);
-      se_combo_str("##AutoSaveStateSlot",&slot,slot_options,0);
-      igPopItemWidth();
-      gui_state.settings.auto_save_state_slot = slot;
-
       int interval = se_auto_save_state_interval_index();
       se_text("Interval");igSameLine(SE_FIELD_INDENT,0);
       igPushItemWidth(-1);
       se_combo_str("##AutoSaveStateInterval",&interval,SE_AUTO_SAVE_STATE_INTERVAL_COMBO,0);
       igPopItemWidth();
       gui_state.settings.auto_save_state_interval = se_auto_save_state_intervals[interval];
-      //Tooltips never show on touch devices, so the warning that a slot gets overwritten has to be
-      //on screen rather than hidden behind a hover.
-      se_text_disabled("This slot is overwritten automatically while you play.");
       if(emu_state.system==SYSTEM_NDS){
         //Styled like the missing BIOS warning: it carries the same "this will not work well"
         //weight, and DS save states are big enough that each capture is a visible stall.
+        //Tooltips never render once the display has been touched, so this has to be on screen.
         igPushStyleColorU32(ImGuiCol_Text,0xff0000ff);
         se_text(ICON_FK_EXCLAMATION_TRIANGLE " Not recommended for NDS.");
         se_text("Capturing a DS save state briefly pauses emulation.");
         igPopStyleColor(1);
       }
+    }
+    //Only shown while the feature is on, so switching it off leaves no stray card behind. Same card
+    //geometry as the numbered slots, minus the Capture button.
+    if(auto_save_state_enable&&auto_save_state.valid){
+      int card_w = (win_w-style->FramePadding.x)*0.5;
+      int card_h = 64;
+      igBeginChildFrame(200,(ImVec2){card_w,card_h},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollWithMouse);
+      ImVec2 screen_p;
+      igGetCursorScreenPos(&screen_p);
+      int screen_x = screen_p.x, screen_y = screen_p.y;
+      int screen_w = 64, screen_h = 64+style->FramePadding.y*2;
+      int button_w = 55;
+      igSetCursorPosY(igGetCursorPosY()+1.0);
+      se_text("Auto Save");
+      igSetCursorPosY(igGetCursorPosY()-2.0);
+      if(se_button("Restore",(ImVec2){button_w,0}))se_restore_auto_save_state();
+      float w_scale = 1.0, h_scale = 1.0;
+      float border_screen_x = screen_x+button_w+(card_w-screen_w-button_w)*0.5;
+      float border_screen_y = screen_y+(card_h-screen_h)*0.5-style->FramePadding.y;
+      ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+      ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){border_screen_x-2,border_screen_y},(ImVec2){border_screen_x+screen_w+2,border_screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+      if(auto_save_state.screenshot_width>auto_save_state.screenshot_height){
+        h_scale = (float)auto_save_state.screenshot_height/(float)auto_save_state.screenshot_width;
+      }else{
+        w_scale = (float)auto_save_state.screenshot_width/(float)auto_save_state.screenshot_height;
+      }
+      screen_w*=w_scale;
+      screen_h*=h_scale;
+      screen_x+=button_w+(card_w-screen_w-button_w)*0.5;
+      screen_y+=(card_h-screen_h)*0.5-style->FramePadding.y;
+      se_draw_image(auto_save_state.screenshot,auto_save_state.screenshot_width,auto_save_state.screenshot_height,
+                    screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
+      igEndChildFrame();
     }
   }
   se_section(ICON_FK_CLOUD " Google Drive");
@@ -7757,8 +7792,6 @@ void se_load_settings(){
       gui_state.settings.settings_file_version = 4;
       gui_state.settings.auto_save_state_enable = false;
       gui_state.settings.auto_save_state_interval = se_auto_save_state_intervals[SE_AUTO_SAVE_STATE_DEFAULT_INTERVAL_INDEX];
-      //Default to the last slot, which is the least likely one to be used for manual saves.
-      gui_state.settings.auto_save_state_slot = SE_NUM_SAVE_STATES-1;
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
@@ -7770,7 +7803,6 @@ void se_load_settings(){
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
     //Snap the auto save state interval back onto one of the presets so that it can never be zero.
     gui_state.settings.auto_save_state_interval = se_auto_save_state_intervals[se_auto_save_state_interval_index()];
-    if(gui_state.settings.auto_save_state_slot>=SE_NUM_SAVE_STATES)gui_state.settings.auto_save_state_slot=SE_NUM_SAVE_STATES-1;
     gui_state.last_saved_settings=gui_state.settings;
     se_reload_theme();
   }
