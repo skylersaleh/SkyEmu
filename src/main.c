@@ -207,7 +207,8 @@ typedef struct{
   uint32_t nds_layout; 
   uint32_t touch_screen_show_button_labels;
   uint32_t show_screen_bezel;
-  uint32_t padding[218];
+  uint32_t auto_save_state_enable;
+  uint32_t padding[217];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -484,6 +485,7 @@ typedef struct {
     bool single_panel_mode;    
     //Points to the most recently opened panel. When single panel mode is enabled all other panels should be closed. 
     bool * last_opened_panel;
+    double last_autosave_time;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -492,6 +494,8 @@ typedef struct {
 
 #define SE_NUM_SAVE_STATES 4
 #define SE_MAX_SCREENSHOT_SIZE (NDS_LCD_H*NDS_LCD_W*2*4)
+
+#define SE_AUTO_SAVE_STATE_INTERVAL 30.0
 
 #define SE_THEME_DARK 0
 #define SE_THEME_LIGHT 1
@@ -679,7 +683,10 @@ const char* se_localize_and_cache(const char* input_str){
   return localized_string;
 }
 bool se_checkbox(const char* label, bool * v){
-  return igCheckbox(se_localize_and_cache(label),v);
+  igPushStyleVarFloat(ImGuiStyleVar_FrameBorderSize, 1.0f);
+  bool val =  igCheckbox(se_localize_and_cache(label),v);
+  igPopStyleVar(1);
+  return val; 
 }
 void se_text(const char* label,...){
   va_list args;
@@ -1166,6 +1173,7 @@ se_core_state_t core;
 se_core_scratch_t scratch;
 se_core_rewind_buffer_t rewind_buffer;
 se_save_state_t save_states[SE_NUM_SAVE_STATES];
+se_save_state_t auto_save_state;
 se_cloud_state_t cloud_state;
 
 bool se_more_rewind_deltas(se_core_rewind_buffer_t* rewind, uint32_t index){
@@ -1318,7 +1326,6 @@ uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, u
   se_emu_id emu_id=se_get_emu_id();
   emu_id.bess_offset = se_save_best_effort_state(&save_state->state);
   emu_id.system = save_state->system;
-  printf("Bess offset: %d\n",emu_id.bess_offset);
   size_t save_state_size = se_get_core_size();
   size_t net_save_state_size = sizeof(emu_id)+save_state_size+SE_RC_BUFFER_SIZE;
   int screenshot_size = save_state->screenshot_width*save_state->screenshot_height;
@@ -1362,6 +1369,20 @@ uint8_t* se_save_state_to_image(se_save_state_t * save_state, uint32_t *width, u
   *width = save_state->screenshot_width*scale;
   *height = save_state->screenshot_height*scale;
   return imdata;
+}
+bool se_save_state_to_disk_raw(se_save_state_t* save_state, const char* filename){
+  uint32_t im_w=0,im_h=0; 
+  uint8_t * im_data = se_save_state_to_image(save_state,&im_w, &im_h);
+  FILE *f = fopen(filename,"wb");
+  if(f){
+    fwrite(&im_w, 4, 1,f);
+    fwrite(&im_h, 4, 1,f);
+    fwrite(im_data, 1, im_w*im_h*4,f);
+    fclose(f);
+    se_emscripten_flush_fs();
+    return true;
+  }
+  return false; 
 }
 bool se_save_state_to_disk(se_save_state_t* save_state, const char* filename){
   if(emu_state.rom_loaded==false)return false;
@@ -1413,8 +1434,6 @@ bool se_load_state_common(se_save_state_t* save_state, const char* filename, uin
       save_state->screenshot[p2*4+3]=0xff;
     }
   }
-  
-  stbi_image_free(imdata);
 
   bool valid = data_size<sizeof(se_emu_id);
 
@@ -1484,7 +1503,9 @@ bool se_load_state_from_mem(se_save_state_t* save_state, void* data, size_t data
   uint8_t *imdata = stbi_load_from_memory(data, data_size, &im_w, &im_h, &im_c, 4);
   if(!imdata)return false;
 
-  return se_load_state_common(save_state, NULL, imdata, im_w, im_h);
+  bool res = se_load_state_common(save_state, NULL, imdata, im_w, im_h);
+  stbi_image_free(imdata);
+  return res;
 }
 bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
   save_state->valid = false;
@@ -1493,8 +1514,32 @@ bool se_load_state_from_disk(se_save_state_t* save_state, const char* filename){
   if(!imdata)return false; 
 
   bool ret = se_load_state_common(save_state, filename, imdata, im_w, im_h);
+  stbi_image_free(imdata);
   if(save_state->valid)printf("Loaded save state:%s\n",filename);
   else printf("Failed to load state from file:%s\n",filename);
+  return ret;
+}
+bool se_load_state_from_disk_raw(se_save_state_t* save_state, const char* filename){
+  size_t size= 0; 
+  uint8_t *data = sb_load_file_data(filename, &size);
+  if(size<8){
+    free(data);
+    return false;
+  }
+  uint32_t w = ((uint32_t*)data)[0];
+  uint32_t h = ((uint32_t*)data)[1];
+
+  if(w*h*4+8 != size){
+    free(data);
+    printf("Failed to load raw savestate %s\n",filename);
+    return false;
+  }
+  uint8_t *imdata = data+8;
+  save_state->valid = false;
+  bool ret = se_load_state_common(save_state, filename, imdata, w, h);
+  if(save_state->valid)printf("Loaded save state:%s\n",filename);
+  else printf("Failed to load state from file:%s\n",filename);
+  free(data);
   return ret;
 }
 double se_time(){
@@ -2580,6 +2625,19 @@ void se_load_rom(const char *filename){
       se_load_state_from_disk(save_states+i,save_state_path);
     }
   }
+  {
+    auto_save_state.valid=false;
+    char save_state_path[SB_FILE_PATH_SIZE];
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.raw",emu_state.save_data_base_path);
+    se_load_state_from_disk_raw(&auto_save_state,save_state_path);
+    if(!auto_save_state.valid){
+      const char* base, *file,*ext;
+      sb_breakup_path(emu_state.save_data_base_path,&base,&file,&ext);
+      snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s%s.autosave.state.raw",gui_state.paths.save,file);
+      se_load_state_from_disk_raw(&auto_save_state,save_state_path);
+    }
+  }
+  gui_state.last_autosave_time = se_time();
   emu_state.game_checksum = cloud_drive_hash((const char*)emu_state.rom_data,emu_state.rom_size);
   se_sync_cloud_save_states();
   #ifdef ENABLE_RETRO_ACHIEVEMENTS
@@ -3133,7 +3191,12 @@ void se_ra_register(bool clicked, int x, int y, int w, int h){
 #endif
 }
 void se_reset_save_states(){
-  for(int i=0;i<SE_NUM_SAVE_STATES;++i)save_states[i].valid = false;
+  for(int i=0;i<SE_NUM_SAVE_STATES;++i){
+    memset(save_states+i,0, sizeof(se_save_state_t));
+    save_states[i].valid = false;
+  }
+  memset(&auto_save_state,0, sizeof(se_save_state_t));
+  auto_save_state.valid = false;
 }
 
 static void se_draw_debug_menu(){
@@ -4716,6 +4779,16 @@ void se_download_emscripten_file(const char * path){
   }, name, data, data_size);
   free(data);
 }
+void se_add_file_to_zip(const char * archive_path, const char* src_path, const char* zip_path, mz_zip_error* zip_error){
+  if(!sb_file_exists(src_path))return;
+  size_t data_size;
+  uint8_t* data = sb_load_file_data(archive_path,&data_size);
+  mz_bool status = mz_zip_add_mem_to_archive_file_in_place_v2(archive_path,zip_path,data,data_size,NULL,0,MZ_BEST_COMPRESSION,zip_error);
+  free(data);
+  if (!status){
+    printf("mz_zip_add_mem_to_archive_file_in_place_v2 failed: %s\n",mz_zip_get_error_string(*zip_error));
+  }
+}
 void se_download_emscripten_save_states()
 {
   mz_zip_error zip_error;
@@ -4729,17 +4802,17 @@ void se_download_emscripten_save_states()
     char save_state_name[SB_FILE_PATH_SIZE];
     snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.slot%d.state.png",emu_state.save_data_base_path,i);
     snprintf(save_state_name,SB_FILE_PATH_SIZE,"slot%d.state.png",i);
-    if(!sb_file_exists(save_state_path))continue;
-    size_t data_size;
-    uint8_t* data = sb_load_file_data(save_state_path,&data_size);
-    mz_bool status = mz_zip_add_mem_to_archive_file_in_place_v2(archive_filename,save_state_name,data,data_size,NULL,0,MZ_BEST_COMPRESSION,&zip_error);
-    free(data);
-    if (!status)
-    {
-      printf("mz_zip_add_mem_to_archive_file_in_place_v2 failed: %s\n",mz_zip_get_error_string(zip_error));
-      break;
-    }
+    se_add_file_to_zip(archive_filename, save_state_path, save_state_name,&zip_error);
   }
+  // Auto save state
+  {
+    char save_state_path[SB_FILE_PATH_SIZE];
+    char save_state_name[SB_FILE_PATH_SIZE];
+    snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.raw",emu_state.save_data_base_path);
+    snprintf(save_state_name,SB_FILE_PATH_SIZE,"autosave.state.raw");
+    se_add_file_to_zip(archive_filename, save_state_path, save_state_name,&zip_error);
+  }
+
   mutex_lock(cloud_state.save_states_mutex);
   for(int i=0;i<SE_NUM_SAVE_STATES;++i){
     if(cloud_state.save_states_busy[i]||cloud_state.save_states[i].valid==false)continue;
@@ -5323,6 +5396,16 @@ static void se_poll_sdl(){
 }
 #endif
 
+void se_update_auto_save_state(){
+  if(se_time()-gui_state.last_autosave_time<SE_AUTO_SAVE_STATE_INTERVAL)return;
+  gui_state.last_autosave_time = se_time();
+  //Don't keep saving when the game is paused, but reset the timer so a new auto save isn't created until the user plays for a bit. 
+  if(emu_state.run_mode!=SB_MODE_RUN)return;
+  se_capture_state(&core,&auto_save_state);
+  char save_state_path[SB_FILE_PATH_SIZE];
+  snprintf(save_state_path,SB_FILE_PATH_SIZE,"%s.autosave.state.raw",emu_state.save_data_base_path);
+  se_save_state_to_disk_raw(&auto_save_state,save_state_path);
+}
 void se_update_frame() {
   #ifdef ENABLE_HTTP_CONTROL_SERVER
   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
@@ -5347,6 +5430,7 @@ void se_update_frame() {
       se_emscripten_flush_fs();
     }
   }
+  se_update_auto_save_state();
 
   emu_state.screen_ghosting_strength = gui_state.settings.ghosting;
   const int frames_per_rewind_state = 8; 
@@ -5938,7 +6022,6 @@ void se_draw_save_states(bool cloud){
       screen_y+=(slot_h-screen_h)*0.5-style->FramePadding.y;
       ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
       ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){screen_x,screen_y},(ImVec2){screen_x+screen_w,screen_y+screen_h},color,0,ImDrawCornerFlags_None);
-      ImVec2 anchor;
       igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-5});
       if(cloud_busy){
         se_text(ICON_FK_SPINNER);
@@ -5947,6 +6030,48 @@ void se_draw_save_states(bool cloud){
     }
     igEndChildFrame();
     mutex_unlock(cloud_state.save_states_mutex);
+  }
+  // Auto save state
+  {
+    int card_w = (win_w);
+    int card_h = 55;
+    igBeginChildFrame(200,(ImVec2){card_w,card_h+style->FramePadding.y*4},ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoScrollWithMouse);
+    ImVec2 screen_p;
+    igGetCursorScreenPos(&screen_p);
+    int screen_w = 64, screen_h = card_h;
+    int button_w = 55;
+    int screen_x = card_w-screen_w+2, screen_y = screen_p.y+style->FramePadding.y*2;
+    igSetCursorPosY(igGetCursorPosY()+1.0);
+    se_text("Auto Save State");
+    igSetCursorPosY(igGetCursorPosY()-2.0);
+    bool auto_save_state_enable = gui_state.settings.auto_save_state_enable;
+    se_checkbox("Enable",&auto_save_state_enable);
+    //Trigger an auto save capture the instant it is enabled
+    if(auto_save_state_enable == true && gui_state.settings.auto_save_state_enable==false)gui_state.last_autosave_time = -100e6; 
+    gui_state.settings.auto_save_state_enable = auto_save_state_enable;
+    if(se_button("Restore",(ImVec2){button_w,0}))se_restore_state(&core,&auto_save_state);
+    float w_scale = 1.0, h_scale = 1.0;
+    float border_screen_x = screen_x;
+    float border_screen_y = screen_y+(card_h-screen_h)*0.5-style->FramePadding.y;
+    ImU32 color = igColorConvertFloat4ToU32(style->Colors[ImGuiCol_MenuBarBg]);
+    ImDrawList_AddRectFilled(igGetWindowDrawList(),(ImVec2){border_screen_x-2,border_screen_y},(ImVec2){border_screen_x+screen_w+2,border_screen_y+screen_h},color,0,ImDrawCornerFlags_None);
+    if(auto_save_state.screenshot_width>auto_save_state.screenshot_height){
+      h_scale = (float)auto_save_state.screenshot_height/(float)auto_save_state.screenshot_width;
+    }else{
+      w_scale = (float)auto_save_state.screenshot_width/(float)auto_save_state.screenshot_height;
+    }
+    if(auto_save_state.valid){
+      screen_x+=(screen_w-screen_w*w_scale)*0.5;
+      screen_w*=w_scale;
+      screen_h*=h_scale;
+      screen_y+=(card_h-screen_h)*0.5-style->FramePadding.y;
+      se_draw_image(auto_save_state.screenshot,auto_save_state.screenshot_width,auto_save_state.screenshot_height,
+      screen_x*se_dpi_scale(),screen_y*se_dpi_scale(),screen_w*se_dpi_scale(),screen_h*se_dpi_scale(), true);
+    }else{
+      igSetCursorScreenPos((ImVec2){screen_x+screen_w*0.5-5,screen_y+screen_h*0.5-7});
+      se_text(ICON_FK_BAN);
+    }
+    igEndChildFrame();
   }
   #ifdef EMSCRIPTEN
   if(!has_save_states)se_push_disabled();
@@ -7550,7 +7675,7 @@ void se_load_settings(){
     char settings_path[SB_FILE_PATH_SIZE];
     snprintf(settings_path,SB_FILE_PATH_SIZE,"%suser_settings.bin",se_get_pref_path());
     if(!sb_load_file_data_into_buffer(settings_path,(void*)&gui_state.settings,sizeof(gui_state.settings))){gui_state.settings.settings_file_version=-1;}
-    int max_settings_version_supported =3;
+    int max_settings_version_supported =4;
     if(gui_state.settings.settings_file_version>max_settings_version_supported){
       gui_state.settings.volume=0.8;
       gui_state.settings.draw_debug_menu = false; 
@@ -7598,6 +7723,10 @@ void se_load_settings(){
       https_set_cache_enabled(gui_state.settings.enable_download_cache);
       gui_state.settings.nds_layout = 0; 
       gui_state.settings.touch_screen_show_button_labels= true;
+    }
+    if(gui_state.settings.settings_file_version<4){
+      gui_state.settings.settings_file_version = 4;
+      gui_state.settings.auto_save_state_enable = true;
     }
     if(gui_state.settings.gui_scale_factor<0.5)gui_state.settings.gui_scale_factor=1.0;
     if(gui_state.settings.gui_scale_factor>4.0)gui_state.settings.gui_scale_factor=1.0;
