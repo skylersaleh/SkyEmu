@@ -5,6 +5,7 @@ SkyEmu contains a web server that implements a REST-like API that can be used to
 This interface provides access to the following functionality:
 - Loading arbitrary ROM files
 - Retrieving the emulated screen's image
+- Real-time streaming of the emulated screen
 - Reading/Writing arbitrary memory addresses in the emulated system
 - Stepping the emulator a controlled number of frames
 - Controlling user inputs for the emulator and emulated console
@@ -102,6 +103,38 @@ The paramater format specifies which image format to use. It can be set to png, 
 **Result:**
 
 ```<much larger png image of screen with save state embedded>```
+
+# /stream command
+
+Provides a continuous real-time stream of the emulated screen using multipart/x-mixed-replace (MJPEG-style streaming). This is much more efficient than repeatedly calling /screen for real-time display, as it maintains a single HTTP connection and continuously sends frames.
+
+The parameter `fps` controls the frame rate (default: 30, min: 1, max: 60).
+
+Frames are encoded as JPEG for optimal streaming performance.
+
+**Example:**
+
+```http://localhost:8080/stream```
+
+**Result:**
+
+Continuous stream of JPEG images at 30 FPS. This endpoint is designed to be opened in a browser or used with tools that support MJPEG streams (like VLC, ffmpeg, or img tags in HTML).
+
+**Example (Custom FPS):**
+
+```http://localhost:8080/stream?fps=60```
+
+**Result:**
+
+Continuous stream of JPEG images at 60 FPS.
+
+**Usage in HTML:**
+
+```html
+<img src="http://localhost:8080/stream" alt="SkyEmu Stream">
+```
+
+**Note:** The stream will continue until the client disconnects. This endpoint is ideal for headless mode where you want to display the emulator output in real-time without the overhead of multiple HTTP requests.
 
 # /read_byte command
 
