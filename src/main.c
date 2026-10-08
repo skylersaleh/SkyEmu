@@ -145,6 +145,7 @@ const static char* se_analog_bind_names[]={
 #define SE_NUM_RECENT_PATHS 32
 #define SE_FONT_CACHE_PAGE_SIZE 16
 #define SE_MAX_UNICODE_CODE_POINT 0xffff
+#define SE_MAX_PATH_LABEL_SIZE 64
 
 typedef struct{
   int bind_being_set;
@@ -169,6 +170,24 @@ typedef struct{
 typedef struct{
   char path[SB_FILE_PATH_SIZE];
 }se_game_info_t;
+
+#define SE_MAX_GAME_LIBRARY_ENTRIES 2048
+#define SE_MAX_GAME_LIBRARY_PATHS 3
+
+typedef struct{
+  char path[SB_FILE_PATH_SIZE];
+  char name[256];
+  uint8_t system_type; // 0=GB, 1=GBC, 2=GBA, 3=NDS
+}se_game_library_entry_t;
+
+typedef struct{
+  se_game_library_entry_t entries[SE_MAX_GAME_LIBRARY_ENTRIES];
+  int num_entries;
+  bool needs_rescan;
+  int sorted_entries[SE_MAX_GAME_LIBRARY_ENTRIES];
+  int library_sort_type;
+}se_game_library_state_t;
+
 typedef struct{
   // This structure is directly saved out for the user settings. 
   // Be very careful to keep alignment and ordering the same otherwise you will break the settings. 
@@ -207,7 +226,8 @@ typedef struct{
   uint32_t nds_layout; 
   uint32_t touch_screen_show_button_labels;
   uint32_t show_screen_bezel;
-  uint32_t padding[218];
+  uint32_t game_library_recursive_scan;
+  uint32_t padding[217];
 }persistent_settings_t; 
 _Static_assert(sizeof(persistent_settings_t)==1024, "persistent_settings_t must be exactly 1024 bytes");
 #define SE_STATS_GRAPH_DATA 256
@@ -255,7 +275,7 @@ typedef struct{
   char cheat_codes[SB_FILE_PATH_SIZE];
   char theme[SB_FILE_PATH_SIZE];
   char custom_font[SB_FILE_PATH_SIZE];
-  char padding[3][SB_FILE_PATH_SIZE];
+  char game_library[SE_MAX_GAME_LIBRARY_PATHS][SB_FILE_PATH_SIZE];
 }se_search_paths_t;
 
 _Static_assert(sizeof(se_search_paths_t)==SB_FILE_PATH_SIZE*8, "se_search_paths_t must contain 8 paths");
@@ -484,6 +504,7 @@ typedef struct {
     bool single_panel_mode;    
     //Points to the most recently opened panel. When single panel mode is enabled all other panels should be closed. 
     bool * last_opened_panel;
+    se_game_library_state_t game_library;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -1688,6 +1709,112 @@ static void se_clear_game_from_recents(int index) {
     }
   }
   se_save_recent_games_list();
+}
+
+// Game library functions
+static uint8_t se_detect_system_type(const char* path) {
+  if(sb_path_has_file_ext(path, ".gb")) return 0;  // GB
+  if(sb_path_has_file_ext(path, ".gbc")) return 1; // GBC
+  if(sb_path_has_file_ext(path, ".gba")) return 2; // GBA
+  if(sb_path_has_file_ext(path, ".nds")) return 3; // NDS
+  // Note: ZIP files are intentionally excluded from library as they require extraction to determine system type
+  return 255; // Unknown/unsupported
+}
+
+static void se_scan_directory_for_games(const char* dir_path, bool recursive) {
+  tinydir_dir dir;
+  if(tinydir_open(&dir, dir_path) == -1) {
+    printf("Failed to open directory: %s\n", dir_path);
+    return;
+  }
+  
+  while(dir.has_next) {
+    tinydir_file file;
+    if(tinydir_readfile(&dir, &file) == -1) {
+      tinydir_next(&dir);
+      continue;
+    }
+    
+    if(strcmp(file.name, ".") == 0 || strcmp(file.name, "..") == 0) {
+      tinydir_next(&dir);
+      continue;
+    }
+    
+    if(file.is_dir && recursive) {
+      se_scan_directory_for_games(file.path, recursive);
+    } else if(!file.is_dir) {
+      uint8_t system_type = se_detect_system_type(file.path);
+      if(system_type != 255) {
+        // Valid ROM file found
+        if(gui_state.game_library.num_entries < SE_MAX_GAME_LIBRARY_ENTRIES) {
+          se_game_library_entry_t* entry = &gui_state.game_library.entries[gui_state.game_library.num_entries];
+          strncpy(entry->path, file.path, SB_FILE_PATH_SIZE-1);
+          entry->path[SB_FILE_PATH_SIZE-1] = '\0';
+          strncpy(entry->name, file.name, sizeof(entry->name)-1);
+          entry->name[sizeof(entry->name)-1] = '\0';
+          entry->system_type = system_type;
+          gui_state.game_library.num_entries++;
+        }
+      }
+    }
+    
+    tinydir_next(&dir);
+  }
+  
+  tinydir_close(&dir);
+}
+
+static void se_scan_game_library() {
+  gui_state.game_library.num_entries = 0;
+  bool recursive = gui_state.settings.game_library_recursive_scan;
+  
+  for(int i = 0; i < SE_MAX_GAME_LIBRARY_PATHS; ++i) {
+    if(gui_state.paths.game_library[i][0] != '\0') {
+      se_scan_directory_for_games(gui_state.paths.game_library[i], recursive);
+    }
+  }
+  
+  gui_state.game_library.needs_rescan = false;
+  printf("Game library scan complete. Found %d games.\n", gui_state.game_library.num_entries);
+}
+
+static int se_game_library_alpha_comparator(const void* a, const void* b) {
+  int ia = *(const int*)a;
+  int ib = *(const int*)b;
+  // Bounds checking to prevent out-of-bounds access
+  if(ia < 0 || ia >= gui_state.game_library.num_entries) return 1;
+  if(ib < 0 || ib >= gui_state.game_library.num_entries) return -1;
+  return strcmp(gui_state.game_library.entries[ia].name, gui_state.game_library.entries[ib].name);
+}
+
+static int se_game_library_rev_alpha_comparator(const void* a, const void* b) {
+  return -se_game_library_alpha_comparator(a, b);
+}
+
+static void se_sort_game_library() {
+  int size = gui_state.game_library.num_entries;
+  
+  for(int i = 0; i < size; ++i) {
+    gui_state.game_library.sorted_entries[i] = i;
+  }
+  // Mark remaining entries as invalid
+  for(int i = size; i < SE_MAX_GAME_LIBRARY_ENTRIES; ++i) {
+    gui_state.game_library.sorted_entries[i] = -1;
+  }
+  
+  if(size == 0) return;
+  
+  // Validate sort type
+  if(gui_state.game_library.library_sort_type < SE_SORT_ALPHA_ASC || 
+     gui_state.game_library.library_sort_type > SE_SORT_ALPHA_DESC) {
+    gui_state.game_library.library_sort_type = SE_SORT_ALPHA_ASC;
+  }
+  
+  if(gui_state.game_library.library_sort_type == SE_SORT_ALPHA_ASC) {
+    qsort(gui_state.game_library.sorted_entries, size, sizeof(int), se_game_library_alpha_comparator);
+  } else if(gui_state.game_library.library_sort_type == SE_SORT_ALPHA_DESC) {
+    qsort(gui_state.game_library.sorted_entries, size, sizeof(int), se_game_library_rev_alpha_comparator);
+  }
 }
 
 bool se_key_is_pressed(int keycode){
@@ -5205,6 +5332,93 @@ void se_load_rom_overlay(bool visible){
     igPopID();
   }
   if(num_entries==0)se_text("No recently played games");
+  
+  // Game Library section
+  se_section(ICON_FK_GAMEPAD " Game Library");
+  
+  // Check if library needs to be scanned
+  if(gui_state.game_library.needs_rescan) {
+    bool has_paths = false;
+    for(int i = 0; i < SE_MAX_GAME_LIBRARY_PATHS; ++i) {
+      if(gui_state.paths.game_library[i][0] != '\0') {
+        has_paths = true;
+        break;
+      }
+    }
+    if(has_paths) {
+      se_scan_game_library();
+      se_sort_game_library();
+    }
+  }
+  
+  igDummy((ImVec2){1,1});
+  igSameLine(0,5);
+  if(se_button(ICON_FK_REFRESH " Rescan", (ImVec2){0,0})) {
+    se_scan_game_library();
+    se_sort_game_library();
+  }
+  se_tooltip("Rescan game library folders");
+  
+  igSameLine(0,5);
+  const char* lib_icon=ICON_FK_SORT_ALPHA_ASC;
+  switch(gui_state.game_library.library_sort_type){
+    case SE_SORT_ALPHA_ASC: lib_icon=ICON_FK_SORT_ALPHA_ASC;break;
+    case SE_SORT_ALPHA_DESC:lib_icon=ICON_FK_SORT_ALPHA_DESC;break;
+  }
+  if(se_button(lib_icon,(ImVec2){40-4,0})){
+    gui_state.game_library.library_sort_type++;
+    if(gui_state.game_library.library_sort_type>SE_SORT_ALPHA_DESC)gui_state.game_library.library_sort_type=SE_SORT_ALPHA_ASC;
+    se_sort_game_library();
+  }
+  se_tooltip("Sort game library");
+  
+  igSeparator();
+  
+  int num_lib_entries=0;
+  for(int i=0;i<SE_MAX_GAME_LIBRARY_ENTRIES;++i){
+    if(gui_state.game_library.sorted_entries[i]==-1)break;
+    se_game_library_entry_t *entry = &gui_state.game_library.entries[gui_state.game_library.sorted_entries[i]];
+    
+    igPushIDInt(10000+i);
+    
+    const char* ext_upper = "";
+    switch(entry->system_type) {
+      case 0: ext_upper = "GB"; break;
+      case 1: ext_upper = "GBC"; break;
+      case 2: ext_upper = "GBA"; break;
+      case 3: ext_upper = "NDS"; break;
+      default: ext_upper = "ROM"; break;
+    }
+    
+    if(!se_string_contains_string_case_insensitive(entry->name,gui_state.search_buffer)){
+      igPopID();
+      continue;
+    }
+    
+    if(se_selectable_with_box(entry->name,se_replace_fake_path(entry->path),ext_upper,false,0)){
+      se_load_rom(entry->path);
+    }
+    igSeparator();
+    num_lib_entries++;
+    igPopID();
+  }
+  
+  if(num_lib_entries==0) {
+    bool has_paths = false;
+    for(int i = 0; i < SE_MAX_GAME_LIBRARY_PATHS; ++i) {
+      if(gui_state.paths.game_library[i][0] != '\0') {
+        has_paths = true;
+        break;
+      }
+    }
+    if(!has_paths) {
+      se_text("No game library folders configured");
+      se_text("Configure folders in Settings > Paths");
+    } else {
+      se_text("No games found in library");
+    }
+  }
+  
   igEnd();
   return;
 }
@@ -6506,9 +6720,28 @@ void se_draw_menu_panel(){
     bool save_to_path=gui_state.settings.save_to_path;
     se_checkbox("Create new files in paths",&save_to_path);
     gui_state.settings.save_to_path=save_to_path;
+    
+    se_section(ICON_FK_GAMEPAD " Game Library Paths");
+    se_text("Configure folders to scan for games");
+    for(int i = 0; i < SE_MAX_GAME_LIBRARY_PATHS; ++i) {
+      char label[SE_MAX_PATH_LABEL_SIZE];
+      snprintf(label, SE_MAX_PATH_LABEL_SIZE, "Game Library Path %d", i + 1);
+      se_input_path(label, gui_state.paths.game_library[i], ImGuiInputTextFlags_None);
+    }
+    bool recursive_scan = gui_state.settings.game_library_recursive_scan;
+    se_checkbox("Recursive folder scan", &recursive_scan);
+    se_tooltip("Scan subfolders for games");
+    gui_state.settings.game_library_recursive_scan = recursive_scan;
+    
+    if(se_button(ICON_FK_REFRESH " Rescan Game Library", (ImVec2){0,0})) {
+      gui_state.game_library.needs_rescan = true;
+    }
+    se_tooltip("Manually trigger a rescan of game library folders");
+    
     if(memcmp(&gui_state.last_saved_paths, &gui_state.paths,sizeof(gui_state.paths))){
       se_save_search_paths();
       gui_state.last_saved_paths=gui_state.paths;
+      gui_state.game_library.needs_rescan = true;
     }
   }
   se_section(ICON_FK_WRENCH " Advanced");
@@ -7607,6 +7840,12 @@ void se_load_settings(){
     if(gui_state.settings.touch_controls_scale<0.1)gui_state.settings.touch_controls_scale=1.0;
     if(gui_state.settings.touch_controls_opacity<0||gui_state.settings.touch_controls_opacity>1.0)gui_state.settings.touch_controls_opacity=0.5;
     if(gui_state.settings.gba_color_correction_mode> GBA_HIGAN_CORRECTION)gui_state.settings.gba_color_correction_mode=GBA_SKYEMU_CORRECTION;
+    
+    // Initialize game library state
+    gui_state.game_library.num_entries = 0;
+    gui_state.game_library.needs_rescan = true;
+    gui_state.game_library.library_sort_type = SE_SORT_ALPHA_ASC;
+    
     gui_state.last_saved_settings=gui_state.settings;
     se_reload_theme();
   }
