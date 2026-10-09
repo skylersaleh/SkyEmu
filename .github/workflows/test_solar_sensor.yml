@@ -1,0 +1,12 @@
+name: Test Solar Sensor
+on: [push,pull_request]
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v2.3.1
+      - name: Build & run solar-sensor self-test 🌞
+        run: |
+          cc -std=c99 -Wall -Wextra -o solar_selftest tests/solar_sensor_selftest.c
+          ./solar_selftest
