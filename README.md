@@ -121,6 +121,8 @@ We do this for a number of reasons:
 - Developers who wish to add functionality using AI tooling are generally very enthusiastic about the software and emulation development overall. However, they feel lost in the complexity of modern emulators. AI code generation robs them of the ability to learn how to make these changes and robs the community of the next generation of emulator developers. For this reason, we still allow AI to be used as a teaching aid for people who wish to contribute, but don't allow it to do all work for them, but instead encourage its use to help them navigate the complexities of the project so that they can grow their skills and are able to contribute themselves. 
 - It has come to our attention that SkyEmu is one of the handful of large emulator projects in active development that does not have any AI generated code, and we would like to keep it as an option for usage by people who prefer non-AI generated SW. 
 
+An exemption is made for translation strings in localization.h and localization.c. UI translation string generation may be AI assisted, but a human translation is preferred when available. 
+
 
 ## Birds of a Feather
 - [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games. 
