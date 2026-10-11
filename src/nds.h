@@ -3469,14 +3469,18 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
       ,commands[4],commands[5],commands[6],commands[7]);
     switch(commands[0]){
       case NDS_CARD_MAIN_DATA_READ:{
+        uint64_t dev_cap = nds->card.device_capacity;
+        if(dev_cap>14)dev_cap = 14; 
+        uint64_t mirror_size = ((128*1024ULL)<<dev_cap)-1; 
         //Encrypted data read;
-        int read_off = (((int)commands[1])<<24)|(((int)commands[2])<<16)|(((int)commands[3])<<8)|(((int)commands[4])<<0);
+        int read_off = ((((int)commands[1])<<24)|(((int)commands[2])<<16)|(((int)commands[3])<<8)|(((int)commands[4])<<0))&mirror_size;
         if(read_off<=0x7FFF)read_off=0x8000+(read_off &0x1FF);
         nds->mem.card_read_offset=read_off;
         int data_block_size = SB_BFE(gcbus_ctl,24,3);
         const int transfer_size_map[8]={0, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 4};
         for(int i=0;i<0x1000;++i){
-          nds->mem.card_transfer_data[i]=nds->mem.card_data[(i+(read_off&~0xfff))%nds->mem.card_size];
+          size_t off = (i+(read_off&~0xfff))&mirror_size;
+          nds->mem.card_transfer_data[i]= off<nds->mem.card_size ? nds->mem.card_data[off]: 0xff;
         }
         nds->mem.card_transfer_bytes=transfer_size_map[data_block_size];
         if(nds->gc_log)fprintf(nds->gc_log,"Encrypted Read: 0x%08x transfer_size: %08x\n",read_off,nds->mem.card_transfer_bytes);
