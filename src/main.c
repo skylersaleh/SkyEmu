@@ -8967,6 +8967,7 @@ bool se_run_ar_cheat(const uint32_t* buffer, uint32_t size){
 static void headless_mode(){
   //Leave here so the entry point still exists
 #ifdef ENABLE_HTTP_CONTROL_SERVER
+  https_initialize();
   se_init();
   se_update_frame();
   hcs_join_server_thread();
