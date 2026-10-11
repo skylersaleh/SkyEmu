@@ -2269,6 +2269,14 @@ typedef struct{
   uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
   nds_vert_t vert_buffer[NDS_MAX_VERTS];
+  FILE * gx_log;
+  FILE * io9_log;
+  FILE * io7_log;
+  FILE * gc_log;
+  FILE * dma_log;
+  FILE * vert_log;
+  FILE * arm9_log;
+  FILE * arm7_log;
 }nds_scratch_t; 
 static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
@@ -3196,10 +3204,10 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   nds->arm9.irq_table_address = 0xFFFF0000;
   nds->mem.card_chip_id= 0x1FC2;
 
-  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
-  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
-  nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
-  nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
+  if(scratch->arm7_log){fclose(scratch->arm7_log);scratch->arm7_log=NULL;};
+  if(scratch->arm9_log){fclose(scratch->arm9_log);scratch->arm9_log=NULL;};
+  scratch->arm7_log =se_load_log_file(nds->save_file_path, "log7.bin");
+  scratch->arm9_log =se_load_log_file(nds->save_file_path, "log9.bin");
 
 
   //Preload user settings
@@ -3383,18 +3391,18 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
   nds_update_vram_mapping(nds);
 
-  //nds->gx_log = fopen("gxlog.txt","wb");
-  //nds->io7_log = fopen("io7log.txt","wb");
-  //nds->io9_log = fopen("io9log.txt","wb");
-  //nds->vert_log = fopen("vertlog.txt","wb");
-  //nds->gc_log = fopen("gclog.txt","wb");
-  //nds->dma_log = fopen("dmalog.txt","wb");
+  //scratch->gx_log = fopen("gxlog.txt","wb");
+  //scratch->io7_log = fopen("io7log.txt","wb");
+  //scratch->io9_log = fopen("io9log.txt","wb");
+  //scratch->vert_log = fopen("vertlog.txt","wb");
+  //scratch->gc_log = fopen("gclog.txt","wb");
+  //scratch->dma_log = fopen("dmalog.txt","wb");
 
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
-  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
-  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
+  if(scratch->arm7_log){fclose(scratch->arm7_log);scratch->arm7_log=NULL;};
+  if(scratch->arm9_log){fclose(scratch->arm9_log);scratch->arm9_log=NULL;};
   printf("Unloading DS data\n");
 }
 uint32_t nds_sqrt_u64(uint64_t value){
@@ -7041,6 +7049,14 @@ void nds_ptrs_init(nds_t* nds, nds_scratch_t* scratch, uint8_t* rom_data, size_t
   nds->framebuffer_3d=scratch->framebuffer_3d;
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds->gpu.vert_buffer=scratch->vert_buffer;
+  nds->gx_log = scratch->gx_log;
+  nds->io9_log = scratch->io9_log;
+  nds->io7_log = scratch->io7_log;
+  nds->gc_log = scratch->gc_log;
+  nds->dma_log = scratch->dma_log;
+  nds->vert_log = scratch->vert_log;
+  nds->arm9.log_cmp_file = scratch->arm9_log;
+  nds->arm7.log_cmp_file = scratch->arm7_log;
 }
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
