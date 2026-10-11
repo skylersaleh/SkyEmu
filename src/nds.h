@@ -2225,7 +2225,7 @@ typedef struct{
   bool frame_in_progress;
   bool pause_after_frame; 
   nds_timer_t timers[2][4];
-  uint32_t next_timer_clock;
+  uint64_t next_timer_clock;
   uint64_t last_timer_clock;
   bool prev_key_interrupt;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
@@ -2364,7 +2364,7 @@ static bool nds_load_best_effort_state(nds_t* nds,uint8_t *save_state_data, uint
   nds->mem.card_read_offset=bess->card_read_offset;
   nds->mem.card_transfer_bytes=bess->card_transfer_bytes;
   for(int cpu=0;cpu<2;++cpu)
-    for(int i=0;i<4;++i)nds->timers[cpu][i].reload_value=nds->bess.timer_reload_values[cpu][i];
+    for(int i=0;i<4;++i)nds->timers[cpu][i].reload_value=bess->timer_reload_values[cpu][i];
   printf("Bess restore successful\n");
   return true; 
 }
@@ -6638,6 +6638,19 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
   if(nds->current_clock>=nds->next_timer_clock)nds_compute_timers(nds); 
 }
+static inline bool nds_check_timer_drives_irq(nds_t* nds, int cpu, int t, bool irq_en){
+  bool drives_irq = irq_en; 
+  for(int t2 = t+1; t2<4;++t2){
+    uint16_t tm2_cnt_h = nds_io_read16(nds,cpu,GBA_TM0CNT_H+t2*4);
+    bool enable = SB_BFE(tm2_cnt_h,7,1);
+    if(!enable)break;
+    bool count_up2 = SB_BFE(tm2_cnt_h,2,1);
+    if(!count_up2)break;
+    bool irq_en2   = SB_BFE(tm2_cnt_h,6,1);
+    drives_irq|=irq_en2;
+  } 
+  return drives_irq;
+}
 static void nds_compute_timers(nds_t* nds){
 
   int ticks = nds->current_clock-nds->last_timer_clock; 
@@ -6657,14 +6670,16 @@ static void nds_compute_timers(nds_t* nds){
         uint16_t value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
         if(enable!=timer->last_enable){
           timer->startup_delay=2;
-          value = timer->reload_value;
+          value = timer->pending_reload_value;
           nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
         }
         if(timer->startup_delay>=0){
           timer->startup_delay-=ticks; 
           timer->last_enable = enable;
           if(timer->startup_delay>=0){
-            if(timer->startup_delay<timer_ticks_before_event&&irq_en)timer_ticks_before_event=timer->startup_delay;
+            if(timer->startup_delay<timer_ticks_before_event&&
+               nds_check_timer_drives_irq(nds,cpu,t, irq_en))timer_ticks_before_event=timer->startup_delay;
+            last_timer_overflow=0;
             continue;
           }
           compensated_ticks=-timer->startup_delay;
@@ -6699,8 +6714,10 @@ static void nds_compute_timers(nds_t* nds){
           }
           value = v; 
           timer->prescaler_timer=prescale_time;
-          int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
-          if(ticks_before_overflow<timer_ticks_before_event&&irq_en)timer_ticks_before_event=ticks_before_overflow;
+          int ticks_before_overflow = ((int)(0x10000-value)<<(prescale_duty))- prescale_time;
+          if(ticks_before_overflow<timer_ticks_before_event && nds_check_timer_drives_irq(nds,cpu,t, irq_en)){
+            timer_ticks_before_event=ticks_before_overflow;
+          }
         }
         timer->reload_value=timer->pending_reload_value;
         if(last_timer_overflow && irq_en){
