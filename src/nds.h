@@ -1979,8 +1979,7 @@ typedef struct{
   uint32_t length;
   uint32_t current_transaction;
   bool last_enable;
-  bool last_vblank;
-  bool last_hblank;
+  uint32_t latched_events;
   uint32_t latched_transfer;
   int startup_delay; 
   uint32_t gx_dma_subtransfer; 
@@ -2470,14 +2469,20 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 #define NDS_MEM_ARM9  0x2
 #define NDS_MEM_PPU   0x4
 #define NDS_MEM_DEBUG 0x8
+#define NDS_MEM_CPU   0x10
+#define NDS_MEM_DMA   0x20
 
-#define NDS_MEM_1B 0x10
-#define NDS_MEM_2B 0x20
-#define NDS_MEM_4B 0x40
+#define NDS_MEM_1B 0x100
+#define NDS_MEM_2B 0x200
+#define NDS_MEM_4B 0x400
 
-#define NDS_MEM_WRITE 0x100
-#define NDS_MEM_SEQ   0x200
-#define NDS_MEM_CODE  0x400
+#define NDS_MEM_WRITE 0x1000
+#define NDS_MEM_SEQ   0x2000
+#define NDS_MEM_CODE  0x4000
+
+#define NDS_DMA_EVENT_VBLANK 0x1
+#define NDS_DMA_EVENT_HBLANK 0x2
+#define NDS_DMA_EVENT_VIDEO  0x4
 
 
 static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
@@ -2676,7 +2681,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&(NDS_MEM_ARM9)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
+      if(!(transaction_type&(NDS_MEM_CPU)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -2693,7 +2698,8 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       }
       break;
     case 0x4: 
-        nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+        // DMA does not pay non-seq cost for VRAM access
+        nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
         if((addr&0xffff)>=0x2000||addr>=0x04200000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
@@ -2708,20 +2714,23 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         }
       break;
     case 0x5: //Palette 
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.palette, addr, data, transaction_type); 
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
-        //1Byte writes are ignored from the ARM9
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
+      //1Byte writes are ignored from the ARM9
       const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B);
       if((transaction_type&ignore_write_mask)!=ignore_write_mask){
         *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
       }
       break;
     case 0x7: 
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.oam, addr, data, transaction_type); 
       break;
@@ -2894,28 +2903,28 @@ static FORCE_INLINE void nds7_debug_write8(nds_t*nds, unsigned baddr, uint8_t da
 }
 
 static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint32_t nds9_cpu_read32_seq(nds_t*nds, unsigned baddr, bool is_sequential){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16_seq(nds_t*nds, unsigned baddr, bool is_sequential){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
 }
 static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write32(nds_t*nds, unsigned baddr, uint32_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write16(nds_t*nds, unsigned baddr, uint16_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write8(nds_t*nds, unsigned baddr, uint8_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
@@ -5632,6 +5641,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
         nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
         nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+        int latch_dma_events = 0;
         if(vcmp!=ppu->last_vcmp) {
           ppu->last_vcmp=vcmp;
           bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
@@ -5647,6 +5657,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
           if(hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
           if(hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
+          if(lcd_y<NDS_LCD_H)latch_dma_events|=NDS_DMA_EVENT_HBLANK;
+          //Video DMA is offset by 2 scanlines
+          if(lcd_y>=2&& lcd_y<NDS_LCD_H+2)latch_dma_events|=NDS_DMA_EVENT_VIDEO;
+
         }
         if(vblank&&!ppu->last_vblank){
           bool vblank_irq_en = SB_BFE(disp_stat,3,1);
@@ -5654,9 +5668,20 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
           if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
           nds->frame_in_progress=false;
+          latch_dma_events|=NDS_DMA_EVENT_VBLANK;
         }
         if(new_if)nds9_send_interrupt(nds,3,new_if);
         if(new_if7)nds7_send_interrupt(nds,3,new_if7);
+        if(latch_dma_events){
+          for(int cpu = 0;cpu<2;++cpu){
+            for(int i=0;i<4;++i){
+              uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
+              bool enable = SB_BFE(cnt_h,15,1);
+              if(!enable)continue;
+              nds->dma[cpu][i].latched_events|=latch_dma_events;
+            }
+          }
+        }
       }
       if(hblank!=ppu->last_hblank){
         ppu->last_hblank = hblank;
@@ -6278,7 +6303,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           write_address+=write_offset*0x08000;
           write_address+=lcd_y*szx*2+lcd_x*2;
           color|=0x8000;//TODO: Confirm that captured alpha is always 1
-          nds9_write16(nds,write_address,color);
+          nds_apply_vram_mem_op(nds,write_address, color, NDS_MEM_PPU|NDS_MEM_2B|NDS_MEM_WRITE);
         }
       }
       {
@@ -6449,6 +6474,7 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           nds->dma[cpu][i].current_transaction=0;
           nds->dma[cpu][i].startup_delay=0;
           nds->dma[cpu][i].trigger_mode = SB_BFE(cnt_h,11,3);
+          nds->dma[cpu][i].latched_events = 0; 
         }
         int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
         int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
@@ -6473,28 +6499,25 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           if(dst_addr_ctl==3){        
             nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
           }
-          bool last_vblank = nds->dma[cpu][i].last_vblank;
-          bool last_hblank = nds->dma[cpu][i].last_hblank;
-          nds->dma[cpu][i].last_vblank = nds->ppu[0].last_vblank;
-          nds->dma[cpu][i].last_hblank = nds->ppu[0].last_hblank;
-          if(mode ==1 && (!nds->ppu[0].last_vblank||last_vblank)){
+          // V-blank
+          if(mode ==1 && !(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_VBLANK)){
             nds->dma_wait_ppu=true;
             continue; 
           } 
-          if(mode==2){
+          // H-blank (in NDS_ARM7 this is actually a cartridge DMA)
+          if(mode==2 && cpu == NDS_ARM9){
             nds->dma_wait_ppu=true;
-            uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(vcount>=NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(!(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_HBLANK))continue;
           }
           //Video dma
           if((mode==3)&&cpu==NDS_ARM9){
             nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(!(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_VIDEO))continue;
             //Video dma starts at scanline 2
-            if(vcount<2)continue;
             if(vcount==NDS_LCD_H+1)dma_repeat=false;
           }
+          nds->dma[cpu][i].latched_events = 0; 
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
             uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
@@ -6568,25 +6591,30 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           if(nds->dma[cpu][i].current_transaction<cnt){
             nds->dma_processed[cpu]|=true;
             nds->activate_dmas|=true;
+            int dma_mem_type = nds->dma[cpu][i].current_transaction!=0 ? NDS_MEM_SEQ : 0; 
+            dma_mem_type |= NDS_MEM_DMA;
+            dma_mem_type |= cpu ==NDS_ARM9? NDS_MEM_ARM9 : NDS_MEM_ARM7;
             int x = nds->dma[cpu][i].current_transaction++;
             int dst_addr = dst+x*transfer_bytes*dst_dir;
             int src_addr = src+x*transfer_bytes*src_dir;
             if(type){
+              dma_mem_type |= NDS_MEM_4B;
               if(src_addr>=0x02000000){
-                if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr);
-                else nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr);
+                if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_process_memory_transaction(nds,src_addr,0,dma_mem_type);
+                else nds->dma[cpu][i].latched_transfer = nds9_process_memory_transaction(nds,src_addr,0,dma_mem_type);
               }
-              if(cpu==NDS_ARM7)nds7_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              else nds9_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              if(cpu==NDS_ARM7)nds7_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
+              else nds9_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
             }else{
               int v = 0;
+              dma_mem_type |= NDS_MEM_2B;
               if(src_addr>=0x02000000){
-                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read16(nds,src_addr)&0xffff;
-                else v=nds->dma[cpu][i].latched_transfer = nds9_read16(nds,src_addr)&0xffff;
+                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_process_memory_transaction(nds,src_addr,0,dma_mem_type)&0xffff;
+                else v=nds->dma[cpu][i].latched_transfer =nds9_process_memory_transaction(nds,src_addr,0,dma_mem_type)&0xffff;
                 nds->dma[cpu][i].latched_transfer |= nds->dma[cpu][i].latched_transfer<<16;
               }else v = nds->dma[cpu][i].latched_transfer>>(((dst_addr)&0x3)*8);
-              if(cpu==NDS_ARM7)nds7_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              else nds9_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              if(cpu==NDS_ARM7)nds7_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
+              else nds9_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
             }
           }
         }
