@@ -6416,7 +6416,7 @@ static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds){
       }
     }
     if(fold_state)ext_key|= 1 <<7;
-    ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
+    ext_key|= (1 <<2)|(1<<3)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
 }
