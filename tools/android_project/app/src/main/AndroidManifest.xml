@@ -23,6 +23,14 @@
           android:name="android.support.FILE_PROVIDER_PATHS"
           android:resource="@xml/provider_paths"/>
     </provider>
+    <receiver
+        android:name="com.sky.SkyEmu.RetroAchievementsHostOverrideReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="${applicationId}.action.SET_RETROACHIEVEMENTS_HOST_OVERRIDE" />
+        <action android:name="${applicationId}.action.CLEAR_RETROACHIEVEMENTS_HOST_OVERRIDE" />
+      </intent-filter>
+    </receiver>
     <activity
       android:name="com.sky.SkyEmu.MainActivity"
       android:exported="true">

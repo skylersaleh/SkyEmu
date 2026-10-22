@@ -626,6 +626,49 @@ const char* se_get_pref_path(){
 #endif
   return "";
 }
+#if defined(ENABLE_RETRO_ACHIEVEMENTS) && defined(SE_PLATFORM_ANDROID)
+// Written by RetroAchievementsHostOverrideReceiver.java (e.g. by a local offline proxy).
+// Hardcore is forced off while an override is active and restored once it is cleared.
+static bool se_ra_host_override_active = false;
+static void se_apply_ra_host_override(){
+  char override_path[SB_FILE_PATH_SIZE];
+  char restore_path[SB_FILE_PATH_SIZE];
+  snprintf(override_path,SB_FILE_PATH_SIZE,"%sra_host_override.txt",se_get_pref_path());
+  snprintf(restore_path,SB_FILE_PATH_SIZE,"%sra_hardcore_restore.txt",se_get_pref_path());
+
+  char host[256]={0};
+  if(sb_file_exists(override_path)){
+    size_t size = 0;
+    uint8_t* data = sb_load_file_data(override_path,&size);
+    if(data){
+      size_t len = 0;
+      while(len<size&&len<sizeof(host)-1&&!isspace(data[len])){host[len]=data[len];++len;}
+      free(data);
+    }
+  }
+  se_ra_host_override_active = strncmp(host,"http://",7)==0;
+  if(se_ra_host_override_active){
+    rc_api_set_host(host);
+    rc_api_set_image_host("https://media.retroachievements.org");
+    if(!sb_file_exists(restore_path)){
+      uint8_t restore = gui_state.settings.hardcore_mode?'1':'0';
+      sb_save_file_data(restore_path,&restore,1);
+    }
+    gui_state.settings.hardcore_mode = false;
+  }else{
+    rc_api_set_host(NULL);
+    if(sb_file_exists(restore_path)){
+      size_t size = 0;
+      uint8_t* data = sb_load_file_data(restore_path,&size);
+      if(data){
+        if(size)gui_state.settings.hardcore_mode = data[0]=='1';
+        free(data);
+      }
+      remove(restore_path);
+    }
+  }
+}
+#endif
 #ifdef SE_PLATFORM_ANDROID
 float se_android_get_display_dpi_scale();
 #endif
@@ -2785,6 +2828,9 @@ static void se_emulate_single_frame(){
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   if (rc_client_get_user_info(retro_achievements_get_client())){
     if (gui_state.ra_needs_reload) {
+#ifdef SE_PLATFORM_ANDROID
+      se_apply_ra_host_override();
+#endif
       rc_client_set_encore_mode_enabled(retro_achievements_get_client(), gui_state.ra_encore_mode);
       rc_client_set_hardcore_enabled(retro_achievements_get_client(), gui_state.settings.hardcore_mode);
       if (retro_achievements_load_game()) {
@@ -6326,12 +6372,16 @@ void se_draw_menu_panel(){
         gui_state.settings.only_one_notification,
       };
 
-      if (encore) se_push_disabled();
+      bool hardcore_locked = encore;
+#ifdef SE_PLATFORM_ANDROID
+      hardcore_locked |= se_ra_host_override_active;
+#endif
+      if (hardcore_locked) se_push_disabled();
       if (se_checkbox("Hardcore Mode", &draw_checkboxes_bool[0]))
       {
         rc_client_set_hardcore_enabled(retro_achievements_get_client(), draw_checkboxes_bool[0]);
       }
-      if (encore) se_pop_disabled();
+      if (hardcore_locked) se_pop_disabled();
 
       if (se_checkbox("Encore Mode", &gui_state.ra_encore_mode))
       {
@@ -7755,6 +7805,9 @@ void se_load_settings(){
   }
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
   bool is_mobile = gui_state.ui_type == SE_UI_ANDROID || gui_state.ui_type == SE_UI_IOS;
+#ifdef SE_PLATFORM_ANDROID
+  se_apply_ra_host_override();
+#endif
   retro_achievements_initialize(&emu_state,gui_state.settings.hardcore_mode);
 #endif
 }
