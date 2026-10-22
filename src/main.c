@@ -668,6 +668,15 @@ static void se_apply_ra_host_override(){
     }
   }
 }
+// A running game is left alone: enabling hardcore mid-session makes rcheevos reset it.
+static void se_poll_ra_host_override(){
+  static double last_check = -1;
+  if(emu_state.rom_loaded)return;
+  double now = se_time();
+  if(last_check>=0&&now-last_check<1.0)return;
+  last_check = now;
+  se_apply_ra_host_override();
+}
 #endif
 #ifdef SE_PLATFORM_ANDROID
 float se_android_get_display_dpi_scale();
@@ -6331,6 +6340,9 @@ void se_draw_menu_panel(){
         offset1 = (ImVec2){uvs.x1, uvs.y1};
         offset2 = (ImVec2){uvs.x2, uvs.y2};
       }
+#ifdef SE_PLATFORM_ANDROID
+      se_poll_ra_host_override();
+#endif
       bool hardcore = gui_state.settings.hardcore_mode&&gui_state.ra_logged_in;
       bool encore = gui_state.ra_encore_mode;
       {
