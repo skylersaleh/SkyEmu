@@ -8,47 +8,7 @@
 
 #include <assert.h>
 
-#ifndef RC_DISABLE_LUA
-#include "lua.h"
-#include "lauxlib.h"
-
-#include "rcheevos/mock_memory.h"
-#endif
-
 #define TIMING_TEST 0
-
-static void test_lua(void) {
-  {
-    /*------------------------------------------------------------------------
-    TestLua
-    ------------------------------------------------------------------------*/
-
-#ifndef RC_DISABLE_LUA
-
-    lua_State* L;
-    const char* luacheevo = "return { test = function(peek, ud) return peek(0, 4, ud) end }";
-    uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
-    memory_t memory;
-    rc_trigger_t* trigger;
-    char buffer[2048];
-
-    memory.ram = ram;
-    memory.size = sizeof(ram);
-
-    L = luaL_newstate();
-    luaL_loadbufferx(L, luacheevo, strlen(luacheevo), "luacheevo.lua", "t");
-    lua_call(L, 0, 1);
-
-    memory.ram = ram;
-    memory.size = sizeof(ram);
-
-    trigger = rc_parse_trigger(buffer, "@test=0xX0", L, 1);
-    assert(rc_test_trigger(trigger, peek, &memory, L) != 0);
-
-    lua_close(L);
-#endif /* RC_DISABLE_LUA */
-  }
-}
 
 extern void test_timing();
 
@@ -76,10 +36,17 @@ extern void test_consoleinfo();
 extern void test_rc_libretro();
 extern void test_rc_validate();
 
-extern void test_url();
-
-extern void test_cdreader();
 extern void test_hash();
+#ifndef RC_HASH_NO_ROM
+extern void test_hash_rom();
+#endif
+#ifndef RC_HASH_NO_DISC
+extern void test_cdreader();
+extern void test_hash_disc();
+#endif
+#ifndef RC_HASH_NO_ZIP
+extern void test_hash_zip();
+#endif
 
 extern void test_rapi_common();
 extern void test_rapi_user();
@@ -110,10 +77,6 @@ int main(void) {
   test_consoleinfo();
   test_rc_validate();
 
-  test_lua();
-
-  test_url();
-
   test_rapi_common();
   test_rapi_user();
   test_rapi_runtime();
@@ -127,12 +90,20 @@ int main(void) {
 #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
   test_client_raintegration();
 #endif
-
 #ifdef RC_CLIENT_SUPPORTS_HASH
   /* no direct compile option for hash support, so leverage RC_CLIENT_SUPPORTS_HASH */
   test_rc_libretro(); /* libretro extensions require hash support */
-  test_cdreader();
   test_hash();
+ #ifndef RC_HASH_NO_ROM
+  test_hash_rom();
+ #endif
+ #ifndef RC_HASH_NO_DISC
+  test_cdreader();
+  test_hash_disc();
+ #endif
+ #ifndef RC_HASH_NO_ZIP
+  test_hash_zip();
+ #endif
 #endif
 #endif
 

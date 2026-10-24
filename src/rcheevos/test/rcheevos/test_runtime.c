@@ -53,7 +53,7 @@ static void assert_do_frame(rc_runtime_t* runtime, memory_t* memory)
   rc_runtime_do_frame(runtime, event_handler, peek, memory, NULL);
 }
 
-static void assert_richpresence_display_string(rc_runtime_t* runtime, memory_t* memory, const char* expected)
+static void _assert_richpresence_display_string(rc_runtime_t* runtime, memory_t* memory, const char* expected)
 {
   char buffer[512];
   const int expected_len = (int)strlen(expected);
@@ -61,6 +61,7 @@ static void assert_richpresence_display_string(rc_runtime_t* runtime, memory_t* 
   ASSERT_STR_EQUALS(buffer, expected);
   ASSERT_NUM_EQUALS(result, expected_len);
 }
+#define assert_richpresence_display_string(runtime, memory, expected) ASSERT_HELPER(_assert_richpresence_display_string(runtime, memory, expected), "assert_richpresence_display_string")
 
 static void test_two_achievements_activate_and_trigger(void)
 {
@@ -145,11 +146,10 @@ static void test_deactivate_achievements(void)
   ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_WAITING);
   ASSERT_NUM_EQUALS(event_count, 0);
 
-  /* deactivate the first. it owns shared memrefs, so can't be deallocated */
+  /* deactivate the first. */
   rc_runtime_deactivate_achievement(&runtime, 1);
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
-  ASSERT_PTR_NULL(runtime.triggers[0].trigger);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_WAITING);
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 1);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_WAITING);
 
   /* both achievements are false, deactivated one should not activate */
   ram[1] = ram[2] = 9;
@@ -163,24 +163,23 @@ static void test_deactivate_achievements(void)
   ASSERT_NUM_EQUALS(event_count, 1);
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_TRIGGERED, 2, 0);
 
-  /* reactivate achievement. definition didn't change, should reactivate in-place */
+  /* reactivate achievement. */
   assert_activate_achievement(&runtime, 1, "0xH0001=10");
   ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
-  ASSERT_PTR_NOT_NULL(runtime.triggers[0].trigger);
-  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_WAITING);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_WAITING);
 
   /* reactivated achievement is waiting and should not trigger */
   assert_do_frame(&runtime, &memory);
-  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_WAITING);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_WAITING);
   ASSERT_NUM_EQUALS(event_count, 0);
 
   /* both achievements are false. first should activate, second should be ignored */
   ram[1] = ram[2] = 9;
   assert_do_frame(&runtime, &memory);
-  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_ACTIVE);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_TRIGGERED);
+  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_ACTIVE);
   ASSERT_NUM_EQUALS(event_count, 1);
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_ACTIVATED, 1, 0);
 
@@ -499,11 +498,10 @@ static void test_shared_memref(void)
   ASSERT_NUM_EQUALS(event_count, 1);
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_ACTIVATED, 2, 0);
 
-  /* deactivate first achievement. memrefs used by second - cannot be free'd */
+  /* deactivate first achievement. */
   rc_runtime_deactivate_achievement(&runtime, 1);
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
-  ASSERT_PTR_NULL(runtime.triggers[0].trigger);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_ACTIVE);
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 1);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_ACTIVE);
 
   /* second achievement is true. should trigger using memrefs from first */
   ram[1] = 12;
@@ -530,9 +528,8 @@ static void test_replace_active_trigger(void)
 
   /* both are true, but first should have been overwritten by second */
   assert_do_frame(&runtime, &memory);
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
-  ASSERT_PTR_NULL(runtime.triggers[0].trigger);
-  ASSERT_NUM_EQUALS(runtime.triggers[1].trigger->state, RC_TRIGGER_STATE_WAITING);
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 1);
+  ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_WAITING);
   ASSERT_NUM_EQUALS(event_count, 0);
 
   /* both are false. only second should be getting processed, expect single event */
@@ -552,11 +549,10 @@ static void test_replace_active_trigger(void)
   ASSERT_NUM_EQUALS(event_count, 1);
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_TRIGGERED, 1, 0);
 
-  /* switch back to original definition. since the memrefs kept the buffer alive, it should be recycled */
+  /* switch back to original definition. */
   assert_activate_achievement(&runtime, 1, "0xH0001=10");
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 1);
   ASSERT_NUM_EQUALS(runtime.triggers[0].trigger->state, RC_TRIGGER_STATE_WAITING);
-  ASSERT_PTR_NULL(runtime.triggers[1].trigger);
 
   rc_runtime_destroy(&runtime);
 }
@@ -603,10 +599,8 @@ static void test_trigger_deactivation(void)
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_TRIGGERED, 2, 0);
   assert_event(RC_RUNTIME_EVENT_ACHIEVEMENT_TRIGGERED, 3, 0);
 
-  /* triggers 2 and 3 should have been removed from the runtime since they don't have memrefs,
-   * and trigger 1 should be nulled out. */
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 1);
-  ASSERT_PTR_NULL(runtime.triggers[0].trigger);
+  /* triggers are no longer active and should have been removed from the runtime */
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 0);
 
   rc_runtime_destroy(&runtime);
 }
@@ -1145,15 +1139,15 @@ static void test_richpresence(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2570 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,570 Points");
 
   /* calling rc_runtime_get_richpresence without calling rc_runtime_do_frame should return the same string as memrefs aren't updated */
   ram[1] = 20;
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2570 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,570 Points");
 
   /* call rc_runtime_do_frame to update memrefs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2580 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,580 Points");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1172,7 +1166,7 @@ static void test_richpresence_starts_with_macro(void)
   assert_activate_richpresence(&runtime,
       "Format:Points\nFormatType=VALUE\n\nDisplay:\n@Points(0x 0001) Points");
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570 Points");
+  assert_richpresence_display_string(&runtime, &memory, "2,570 Points");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1191,7 +1185,7 @@ static void test_richpresence_macro_only(void)
   assert_activate_richpresence(&runtime,
       "Format:Points\nFormatType=VALUE\n\nDisplay:\n@Points(0x 0001)");
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570");
+  assert_richpresence_display_string(&runtime, &memory, "2,570");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1214,13 +1208,13 @@ static void test_richpresence_conditional(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570 points");
+  assert_richpresence_display_string(&runtime, &memory, "2,570 points");
 
   /* update display string */
   ram[0] = 0;
   ram[1] = 20;
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2580 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,580 Points");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1243,21 +1237,21 @@ static void test_richpresence_conditional_with_hits(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570 points");
+  assert_richpresence_display_string(&runtime, &memory, "2,570 points");
 
   /* one hit is not enough to switch display strings, but the memref does get updated */
   ram[0] = 1;
   ram[1] = 20;
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2580 points");
+  assert_richpresence_display_string(&runtime, &memory, "2,580 points");
 
   /* second hit is enough */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2580 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,580 Points");
 
   /* no more hits are accumulated */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2580 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,580 Points");
 
   /* same test without intermediary evaluation of display string */
   rc_runtime_reset(&runtime);
@@ -1268,7 +1262,7 @@ static void test_richpresence_conditional_with_hits(void)
   ram[0] = 1;
   assert_do_frame(&runtime, &memory); /* one hit */
   assert_do_frame(&runtime, &memory); /* two hits */
-  assert_richpresence_display_string(&runtime, &memory, "Score is 2590 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 2,590 Points");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1291,18 +1285,18 @@ static void test_richpresence_conditional_with_hits_after_match(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "It's 2570");
+  assert_richpresence_display_string(&runtime, &memory, "It's 2,570");
 
   /* first condition is true, but one hit should still be tallied on the second conditional */
   ram[0] = 1;
   ram[1] = 20;
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "It's 2580");
+  assert_richpresence_display_string(&runtime, &memory, "It's 2,580");
 
   /* first conditio no longer true, second condtion will get it's second hit, which is enough */
   ram[2] = 20;
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "Score is 5140 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 5,140 Points");
 
   /* same test without intermediary evaluation of display string */
   rc_runtime_reset(&runtime);
@@ -1316,7 +1310,7 @@ static void test_richpresence_conditional_with_hits_after_match(void)
   assert_do_frame(&runtime, &memory); /* one hit */
   ram[2] = 20;
   assert_do_frame(&runtime, &memory); /* two hits */
-  assert_richpresence_display_string(&runtime, &memory, "Score is 5140 Points");
+  assert_richpresence_display_string(&runtime, &memory, "Score is 5,140 Points");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1339,21 +1333,17 @@ static void test_richpresence_reload(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570 Points");
+  assert_richpresence_display_string(&runtime, &memory, "2,570 Points");
 
   /* reloading should generate display string with current memrefs */
   ram[1] = 20;
   assert_activate_richpresence(&runtime,
       "Format:Points\nFormatType=VALUE\n\nDisplay:\n@Points(0x 0001) Bananas");
-  assert_richpresence_display_string(&runtime, &memory, "2570 Bananas");
-
-  /* memrefs should be reused from first script */
-  ASSERT_NUM_EQUALS(runtime.richpresence->owns_memrefs, 0);
-  ASSERT_PTR_NOT_NULL(runtime.richpresence->previous);
+  assert_richpresence_display_string(&runtime, &memory, "2,570 Bananas");
 
   /* first frame after reloading should update display string */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2580 Bananas");
+  assert_richpresence_display_string(&runtime, &memory, "2,580 Bananas");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1377,22 +1367,18 @@ static void test_richpresence_reload_addaddress(void)
 
   /* first frame should update display string with correct memrfs */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2570 Points");
+  assert_richpresence_display_string(&runtime, &memory, "2,570 Points");
 
   /* reloading should generate display string with current memrefs */
   /* the entire AddAddress expression will be a single variable, which will have a current value. */
   ram[2] = 20;
   assert_activate_richpresence(&runtime,
       "Format:Points\nFormatType=VALUE\n\nDisplay:\n@Points(I:0xH0000_M:0x 0001) Bananas");
-  assert_richpresence_display_string(&runtime, &memory, "2570 Bananas");
-
-  /* the AddAddress expression will be owned by the previous script. */
-  ASSERT_NUM_EQUALS(runtime.richpresence->owns_memrefs, 0);
-  ASSERT_PTR_NOT_NULL(runtime.richpresence->previous);
+  assert_richpresence_display_string(&runtime, &memory, "2,570 Bananas");
 
   /* first frame after reloading should update display string */
   assert_do_frame(&runtime, &memory);
-  assert_richpresence_display_string(&runtime, &memory, "2580 Bananas");
+  assert_richpresence_display_string(&runtime, &memory, "2,580 Bananas");
 
   rc_runtime_destroy(&runtime);
 }
@@ -1419,7 +1405,24 @@ static void test_richpresence_static(void)
   rc_runtime_destroy(&runtime);
 }
 
-typedef struct {
+static void test_richpresence_addsource_chain(void)
+{
+  rc_runtime_t runtime;
+  rc_runtime_init(&runtime);
+
+  /* large number of AddSources will exceed the runtime buffer of 32 memrefs and 16 modified memrefs */
+  assert_activate_richpresence(&runtime,
+    "Display:\n"
+    "@Number(0xH0000_0xH0001_0xH0002_0xH0003_0xH0004_0xH0005_0xH0006_0xH0007_"
+            "0xH0010_0xH0011_0xH0012_0xH0013_0xH0014_0xH0015_0xH0016_0xH0017_"
+            "0xH0020_0xH0021_0xH0022_0xH0023_0xH0024_0xH0025_0xH0026_0xH0027_"
+            "0xH0030_0xH0031_0xH0032_0xH0033_0xH0034_0xH0035_0xH0036_0xH0037_"
+            "0xH0040_0xH0041_0xH0042_0xH0043)\n");
+
+  rc_runtime_destroy(&runtime);
+}
+
+typedef struct memory_invalid_t {
   memory_t memory;
   rc_runtime_t* runtime;
   uint32_t invalid_address;
@@ -1632,8 +1635,8 @@ void test_runtime(void) {
 
   /* leaderboards */
   TEST(test_lboard);
-  TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_VALUE, 12345, "12345");
-  TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_VALUE, -12345, "-12345");
+  TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_VALUE, 12345, "12,345");
+  TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_VALUE, -12345, "-12,345");
   TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_VALUE, 0xFFFFFFFF, "-1");
   TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_SCORE, 12345, "012345");
   TEST_PARAMS3(test_format_lboard_value, RC_FORMAT_SECONDS, 345, "5:45");
@@ -1650,6 +1653,7 @@ void test_runtime(void) {
   TEST(test_richpresence_reload);
   TEST(test_richpresence_reload_addaddress);
   TEST(test_richpresence_static);
+  TEST(test_richpresence_addsource_chain);
 
   /* invalidate address */
   TEST(test_invalidate_address);
