@@ -3,13 +3,14 @@
 #include "../test_framework.h"
 #include "mock_memory.h"
 
-static void _assert_parse_trigger(rc_trigger_t** trigger, void* buffer, const char* memaddr)
+static void _assert_parse_trigger(rc_trigger_t** trigger, void* buffer, size_t buffer_size, const char* memaddr)
 {
   int size;
   unsigned* overflow;
 
   size = rc_trigger_size(memaddr);
   ASSERT_NUM_GREATER(size, 0);
+  ASSERT_NUM_LESS_EQUALS(size + 4, buffer_size);
 
   overflow = (unsigned*)(((char*)buffer) + size);
   *overflow = 0xCDCDCDCD;
@@ -21,7 +22,7 @@ static void _assert_parse_trigger(rc_trigger_t** trigger, void* buffer, const ch
     ASSERT_FAIL("write past end of buffer");
   }
 }
-#define assert_parse_trigger(trigger, buffer, memaddr) ASSERT_HELPER(_assert_parse_trigger(trigger, buffer, memaddr), "assert_parse_trigger")
+#define assert_parse_trigger(trigger, buffer, memaddr) ASSERT_HELPER(_assert_parse_trigger(trigger, buffer, sizeof(buffer), memaddr), "assert_parse_trigger")
 
 static void _assert_evaluate_trigger(rc_trigger_t* trigger, memory_t* memory, int expected_result) {
   int result = rc_test_trigger(trigger, peek, memory, NULL);
@@ -529,7 +530,7 @@ static void test_measured_addhits() {
   uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[256];
+  char buffer[512];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -589,7 +590,7 @@ static void test_measured_indirect() {
   uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[256];
+  char buffer[384];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -947,6 +948,43 @@ static void test_measured_while_paused_reset_non_hitcount() {
   ASSERT_NUM_EQUALS(trigger->measured_value, 60U);
 }
 
+static void test_measured_while_paused_extra_alts() {
+  uint8_t ram[] = { 0x00, 0x00, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[512];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /* (measured(byte(2) == 99) && unless(byte(1) == 1)) || (byte(3) == 1) */
+  assert_parse_trigger(&trigger, buffer, "SM:0xH0002=99_P:0xH0001=1S0xH0003=1");
+
+  /* alt1 will capture measured value */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 52U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 99U);
+
+  /* first alt paused - expect last measured value to be kept */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 52U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 99U);
+
+  /* measured value changed but alt still paused - expect last measured value to be kept */
+  ram[2] = 61;
+  assert_evaluate_trigger(trigger, &memory, 0);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 52U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 99U);
+
+  /* first alt unpaused - it will update, measured will use the active value */
+  ram[1] = 0;
+  ram[2] = 63;
+  assert_evaluate_trigger(trigger, &memory, 0);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 63U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 99U);
+}
+
 static void test_measured_reset_hitcount() {
   uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
   memory_t memory;
@@ -1048,7 +1086,7 @@ static void test_measured_if() {
   uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[256];
+  char buffer[512];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -1088,7 +1126,7 @@ static void test_measured_if_comparison() {
   uint8_t ram[] = {0x00, 0x12, 0x34, 0xAB, 0x56};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[256];
+  char buffer[512];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -1696,7 +1734,7 @@ static void test_evaluate_trigger_primed() {
   uint8_t ram[] = {0x00, 0x01, 0x00, 0x01, 0x00};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[512];
+  char buffer[640];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -1822,7 +1860,7 @@ static void test_evaluate_trigger_chained_resetnextif() {
   uint8_t ram[] = {0x00, 0x00, 0x00, 0x00, 0x00};
   memory_t memory;
   rc_trigger_t* trigger;
-  char buffer[512];
+  char buffer[640];
 
   memory.ram = ram;
   memory.size = sizeof(ram);
@@ -1879,13 +1917,16 @@ static void test_evaluate_trigger_chained_resetnextif() {
 
 static void test_prev_prior_share_memref() {
   rc_trigger_t* trigger;
+  rc_memrefs_t* memrefs;
   char buffer[512];
 
   assert_parse_trigger(&trigger, buffer, "0xH0001=d0xH0001_0xH0001!=p0xH0001");
 
-  ASSERT_NUM_EQUALS(trigger->memrefs->address, 1U);
-  ASSERT_NUM_EQUALS(trigger->memrefs->value.size, RC_MEMSIZE_8_BITS);
-  ASSERT_PTR_NULL(trigger->memrefs->next);
+  memrefs = rc_trigger_get_memrefs(trigger);
+  ASSERT_PTR_NOT_NULL(memrefs);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.count, 1);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].address, 1U);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].value.size, RC_MEMSIZE_8_BITS);
 
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 0)->operand1.type, RC_OPERAND_ADDRESS);
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 0)->operand2.type, RC_OPERAND_DELTA);
@@ -1895,13 +1936,16 @@ static void test_prev_prior_share_memref() {
 
 static void test_bit_lookups_share_memref() {
   rc_trigger_t* trigger;
+  rc_memrefs_t* memrefs;
   char buffer[512];
 
   assert_parse_trigger(&trigger, buffer, "0xM0001=1_0xN0x0001=0_0xO0x0001=1");
 
-  ASSERT_NUM_EQUALS(trigger->memrefs->address, 1U);
-  ASSERT_NUM_EQUALS(trigger->memrefs->value.size, RC_MEMSIZE_8_BITS);
-  ASSERT_PTR_NULL(trigger->memrefs->next);
+  memrefs = rc_trigger_get_memrefs(trigger);
+  ASSERT_PTR_NOT_NULL(memrefs);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.count, 1);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].address, 1U);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].value.size, RC_MEMSIZE_8_BITS);
 
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 0)->operand1.size, RC_MEMSIZE_BIT_0);
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 1)->operand1.size, RC_MEMSIZE_BIT_1);
@@ -1910,13 +1954,16 @@ static void test_bit_lookups_share_memref() {
 
 static void test_bitcount_shares_memref() {
   rc_trigger_t* trigger;
+  rc_memrefs_t* memrefs;
   char buffer[512];
 
   assert_parse_trigger(&trigger, buffer, "0xH0001>5_0xK0001!=3");
 
-  ASSERT_NUM_EQUALS(trigger->memrefs->address, 1U);
-  ASSERT_NUM_EQUALS(trigger->memrefs->value.size, RC_MEMSIZE_8_BITS);
-  ASSERT_PTR_NULL(trigger->memrefs->next);
+  memrefs = rc_trigger_get_memrefs(trigger);
+  ASSERT_PTR_NOT_NULL(memrefs);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.count, 1);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].address, 1U);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].value.size, RC_MEMSIZE_8_BITS);
 
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 0)->operand1.type, RC_OPERAND_ADDRESS);
   ASSERT_NUM_EQUALS(trigger_get_cond(trigger, 0, 0)->operand1.size, RC_MEMSIZE_8_BITS);
@@ -1926,18 +1973,468 @@ static void test_bitcount_shares_memref() {
 
 static void test_large_memref_not_shared() {
   rc_trigger_t* trigger;
+  rc_memrefs_t* memrefs;
   char buffer[512];
 
   assert_parse_trigger(&trigger, buffer, "0xH1234=1_0xX1234>d0xX1234");
 
-  /* this could be shared, but isn't currently */
-  ASSERT_NUM_EQUALS(trigger->memrefs->address, 0x1234);
-  ASSERT_NUM_EQUALS(trigger->memrefs->value.size, RC_MEMSIZE_8_BITS);
-  ASSERT_PTR_NOT_NULL(trigger->memrefs->next);
+  memrefs = rc_trigger_get_memrefs(trigger);
+  ASSERT_PTR_NOT_NULL(memrefs);
 
-  ASSERT_NUM_EQUALS(trigger->memrefs->next->address, 0x1234);
-  ASSERT_NUM_EQUALS(trigger->memrefs->next->value.size, RC_MEMSIZE_32_BITS);
-  ASSERT_PTR_NULL(trigger->memrefs->next->next);
+  /* this could be shared, but isn't currently */
+  ASSERT_NUM_EQUALS(memrefs->memrefs.count, 2);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].address, 0x1234U);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[0].value.size, RC_MEMSIZE_8_BITS);
+
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[1].address, 0x1234U);
+  ASSERT_NUM_EQUALS(memrefs->memrefs.items[1].value.size, RC_MEMSIZE_32_BITS);
+}
+
+static void test_remember_recall() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[256];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  assert_parse_trigger(&trigger, buffer, "K:1_{recall}=1(3)");
+
+  /* condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1U);
+
+  /* condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 2U);
+
+  /* condition is true - hit count should be incremented to reach target */
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 1, 3U);
+
+  /* condition is true - target previously met */
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 1, 3U);
+}
+
+static void test_remember_recall_separate_accumulator_per_group() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[640];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  assert_parse_trigger(&trigger, buffer, "K:1_{recall}=1.3.S{recall}=1.3.SK:1_K:{recall}*2_{recall}=2.5.");
+
+  /* core group condition is true - hit count should be incremented */
+  /* alt1 group condition is false since it's a different recall accumulator */
+  /* alt2 group condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1U);
+  assert_hit_count(trigger, 1, 0, 0U);
+  assert_hit_count(trigger, 2, 2, 1U);
+
+  /* core group condition is true - hit count should be incremented */
+  /* alt group condition is false since it's a different recall accumulator */
+  /* alt2 group condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 2U);
+  assert_hit_count(trigger, 1, 0, 0U);
+  assert_hit_count(trigger, 2, 2, 2U);
+
+  /* core group condition is true - hit count should be incremented to reach target */
+  /* alt group condition is false since it's a different recall accumulator */
+  /* alt2 group condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 3U);
+  assert_hit_count(trigger, 1, 0, 0U);
+  assert_hit_count(trigger, 2, 2, 3U);
+
+  /* core group condition is true - target previously met */
+  /* alt group condition is false since it's a different recall accumulator */
+  /* alt2 group condition is true - hit count should be incremented */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 3U);
+  assert_hit_count(trigger, 1, 0, 0U);
+  assert_hit_count(trigger, 2, 2, 4U);
+
+  /* core group condition is true - target previously met */
+  /* alt group condition is false since it's a different recall accumulator */
+  /* alt2 group condition is true - hit count incremented to reach target */
+  /* core + alt2 now satisfied, trigger is true*/
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 1, 3U);
+  assert_hit_count(trigger, 1, 0, 0U);
+  assert_hit_count(trigger, 2, 2, 5U);
+}
+
+static void test_remember_recall_separate_accumulator_per_group_complex()
+{
+  uint8_t ram[128];
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[1280];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+  memset(ram, 0, sizeof(ram));
+
+  assert_parse_trigger(&trigger, buffer, "0=0SK:0x 0002&1023_K:{recall}*2_K:{recall}+4_{recall}=100SK:0x 0004&1023_K:{recall}*2_K:{recall}+4_{recall}=100");
+
+  /* $2=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  /* $4=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* $2=0030 & 03FF = 0030 * 2 = 0060 + 4 = 0064 ?= 100 = true */
+  /* $4=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  ram[2] = 0x30;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* $2=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  /* $4=0030 & 03FF = 0030 * 2 = 0060 + 4 = 0064 ?= 100 = true */
+  ram[2] = 0x00;
+  ram[4] = 0x30;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* $2=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  /* $4=0000 & 03FF = 0000 * 2 = 0000 + 4 = 0004 ?= 100 = false */
+  ram[4] = 0x00;
+  assert_evaluate_trigger(trigger, &memory, 0);
+}
+
+static void test_remember_recall_use_same_value_multiple() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[640];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  ram[0] = 1;
+  assert_parse_trigger(&trigger, buffer, "K:5_A:0xH00_C:{recall}=6_B:0xH00_C:{recall}=4_M:0=1.4.");
+
+  /* because the recall accumulator can be re-used, both add hits are true and increment hits */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 2, 1U);
+  assert_hit_count(trigger, 0, 4, 1U);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 2U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 4U);
+
+  /* because the recall accumulator can be re-used, both add hits are true and increment hits to reach target*/
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 2, 2U);
+  assert_hit_count(trigger, 0, 4, 2U);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 4U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 4U);
+
+  /* condition is true - previously met */
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 2, 3U);
+  assert_hit_count(trigger, 0, 4, 3U);
+  ASSERT_NUM_EQUALS(trigger->measured_value, 6U);
+  ASSERT_NUM_EQUALS(trigger->measured_target, 4U);
+}
+
+static void test_remember_recall_in_pause_and_main() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[640];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  assert_parse_trigger(&trigger, buffer, "K:0xH00_{recall}<3.4._K:0xH00*2_{recall}>0xH01_K:0xH00*2_P:{recall}=2");
+
+  /* pause checks 0*2=2, not paused. Condition 2 gets hit since recalled value < 3 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1U);
+
+  ram[0] = 1;
+  /* pause checks 1*2 = 2, pause active. condition 2 does not get new hit */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1U);
+
+  ram[0] = 2;
+  /* pause checks 2*2 = 2, pause inactive. condition 2 dgets hit because < 3 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 2U);
+
+  ram[0] = 3;
+  /* pause checks 2*2 = 2, pause inactive. condition 2 gets no because = 3 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 2U);
+
+  ram[0] = 0;
+  /* pause checks 0*2=2, not paused. Condition 2 gets hit since recalled value < 3 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 3U);
+
+  ram[0] = 1;
+  /* pause checks 1*2 = 2, pause active. condition 2 does not get new hit */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 3U);
+
+  ram[0] = 2;
+  /* pause checks 2*2 = 2, pause inactive. condition 2 dgets hit because < 3, not true because condition 4 untrue */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 4U);
+
+  ram[0] = 10;
+  /* condition is true - hits on condition 2 previously met, no active pause. */
+  assert_evaluate_trigger(trigger, &memory, 1);
+  assert_hit_count(trigger, 0, 1, 4U);
+}
+
+static void test_remember_recall_in_pause_with_chain()
+{
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  rc_condition_t* condition;
+  char buffer[640];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  assert_parse_trigger(&trigger, buffer, "I:{recall}_I:0xH02_0xH03=10_K:0xH00_P:0=1");
+
+  /* ensure recall memrefs point at the remember for the pause chain */
+  condition = trigger->requirement->conditions;
+  ASSERT_NUM_EQUALS(condition->operand1.type, RC_OPERAND_RECALL);
+  ASSERT_PTR_NOT_NULL(condition->operand1.value.memref);
+
+  condition = condition->next;
+  ASSERT_NUM_EQUALS(condition->operand1.value.memref->value.memref_type, RC_MEMREF_TYPE_MODIFIED_MEMREF);
+  ASSERT_NUM_EQUALS(((rc_modified_memref_t*)condition->operand1.value.memref)->parent.type, RC_OPERAND_RECALL);
+  ASSERT_PTR_NOT_NULL(((rc_modified_memref_t*)condition->operand1.value.memref)->parent.value.memref);
+
+  /* byte(0)=0, remember. byte(0+2)=0x34, byte(0x34+3)=n/a */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  ram[2] = 1;
+  /* byte(0)=0, remember. byte(0+2)=1, byte(1+3)=0x56 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  ram[4] = 10;
+  /* byte(0)=0, remember. byte(0+2)=1, byte(1+3)=10 */
+  assert_evaluate_trigger(trigger, &memory, 1);
+}
+
+static void test_remember_recall_in_addaddress()
+{
+  uint8_t ram[] = { 0x02, 0x03, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[1024];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /* byte(byte(0x0001) + (byte(0x0000) - 1) * 2) == 60 */
+  assert_parse_trigger(&trigger, buffer, "K:0xH0000-1_K:{recall}*2_I:{recall}+0xH0001_0xH0000=60");
+
+  /* byte(3 + (2 - 1) * 2) => byte(3+2) => byte(5) == 60 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* condition is true */
+  ram[5] = 60;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* byte(3 + (3 - 1) * 2) => byte(3+4) => byte(7) == 60 */
+  ram[0] = 3;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* condition is true */
+  ram[7] = 60;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* byte(0 + (3 - 1) * 2) => byte(0+4) => byte(4) == 60 */
+  ram[1] = 0;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* condition is true */
+  ram[4] = 60;
+  assert_evaluate_trigger(trigger, &memory, 1);
+}
+
+static void test_remember_recall_self_in_addaddress()
+{
+  uint8_t ram[] = { 0x02, 0x03, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[1024];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /* byte(byte(0x0000) + 1) == 60 */
+  assert_parse_trigger(&trigger, buffer, "K:0xH0000_K:{recall}_I:{recall}_0xH0001=60");
+
+  /* byte(2 + 1) => byte(3) == 60 */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* condition is true */
+  ram[3] = 60;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* byte(3 + 1) => byte(4) == 60 */
+  ram[0] = 3;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* condition is true */
+  ram[4] = 60;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* byte(2 + 1) => byte(3) == 60 */
+  ram[0] = 2;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* condition is false */
+  ram[3] = 9;
+  assert_evaluate_trigger(trigger, &memory, 0);
+}
+
+static void test_remember_in_main_recall_in_pause()
+{
+  uint8_t ram[] = { 0x02, 0x03, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[1024];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /* remember(byte(0) & 15) && always_true() && pauseif({recall} != 0 && byte(1) == 1) */
+  assert_parse_trigger(&trigger, buffer, "K:0xH0000&15_1=1.6._N:{recall}!=2_P:0xH0001=1");
+
+  /* because the remember gets associated to the always_true(), the {recall} in the
+   * pauseif will always recall 0 */
+
+  /* always_true is true; {recall} != 2 && 3 == 1; remembered value is 2; 3 != 1 => not paused */
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1);
+
+  /* always_true is true; {recall} != 2 && 1 == 1; remembered value is 2,
+   * but it's remembered AFTER the pause is processed, so {recall} != 2 is actually
+   * 0 != 2, which is true, so the trigger is paused. */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+  assert_hit_count(trigger, 0, 1, 1);
+}
+
+/* ======================================================== */
+
+static void test_trailing_andnext() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[512];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /*             byte(0x0002)=1
+   * AndNext     byte(0x0001)=1   -- ignored as compound condition is incomplete
+   */
+  assert_parse_trigger(&trigger, buffer, "0xH0002=1_N:0xH0001=1");
+  ASSERT_PTR_NOT_NULL(trigger->requirement->conditions);
+  ASSERT_PTR_NOT_NULL(trigger->requirement->conditions->next);
+  ASSERT_PTR_NULL(trigger->requirement->conditions->next->next);
+
+  /* both conditions false */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition true */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition not true */
+  ram[1] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition true */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* first condition true */
+  ram[2] = 1;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* first condition not true */
+  ram[2] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition not true */
+  ram[1] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* first condition true */
+  ram[2] = 1;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* first condition not true */
+  ram[2] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+}
+
+static void test_trailing_andnext_with_alt() {
+  uint8_t ram[] = { 0x00, 0x12, 0x34, 0xAB, 0x56 };
+  memory_t memory;
+  rc_trigger_t* trigger;
+  char buffer[512];
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  /*             byte(0x0002)=1
+   * AndNext     byte(0x0001)=1   -- ignored as compound condition is incomplete
+   */
+  assert_parse_trigger(&trigger, buffer, "0xH0002=1_N:0xH0001=1SR:0xH0003=1");
+  ASSERT_PTR_NOT_NULL(trigger->requirement->conditions);
+  ASSERT_PTR_NOT_NULL(trigger->requirement->conditions->next);
+  ASSERT_PTR_NULL(trigger->requirement->conditions->next->next);
+  ASSERT_PTR_NOT_NULL(trigger->alternative->conditions);
+  ASSERT_PTR_NULL(trigger->alternative->conditions->next);
+
+  /* both conditions false */
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition true */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition not true */
+  ram[1] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition true */
+  ram[1] = 1;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* first condition true */
+  ram[2] = 1;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* first condition not true */
+  ram[2] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* second condition not true */
+  ram[1] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
+
+  /* first condition true */
+  ram[2] = 1;
+  assert_evaluate_trigger(trigger, &memory, 1);
+
+  /* first condition not true */
+  ram[2] = 2;
+  assert_evaluate_trigger(trigger, &memory, 0);
 }
 
 /* ======================================================== */
@@ -1973,6 +2470,7 @@ void test_trigger(void) {
   TEST(test_measured_while_paused_reset_alt);
   TEST(test_measured_while_paused_reset_core);
   TEST(test_measured_while_paused_reset_non_hitcount);
+  TEST(test_measured_while_paused_extra_alts);
   TEST(test_measured_reset_hitcount);
   TEST(test_measured_reset_comparison);
   TEST(test_measured_if);
@@ -2003,6 +2501,21 @@ void test_trigger(void) {
   TEST(test_bit_lookups_share_memref);
   TEST(test_bitcount_shares_memref);
   TEST(test_large_memref_not_shared);
+
+  /* accumulator - remember and recall*/
+  TEST(test_remember_recall);
+  TEST(test_remember_recall_separate_accumulator_per_group);
+  TEST(test_remember_recall_separate_accumulator_per_group_complex);
+  TEST(test_remember_recall_use_same_value_multiple);
+  TEST(test_remember_recall_in_pause_and_main);
+  TEST(test_remember_recall_in_pause_with_chain);
+  TEST(test_remember_recall_in_addaddress);
+  TEST(test_remember_recall_self_in_addaddress);
+  TEST(test_remember_in_main_recall_in_pause);
+
+  /* incomplete logic */
+  TEST(test_trailing_andnext);
+  TEST(test_trailing_andnext_with_alt);
 
   TEST_SUITE_END();
 }

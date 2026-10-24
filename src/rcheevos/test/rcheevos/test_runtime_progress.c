@@ -75,26 +75,25 @@ static void _assert_deserialize(rc_runtime_t* runtime, uint8_t* buffer)
 
 static void _assert_sized_memref(rc_runtime_t* runtime, uint32_t address, uint8_t size, uint32_t value, uint32_t prev, uint32_t prior)
 {
-  rc_memref_t* memref = runtime->memrefs;
-  while (memref)
-  {
-    if (memref->address == address && memref->value.size == size)
-    {
-      ASSERT_NUM_EQUALS(memref->value.value, value);
-      ASSERT_NUM_EQUALS(memref->value.prior, prior);
+  rc_memref_list_t* memref_list = &runtime->memrefs->memrefs;
+  for (; memref_list; memref_list = memref_list->next) {
+    const rc_memref_t* memref = memref_list->items;
+    const rc_memref_t* memref_end = memref + memref_list->count;
+    for (; memref < memref_end; ++memref) {
+      if (memref->address == address && memref->value.size == size) {
+        ASSERT_NUM_EQUALS(memref->value.value, value);
+        ASSERT_NUM_EQUALS(memref->value.prior, prior);
 
-      if (value == prior)
-      {
-        ASSERT_NUM_EQUALS(memref->value.changed, 0);
+        if (value == prior) {
+          ASSERT_NUM_EQUALS(memref->value.changed, 0);
+        }
+        else {
+          ASSERT_NUM_EQUALS(memref->value.changed, (prev == prior) ? 1 : 0);
+        }
+
+        return;
       }
-      else
-      {
-        ASSERT_NUM_EQUALS(memref->value.changed, (prev == prior) ? 1 : 0);
-      }
-      return;
     }
-
-    memref = memref->next;
   }
 
   ASSERT_FAIL("could not find memref for address %u", address);
@@ -245,46 +244,42 @@ static void update_md5(uint8_t* buffer)
 
 static void reset_runtime(rc_runtime_t* runtime)
 {
+  rc_memref_list_t* memref_list;
   rc_memref_t* memref;
   rc_trigger_t* trigger;
   rc_condition_t* cond;
   rc_condset_t* condset;
   uint32_t i;
 
-  memref = runtime->memrefs;
-  while (memref)
-  {
-    memref->value.value = 0xFF;
-    memref->value.changed = 0;
-    memref->value.prior = 0xFF;
-
-    memref = memref->next;
+  for (memref_list = &runtime->memrefs->memrefs; memref_list; memref_list = memref_list->next) {
+    const rc_memref_t* memref_end;
+    memref = memref_list->items;
+    memref_end = memref + memref_list->count;
+    for (; memref < memref_end; ++memref) {
+      memref->value.value = 0xFF;
+      memref->value.changed = 0;
+      memref->value.prior = 0xFF;
+    }
   }
 
-  for (i = 0; i < runtime->trigger_count; ++i)
-  {
+  for (i = 0; i < runtime->trigger_count; ++i) {
     trigger = runtime->triggers[i].trigger;
-    if (trigger)
-    {
+    if (trigger) {
       trigger->measured_value = 0xFF;
       trigger->measured_target = 0xFF;
 
-      if (trigger->requirement)
-      {
+      if (trigger->requirement) {
         cond = trigger->requirement->conditions;
-        while (cond)
-        {
+        while (cond) {
           cond->current_hits = 0xFF;
           cond = cond->next;
         }
       }
 
       condset = trigger->alternative;
-      while (condset)
-      {
+      while (condset) {
         cond = condset->conditions;
-        while (cond)
-        {
+        while (cond) {
           cond->current_hits = 0xFF;
           cond = cond->next;
         }
@@ -307,7 +302,8 @@ static void test_empty()
   reset_runtime(&runtime);
   assert_deserialize(&runtime, buffer);
 
-  ASSERT_PTR_NULL(runtime.memrefs);
+  ASSERT_NUM_EQUALS(runtime.memrefs->memrefs.count, 0);
+  ASSERT_NUM_EQUALS(runtime.memrefs->modified_memrefs.count, 0);
   ASSERT_NUM_EQUALS(runtime.trigger_count, 0);
   ASSERT_NUM_EQUALS(runtime.lboard_count, 0);
 
@@ -814,6 +810,59 @@ static void test_memref_shared_address()
   rc_runtime_destroy(&runtime);
 }
 
+static void test_memref_addsource() {
+  uint8_t ram[] = { 1, 2, 3, 4, 5 };
+  uint8_t buffer1[512];
+  uint8_t buffer2[512];
+  memory_t memory;
+  rc_runtime_t runtime;
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  rc_runtime_init(&runtime);
+
+  /* byte(2) + byte(1) == 5 - third condition just prevents the achievement from triggering*/
+  assert_activate_achievement(&runtime, 1, "A:0xH0002_0xH0001=3_0xH0004=99");
+  assert_do_frame(&runtime, &memory); /* $2 = 3, $1 = 2, 3 + 2 = 5 */
+  ram[1] = 3;
+  ram[2] = 0;
+  assert_do_frame(&runtime, &memory); /* $2 = 0, $1 = 3, 0 + 3 = 3 */
+  assert_do_frame(&runtime, &memory);
+  assert_do_frame(&runtime, &memory);
+  assert_do_frame(&runtime, &memory);
+
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 4);
+  assert_cond_memref(&runtime, 1, 0, 1, 3, 5, 0);
+
+  assert_serialize(&runtime, buffer1, sizeof(buffer1));
+
+  assert_do_frame(&runtime, &memory);
+  ram[1] = 6;
+  ram[2] = 1;
+  assert_do_frame(&runtime, &memory); /* $2 = 1, $1 = 6, 1 + 6 = 7 */
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 5);
+  assert_cond_memref(&runtime, 1, 0, 1, 7, 3, 1);
+
+  assert_serialize(&runtime, buffer2, sizeof(buffer2));
+
+  reset_runtime(&runtime);
+  assert_deserialize(&runtime, buffer1);
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 4);
+  assert_cond_memref(&runtime, 1, 0, 1, 3, 5, 0);
+
+  reset_runtime(&runtime);
+  assert_deserialize(&runtime, buffer2);
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 5);
+  assert_cond_memref(&runtime, 1, 0, 1, 7, 3, 1);
+
+  rc_runtime_destroy(&runtime);
+}
+
 static void test_memref_indirect()
 {
   uint8_t ram[] = { 1, 2, 3, 4, 5 };
@@ -868,6 +917,63 @@ static void test_memref_indirect()
   assert_hitcount(&runtime, 1, 0, 1, 5);
   assert_cond_memref(&runtime, 1, 0, 0, 1, 0, 1);
   assert_cond_memref(&runtime, 1, 0, 1, 1, 3, 1);
+
+  rc_runtime_destroy(&runtime);
+}
+
+static void test_memref_indirect_delta()
+{
+  uint8_t ram[] = { 1, 2, 3, 4, 5 };
+  uint8_t buffer1[512];
+  uint8_t buffer2[512];
+  memory_t memory;
+  rc_runtime_t runtime;
+
+  memory.ram = ram;
+  memory.size = sizeof(ram);
+
+  rc_runtime_init(&runtime);
+
+  /* byte(byte(2) + 1) == 5 - third condition just prevents the achievement from triggering*/
+  assert_activate_achievement(&runtime, 1, "I:0xH0002_d0xH0001=3_0xH0004=99");
+  assert_do_frame(&runtime, &memory); /* $2 = 3, $(3+1) = 5, delta = 0 */
+  ram[1] = 3;
+  ram[2] = 0;
+  assert_do_frame(&runtime, &memory); /* $2 = 0, $(0+1) = 3, delta = 5 */
+  assert_do_frame(&runtime, &memory); /* $2 = 0, $(0+1) = 3, delta = 3 */
+
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 1);
+  assert_cond_memref(&runtime, 1, 0, 0, 0, 3, 0);
+  assert_cond_memref(&runtime, 1, 0, 1, 3, 5, 0);
+
+  assert_serialize(&runtime, buffer1, sizeof(buffer1));
+
+  assert_do_frame(&runtime, &memory); /* $2 = 0, $(0+1) = 3, delta = 3 */
+  ram[1] = 6;
+  ram[2] = 1;
+  assert_do_frame(&runtime, &memory); /* $2 = 1, $(1+1) = 1, delta = 3 */
+  assert_do_frame(&runtime, &memory); /* $2 = 1, $(1+1) = 1, delta = 1 */
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 3);
+  assert_cond_memref(&runtime, 1, 0, 0, 1, 0, 0);
+  assert_cond_memref(&runtime, 1, 0, 1, 1, 3, 0);
+
+  assert_serialize(&runtime, buffer2, sizeof(buffer2));
+
+  reset_runtime(&runtime);
+  assert_deserialize(&runtime, buffer1);
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 1);
+  assert_cond_memref(&runtime, 1, 0, 0, 0, 3, 0);
+  assert_cond_memref(&runtime, 1, 0, 1, 3, 5, 0);
+
+  reset_runtime(&runtime);
+  assert_deserialize(&runtime, buffer2);
+  assert_hitcount(&runtime, 1, 0, 0, 0);
+  assert_hitcount(&runtime, 1, 0, 1, 3);
+  assert_cond_memref(&runtime, 1, 0, 0, 1, 0, 0);
+  assert_cond_memref(&runtime, 1, 0, 1, 1, 3, 0);
 
   rc_runtime_destroy(&runtime);
 }
@@ -1183,11 +1289,10 @@ static void test_multiple_achievements_deactivated_memrefs()
   assert_hitcount(&runtime, 2, 0, 0, 2);
   assert_hitcount(&runtime, 3, 0, 0, 1);
 
-  /* deactivate an achievement with memrefs - trigger should be nulled */
+  /* deactivate an achievement with memrefs */
   ASSERT_NUM_EQUALS(runtime.trigger_count, 3);
-  ASSERT_TRUE(runtime.triggers[0].owns_memrefs);
   rc_runtime_deactivate_achievement(&runtime, 1);
-  ASSERT_NUM_EQUALS(runtime.trigger_count, 3);
+  ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
 
   assert_serialize(&runtime, buffer, sizeof(buffer));
 
@@ -1238,7 +1343,6 @@ static void test_multiple_achievements_deactivated_no_memrefs()
 
   /* deactivate an achievement without memrefs - trigger should be removed */
   ASSERT_NUM_EQUALS(runtime.trigger_count, 3);
-  ASSERT_FALSE(runtime.triggers[1].owns_memrefs);
   rc_runtime_deactivate_achievement(&runtime, 2);
   ASSERT_NUM_EQUALS(runtime.trigger_count, 2);
 
@@ -1687,7 +1791,9 @@ void test_runtime_progress(void) {
 
   TEST(test_no_core_group);
   TEST(test_memref_shared_address);
+  TEST(test_memref_addsource);
   TEST(test_memref_indirect);
+  TEST(test_memref_indirect_delta);
   TEST(test_memref_double_indirect);
 
   TEST(test_multiple_achievements);

@@ -19,11 +19,12 @@ void test_format(void) {
   TEST_SUITE_BEGIN();
 
   /* rc_format_value */
-  TEST_PARAMS3(test_format_value, RC_FORMAT_VALUE, 12345, "12345");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_VALUE, -12345, "-12345");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_VALUE, 12345, "12,345");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_VALUE, -12345, "-12,345");
   TEST_PARAMS3(test_format_value, RC_FORMAT_VALUE, 0xFFFFFFFF, "-1");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_UNSIGNED_VALUE, 0xFFFFFFFF, "4294967295");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_SCORE, 12345, "012345");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_UNSIGNED_VALUE, 0xFFFFFFFF, "4,294,967,295");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_UNFORMATTED, 0xFFFFFFFF, "4294967295"); /* UNFORMATTED does not add commas */
+  TEST_PARAMS3(test_format_value, RC_FORMAT_SCORE, 12345, "012345"); /* SCORE does not add commas */
   TEST_PARAMS3(test_format_value, RC_FORMAT_SECONDS, 45, "0:45");
   TEST_PARAMS3(test_format_value, RC_FORMAT_SECONDS, 345, "5:45");
   TEST_PARAMS3(test_format_value, RC_FORMAT_SECONDS, 12345, "3h25:45");
@@ -53,19 +54,19 @@ void test_format(void) {
   TEST_PARAMS3(test_format_value, RC_FORMAT_FIXED3, -1234, "-1.234");
   TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, 0, "0");
   TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, 1, "10");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, 1234, "12340");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, -1234, "-12340");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, 1234, "12,340");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_TENS, -1234, "-12,340");
   TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, 0, "0");
   TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, 1, "100");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, 1234, "123400");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, -1234, "-123400");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, 1234, "123,400");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_HUNDREDS, -1234, "-123,400");
   TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, 0, "0");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, 1, "1000");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, 1234, "1234000");
-  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, -1234, "-1234000");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, 1, "1,000");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, 1234, "1,234,000");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_THOUSANDS, -1234, "-1,234,000");
 
   /* because of the internal conversion to centiseconds, anything above MAX_INT / 10 could overflow */
-  TEST_PARAMS3(test_format_value, RC_FORMAT_FRAMES, 0x19999999, "1988h24:38.81");
+  TEST_PARAMS3(test_format_value, RC_FORMAT_FRAMES, 0x19999999, "1,988h24:38.81");
 
   /* rc_parse_format */
   TEST_PARAMS2(test_parse_format, "VALUE", RC_FORMAT_VALUE);

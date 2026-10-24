@@ -43,6 +43,7 @@ typedef struct rc_api_fetch_code_notes_response_t {
 rc_api_fetch_code_notes_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_fetch_code_notes_request(rc_api_request_t* request, const rc_api_fetch_code_notes_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_fetch_code_notes_request_hosted(rc_api_request_t* request, const rc_api_fetch_code_notes_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_fetch_code_notes_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_fetch_code_notes_response(rc_api_fetch_code_notes_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_fetch_code_notes_server_response(rc_api_fetch_code_notes_response_t* response, const rc_api_server_response_t* server_response);
@@ -77,10 +78,60 @@ typedef struct rc_api_update_code_note_response_t {
 rc_api_update_code_note_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_update_code_note_request(rc_api_request_t* request, const rc_api_update_code_note_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_update_code_note_request_hosted(rc_api_request_t* request, const rc_api_update_code_note_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_update_code_note_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_update_code_note_response(rc_api_update_code_note_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_update_code_note_server_response(rc_api_update_code_note_response_t* response, const rc_api_server_response_t* server_response);
 RC_EXPORT void RC_CCONV rc_api_destroy_update_code_note_response(rc_api_update_code_note_response_t* response);
+
+/* --- Update Code Notes --- */
+
+typedef struct rc_api_update_code_note_entry_t {
+  /* The address the note is associated to */
+  uint32_t address;
+  /* The contents of the note (NULL or empty to delete a note) */
+  const char* note;
+}
+rc_api_update_code_note_entry_t;
+
+/**
+ * API parameters for an update code notes request.
+ */
+typedef struct rc_api_update_code_notes_request_t {
+  /* The username of the developer */
+  const char* username;
+  /* The API token from the login request */
+  const char* api_token;
+  /* The unique identifier of the game */
+  uint32_t game_id;
+  /* An array of notes to update */
+  rc_api_update_code_note_entry_t* entries;
+  /* The number of items in the entries array */
+  uint32_t num_entries;
+}
+rc_api_update_code_notes_request_t;
+
+/**
+ * Response data for an update code note request.
+ */
+typedef struct rc_api_update_code_notes_response_t {
+  /* The addresses that were successfully updated */
+  uint32_t* updated_addresses;
+  /* The addresses that could not be updated due to permissions errors */
+  uint32_t* access_denied_addresses;
+  /* The number of elements in the updated_addresses array */
+  uint32_t num_updated_addresses;
+  /* The number of elements in the access_denied_addresses array */
+  uint32_t num_access_denied_addresses;
+
+  /* Common server-provided response information */
+  rc_api_response_t response;
+}
+rc_api_update_code_notes_response_t;
+
+RC_EXPORT int RC_CCONV rc_api_init_update_code_notes_request_hosted(rc_api_request_t* request, const rc_api_update_code_notes_request_t* api_params, const rc_api_host_t* host);
+RC_EXPORT int RC_CCONV rc_api_process_update_code_notes_server_response(rc_api_update_code_notes_response_t* response, const rc_api_server_response_t* server_response);
+RC_EXPORT void RC_CCONV rc_api_destroy_update_code_notes_response(rc_api_update_code_notes_response_t* response);
 
 /* --- Update Achievement --- */
 
@@ -126,6 +177,7 @@ typedef struct rc_api_update_achievement_response_t {
 rc_api_update_achievement_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_update_achievement_request(rc_api_request_t* request, const rc_api_update_achievement_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_update_achievement_request_hosted(rc_api_request_t* request, const rc_api_update_achievement_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_update_achievement_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_update_achievement_response(rc_api_update_achievement_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_update_achievement_server_response(rc_api_update_achievement_response_t* response, const rc_api_server_response_t* server_response);
@@ -177,10 +229,42 @@ typedef struct rc_api_update_leaderboard_response_t {
 rc_api_update_leaderboard_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_update_leaderboard_request(rc_api_request_t* request, const rc_api_update_leaderboard_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_update_leaderboard_request_hosted(rc_api_request_t* request, const rc_api_update_leaderboard_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_update_leaderboard_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_update_leaderboard_response(rc_api_update_leaderboard_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_update_leaderboard_server_response(rc_api_update_leaderboard_response_t* response, const rc_api_server_response_t* server_response);
 RC_EXPORT void RC_CCONV rc_api_destroy_update_leaderboard_response(rc_api_update_leaderboard_response_t* response);
+
+/* --- Update Rich Presence --- */
+
+/**
+ * API parameters for an update rich presence request.
+ */
+typedef struct rc_api_update_rich_presence_request_t {
+  /* The username of the developer */
+  const char* username;
+  /* The API token from the login request */
+  const char* api_token;
+  /* The unique identifier of the game */
+  uint32_t game_id;
+  /* The script for the rich_presence */
+  const char* script;
+}
+rc_api_update_rich_presence_request_t;
+
+/**
+ * Response data for an update rich presence request.
+ */
+typedef struct rc_api_update_rich_presence_response_t {
+  /* Common server-provided response information */
+  rc_api_response_t response;
+}
+rc_api_update_rich_presence_response_t;
+
+RC_EXPORT int RC_CCONV rc_api_init_update_rich_presence_request(rc_api_request_t* request, const rc_api_update_rich_presence_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_update_rich_presence_request_hosted(rc_api_request_t* request, const rc_api_update_rich_presence_request_t* api_params, const rc_api_host_t* host);
+RC_EXPORT int RC_CCONV rc_api_process_update_rich_presence_server_response(rc_api_update_rich_presence_response_t* response, const rc_api_server_response_t* server_response);
+RC_EXPORT void RC_CCONV rc_api_destroy_update_rich_presence_response(rc_api_update_rich_presence_response_t* response);
 
 /* --- Fetch Badge Range --- */
 
@@ -208,6 +292,7 @@ typedef struct rc_api_fetch_badge_range_response_t {
 rc_api_fetch_badge_range_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_fetch_badge_range_request(rc_api_request_t* request, const rc_api_fetch_badge_range_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_fetch_badge_range_request_hosted(rc_api_request_t* request, const rc_api_fetch_badge_range_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_fetch_badge_range_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_fetch_badge_range_response(rc_api_fetch_badge_range_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_fetch_badge_range_server_response(rc_api_fetch_badge_range_response_t* response, const rc_api_server_response_t* server_response);
@@ -249,6 +334,7 @@ typedef struct rc_api_add_game_hash_response_t {
 rc_api_add_game_hash_response_t;
 
 RC_EXPORT int RC_CCONV rc_api_init_add_game_hash_request(rc_api_request_t* request, const rc_api_add_game_hash_request_t* api_params);
+RC_EXPORT int RC_CCONV rc_api_init_add_game_hash_request_hosted(rc_api_request_t* request, const rc_api_add_game_hash_request_t* api_params, const rc_api_host_t* host);
 /* [deprecated] use rc_api_process_add_game_hash_server_response instead */
 RC_EXPORT int RC_CCONV rc_api_process_add_game_hash_response(rc_api_add_game_hash_response_t* response, const char* server_response);
 RC_EXPORT int RC_CCONV rc_api_process_add_game_hash_server_response(rc_api_add_game_hash_response_t* response, const rc_api_server_response_t* server_response);
