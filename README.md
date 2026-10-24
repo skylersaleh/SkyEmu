@@ -107,6 +107,23 @@ SkyEmu has been tested on 100s of ROMs and most common games should be playable 
 - Dotclk based PPU implementation
 - Anti-aliased audio synthesis with support for APU changes per sample (supports Pikachu's voice in Pokemon Yellow/Pokemon Pinball)
 
+## AI Policy
+
+All SkyEmu code has been written by humans and we do not accept AI generated code into the repo. 
+
+We understand the utility in AI assisted development and still allow AI to be used for debug, code understanding, and other purposes that do not yield generated output into the repo. 
+
+We do this for a number of reasons:
+
+- AI generated code review is generally substantially more challenging than code review of code authored by humans and has questionable copyright ownership. 
+- We really want people to understand code that gets submitted to the emulator as many changes are interconnected. The knowledge of the changes made by AI tends to disappear when the context does. While human knowledge persists, even if an AI was used to teach the human how to make the changes.
+- Code quality standards of many projects have substantially reduced after the incorporation of broad scale AI usage from the two above issues. 
+- Developers who wish to add functionality using AI tooling are generally very enthusiastic about the software and emulation development overall. However, they feel lost in the complexity of modern emulators. AI code generation robs them of the ability to learn how to make these changes and robs the community of the next generation of emulator developers. For this reason, we still allow AI to be used as a teaching aid for people who wish to contribute, but don't allow it to do all work for them, but instead encourage its use to help them navigate the complexities of the project so that they can grow their skills and are able to contribute themselves. 
+- It has come to our attention that SkyEmu is one of the handful of large emulator projects in active development that does not have any AI generated code, and we would like to keep it as an option for usage by people who prefer non-AI generated SW. 
+
+An exemption is made for translation strings in localization.h and localization.c. UI translation string generation may be AI assisted, but a human translation is preferred when available. 
+
+
 ## Birds of a Feather
 - [**Pokemon Bot**](https://github.com/OFFTKP/pokemon-bot): A discord bot that can connect to SkyEmu to allow your discord users to play GB/GBC/GBA/NDS games. 
 - [**Panda3DS**](https://github.com/wheremyfoodat/Panda3DS): Panda themed HLE 3DS emulator
