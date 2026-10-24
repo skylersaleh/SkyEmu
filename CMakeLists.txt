@@ -335,18 +335,11 @@ if(NOT RETRO_CORE_ONLY)
   if(ENABLE_RETRO_ACHIEVEMENTS)
     add_definitions(-DENABLE_RETRO_ACHIEVEMENTS=1)
     add_definitions(-DRC_CLIENT_SUPPORTS_HASH)
-    add_library(Lua STATIC src/lua/onelua.c)
-    if(IOS)
-      target_compile_definitions(Lua PRIVATE LUA_USE_IOS) # makes it so system is not used
-    endif()
-    set_property(TARGET Lua PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-    set(LINK_LIBS ${LINK_LIBS} Lua)
     set(RCHEEVOS_SRC src/rcheevos/src/rapi/rc_api_common.c
       src/rcheevos/src/rapi/rc_api_editor.c
       src/rcheevos/src/rapi/rc_api_info.c
       src/rcheevos/src/rapi/rc_api_runtime.c
       src/rcheevos/src/rapi/rc_api_user.c
-      src/rcheevos/src/rapi/rc_api_common.c
       src/rcheevos/src/rcheevos/alloc.c
       src/rcheevos/src/rcheevos/condition.c
       src/rcheevos/src/rcheevos/condset.c
@@ -358,6 +351,7 @@ if(NOT RETRO_CORE_ONLY)
       src/rcheevos/src/rc_compat.c
       src/rcheevos/src/rc_client.c
       src/rcheevos/src/rc_util.c
+      src/rcheevos/src/rc_version.c
       src/rcheevos/src/rc_client_raintegration.c
       src/rcheevos/src/rcheevos/rc_validate.c
       src/rcheevos/src/rcheevos/richpresence.c
@@ -367,12 +361,15 @@ if(NOT RETRO_CORE_ONLY)
       src/rcheevos/src/rcheevos/value.c
       src/rcheevos/src/rhash/cdreader.c
       src/rcheevos/src/rhash/hash.c
+      src/rcheevos/src/rhash/hash_disc.c
+      src/rcheevos/src/rhash/hash_encrypted.c
+      src/rcheevos/src/rhash/hash_rom.c
+      src/rcheevos/src/rhash/hash_zip.c
       src/rcheevos/src/rhash/md5.c
       src/rcheevos/src/rhash/aes.c
-      src/rcheevos/src/rurl/url.c
     )
     set(SKYEMU_SRC ${SKYEMU_SRC} ${RCHEEVOS_SRC} src/retro_achievements.cpp)
-    include_directories(src/rcheevos/include src/lua)
+    include_directories(src/rcheevos/include)
   endif()
   
   if(IOS)
