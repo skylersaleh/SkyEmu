@@ -1,0 +1,24 @@
+name: Build Flatpak
+on: [push,pull_request]
+
+jobs:
+  flatpak:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Flatpak Dependencies
+        uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('io.github.skylersaleh.SkyEmu.yml') }}
+          restore-keys: |
+            flatpak-builder-
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: SkyEmu.flatpak
+          manifest-path: flatpak/io.github.skylersaleh.SkyEmu.yml
+          run-tests: false
+          cache: false   

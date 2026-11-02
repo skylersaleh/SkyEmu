@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.skylersaleh.SkyEmu</id>  
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>SkyEmu</name>
+  <developer_name>SkyEmu Developers</developer_name>
+  <summary>GB, GBC, GBA, and DS Emulator</summary>
+  <description>
+    <p>SkyEmu is a low level GameBoy, GameBoy Color, Game Boy Advance, and DS emulator. Its primary focus is to preserve these great systems for future generations while providing a good user experience through a good mixture of tradeoffs of accuracy, performance, features and usability.</p>
+  </description>
+  <launchable type="desktop-id">io.github.skylersaleh.SkyEmu.desktop</launchable>
+  <url type="homepage">https://github.com/skylersaleh/SkyEmu</url>
+  <url type="bugtracker">https://github.com/skylersaleh/SkyEmu/issues</url>
+  <url type="contact">https://discord.gg/tnUEtmJgA5</url>
+  <screenshots>
+    <screenshot type="default"><caption>A screenshot of SkyEmu running on different platform.</caption><image>https://raw.githubusercontent.com/TheRealYasri/io.github.skylersaleh.SkyEmu/refs/heads/TheRealYasri-patch-1/image1.png</image></screenshot>
+  </screenshots>
+  <releases>
+
+    <release version="v5" date="2026-02-11">
+      <url>https://github.com/skylersaleh/SkyEmu/releases/tag/v5</url>
+    </release>
+
+  </releases>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+</component>
+

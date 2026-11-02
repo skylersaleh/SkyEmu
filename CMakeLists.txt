@@ -30,6 +30,11 @@ option(USE_SYSTEM_CURL "Use the system's libcurl package" OFF)
 option(USE_SYSTEM_OPENSSL "Use the system's OpenSSL package" OFF)
 option(USE_SYSTEM_SDL2 "Use the system's SDL2 package" OFF)
 option(RETRO_CORE_ONLY "Only build libretro core" OFF)
+option(PLATFORM_FLATPAK "Build with customizations for Flatpak (forces writes to Flatpak sandbox)" OFF)
+
+if(PLATFORM_FLATPAK)
+  add_definitions(-DSE_PLATFORM_FLATPAK=1)
+endif()
 
 if (EMSCRIPTEN)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s ELIMINATE\_DUPLICATE\_FUNCTIONS=1 -s ENVIRONMENT=web -s ASSERTIONS=0 -s WASM=1 -DSE_PLATFORM_WEB --shell-file ${PROJECT_SOURCE_DIR}/src/shell.html -s USE_CLOSURE_COMPILER=0 ")
