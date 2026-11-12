@@ -32,6 +32,7 @@
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
+#include <emscripten/html5.h> // gm112 note: this is for accessing the html5 events ;p
 #endif
 
 #include "cloud.h"
@@ -8798,9 +8799,29 @@ static void se_init(){
     if(http_server_mode)emu_state.run_mode=SB_MODE_PAUSE;
   }
 }
+
+#ifdef EMSCRIPTEN
+// gm112 note: This seems like an okay area for web callbacks, i think?
+static bool skyemu_web_was_manually_paused_ya = false;
+static EM_BOOL se_web_visibility_changed(int event_type, const
+  EmscriptenVisibilityChangeEvent* event, void* user_data){
+    if (event->hidden) {
+        skyemu_web_was_manually_paused_ya = emu_state.run_mode==SB_MODE_PAUSE;
+        emu_state.run_mode = SB_MODE_PAUSE;
+        EM_ASM({ if(Module._saudio_context) Module._saudio_context.suspend(); });
+    } else {
+        EM_ASM({ if(Module._saudio_context) Module._saudio_context.resume(); });
+        if(skyemu_web_was_manually_paused_ya) return EM_TRUE;
+        emu_state.run_mode = SB_MODE_RUN;
+    }
+    return EM_TRUE;
+  }
+#endif
+
 static void init(void) {
   #if defined(EMSCRIPTEN)
   em_init_fs();
+  emscripten_set_visibilitychange_callback(NULL, EM_FALSE, se_web_visibility_changed);
   #endif
   https_initialize();
   gui_state.overlay_open= true;
