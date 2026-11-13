@@ -487,6 +487,7 @@ typedef struct {
     //Points to the most recently opened panel. When single panel mode is enabled all other panels should be closed. 
     bool * last_opened_panel;
     double last_autosave_time;
+    bool web_document_is_inactive;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -8802,16 +8803,15 @@ static void se_init(){
 
 #ifdef EMSCRIPTEN
 // gm112 note: This seems like an okay area for web callbacks, i think?
-static bool skyemu_web_was_manually_paused_ya = false;
 static EM_BOOL se_web_visibility_changed(int event_type, const
   EmscriptenVisibilityChangeEvent* event, void* user_data){
     if (event->hidden) {
-        skyemu_web_was_manually_paused_ya = emu_state.run_mode==SB_MODE_PAUSE;
+        gui_state.web_document_is_inactive = emu_state.run_mode==SB_MODE_PAUSE;
         emu_state.run_mode = SB_MODE_PAUSE;
         EM_ASM({ if(Module._saudio_context) Module._saudio_context.suspend(); });
     } else {
         EM_ASM({ if(Module._saudio_context) Module._saudio_context.resume(); });
-        if(skyemu_web_was_manually_paused_ya) return EM_TRUE;
+        if(gui_state.web_document_is_inactive) return EM_TRUE;
         emu_state.run_mode = SB_MODE_RUN;
     }
     return EM_TRUE;
