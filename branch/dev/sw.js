@@ -1,5 +1,5 @@
 // Define the cache version
-const CACHE_VERSION = 'f4d3238bf42da483ed1b7cc35649398b2110e4b4';
+const CACHE_VERSION = 'b64903f0fde8104d0796546b96859e9f682311b7';
 
 // Define an array of URLs to cache
 const CACHE_URLS = [
