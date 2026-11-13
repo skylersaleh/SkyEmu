@@ -32,6 +32,7 @@
 
 #if defined(EMSCRIPTEN)
 #include <emscripten.h>
+#include <emscripten/html5.h> // gm112 note: this is for accessing the html5 events ;p
 #endif
 
 #include "cloud.h"
@@ -486,6 +487,7 @@ typedef struct {
     //Points to the most recently opened panel. When single panel mode is enabled all other panels should be closed. 
     bool * last_opened_panel;
     double last_autosave_time;
+    bool web_document_is_inactive;
 } gui_state_t;
 
 #define SE_REWIND_BUFFER_SIZE (1024*1024)
@@ -8798,9 +8800,28 @@ static void se_init(){
     if(http_server_mode)emu_state.run_mode=SB_MODE_PAUSE;
   }
 }
+
+#ifdef EMSCRIPTEN
+// gm112 note: This seems like an okay area for web callbacks, i think?
+static EM_BOOL se_web_visibility_changed(int event_type, const
+  EmscriptenVisibilityChangeEvent* event, void* user_data){
+    if (event->hidden) {
+        gui_state.web_document_is_inactive = emu_state.run_mode==SB_MODE_PAUSE;
+        emu_state.run_mode = SB_MODE_PAUSE;
+        EM_ASM({ if(Module._saudio_context) Module._saudio_context.suspend(); });
+    } else {
+        EM_ASM({ if(Module._saudio_context) Module._saudio_context.resume(); });
+        if(gui_state.web_document_is_inactive) return EM_TRUE;
+        emu_state.run_mode = SB_MODE_RUN;
+    }
+    return EM_TRUE;
+  }
+#endif
+
 static void init(void) {
   #if defined(EMSCRIPTEN)
   em_init_fs();
+  emscripten_set_visibilitychange_callback(NULL, EM_FALSE, se_web_visibility_changed);
   #endif
   https_initialize();
   gui_state.overlay_open= true;
