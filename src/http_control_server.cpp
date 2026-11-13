@@ -15,11 +15,49 @@ struct HCSServer{
     static void server_thread(HCSServer* server){
         server->svr.set_tcp_nodelay(true);
         server->svr.set_pre_routing_handler([server](const httplib::Request& req, httplib::Response& res) {
-            std::vector<const char*> params;
-            for(auto &v :req.params){
-                params.push_back(v.first.c_str());
-                params.push_back(v.second.c_str());
+            std::vector<std::string> params_store;
+            auto &args = req.target;
+            int state = 0; //Query not found
+            std::string chunk = "";
+            auto flush_chunk = [&params_store](std::string & str){
+                params_store.push_back(httplib::detail::decode_url(str, true));
+                str="";
+            };
+            for(size_t s = 0; s< args.size();++s){
+                switch(state){
+                    case 0: //Query not found
+                        if(args[s]=='?') state = 1; 
+                        break;
+                    case 1: //Key
+                        if(args[s]=='='){
+                            flush_chunk(chunk);
+                            state = 2; 
+                        }else if(args[s]=='&'){
+                            if(chunk.length()){
+                                flush_chunk(chunk);
+                                flush_chunk(chunk);
+                            }
+                            state =1; 
+                        }else chunk+=args[s];
+                        break;
+                    case 2: // value
+                        if(args[s]=='&'){
+                            flush_chunk(chunk);
+                            state = 1; 
+                        }else chunk+=args[s];
+                        break;
+                }
             }
+            if(state==1 && chunk.length()){
+                flush_chunk(chunk);
+                flush_chunk(chunk);
+            }
+            if(state==2)flush_chunk(chunk);
+
+            std::vector<const char*> params;
+            for(auto & p : params_store) params.push_back(p.c_str());
+
+
             params.push_back(NULL);
             params.push_back(NULL);
             bool handled = false; 
