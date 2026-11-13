@@ -4021,9 +4021,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       palette = SB_BFE(palette,0,5);
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
       tex_color[3] = alpha/7.;
     }break;
     case 0x2: /*4-Color Palette Texture*/
@@ -4033,9 +4033,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*8;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       if(palette==0&&color0_transparent)tex_color[3]=0;
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
     }break;
     case 0x3: /*Format 3: 16-Color Palette Texture*/
     {
@@ -4044,9 +4044,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       if(palette==0&&color0_transparent)tex_color[3]=0;
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
     }break;
     case 0x4: /*Format 4: 256-Color Palette Texture*/
     {
@@ -4054,9 +4054,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
       if(palette==0&&color0_transparent)tex_color[3]=0;
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
     }break;
     case 0x5:{
       int bx = x/4, by =y/4;
@@ -4077,24 +4077,24 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       switch(texel){
         case 0:{
           uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr);
-          tex_color[0] = SB_BFE(color,0,5)/31.;
-          tex_color[1] = SB_BFE(color,5,5)/31.;
-          tex_color[2] = SB_BFE(color,10,5)/31.;
+          tex_color[0] = SB_BFE(color,0,5)/31.0f;
+          tex_color[1] = SB_BFE(color,5,5)/31.0f;
+          tex_color[2] = SB_BFE(color,10,5)/31.0f;
           tex_color[3] = 1.0;
         }break;
         case 1:{
           uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
-          tex_color[0] = SB_BFE(color,0,5)/31.;
-          tex_color[1] = SB_BFE(color,5,5)/31.;
-          tex_color[2] = SB_BFE(color,10,5)/31.;
+          tex_color[0] = SB_BFE(color,0,5)/31.0f;
+          tex_color[1] = SB_BFE(color,5,5)/31.0f;
+          tex_color[2] = SB_BFE(color,10,5)/31.0f;
           tex_color[3] = 1.0;
         }break;
         case 2:{
           if(mode==0||mode==2){
             uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+4);
-            tex_color[0] = SB_BFE(color,0,5)/31.;
-            tex_color[1] = SB_BFE(color,5,5)/31.;
-            tex_color[2] = SB_BFE(color,10,5)/31.;
+            tex_color[0] = SB_BFE(color,0,5)/31.0f;
+            tex_color[1] = SB_BFE(color,5,5)/31.0f;
+            tex_color[2] = SB_BFE(color,10,5)/31.0f;
             tex_color[3] = 1.0;
           }else{
             uint16_t color0 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+0);
@@ -4104,9 +4104,9 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
               tex_color[1] = (SB_BFE(color0,5,5)+SB_BFE(color1,5,5))/31.*0.5;
               tex_color[2] = (SB_BFE(color0,10,5)+SB_BFE(color1,10,5))/31.*0.5;
             }else{
-              tex_color[0] = (SB_BFE(color0,0,5)*5+SB_BFE(color1,0,5)*3)/8./31.;
-              tex_color[1] = (SB_BFE(color0,5,5)*5+SB_BFE(color1,5,5)*3)/8./31.;
-              tex_color[2] = (SB_BFE(color0,10,5)*5+SB_BFE(color1,10,5)*3)/8./31.;
+              tex_color[0] = (SB_BFE(color0,0,5)*5+SB_BFE(color1,0,5)*3)/8./31.0f;
+              tex_color[1] = (SB_BFE(color0,5,5)*5+SB_BFE(color1,5,5)*3)/8./31.0f;
+              tex_color[2] = (SB_BFE(color0,10,5)*5+SB_BFE(color1,10,5)*3)/8./31.0f;
             }
             tex_color[3] = 1.0;
           }
@@ -4117,16 +4117,16 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
             return true; 
           }else if(mode==2){
             uint16_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+6);
-            tex_color[0] = SB_BFE(color,0,5)/31.;
-            tex_color[1] = SB_BFE(color,5,5)/31.;
-            tex_color[2] = SB_BFE(color,10,5)/31.;
+            tex_color[0] = SB_BFE(color,0,5)/31.0f;
+            tex_color[1] = SB_BFE(color,5,5)/31.0f;
+            tex_color[2] = SB_BFE(color,10,5)/31.0f;
             tex_color[3] = 1.0;
           }else{
             uint16_t color0 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+0);
             uint16_t color1 = nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_addr+2);
-            tex_color[0] = (SB_BFE(color0,0,5)*3+SB_BFE(color1,0,5)*5)/8./31.;
-            tex_color[1] = (SB_BFE(color0,5,5)*3+SB_BFE(color1,5,5)*5)/8./31.;
-            tex_color[2] = (SB_BFE(color0,10,5)*3+SB_BFE(color1,10,5)*5)/8./31.;
+            tex_color[0] = (SB_BFE(color0,0,5)*3+SB_BFE(color1,0,5)*5)/8./31.0f;
+            tex_color[1] = (SB_BFE(color0,5,5)*3+SB_BFE(color1,5,5)*5)/8./31.0f;
+            tex_color[2] = (SB_BFE(color0,10,5)*3+SB_BFE(color1,10,5)*5)/8./31.0f;
             tex_color[3] = 1.0;
           }
         }break;
@@ -4139,17 +4139,17 @@ static bool nds_sample_texture(nds_t* nds, float* tex_color, float*uv){
       palette = SB_BFE(palette,0,3);
       uint32_t palette_base = SB_BFE(nds->gpu.tex_plt_base,0,13)*16;
       uint16_t color= nds_ppu_read16(nds,NDS_VRAM_TEX_PAL_SLOT0+palette_base+palette*2);
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
-      tex_color[3] = alpha/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
+      tex_color[3] = alpha/31.0f;
     }break;
     case 0x7: /* Format 7: Direct Color Texture*/
     {
       uint32_t color = nds_ppu_read16(nds,NDS_VRAM_TEX_SLOT0+vram_offset+x*2+y*sz[0]*2);
-      tex_color[0] = SB_BFE(color,0,5)/31.;
-      tex_color[1] = SB_BFE(color,5,5)/31.;
-      tex_color[2] = SB_BFE(color,10,5)/31.;
+      tex_color[0] = SB_BFE(color,0,5)/31.0f;
+      tex_color[1] = SB_BFE(color,5,5)/31.0f;
+      tex_color[2] = SB_BFE(color,10,5)/31.0f;
       tex_color[3] = SB_BFE(color,15,1);
     }break;
     default:
@@ -4259,6 +4259,8 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
   SE_RPT3 color_j[r]=v[2]->color[r]-v[0]->color[r];
   SE_RPT2 tex_i[r]=v[1]->tex[r]-v[0]->tex[r];
   SE_RPT2 tex_j[r]=v[2]->tex[r]-v[0]->tex[r];
+  float inv_w[3]; 
+  SE_RPT3 inv_w[r]=1.0f/v[r]->pos[3];
 
   for(float y=min_p[1];y<max_p[1];y+=y_inc){
     bool line_rendered =false; 
@@ -4278,12 +4280,12 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       float bary[3];
 
       SE_RPT3 bary_nopersp[r] = sub_tri_area[(r+1)%3]/tri_area;
-      SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]/v[r]->pos[3];
+      SE_RPT3 bary[r] = sub_tri_area[(r+1)%3]*inv_w[r];
 
       SE_RPT3 sub_tri_area[r]+=sub_tri_area_dx[r];
 
-      float bary_area = bary[0]+bary[1]+bary[2];
-      SE_RPT3 bary[r] /= bary_area;
+      float inv_bary_area = 1.0f/(bary[0]+bary[1]+bary[2]);
+      SE_RPT3 bary[r] *= inv_bary_area;
 
       float z = v[0]->pos[2]+bary[1]*(v[1]->pos[2]-v[0]->pos[2])+bary[2]*(v[2]->pos[2]-v[0]->pos[2]);
       float w = v[0]->pos[3]+bary[1]*(v[1]->pos[3]-v[0]->pos[3])+bary[2]*(v[2]->pos[3]-v[0]->pos[3]);
@@ -4293,7 +4295,7 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       int iy = (y*0.5+0.5)*NDS_LCD_H;
       int p = ix+iy*NDS_LCD_W;
 
-      if(nds->framebuffer_3d_depth[p]<z*0.999999)continue;
+      if(nds->framebuffer_3d_depth[p]<z*0.999999f)continue;
       float uv[2];
       SE_RPT2 uv[r]=v[0]->tex[r]+tex_i[r]*bary[1]+tex_j[r]*bary[2];
 
@@ -4305,15 +4307,15 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
 
       float output_col[4];
       float col_v[4]; 
-      SE_RPT3 col_v[r]=(v[0]->color[r]+color_i[r]*bary[1]+color_j[r]*bary[2])/255.;
-      col_v[3]= alpha/31.;
+      SE_RPT3 col_v[r]=(v[0]->color[r]+color_i[r]*bary[1]+color_j[r]*bary[2])/255.0f;
+      col_v[3]= alpha/31.f;
 
       switch(polygon_mode){
         case 0:
           SE_RPT4 output_col[r]=tex_color[r]*col_v[r];
           break;
         case 1: //Decal Mode
-          SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5));
+          SE_RPT3 output_col[r]=(tex_color[r]*tex_color[3]+col_v[r]*(1-tex_color[3]+0.5f));
           output_col[3]=col_v[3];
           break;
         case 2: //Toon mode
@@ -4322,14 +4324,14 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
           if(shade_mode){
             col_v[1]=col_v[2]=col_v[0];
             uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+ SB_BFE(color,5*r,5)/31.;
+            SE_RPT3 output_col[r]= tex_color[r]*col_v[r]+ SB_BFE(color,5*r,5)/31.f;
           }else{
             int toon_highlight_entry = col_v[0]*255.0f/8.0f; 
             //printf("toon entry: %d\n",toon_highlight_entry);
             uint16_t color = nds9_io_read16(nds,NDS9_TOON_TABLE+toon_highlight_entry*2);
-            col_v[0]= SB_BFE(color,0,5)/31.;
-            col_v[1]= SB_BFE(color,5,5)/31.;
-            col_v[2]= SB_BFE(color,10,5)/31.;
+            col_v[0]= SB_BFE(color,0,5)/31.f;
+            col_v[1]= SB_BFE(color,5,5)/31.f;
+            col_v[2]= SB_BFE(color,10,5)/31.f;
             SE_RPT3 output_col[r]= tex_color[r]*col_v[r];
           }
           output_col[3]= col_v[3]*tex_color[3];
@@ -4338,13 +4340,13 @@ static bool nds_gpu_draw_tri(nds_t* nds, int vi0, int vi1, int vi2){
       SE_RPT4 output_col[r]=fminf(fmaxf(output_col[r],0.f),1.0f);
       if(alpha_test){
         int alpha_test_ref = nds9_io_read8(nds,NDS9_ALPHA_TEST_REF)&0x1f;
-        if(output_col[3]<=alpha_test_ref/31.)continue; 
+        if(output_col[3]<=alpha_test_ref/31.0f)continue; 
       }
       if(alpha_blend){
         float alpha_blend_factor = output_col[3]; 
-        if(translucent_has_depth||alpha_blend_factor>0.95)nds->framebuffer_3d_depth[p]=z;
+        if(translucent_has_depth||alpha_blend_factor>0.95f)nds->framebuffer_3d_depth[p]=z;
         for(int c=0;c<3;++c){
-          nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0-alpha_blend_factor);
+          nds->framebuffer_3d[p*4+c]=output_col[c]*255*alpha_blend_factor+(nds->framebuffer_3d[p*4+c])*(1.0f-alpha_blend_factor);
         }
         if(nds->framebuffer_3d[p*4+3]<alpha_blend_factor*255)nds->framebuffer_3d[p*4+3]=alpha_blend_factor*255;
       }else{
@@ -4641,7 +4643,7 @@ static int nds_gpu_cmd_cycles(int cmd){
   return 1; 
 }
 static FORCE_INLINE int32_t nds_gxfifo_size(nds_t*nds){
-  return (nds->gpu.fifo_write_ptr-nds->gpu.fifo_read_ptr)%(NDS_GXFIFO_MASK);
+  return (nds->gpu.fifo_write_ptr-nds->gpu.fifo_read_ptr);
 }
 static FORCE_INLINE void nds_gxfifo_push(nds_t* nds, uint8_t cmd, uint32_t data){
   if(nds_gxfifo_size(nds)>=NDS_GXFIFO_STORAGE){
@@ -6077,8 +6079,8 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
               if(display_overflow==0){
                 if(bg_x<0||bg_x>=screen_size_x||bg_y<0||bg_y>=screen_size_y)continue; 
               }else{
-                bg_x%=screen_size_x;
-                bg_y%=screen_size_y;
+                bg_x&=screen_size_x-1;
+                bg_y&=screen_size_y-1;
               }
             }else{
               int16_t hoff = SB_BFE(nds9_io_read16(nds,GBA_BG0HOFS+bg*4+reg_offset),0,9);
