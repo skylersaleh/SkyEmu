@@ -1675,7 +1675,7 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
       if(PC==reg_index)arm7_set_thumb_bit(cpu,cpu->registers[PC]&1);
    }
     //Writeback happens on second cycle
-    if(++cpu->block.cycle==1&& w){
+    if(++cpu->block.cycle==1&& w && L){
       arm7_reg_write(cpu,Rn,cpu->block.base_addr); 
     }
     cpu->block.addr+=4;
@@ -1690,8 +1690,8 @@ static FORCE_INLINE void arm9_block_transfer(arm7_t* cpu, uint32_t opcode){
     cpu->phase = i+1;
     return;
   }
-  //Writeback happens on second cycle
-  if((reglist>= (1<<(Rn+1))||cpu->block.num_regs<=1||reglist==0)&& w){
+  //Handle late writeback (required by Rockwrestler)
+  if((!L||reglist>= (1<<(Rn+1))||cpu->block.num_regs<=1||reglist==0)&& w){
     arm7_reg_write(cpu,Rn,cpu->block.base_addr); 
   }
   if(L)cpu->i_cycles+=1;

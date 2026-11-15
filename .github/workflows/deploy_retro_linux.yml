@@ -16,7 +16,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. && cmake --build . --target skyemu_libretro --config Release
+          cmake -DRETRO_CORE_ONLY=ON .. && cmake --build . --target skyemu_libretro --config Release
           zip skyemu_libretro.zip skyemu_libretro.so ../skyemu_libretro.info
       - name: GH Release 🚀
         # You may pin to the exact commit or the version.

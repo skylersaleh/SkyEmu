@@ -1,0 +1,183 @@
+# DESCRIPTION: GitLab CI/CD for libRetro (NOT FOR GitLab-proper)
+
+##############################################################################
+################################# BOILERPLATE ################################
+##############################################################################
+
+# Core definitions
+.core-defs:
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    CORENAME: skyemu
+    CORE_ARGS: -DRETRO_CORE_ONLY=ON
+
+.core-defs-win:
+  extends: .core-defs
+  variables:
+    EXTRA_PATH: bin
+
+.core-defs-linux:
+  extends: .core-defs
+  variables:
+    CC: /usr/bin/gcc-12
+    CXX: /usr/bin/g++-12
+
+.core-defs-osx-x64:
+  extends: .core-defs
+  variables:
+    CORE_ARGS: -G Xcode -DRETRO_CORE_ONLY=ON -DCMAKE_OSX_ARCHITECTURES=x86_64
+    EXTRA_PATH: Release
+
+.core-defs-osx-arm64:
+  extends: .core-defs
+  variables:
+    CORE_ARGS: -G Xcode -DRETRO_CORE_ONLY=ON
+    EXTRA_PATH: Release
+
+.core-defs-ios-arm64:
+  extends: .core-defs
+  variables:
+    CORE_ARGS:  -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DRETRO_CORE_ONLY=ON
+    IOS_MINVER: 13.0
+    MINVER: 13.0
+
+.core-defs-android:
+  extends: .core-defs
+  script:
+    - cmake -DANDROID_PLATFORM=android-$API_LEVEL -DRETRO_CORE_ONLY=ON -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_static -DANDROID_ABI=$ANDROID_ABI -DANDROID_ARM_MODE=arm "$CMAKE_SOURCE_ROOT" -B$BUILD_DIR
+    - cmake --build $BUILD_DIR --target ${CORENAME}_libretro --config Release -- -j $NUMPROC
+    - mv $BUILD_DIR/${CORENAME}_libretro.so $LIBNAME
+    - if [ $STRIP_CORE_LIB -eq 1 ]; then $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip $LIBNAME; fi
+  variables:
+    API_LEVEL: 18
+
+# Inclusion templates, required for the build to work
+include:
+  ################################## DESKTOPS ################################
+  # Windows
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/windows-cmake-mingw.yml'
+
+  # MacOS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: 'osx-cmake-x86.yml'
+
+  # MacOS arm64
+  - project: 'libretro-infrastructure/ci-templates'
+    file: 'osx-cmake-arm64.yml'
+
+  # Linux
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/linux-cmake.yml'
+
+  ################################## CELLULAR ################################
+  # Android
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/android-cmake.yml'
+
+  # iOS arm64
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/ios-cmake.yml'
+
+  ################################## CONSOLES ################################  
+  # Nintendo Switch
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/libnx-static.yml'
+
+  # tvOS arm64
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/tvos-cmake.yml'
+
+# Stages for building
+stages:
+  - build-prepare
+  - build-shared
+ # - build-static
+
+##############################################################################
+#################################### STAGES ##################################
+##############################################################################
+#
+################################### DESKTOPS #################################
+# Windows 64-bit
+libretro-build-windows-x64:
+  extends:
+    - .libretro-windows-cmake-x86_64
+    - .core-defs-win
+
+# Windows 32-bit
+libretro-build-windows-i686:
+  extends:
+    - .libretro-windows-cmake-x86
+    - .core-defs-win
+
+# Linux 64-bit
+libretro-build-linux-x64:
+  extends:
+    - .libretro-linux-cmake-x86_64
+    - .core-defs-linux
+  image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-amd64-ubuntu:backports
+
+# Linux 32-bit
+libretro-build-linux-i686:
+  extends:
+    - .libretro-linux-cmake-x86
+    - .core-defs-linux
+  image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-i386-ubuntu:backports
+
+# MacOS 64-bit
+libretro-build-osx-x64:
+  extends:
+    - .libretro-osx-cmake-x86
+    - .core-defs-osx-x64
+  tags:
+    - mac-apple-silicon
+
+# MacOS arm 64-bit
+libretro-build-osx-arm64:
+  extends:
+    - .libretro-osx-cmake-arm64
+    - .core-defs-osx-arm64
+
+################################### CELLULAR #################################
+# Android ARMv7a
+android-armeabi-v7a:
+  extends:
+    - .libretro-android-cmake-armeabi-v7a
+    - .core-defs-android
+
+# Android ARMv8a
+android-arm64-v8a:
+  extends:
+    - .libretro-android-cmake-arm64-v8a
+    - .core-defs-android
+
+# Android 64-bit x86
+android-x86_64:
+  extends:
+    - .libretro-android-cmake-x86_64
+    - .core-defs-android
+
+# Android 32-bit x86
+android-x86:
+  extends:
+    - .libretro-android-cmake-x86
+    - .core-defs-android
+
+libretro-build-ios-arm64:
+  extends:
+    - .libretro-ios-cmake-arm64
+    - .core-defs-ios-arm64
+
+################################### CONSOLES #################################
+# Nintendo Switch
+#libretro-build-libnx-aarch64:
+#  extends:
+#    - .libretro-libnx-static-retroarch-master
+#    - .core-defs
+
+# tvOS arm64
+libretro-build-tvos-arm64:
+  extends:
+    - .libretro-tvos-cmake-arm64
+    - .core-defs-ios-arm64
