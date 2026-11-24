@@ -77,7 +77,7 @@ The emulator is playing at 1x speed.
 
 Returns a png image of the current screen of the emulated system. The parameter embed_state can be set to 1 to embed the emulation save state similar to the /save commands output on emulators that support it (ie. SkyEmu). The default keeps embed_state set to 0. 
 
-The paramater format specifies which image format to use. It can be set to png, jpg, or bmp. If not specified, png is used by default. 
+The parameter format specifies which image format to use. It can be set to png, jpg, or bmp. If not specified, png is used by default. 
 
 **Example:**
 
@@ -107,7 +107,7 @@ The paramater format specifies which image format to use. It can be set to png, 
 
 Reads one or multiple bytes of data from the emulated system at addresses provided using parameters. The addr parameter can be repeated an arbitrary amount of times to read an arbitrary amount of bytes. 
 
-The paramater map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
+The parameter map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
 
 **Example (Read a single byte):**
 
@@ -143,7 +143,7 @@ The paramater map can be used to specify different address maps. This is current
 
 Writes one or multiple bytes of data from the emulated system at addresses provided using parameters. Multiple addresses can be written to in a single command. Returns "ok" on completion
 
-The paramater map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
+The parameter map can be used to specify different address maps. This is currently only used in the NDS core where address map 7 is used for the ARM7 address map and 0 and 9 are used for the ARM9 address map. The default address map is 0. The map command only effects bytes read after the parameter and does not persist across API calls. 
 
 **Example (Write a single byte):**
 
