@@ -171,11 +171,13 @@ extern "C" void em_https_request_callback_wrapper(void* callback, void* data, in
             std::unique_lock<std::mutex> lock(cache_mutex);
             download_cache[url] = result;
             size_t url_len = strlen(url);
-            fwrite(&url_len, 1, 2, cache_file);
-            fwrite(url, 1, url_len, cache_file);
             uint32_t data_len = result.size();
-            fwrite(&data_len, 1, 4, cache_file);
-            fwrite(result.data(), 1, data_len, cache_file);
+            if(cache_file){
+                fwrite(&url_len, 1, 2, cache_file);
+                fwrite(url, 1, url_len, cache_file);
+                fwrite(&data_len, 1, 4, cache_file);
+                fwrite(result.data(), 1, data_len, cache_file);
+            }
             cache_size += 2 + url_len + 4 + data_len;
         }
     }
@@ -299,16 +301,17 @@ void thread_pool::handle_job(job& j, CURL * curl)
     else
     {
         j.callback(result);
-
         if (j.do_cache && result.size() != 0) {
             std::unique_lock<std::mutex> lock(cache_mutex);
             download_cache[j.url] = result;
             size_t url_len = j.url.size();
-            fwrite(&url_len, 1, 2, cache_file);
-            fwrite(j.url.c_str(), 1, url_len, cache_file);
             uint32_t data_len = result.size();
-            fwrite(&data_len, 1, 4, cache_file);
-            fwrite(result.data(), 1, data_len, cache_file);
+            if(cache_file){
+                fwrite(&url_len, 1, 2, cache_file);
+                fwrite(j.url.c_str(), 1, url_len, cache_file);
+                fwrite(&data_len, 1, 4, cache_file);
+                fwrite(result.data(), 1, data_len, cache_file);
+            }
             cache_size += 2 + url_len + 4 + data_len;
         }
     }
@@ -384,6 +387,7 @@ extern "C" void https_initialize()
     if (!cache_file) {
         cache_file = fopen(path.c_str(), "wb+");
     }
+    if(!cache_file) return; 
 
     fseek(cache_file, 0, SEEK_END);
     size_t size = ftell(cache_file);
@@ -443,10 +447,10 @@ extern "C" void https_initialize()
         }
 
         if (corrupted) {
-            fclose(cache_file);
+            if(cache_file)fclose(cache_file);
             
             cache_file = fopen(path.c_str(), "wb+"); // truncates file
-            fwrite("SKYEMUCACHE", 1, 12, cache_file);
+            if(cache_file)fwrite("SKYEMUCACHE", 1, 12, cache_file);
         }
     }
 }
@@ -457,7 +461,7 @@ extern "C" void https_shutdown()
     curl_global_cleanup();
 #endif
 
-    fclose(cache_file);
+    if(cache_file)fclose(cache_file);
 }
 
 extern "C" uint64_t https_cache_size()
@@ -472,10 +476,10 @@ extern "C" void https_clear_cache()
     cache_size.store(0, std::memory_order_relaxed);
 
     std::string path = std::string(se_get_pref_path()) + "download_cache.bin";
-    fclose(cache_file);
+    if(cache_file)fclose(cache_file);
 
     cache_file = fopen(path.c_str(), "wb+"); // truncates file
-    fwrite("SKYEMUCACHE", 1, 12, cache_file);
+    if(cache_file)fwrite("SKYEMUCACHE", 1, 12, cache_file);
 }
 
 extern "C" void https_set_cache_enabled(bool enabled)

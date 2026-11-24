@@ -1979,8 +1979,7 @@ typedef struct{
   uint32_t length;
   uint32_t current_transaction;
   bool last_enable;
-  bool last_vblank;
-  bool last_hblank;
+  uint32_t latched_events;
   uint32_t latched_transfer;
   int startup_delay; 
   uint32_t gx_dma_subtransfer; 
@@ -2225,7 +2224,7 @@ typedef struct{
   bool frame_in_progress;
   bool pause_after_frame; 
   nds_timer_t timers[2][4];
-  uint32_t next_timer_clock;
+  uint64_t next_timer_clock;
   uint64_t last_timer_clock;
   bool prev_key_interrupt;
   // Some HW has up to a 4 cycle delay before its IF propagates. 
@@ -2270,6 +2269,14 @@ typedef struct{
   uint8_t framebuffer_3d[NDS_LCD_W*NDS_LCD_H*4];
   uint8_t framebuffer_3d_disp[NDS_LCD_W*NDS_LCD_H*4];
   nds_vert_t vert_buffer[NDS_MAX_VERTS];
+  FILE * gx_log;
+  FILE * io9_log;
+  FILE * io7_log;
+  FILE * gc_log;
+  FILE * dma_log;
+  FILE * vert_log;
+  FILE * arm9_log;
+  FILE * arm7_log;
 }nds_scratch_t; 
 static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds); 
 static void nds_tick_touch(sb_joy_t*joy, nds_t* nds); 
@@ -2364,7 +2371,7 @@ static bool nds_load_best_effort_state(nds_t* nds,uint8_t *save_state_data, uint
   nds->mem.card_read_offset=bess->card_read_offset;
   nds->mem.card_transfer_bytes=bess->card_transfer_bytes;
   for(int cpu=0;cpu<2;++cpu)
-    for(int i=0;i<4;++i)nds->timers[cpu][i].reload_value=nds->bess.timer_reload_values[cpu][i];
+    for(int i=0;i<4;++i)nds->timers[cpu][i].reload_value=bess->timer_reload_values[cpu][i];
   printf("Bess restore successful\n");
   return true; 
 }
@@ -2470,14 +2477,20 @@ static FORCE_INLINE uint32_t nds_io_read32(nds_t*nds,int cpu_id, unsigned baddr)
 #define NDS_MEM_ARM9  0x2
 #define NDS_MEM_PPU   0x4
 #define NDS_MEM_DEBUG 0x8
+#define NDS_MEM_CPU   0x10
+#define NDS_MEM_DMA   0x20
 
-#define NDS_MEM_1B 0x10
-#define NDS_MEM_2B 0x20
-#define NDS_MEM_4B 0x40
+#define NDS_MEM_1B 0x100
+#define NDS_MEM_2B 0x200
+#define NDS_MEM_4B 0x400
 
-#define NDS_MEM_WRITE 0x100
-#define NDS_MEM_SEQ   0x200
-#define NDS_MEM_CODE  0x400
+#define NDS_MEM_WRITE 0x1000
+#define NDS_MEM_SEQ   0x2000
+#define NDS_MEM_CODE  0x4000
+
+#define NDS_DMA_EVENT_VBLANK 0x1
+#define NDS_DMA_EVENT_HBLANK 0x2
+#define NDS_DMA_EVENT_VIDEO  0x4
 
 
 static FORCE_INLINE uint32_t nds_apply_mem_op(uint8_t * memory,uint32_t address, uint32_t data, int transaction_type){
@@ -2676,7 +2689,7 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
   uint32_t *ret = &nds->mem.openbus_word;
   switch(addr>>24){
     case 0x2: //Main RAM
-      if(!(transaction_type&(NDS_MEM_ARM9)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
+      if(!(transaction_type&(NDS_MEM_CPU)))nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:9;
       addr&=4*1024*1024-1;
       *ret = nds_apply_mem_op(nds->mem.ram, addr, data, transaction_type); 
       break;
@@ -2693,7 +2706,8 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
       }
       break;
     case 0x4: 
-        nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+        // DMA does not pay non-seq cost for VRAM access
+        nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
         if((addr&0xffff)>=0x2000||addr>=0x04200000){*ret = 0; return *ret;}
         if(addr >=0x04100000&&addr <0x04200000){addr|=NDS_IO_MAP_041_OFFSET;}
         bool process_write = nds_preprocess_mmio(nds,addr,data,transaction_type);
@@ -2708,20 +2722,23 @@ static FORCE_INLINE uint32_t nds9_process_memory_transaction(nds_t * nds, uint32
         }
       break;
     case 0x5: //Palette 
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.palette, addr, data, transaction_type); 
       break;
     case 0x6: //VRAM(NDS9) WRAM(NDS7)
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
-        //1Byte writes are ignored from the ARM9
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
+      //1Byte writes are ignored from the ARM9
       const int ignore_write_mask = (NDS_MEM_WRITE|NDS_MEM_1B);
       if((transaction_type&ignore_write_mask)!=ignore_write_mask){
         *ret = nds_apply_vram_mem_op(nds, addr, data, transaction_type); 
       }
       break;
     case 0x7: 
-      nds->mem.slow_bus_cycles+=(transaction_type&NDS_MEM_SEQ)?1:4;
+      // DMA does not pay non-seq cost for VRAM access
+      nds->mem.slow_bus_cycles+=(transaction_type&(NDS_MEM_SEQ|NDS_MEM_DMA))?1:4;
       addr&=2*1024-1;
       *ret = nds_apply_mem_op(nds->mem.oam, addr, data, transaction_type); 
       break;
@@ -2894,28 +2911,28 @@ static FORCE_INLINE void nds7_debug_write8(nds_t*nds, unsigned baddr, uint8_t da
 }
 
 static FORCE_INLINE uint32_t nds9_cpu_read32(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint32_t nds9_cpu_read32_seq(nds_t*nds, unsigned baddr, bool is_sequential){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
 }
 static FORCE_INLINE uint16_t nds9_cpu_read16_seq(nds_t*nds, unsigned baddr, bool is_sequential){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU|NDS_MEM_CODE|(is_sequential?NDS_MEM_SEQ:0));
 }
 static FORCE_INLINE uint8_t nds9_cpu_read8(nds_t*nds, unsigned baddr){
-  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9);
+  return nds9_process_memory_transaction_cpu(nds,baddr,0,NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write32(nds_t*nds, unsigned baddr, uint32_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_4B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write16(nds_t*nds, unsigned baddr, uint16_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_2B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE void nds9_cpu_write8(nds_t*nds, unsigned baddr, uint8_t data){
-  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9);
+  nds9_process_memory_transaction_cpu(nds,baddr,data,NDS_MEM_WRITE|NDS_MEM_1B|NDS_MEM_ARM9|NDS_MEM_CPU);
 }
 static FORCE_INLINE uint32_t nds9_read32(nds_t*nds, unsigned baddr){
   return nds9_process_memory_transaction(nds,baddr,0,NDS_MEM_4B|NDS_MEM_ARM9);
@@ -3187,10 +3204,10 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   nds->arm9.irq_table_address = 0xFFFF0000;
   nds->mem.card_chip_id= 0x1FC2;
 
-  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
-  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
-  nds->arm7.log_cmp_file =se_load_log_file(nds->save_file_path, "log7.bin");
-  nds->arm9.log_cmp_file =se_load_log_file(nds->save_file_path, "log9.bin");
+  if(scratch->arm7_log){fclose(scratch->arm7_log);scratch->arm7_log=NULL;};
+  if(scratch->arm9_log){fclose(scratch->arm9_log);scratch->arm9_log=NULL;};
+  scratch->arm7_log =se_load_log_file(nds->save_file_path, "log7.bin");
+  scratch->arm9_log =se_load_log_file(nds->save_file_path, "log9.bin");
 
 
   //Preload user settings
@@ -3374,18 +3391,18 @@ bool nds_load_rom(sb_emu_state_t*emu,nds_t* nds,nds_scratch_t*scratch){
   }
   nds_update_vram_mapping(nds);
 
-  //nds->gx_log = fopen("gxlog.txt","wb");
-  //nds->io7_log = fopen("io7log.txt","wb");
-  //nds->io9_log = fopen("io9log.txt","wb");
-  //nds->vert_log = fopen("vertlog.txt","wb");
-  //nds->gc_log = fopen("gclog.txt","wb");
-  //nds->dma_log = fopen("dmalog.txt","wb");
+  //scratch->gx_log = fopen("gxlog.txt","wb");
+  //scratch->io7_log = fopen("io7log.txt","wb");
+  //scratch->io9_log = fopen("io9log.txt","wb");
+  //scratch->vert_log = fopen("vertlog.txt","wb");
+  //scratch->gc_log = fopen("gclog.txt","wb");
+  //scratch->dma_log = fopen("dmalog.txt","wb");
 
   return true; 
 }  
 static void nds_unload(nds_t* nds, nds_scratch_t* scratch){
-  if(nds->arm7.log_cmp_file){fclose(nds->arm7.log_cmp_file);nds->arm7.log_cmp_file=NULL;};
-  if(nds->arm9.log_cmp_file){fclose(nds->arm9.log_cmp_file);nds->arm9.log_cmp_file=NULL;};
+  if(scratch->arm7_log){fclose(scratch->arm7_log);scratch->arm7_log=NULL;};
+  if(scratch->arm9_log){fclose(scratch->arm9_log);scratch->arm9_log=NULL;};
   printf("Unloading DS data\n");
 }
 uint32_t nds_sqrt_u64(uint64_t value){
@@ -3452,14 +3469,18 @@ static void nds_process_gc_bus_ctl(nds_t*nds, int cpu_id){
       ,commands[4],commands[5],commands[6],commands[7]);
     switch(commands[0]){
       case NDS_CARD_MAIN_DATA_READ:{
+        uint64_t dev_cap = nds->card.device_capacity;
+        if(dev_cap>14)dev_cap = 14; 
+        uint64_t mirror_size = ((128*1024ULL)<<dev_cap)-1; 
         //Encrypted data read;
-        int read_off = (((int)commands[1])<<24)|(((int)commands[2])<<16)|(((int)commands[3])<<8)|(((int)commands[4])<<0);
+        int read_off = ((((int)commands[1])<<24)|(((int)commands[2])<<16)|(((int)commands[3])<<8)|(((int)commands[4])<<0))&mirror_size;
         if(read_off<=0x7FFF)read_off=0x8000+(read_off &0x1FF);
         nds->mem.card_read_offset=read_off;
         int data_block_size = SB_BFE(gcbus_ctl,24,3);
         const int transfer_size_map[8]={0, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 4};
         for(int i=0;i<0x1000;++i){
-          nds->mem.card_transfer_data[i]=nds->mem.card_data[(i+(read_off&~0xfff))%nds->mem.card_size];
+          size_t off = (i+(read_off&~0xfff))&mirror_size;
+          nds->mem.card_transfer_data[i]= off<nds->mem.card_size ? nds->mem.card_data[off]: 0xff;
         }
         nds->mem.card_transfer_bytes=transfer_size_map[data_block_size];
         if(nds->gc_log)fprintf(nds->gc_log,"Encrypted Read: 0x%08x transfer_size: %08x\n",read_off,nds->mem.card_transfer_bytes);
@@ -5117,7 +5138,20 @@ static void nds_tick_ipc_fifo(nds_t* nds){
     }
   }
 }
-
+static void nds_reset_audio_channel(nds_t* nds, int channel, bool is_adpcm){
+  nds_audio_t * audio = &(nds->audio);
+  audio->channel[channel].sample=0;
+  audio->channel[channel].lfsr = 0x7FFF;
+  uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+channel*16)*2;
+  if(is_adpcm){  
+    uint32_t sad = nds7_io_read32(nds,NDS7_SOUND0_SAD+channel*16);
+    uint32_t header = nds7_read32(nds,sad);
+    audio->channel[channel].adpcm_sample = (int16_t)(header & 0xFFFF);
+    audio->channel[channel].adpcm_index = (header >> 16) & 0x7F;
+    if(audio->channel[channel].adpcm_index>88)audio->channel[channel].adpcm_index=88;
+  }
+  audio->channel[channel].timer = tmr;
+}
 static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int transaction_type){
   uint32_t word_mask = nds_word_mask(addr,transaction_type);
   uint32_t baddr =addr;
@@ -5139,6 +5173,19 @@ static bool nds_preprocess_mmio(nds_t * nds, uint32_t addr,uint32_t data, int tr
       float val = clipmtx[i];
       int32_t fixed_val = val;
       nds9_io_store32(nds,NDS9_CLIPMTX_RESULT+i*4,fixed_val);
+    }
+  }else if(cpu == NDS_ARM7 && (transaction_type & NDS_MEM_WRITE) && (addr >= NDS7_SOUND0_CNT && addr <= NDS7_SOUNDF_CNT)){
+    int channel = (addr - NDS7_SOUND0_CNT)/16; 
+    bool is_soundx_cnt = ((addr - NDS7_SOUND0_CNT)%16) ==0; 
+    if(is_soundx_cnt){
+      uint32_t aligned_data = nds_align_data(baddr,data,transaction_type);
+      uint32_t old_data = nds7_io_read32(nds,addr);
+      uint32_t new_data = (old_data &~word_mask)| (aligned_data&(word_mask)); 
+      bool newly_enabled = SB_BFE(new_data, 31,1)&&!SB_BFE(old_data,31,1);
+      if(newly_enabled){
+        int format =  SB_BFE(new_data,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
+        nds_reset_audio_channel(nds,channel, format==2);
+      }
     }
   }
   switch(addr){
@@ -5606,6 +5653,7 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         nds9_io_store16(nds,GBA_VCOUNT,lcd_y);   
         nds9_io_store16(nds,GBA_DISPSTAT,disp_stat);
         nds7_io_store16(nds,GBA_DISPSTAT,disp_stat7);
+        int latch_dma_events = 0;
         if(vcmp!=ppu->last_vcmp) {
           ppu->last_vcmp=vcmp;
           bool vcnt_irq_en = SB_BFE(disp_stat,5,1);
@@ -5621,6 +5669,10 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           bool hblank_irq_en7 = SB_BFE(disp_stat7,4,1);
           if(hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
           if(hblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_HBLANK); 
+          if(lcd_y<NDS_LCD_H)latch_dma_events|=NDS_DMA_EVENT_HBLANK;
+          //Video DMA is offset by 2 scanlines
+          if(lcd_y>=2&& lcd_y<NDS_LCD_H+2)latch_dma_events|=NDS_DMA_EVENT_VIDEO;
+
         }
         if(vblank&&!ppu->last_vblank){
           bool vblank_irq_en = SB_BFE(disp_stat,3,1);
@@ -5628,9 +5680,20 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           if(vblank_irq_en)  new_if |= (1<< GBA_INT_LCD_VBLANK); 
           if(vblank_irq_en7) new_if7|= (1<< GBA_INT_LCD_VBLANK);
           nds->frame_in_progress=false;
+          latch_dma_events|=NDS_DMA_EVENT_VBLANK;
         }
         if(new_if)nds9_send_interrupt(nds,3,new_if);
         if(new_if7)nds7_send_interrupt(nds,3,new_if7);
+        if(latch_dma_events){
+          for(int cpu = 0;cpu<2;++cpu){
+            for(int i=0;i<4;++i){
+              uint16_t cnt_h=nds_io_read16(nds,cpu, GBA_DMA0CNT_H+12*i);
+              bool enable = SB_BFE(cnt_h,15,1);
+              if(!enable)continue;
+              nds->dma[cpu][i].latched_events|=latch_dma_events;
+            }
+          }
+        }
       }
       if(hblank!=ppu->last_hblank){
         ppu->last_hblank = hblank;
@@ -6184,17 +6247,21 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             break; 
         }
       }
-
+      int disp_r = r; 
+      int disp_g = g; 
+      int disp_b = b; 
+      //In HW the vram read in display_mode 2 occurs before the capture, but only routes
+      //directly to the display and is not used for the capture computation. 
       if(display_mode==2&&ppu_id==0){
         int vram_block = SB_BFE(dispcnt,18,2);
         uint16_t value = ((uint16_t*)nds->mem.vram)[lcd_x+lcd_y*NDS_LCD_W+vram_block*64*1024];
-        r = SB_BFE(value,0,5);
-        g = SB_BFE(value,5,5);
-        b = SB_BFE(value,10,5);
+        disp_r = SB_BFE(value,0,5);
+        disp_g = SB_BFE(value,5,5);
+        disp_b = SB_BFE(value,10,5);
       }else if(display_mode==0){
-        r=31;
-        g=31;
-        b=31;
+        disp_r=31;
+        disp_g=31;
+        disp_b=31;
       }
 
       if(enable_capture){
@@ -6216,15 +6283,14 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
           int capture_mode = SB_BFE(dispcapcnt,29,2);
           
           if(capture_mode>=2){        
-            int r = SB_BFE(color,0,5);
-            int g = SB_BFE(color,5,5);
-            int b = SB_BFE(color,10,5);
+            int blend_r = SB_BFE(color,0,5);
+            int blend_g = SB_BFE(color,5,5);
+            int blend_b = SB_BFE(color,10,5);
             int read_offset = SB_BFE(dispcapcnt, 26,2);
             uint32_t read_address = 0x06800000;
             read_address+=read_offset*0x08000;
             read_address+=lcd_y*szx*2+lcd_x*2;
             uint16_t color2=nds_ppu_read16(nds,read_address);
-            if(display_mode==2)color2=ppu->first_target_buffer[lcd_x];
 
             int r2 = SB_BFE(color2,0,5);
             int g2 = SB_BFE(color2,5,5);
@@ -6234,28 +6300,24 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
         
             if(eva>16)eva=16;
             if(evb>16)evb=16;
-            r = (r*eva+r2*evb)/16;
-            g = (g*eva+g2*evb)/16;
-            b = (b*eva+b2*evb)/16;
-            if(r>31)r = 31;
-            if(g>31)g = 31;
-            if(b>31)b = 31;
-            color  = SB_BFE(r,0,5);
-            color |= SB_BFE(g,0,5)<<5;
-            color |= SB_BFE(b,0,5)<<10;
-          }      
+            blend_r = (blend_r*eva+r2*evb)/16;
+            blend_g = (blend_g*eva+g2*evb)/16;
+            blend_b = (blend_b*eva+b2*evb)/16;
+            if(blend_r>31)blend_r = 31;
+            if(blend_g>31)blend_g = 31;
+            if(blend_b>31)blend_b = 31;
+            color  = SB_BFE(blend_r,0,5);
+            color |= SB_BFE(blend_g,0,5)<<5;
+            color |= SB_BFE(blend_b,0,5)<<10;
+          }
           uint32_t write_address = 0x06800000;
           write_address+=write_block*128*1024;
           write_address+=write_offset*0x08000;
           write_address+=lcd_y*szx*2+lcd_x*2;
           color|=0x8000;//TODO: Confirm that captured alpha is always 1
-          nds9_write16(nds,write_address,color);
+          nds_apply_vram_mem_op(nds,write_address, color, NDS_MEM_PPU|NDS_MEM_2B|NDS_MEM_WRITE);
         }
       }
-
-      int disp_r = r; 
-      int disp_g = g; 
-      int disp_b = b; 
       {
         uint16_t master_brightness= nds9_io_read16(nds,reg_offset+NDS_A_MASTER_BRIGHT);
         int mode = SB_BFE(master_brightness,14,2);
@@ -6273,9 +6335,9 @@ static FORCE_INLINE void nds_tick_ppu(nds_t* nds,bool render){
             disp_r -= disp_r*factor/16;
             disp_g -= disp_g*factor/16;
             disp_b -= disp_b*factor/16;
-            if(disp_r<0)r=0;
-            if(disp_g<0)g=0;
-            if(disp_b<0)b=0;
+            if(disp_r<0)disp_r=0;
+            if(disp_g<0)disp_g=0;
+            if(disp_b<0)disp_b=0;
           }
         }
       }
@@ -6354,7 +6416,7 @@ static void nds_tick_keypad(sb_emu_state_t*emu, nds_t* nds){
       }
     }
     if(fold_state)ext_key|= 1 <<7;
-    ext_key|= (1 <<2)|(1 <<4)|(1 <<5); //always set
+    ext_key|= (1 <<2)|(1<<3)|(1 <<4)|(1 <<5); //always set
     nds7_io_store16(nds,NDS7_EXTKEYIN,ext_key);
   }
 }
@@ -6424,6 +6486,7 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           nds->dma[cpu][i].current_transaction=0;
           nds->dma[cpu][i].startup_delay=0;
           nds->dma[cpu][i].trigger_mode = SB_BFE(cnt_h,11,3);
+          nds->dma[cpu][i].latched_events = 0; 
         }
         int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
         int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
@@ -6448,28 +6511,25 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           if(dst_addr_ctl==3){        
             nds->dma[cpu][i].dest_addr=nds_io_read32(nds,cpu,GBA_DMA0DAD+12*i);
           }
-          bool last_vblank = nds->dma[cpu][i].last_vblank;
-          bool last_hblank = nds->dma[cpu][i].last_hblank;
-          nds->dma[cpu][i].last_vblank = nds->ppu[0].last_vblank;
-          nds->dma[cpu][i].last_hblank = nds->ppu[0].last_hblank;
-          if(mode ==1 && (!nds->ppu[0].last_vblank||last_vblank)){
+          // V-blank
+          if(mode ==1 && !(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_VBLANK)){
             nds->dma_wait_ppu=true;
             continue; 
           } 
-          if(mode==2){
+          // H-blank (in NDS_ARM7 this is actually a cartridge DMA)
+          if(mode==2 && cpu == NDS_ARM9){
             nds->dma_wait_ppu=true;
-            uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(vcount>=NDS_LCD_H||!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(!(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_HBLANK))continue;
           }
           //Video dma
           if((mode==3)&&cpu==NDS_ARM9){
             nds->dma_wait_ppu=true;
             uint16_t vcount = nds_io_read16(nds,cpu,GBA_VCOUNT);
-            if(!nds->ppu[0].last_hblank||last_hblank)continue;
+            if(!(nds->dma[cpu][i].latched_events & NDS_DMA_EVENT_VIDEO))continue;
             //Video dma starts at scanline 2
-            if(vcount<2)continue;
             if(vcount==NDS_LCD_H+1)dma_repeat=false;
           }
+          nds->dma[cpu][i].latched_events = 0; 
           //GC Card DMA
           if((mode==5&&cpu==NDS_ARM9)||(mode==2&&cpu==NDS_ARM7)){
             uint32_t ctl= nds_io_read32(nds,cpu,NDS_GCBUS_CTL);
@@ -6543,25 +6603,30 @@ static FORCE_INLINE void nds_tick_dma(nds_t*nds, int last_tick){
           if(nds->dma[cpu][i].current_transaction<cnt){
             nds->dma_processed[cpu]|=true;
             nds->activate_dmas|=true;
+            int dma_mem_type = nds->dma[cpu][i].current_transaction!=0 ? NDS_MEM_SEQ : 0; 
+            dma_mem_type |= NDS_MEM_DMA;
+            dma_mem_type |= cpu ==NDS_ARM9? NDS_MEM_ARM9 : NDS_MEM_ARM7;
             int x = nds->dma[cpu][i].current_transaction++;
             int dst_addr = dst+x*transfer_bytes*dst_dir;
             int src_addr = src+x*transfer_bytes*src_dir;
             if(type){
+              dma_mem_type |= NDS_MEM_4B;
               if(src_addr>=0x02000000){
-                if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_read32(nds,src_addr);
-                else nds->dma[cpu][i].latched_transfer = nds9_read32(nds,src_addr);
+                if(cpu==NDS_ARM7)nds->dma[cpu][i].latched_transfer = nds7_process_memory_transaction(nds,src_addr,0,dma_mem_type);
+                else nds->dma[cpu][i].latched_transfer = nds9_process_memory_transaction(nds,src_addr,0,dma_mem_type);
               }
-              if(cpu==NDS_ARM7)nds7_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              else nds9_write32(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              if(cpu==NDS_ARM7)nds7_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
+              else nds9_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
             }else{
               int v = 0;
+              dma_mem_type |= NDS_MEM_2B;
               if(src_addr>=0x02000000){
-                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_read16(nds,src_addr)&0xffff;
-                else v=nds->dma[cpu][i].latched_transfer = nds9_read16(nds,src_addr)&0xffff;
+                if(cpu==NDS_ARM7)v=nds->dma[cpu][i].latched_transfer = nds7_process_memory_transaction(nds,src_addr,0,dma_mem_type)&0xffff;
+                else v=nds->dma[cpu][i].latched_transfer =nds9_process_memory_transaction(nds,src_addr,0,dma_mem_type)&0xffff;
                 nds->dma[cpu][i].latched_transfer |= nds->dma[cpu][i].latched_transfer<<16;
               }else v = nds->dma[cpu][i].latched_transfer>>(((dst_addr)&0x3)*8);
-              if(cpu==NDS_ARM7)nds7_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
-              else nds9_write16(nds,dst_addr,nds->dma[cpu][i].latched_transfer);
+              if(cpu==NDS_ARM7)nds7_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
+              else nds9_process_memory_transaction(nds,dst_addr,nds->dma[cpu][i].latched_transfer,dma_mem_type|NDS_MEM_WRITE);
             }
           }
         }
@@ -6613,6 +6678,19 @@ static FORCE_INLINE void nds_tick_sio(nds_t* nds){
 static FORCE_INLINE void nds_tick_timers(nds_t* nds){
   if(nds->current_clock>=nds->next_timer_clock)nds_compute_timers(nds); 
 }
+static inline bool nds_check_timer_drives_irq(nds_t* nds, int cpu, int t, bool irq_en){
+  bool drives_irq = irq_en; 
+  for(int t2 = t+1; t2<4;++t2){
+    uint16_t tm2_cnt_h = nds_io_read16(nds,cpu,GBA_TM0CNT_H+t2*4);
+    bool enable = SB_BFE(tm2_cnt_h,7,1);
+    if(!enable)break;
+    bool count_up2 = SB_BFE(tm2_cnt_h,2,1);
+    if(!count_up2)break;
+    bool irq_en2   = SB_BFE(tm2_cnt_h,6,1);
+    drives_irq|=irq_en2;
+  } 
+  return drives_irq;
+}
 static void nds_compute_timers(nds_t* nds){
 
   int ticks = nds->current_clock-nds->last_timer_clock; 
@@ -6632,14 +6710,16 @@ static void nds_compute_timers(nds_t* nds){
         uint16_t value = nds_io_read16(nds,cpu,GBA_TM0CNT_L+t*4);
         if(enable!=timer->last_enable){
           timer->startup_delay=2;
-          value = timer->reload_value;
+          value = timer->pending_reload_value;
           nds_io_store16(nds,cpu,GBA_TM0CNT_L+t*4,value);
         }
         if(timer->startup_delay>=0){
           timer->startup_delay-=ticks; 
           timer->last_enable = enable;
           if(timer->startup_delay>=0){
-            if(timer->startup_delay<timer_ticks_before_event&&irq_en)timer_ticks_before_event=timer->startup_delay;
+            if(timer->startup_delay<timer_ticks_before_event&&
+               nds_check_timer_drives_irq(nds,cpu,t, irq_en))timer_ticks_before_event=timer->startup_delay;
+            last_timer_overflow=0;
             continue;
           }
           compensated_ticks=-timer->startup_delay;
@@ -6674,8 +6754,10 @@ static void nds_compute_timers(nds_t* nds){
           }
           value = v; 
           timer->prescaler_timer=prescale_time;
-          int ticks_before_overflow = (int)(0xffff-value)<<(prescale_duty);
-          if(ticks_before_overflow<timer_ticks_before_event&&irq_en)timer_ticks_before_event=ticks_before_overflow;
+          int ticks_before_overflow = ((int)(0x10000-value)<<(prescale_duty))- prescale_time;
+          if(ticks_before_overflow<timer_ticks_before_event && nds_check_timer_drives_irq(nds,cpu,t, irq_en)){
+            timer_ticks_before_event=ticks_before_overflow;
+          }
         }
         timer->reload_value=timer->pending_reload_value;
         if(last_timer_overflow && irq_en){
@@ -6707,6 +6789,8 @@ static FORCE_INLINE float nds_polyblep(float t,float dt){
   }else return 0; 
 }
 static FORCE_INLINE float nds_bandlimited_square(float t, float duty_cycle,float dt){
+  //When the square wave becomes too high in frequency just output the average value. 
+  if(dt>0.5)return 1.0-2.0*duty_cycle; 
   float t2 = t - duty_cycle;
   if(t2< 0.0)t2 +=1.0;
   float y = t < duty_cycle ? -1 : 1;
@@ -6778,7 +6862,7 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
   while(audio->current_sample_generated_time < current_sim_time){
     uint64_t prev_cycles = audio->current_sample_generated_time;
     audio->current_sample_generated_time+=33513982*64/SE_AUDIO_SAMPLE_RATE;
-    uint64_t cycles_since_tick=(audio->current_sample_generated_time-prev_cycles)/64; 
+    uint64_t cycles_since_tick=(audio->current_sample_generated_time/64)-(prev_cycles/64); 
 
     const float lowpass_coef = 0.999;
 
@@ -6789,20 +6873,17 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
       uint32_t tmr = nds7_io_read16(nds,NDS7_SOUND0_TMR+c*16)*2;
       int format =  SB_BFE(cnt,29,2);//(0=PCM8, 1=PCM16, 2=IMA-ADPCM, 3=PSG/Noise);
       if(!enable){
-        audio->channel[c].sample=0;
-        audio->channel[c].lfsr = 0x7FFF;
-        audio->channel[c].timer = tmr;
         emu->audio_channel_output[c] = emu->audio_channel_output[c]*lowpass_coef;
         continue;
       }
       uint32_t sad = nds7_io_read32(nds,NDS7_SOUND0_SAD+c*16);
-      uint16_t pnt = nds7_io_read16(nds,NDS7_SOUND0_PNT+c*16);
-      uint16_t len = nds7_io_read32(nds,NDS7_SOUND0_LEN+c*16);
+      uint32_t pnt = nds7_io_read16(nds,NDS7_SOUND0_PNT+c*16);
+      uint32_t len = SB_BFE(nds7_io_read32(nds,NDS7_SOUND0_LEN+c*16),0,22);
       uint32_t tot_samps = len*4;
       switch(format){
         case 0: tot_samps = (len+pnt)*4; pnt*=4;break;
         case 1: tot_samps = (len+pnt)*2; pnt*=2;break;
-        case 2: tot_samps = 8*(len+pnt-1); pnt=(pnt-1)*8;break;
+        case 2: tot_samps = 8*(len+pnt); pnt=pnt*8;break;
         case 3: tot_samps = 8;  break;
       }
       if(enable){
@@ -6812,13 +6893,17 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
           case 1: v= ((int16_t)nds7_read16(nds,sad+audio->channel[c].sample*2))/32768.;break;
           case 2: v= ((int16_t)audio->channel[c].adpcm_sample) / 32768.0;break;
           case 3:
-          if(c>=8&&c<=13)v= (audio->channel[c].sample<SB_BFE(cnt,24,3))*2.-1.;//Todo: add antialiasing
+          if(c>=8&&c<=13){
+            float frac = ((float)audio->channel[c].timer - (float)tmr) / (0x20000 - (float)tmr); 
+            frac = frac> 1.0 ? 1.0 : (frac<0.0? 0.0: frac); 
+            float t = (audio->channel[c].sample + frac) / 8; 
+            int N = SB_BFE(cnt,24,3); 
+            float duty_cycle = (7.0-N)/8.0; 
+            float dt = (float)cycles_since_tick / ((0x20000 - (float)tmr)*8.0);
+            v = nds_bandlimited_square(t, duty_cycle,dt);
+          }
           else if(c==14||c==15){ //PSG Noise
-            if(audio->channel[c].lfsr&1){
-              v = -1.;
-              audio->channel[c].lfsr^=0x6000<<1;
-            }else v= 1;
-            audio->channel[c].lfsr>>=1;
+           v = (audio->channel[c].lfsr&1) ? -1. : 1; 
           }
           break; 
         }
@@ -6833,9 +6918,10 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
       }
       audio->channel[c].timer+=cycles_since_tick;
       while(audio->channel[c].timer>0x1ffff){
+        audio->channel[c].sample+=1;
         audio->channel[c].timer-=0x20000;
         audio->channel[c].timer+=tmr;
-        if(audio->channel[c].sample+1>=tot_samps){
+        if(audio->channel[c].sample>=tot_samps){
           int repeat_mode = SB_BFE(cnt,27,2);
           switch(repeat_mode){
             case 0: audio->channel[c].sample=0; enable=false;break; //Manual (TODO: Does this repeat?)
@@ -6853,7 +6939,13 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
           if(!enable){
             cnt&=~(1u<<31);
             nds7_io_store32(nds,NDS7_SOUND0_CNT+c*16,cnt);
+            break;
           }
+        }
+        //Increment LFSR value when the timer overflows
+        if((format == 3)&&(c==14||c==15)){ 
+          if(audio->channel[c].lfsr&1)audio->channel[c].lfsr^=0x6000<<1;
+          audio->channel[c].lfsr>>=1;
         }
         if(format==2){
             if(audio->channel[c].sample==pnt){
@@ -6880,38 +6972,38 @@ static FORCE_INLINE void nds_tick_audio(nds_t*nds, sb_emu_state_t*emu){
               audio->channel[c].adpcm_sample = (int16_t)(header & 0xFFFF);
               audio->channel[c].adpcm_index = (header >> 16) & 0x7F;
               if(audio->channel[c].adpcm_index>88)audio->channel[c].adpcm_index=88;
+            }else if(audio->channel[c].sample>=8){
+              uint8_t data = nds7_read8(nds,sad+audio->channel[c].sample/2);
+              data = (data>>((audio->channel[c].sample&1)*4))&0xf;
+
+              int16_t entry = adpcm_table[audio->channel[c].adpcm_index];
+              int16_t diff = entry >> 3;
+              if (data & 1) diff += entry >> 2;
+              if (data & 2) diff += entry >> 1;
+              if (data & 4) diff += entry;
+
+              if (data & 8) audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample - diff;
+              else audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample + diff;
+              if(audio->channel[c].adpcm_sample>+0x7FFF)audio->channel[c].adpcm_sample=0x7fff;
+              if(audio->channel[c].adpcm_sample<-0x7FFF)audio->channel[c].adpcm_sample=-0x7fff;
+              int new_index = audio->channel[c].adpcm_index + adpcm_indextable[data & 7];
+              if(new_index>88)new_index=88;
+              if(new_index<0)new_index=0;
+              audio->channel[c].adpcm_index =new_index;
             }
-            uint8_t data = nds7_read8(nds,sad+audio->channel[c].sample/2+4);
-            data = (data>>((audio->channel[c].sample&1)*4))&0xf;
-
-            int16_t entry = adpcm_table[audio->channel[c].adpcm_index];
-            int16_t diff = entry >> 3;
-            if (data & 1) diff += entry >> 2;
-            if (data & 2) diff += entry >> 1;
-            if (data & 4) diff += entry;
-
-            if (data & 8) audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample - diff;
-            else audio->channel[c].adpcm_sample = audio->channel[c].adpcm_sample + diff;
-            if(audio->channel[c].adpcm_sample>+0x7FFF)audio->channel[c].adpcm_sample=0x7fff;
-            if(audio->channel[c].adpcm_sample<-0x7FFF)audio->channel[c].adpcm_sample=-0x7fff;
-            int new_index = audio->channel[c].adpcm_index + adpcm_indextable[data & 7];
-            if(new_index>88)new_index=88;
-            if(new_index<0)new_index=0;
-            audio->channel[c].adpcm_index =new_index;
         }
-        audio->channel[c].sample+=1;
       }
     }
     if((sb_ring_buffer_size(&emu->audio_ring_buff)+3>SB_AUDIO_RING_BUFFER_SIZE)) continue;
 
+    l*=0.5;
+    r*=0.5;
+    
     // Clipping
     if(l>1.0)l=1;
     if(r>1.0)r=1;
     if(l<-1.0)l=-1;
     if(r<-1.0)r=-1;
-    l*=0.5;
-    r*=0.5;
-
     // Quantization
     unsigned write_entry0 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
     unsigned write_entry1 = (emu->audio_ring_buff.write_ptr++)%SB_AUDIO_RING_BUFFER_SIZE;
@@ -6961,6 +7053,14 @@ void nds_ptrs_init(nds_t* nds, nds_scratch_t* scratch, uint8_t* rom_data, size_t
   nds->framebuffer_3d=scratch->framebuffer_3d;
   nds->framebuffer_3d_disp=scratch->framebuffer_3d_disp;
   nds->gpu.vert_buffer=scratch->vert_buffer;
+  nds->gx_log = scratch->gx_log;
+  nds->io9_log = scratch->io9_log;
+  nds->io7_log = scratch->io7_log;
+  nds->gc_log = scratch->gc_log;
+  nds->dma_log = scratch->dma_log;
+  nds->vert_log = scratch->vert_log;
+  nds->arm9.log_cmp_file = scratch->arm9_log;
+  nds->arm7.log_cmp_file = scratch->arm7_log;
 }
 
 void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){

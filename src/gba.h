@@ -670,9 +670,7 @@ typedef struct{
   int dest_addr;
   int length;
   int current_transaction;
-  bool last_enable;
-  bool last_vblank;
-  bool last_hblank;
+  bool triggered_by_ppu;
   uint32_t latched_transfer;
   int startup_delay; 
   bool activate_audio_dma;
@@ -807,7 +805,6 @@ typedef struct gba_t{
   //There is a 2 cycle penalty when the CPU takes over from the DMA
   bool last_transaction_dma; 
   bool activate_dmas; 
-  bool dma_wait_ppu;
   gba_timer_t timers[4];
   uint32_t timer_ticks_before_event;
   uint32_t deferred_timer_ticks;
@@ -1660,6 +1657,26 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
     gba->ppu.aff[aff_bg].wrote_bgy = true;
   }else if(address_u32==GBA_DMA0CNT_L||address_u32==GBA_DMA1CNT_L||
            address_u32==GBA_DMA2CNT_L||address_u32==GBA_DMA3CNT_L){
+    uint32_t old_data = gba_io_read32(gba, address_u32);
+    uint32_t new_data = (old_data&~word_mask)|word_data; 
+    bool enable_triggered = SB_BFE((~old_data)&new_data,31,1);
+    if(enable_triggered){
+      int i = (address_u32-GBA_DMA0CNT_L)/12;
+      bool type = SB_BFE(new_data,10+16,1); // 0: 16b 1:32b
+      gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
+      gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
+      //GBA Suite says that these need to be force aligned
+      if(type){
+        gba->dma[i].dest_addr&=~3;
+        gba->dma[i].source_addr&=~3;
+      }else{
+        gba->dma[i].dest_addr&=~1;
+        gba->dma[i].source_addr&=~1;
+      }
+      gba->dma[i].current_transaction=0;
+      gba->dma[i].startup_delay=2;
+      gba->dma[i].triggered_by_ppu =0; 
+    }
     gba->activate_dmas=true;
   }else if (address_u32==GBA_WAITCNT){
      uint16_t waitcnt = gba_io_read16(gba,GBA_WAITCNT);
@@ -1825,6 +1842,7 @@ static FORCE_INLINE int gba_ppu_compute_max_fast_forward(gba_t* gba, bool render
   //If inside hrender, can fastforward to hblank if not the first pixel and not visible
   bool not_visible = !render||gba->ppu.scan_clock>GBA_LCD_VBLANK_START; 
   if(not_visible&& (scanline_clock>=1 && scanline_clock<=GBA_LCD_HBLANK_START*4))return GBA_LCD_HBLANK_START*4-scanline_clock-1; 
+
   return 3-((gba->ppu.scan_clock)%4);
 }
 static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
@@ -1837,8 +1855,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
   int lcd_y = (gba->ppu.scan_clock)/1232;
   int lcd_x = ((gba->ppu.scan_clock)%1232)/4;
   gba->ppu.scan_clock++;
-  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render)+1;
-  gba->ppu.scan_clock+=gba->ppu.fast_forward_ticks;
+
   if(lcd_x==0||lcd_x==GBA_LCD_HBLANK_START||lcd_x==GBA_LCD_HBLANK_END){
     uint16_t disp_stat = gba_io_read16(gba, GBA_DISPSTAT)&~0x7;
     uint16_t vcount_cmp = SB_BFE(disp_stat,8,8);
@@ -1851,11 +1868,17 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
     gba_io_store16(gba,GBA_DISPSTAT,disp_stat);
     gba_io_store16(gba,GBA_VCOUNT,vcount);   
     uint32_t new_if = 0;
+    int dma_events = 0; 
+    const int GBA_DMA_EVENT_VBLANK= 0x1;
+    const int GBA_DMA_EVENT_HBLANK= 0x2;
+    const int GBA_DMA_EVENT_VIDEO = 0x4;
     if(hblank!=gba->ppu.last_hblank){
       gba->ppu.last_hblank = hblank;
       bool hblank_irq_en = SB_BFE(disp_stat,4,1);
       if(hblank&&hblank_irq_en) new_if|= (1<< GBA_INT_LCD_HBLANK); 
-      gba->activate_dmas|=gba->dma_wait_ppu;
+      if(hblank && lcd_y< 160)dma_events|=GBA_DMA_EVENT_HBLANK;
+      if(hblank && lcd_y>=2 && lcd_y< 162)dma_events|=GBA_DMA_EVENT_VIDEO;
+
       if(!hblank){
         gba->ppu.dispcnt_pipeline[0]=gba->ppu.dispcnt_pipeline[1];
         gba->ppu.dispcnt_pipeline[1]=gba->ppu.dispcnt_pipeline[2];
@@ -1868,7 +1891,7 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         gba->ppu.last_vblank = vblank;
         bool vblank_irq_en = SB_BFE(disp_stat,3,1);
         if(vblank&&vblank_irq_en) new_if|= (1<< GBA_INT_LCD_VBLANK); 
-        gba->activate_dmas|=gba->dma_wait_ppu;
+        if(vblank)dma_events|=GBA_DMA_EVENT_VBLANK;
       }
       gba->ppu.last_lcd_y  = lcd_y;
       if(lcd_y==vcount_cmp) {
@@ -1876,8 +1899,24 @@ static FORCE_INLINE void gba_tick_ppu(gba_t* gba, bool render){
         if(vcnt_irq_en)new_if |= (1<<GBA_INT_LCD_VCOUNT);
       }
     }
+    if(dma_events){
+      for(int i=0;i<4;++i){
+        uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
+        bool enable = SB_BFE(cnt_h,15,1);
+        //DMAs can only be triggered when they are enabled and not already running
+        if(!enable||gba->dma[i].current_transaction!=0)continue;
+        int  mode = SB_BFE(cnt_h,12,2);
+        bool trigger = mode ==1 && (dma_events & GBA_DMA_EVENT_VBLANK);
+        trigger |= mode == 2 &&    (dma_events&GBA_DMA_EVENT_HBLANK);
+        trigger |= mode == 3 && i==3&& (dma_events&GBA_DMA_EVENT_VIDEO);
+        gba->dma[i].triggered_by_ppu |= trigger;
+        gba->activate_dmas|=trigger;
+      }
+    }
     gba_send_interrupt(gba,3,new_if);
   }
+  gba->ppu.fast_forward_ticks = gba_ppu_compute_max_fast_forward(gba, render)+1;
+  gba->ppu.scan_clock+=gba->ppu.fast_forward_ticks;
 
   if(!render)return; 
   
@@ -2405,28 +2444,12 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
 static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   int ticks =0;
   gba->activate_dmas=false;
-  gba->dma_wait_ppu=false;
   for(int i=0;i<4;++i){
     uint16_t cnt_h=gba_io_read16(gba, GBA_DMA0CNT_H+12*i);
     bool enable = SB_BFE(cnt_h,15,1);
     if(enable){
       bool type = SB_BFE(cnt_h,10,1); // 0: 16b 1:32b
 
-      if(!gba->dma[i].last_enable){
-        gba->dma[i].last_enable = enable;
-        gba->dma[i].source_addr=gba_io_read32(gba,GBA_DMA0SAD+12*i);
-        gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
-        //GBA Suite says that these need to be force aligned
-        if(type){
-          gba->dma[i].dest_addr&=~3;
-          gba->dma[i].source_addr&=~3;
-        }else{
-          gba->dma[i].dest_addr&=~1;
-          gba->dma[i].source_addr&=~1;
-        }
-        gba->dma[i].current_transaction=0;
-        gba->dma[i].startup_delay=2;
-      }
       int  dst_addr_ctl = SB_BFE(cnt_h,5,2); // 0: incr 1: decr 2: fixed 3: incr reload
       int  src_addr_ctl = SB_BFE(cnt_h,7,2); // 0: incr 1: decr 2: fixed 3: not allowed
       bool dma_repeat = SB_BFE(cnt_h,9,1); 
@@ -2448,25 +2471,16 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         if(dst_addr_ctl==3){        
           gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
         }
-        bool last_vblank = gba->dma[i].last_vblank;
-        bool last_hblank = gba->dma[i].last_hblank;
-        gba->dma[i].last_vblank = gba->ppu.last_vblank;
-        gba->dma[i].last_hblank = gba->ppu.last_hblank;
-        if(mode ==1 && (!gba->ppu.last_vblank||last_vblank)){
-          gba->dma_wait_ppu=true;
+        if((mode ==1 ||mode == 2)&& !(gba->dma[i].triggered_by_ppu)){
           continue; 
         }
-        if(mode==2){
-          gba->dma_wait_ppu=true;
-          uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
-          if(vcount>=160||!gba->ppu.last_hblank||last_hblank)continue;
-        }
+       
         //Video dma
         if(mode==3 && i ==3){
-          gba->dma_wait_ppu=true;
+          if(!gba->dma[i].triggered_by_ppu)continue;
           uint16_t vcount = gba_io_read16(gba,GBA_VCOUNT);
-          if(!gba->ppu.last_hblank||last_hblank)continue;
           //Video dma starts at scanline 2
+          gba->dma[i].triggered_by_ppu = false; 
           if(vcount==2){gba->dma[i].video_dma_active=true;}
           if(!gba->dma[i].video_dma_active)continue;
           if(vcount==161){
@@ -2474,6 +2488,7 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
             gba->dma[i].video_dma_active=false;
           }
         }
+        gba->dma[i].triggered_by_ppu = false;
         
         if(dst_addr_ctl==3){
           gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
@@ -2642,7 +2657,6 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         }
       }
     }
-    gba->dma[i].last_enable = enable;
     if(ticks)break;
   }
   gba->activate_dmas|=ticks!=0;
@@ -3792,7 +3806,7 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
     int timer_fast_forward = gba->timer_ticks_before_event-gba->deferred_timer_ticks;
     int fast_forward_ticks=ppu_fast_forward<timer_fast_forward?ppu_fast_forward:timer_fast_forward; 
     if(fast_forward_ticks>ticks){
-      if(gba->cpu.wait_for_interrupt)ticks=fast_forward_ticks;
+      if(gba->cpu.wait_for_interrupt&&!gba->activate_dmas)ticks=fast_forward_ticks;
       else fast_forward_ticks=ticks;
     }
     if(SB_UNLIKELY(gba->active_if_pipe_stages)){

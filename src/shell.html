@@ -109,6 +109,7 @@
           navigator.serviceWorker.register('sw.js').then(worker => {
           }).catch(e => console.log('Failed to register service worker', e));
       }                      
+      if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
       window.scroll(0,1);
       var statusElement = document.getElementById('status');
       var progressElement = document.getElementById('progress');
