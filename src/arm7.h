@@ -896,7 +896,7 @@ static FORCE_INLINE bool arm9_run_phased_opcode(arm7_t* cpu){
   }
   return false; 
 }
-static void arm9_exec_instruction(arm7_t* cpu){
+static void FORCE_INLINE arm9_exec_instruction(arm7_t* cpu){
   bool thumb = arm7_get_thumb_bit(cpu);
   if(SB_LIKELY(arm9_run_phased_opcode(cpu))){
     if(cpu->wait_for_interrupt){
