@@ -7089,7 +7089,7 @@ void nds_tick(sb_emu_state_t* emu, nds_t* nds, nds_scratch_t* scratch){
     if(!gx_fifo_full){
       nds_tick_dma(nds,true);
       if(SB_LIKELY(!nds->dma_processed[1])){
-        if(SB_UNLIKELY(nds->nds9_interrupt_line))arm7_process_interrupts(&nds->arm9);
+        if(SB_UNLIKELY(nds->nds9_interrupt_line))arm9_process_interrupts(&nds->arm9);
         if(SB_LIKELY(!nds->arm9.wait_for_interrupt)){
           nds->arm9.i_cycles=0;
           arm9_exec_instruction(&nds->arm9);

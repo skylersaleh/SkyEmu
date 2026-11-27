@@ -819,8 +819,6 @@ typedef struct gba_t{
   // This array acts as a FIFO to keep track of that. 
   uint16_t pipelined_if[5];
   int active_if_pipe_stages; 
-  int last_cpu_tick;
-  int residual_dma_ticks; 
   bool stop_mode; 
   bool frame_in_progress;
   bool pause_after_frame; 
@@ -902,7 +900,7 @@ static FORCE_INLINE sb_debug_mmio_access_t gba_debug_mmio_access(gba_t*gba, unsi
 }
 
 static void gba_tick_keypad(sb_joy_t*joy, gba_t* gba); 
-static FORCE_INLINE void gba_tick_timers(gba_t* gba);
+static FORCE_INLINE void gba_tick_timers(gba_t* gba, int ticks);
 static void gba_compute_timers(gba_t* gba); 
 static void FORCE_INLINE gba_send_interrupt(gba_t*gba,int delay,int if_bit);
 // Returns a pointer to the data backing the baddr (when not DWORD aligned, it
@@ -1351,6 +1349,7 @@ static FORCE_INLINE void gba_compute_access_cycles(gba_t *gba, uint32_t address,
       }
     }else gba->mem.prefetch_size+=wait; 
   }
+  if(bank>=0x04 &&bank<0x05)gba->cpu.yield = true;
   gba->mem.requests+=wait;
 }
 static FORCE_INLINE uint32_t gba_compute_access_cycles_dma(gba_t *gba, uint32_t address,int request_size/*0: 1B,1: 2B,3: 4B*/){
@@ -1674,7 +1673,7 @@ static bool gba_process_mmio_write(gba_t *gba, uint32_t address, uint32_t data, 
         gba->dma[i].source_addr&=~1;
       }
       gba->dma[i].current_transaction=0;
-      gba->dma[i].startup_delay=2;
+      gba->dma[i].startup_delay=3;
       gba->dma[i].triggered_by_ppu =0; 
     }
     gba->activate_dmas=true;
@@ -2441,7 +2440,7 @@ void gba_store_eeprom_bitstream(gba_t *gba, uint32_t source_address, int offset,
     gba_store16(gba,source_address+(i+offset)*elem_size*dir,data>>(size-i-1)&1);
   }
 }
-static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
+static FORCE_INLINE int gba_tick_dma(gba_t*gba){
   int ticks =0;
   gba->activate_dmas=false;
   for(int i=0;i<4;++i){
@@ -2460,14 +2459,12 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
       bool skip_dma = false;
       if(gba->dma[i].current_transaction==0){
         if(mode==3 && i ==0)continue;
-        if(gba->dma[i].startup_delay>=0){
-          gba->dma[i].startup_delay-=last_tick; 
-          if(gba->dma[i].startup_delay>=0){
-            gba->activate_dmas=true;
-            continue;
-          }
-          gba->dma[i].startup_delay=-1;
+        
+        if(gba->dma[i].startup_delay>0){
+          gba->activate_dmas=true;
+          continue;
         }
+          
         if(dst_addr_ctl==3){        
           gba->dma[i].dest_addr=gba_io_read32(gba,GBA_DMA0DAD+12*i);
         }
@@ -2512,6 +2509,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
         if(gba->dma[i].source_addr>=0x08000000){
             if(gba->mem.prefetch_en)ticks+=gba_compute_access_cycles_dma(gba,gba->dma[i].source_addr,2)<=4;
         }
+        // 1 cycle overhead to transfer control to DMA.
+        if(!gba->last_transaction_dma)ticks+=1;
         gba->last_transaction_dma=true;
         uint32_t cnt = gba_io_read16(gba,GBA_DMA0CNT_L+12*i);
 
@@ -2662,7 +2661,8 @@ static FORCE_INLINE int gba_tick_dma(gba_t*gba, int last_tick){
   gba->activate_dmas|=ticks!=0;
  
   if(gba->last_transaction_dma&&ticks==0){
-    ticks+=2; 
+    //1 cycle to finalize a DMA
+    ticks+=1; 
     gba->last_transaction_dma=false;
   }
 
@@ -2694,8 +2694,8 @@ static FORCE_INLINE void gba_tick_sio(gba_t* gba){
     
   }
 }
-static FORCE_INLINE void gba_tick_timers(gba_t* gba){
-  gba->deferred_timer_ticks+=1;
+static FORCE_INLINE void gba_tick_timers(gba_t* gba,int ticks){
+  gba->deferred_timer_ticks+=ticks;
   if(SB_UNLIKELY(gba->deferred_timer_ticks>=gba->timer_ticks_before_event))gba_compute_timers(gba); 
 }
 static void gba_compute_timers(gba_t* gba){
@@ -3784,22 +3784,19 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
   gba->solar_sensor.value = 0xE7-solar_value*(0xE7-0x32);
   gba->ppu.ghosting_strength = emu->screen_ghosting_strength;
   while(gba->frame_in_progress){
-    int ticks = gba->activate_dmas? gba_tick_dma(gba,gba->last_cpu_tick) :0;
-    if(!ticks&&gba->residual_dma_ticks){ticks=gba->residual_dma_ticks;gba->residual_dma_ticks=0;}
+    int ticks = gba->activate_dmas? gba_tick_dma(gba) :0;
     if(!ticks){
-      gba->cpu.i_cycles=0;
       gba->mem.requests=0;
-      if(!gba->cpu.phased_op_id){
-        uint16_t int_if = gba_io_read16(gba,GBA_IF);
-        if(SB_UNLIKELY(int_if)){
-          int_if &= gba_io_read16(gba,GBA_IE);
-          uint32_t ime = gba_io_read32(gba,GBA_IME);
-          int_if *= SB_BFE(ime,0,1);
-          if(int_if)arm7_process_interrupts(&gba->cpu);
-        }
+      uint16_t int_if = gba_io_read16(gba,GBA_IF);
+      if(SB_UNLIKELY(int_if)){
+        int_if &= gba_io_read16(gba,GBA_IE);
+        uint32_t ime = gba_io_read32(gba,GBA_IME);
+        int_if *= SB_BFE(ime,0,1);
+        if(int_if)arm7_process_interrupts(&gba->cpu);
       }
+      
       arm7_exec_instruction(&gba->cpu);
-      gba->last_cpu_tick=ticks = gba->mem.requests+gba->cpu.i_cycles; 
+      ticks = gba->mem.requests+arm_compute_phase_i_cycles(&gba->cpu);
     }
     gba_tick_sio(gba);
     int ppu_fast_forward = gba->ppu.fast_forward_ticks;
@@ -3813,18 +3810,25 @@ void gba_tick(sb_emu_state_t* emu, gba_t* gba,gba_scratch_t *scratch){
       for(int i=0;i<fast_forward_ticks;++i)gba_tick_interrupts(gba);
     }
     gba->rtc.total_clocks_ticked+=fast_forward_ticks;
-    gba->deferred_timer_ticks+=fast_forward_ticks;
+    gba_tick_timers(gba,fast_forward_ticks);
     gba->ppu.fast_forward_ticks-=fast_forward_ticks;
+    for(int i=0;i<4;++i){
+      gba_dma_t *dma = gba->dma+i;
+      if(dma->startup_delay>0){
+        if(dma->startup_delay<=ticks){
+          dma->startup_delay=0;
+          gba->activate_dmas = true;
+        }else dma->startup_delay-=ticks;
+      }
+    }
     ticks -=fast_forward_ticks>ticks?ticks:fast_forward_ticks;
     double delta_t = ((double)ticks+fast_forward_ticks)/(16*1024*1024);
     gba_tick_audio(gba, emu,delta_t,ticks+fast_forward_ticks);
   
-    bool last_activate_dmas =gba->activate_dmas;
     gba->rtc.total_clocks_ticked+=ticks;
     for(int t = 0;t<ticks;++t){
-      if(gba->activate_dmas&&!last_activate_dmas){gba->residual_dma_ticks=ticks-t-1;gba->last_cpu_tick=t+1;}
       gba_tick_interrupts(gba);
-      gba_tick_timers(gba);
+      gba_tick_timers(gba,1);
       gba_tick_ppu(gba,emu->render_frame);
     }
   } 
