@@ -10,19 +10,10 @@
 
 #include "rc_consoles.h"
 #include "rc_compat.h"
+#include "rhash/rc_hash_internal.h"
 
 #include <ctype.h>
 #include <string.h>
-
-/* internal helper functions in hash.c */
-extern void* rc_file_open(const char* path);
-extern void rc_file_seek(void* file_handle, int64_t offset, int origin);
-extern int64_t rc_file_tell(void* file_handle);
-extern size_t rc_file_read(void* file_handle, void* buffer, int requested_bytes);
-extern void rc_file_close(void* file_handle);
-extern int rc_path_compare_extension(const char* path, const char* ext);
-extern int rc_hash_error(const char* message);
-
 
 static rc_libretro_message_callback rc_libretro_verbose_message_callback = NULL;
 
@@ -34,7 +25,19 @@ typedef struct rc_disallowed_core_settings_t
 {
   const char* library_name;
   const rc_disallowed_setting_t* disallowed_settings;
+  uint32_t system_id;
 } rc_disallowed_core_settings_t;
+
+
+static const rc_disallowed_setting_t _rc_disallowed_beetle_psx_settings[] = {
+  { "beetle_psx_cpu_freq_scale", "<100" },
+  { NULL, NULL }
+};
+
+static const rc_disallowed_setting_t _rc_disallowed_beetle_psx_hw_settings[] = {
+  { "beetle_psx_hw_cpu_freq_scale", "<100" },
+  { NULL, NULL }
+};
 
 static const rc_disallowed_setting_t _rc_disallowed_bsnes_settings[] = {
   { "bsnes_region", "pal" },
@@ -69,13 +72,20 @@ static const rc_disallowed_setting_t _rc_disallowed_ecwolf_settings[] = {
 static const rc_disallowed_setting_t _rc_disallowed_fbneo_settings[] = {
   { "fbneo-allow-patched-romsets", "enabled" },
   { "fbneo-cheat-*", "!,Disabled,0 - Disabled" },
+  { "fbneo-cpu-speed-adjust", "??%" }, /* disallow speeds under 100% */
   { "fbneo-dipswitch-*", "Universe BIOS*" },
   { "fbneo-neogeo-mode", "UNIBIOS" },
   { NULL, NULL }
 };
 
 static const rc_disallowed_setting_t _rc_disallowed_fceumm_settings[] = {
+  { "fceumm_game_genie", "!disabled" },
   { "fceumm_region", ",PAL,Dendy" },
+  { NULL, NULL }
+};
+
+static const rc_disallowed_setting_t _rc_disallowed_flycast_settings[] = {
+  { "reicast_sh4clock", "<200" },
   { NULL, NULL }
 };
 
@@ -88,6 +98,11 @@ static const rc_disallowed_setting_t _rc_disallowed_gpgx_settings[] = {
 static const rc_disallowed_setting_t _rc_disallowed_gpgx_wide_settings[] = {
   { "genesis_plus_gx_wide_lock_on", ",action replay (pro),game genie" },
   { "genesis_plus_gx_wide_region_detect", "pal" },
+  { NULL, NULL }
+};
+
+static const rc_disallowed_setting_t _rc_disallowed_melonds_ds_settings[] = {
+  { "melonds_console_mode", "dsi" },
   { NULL, NULL }
 };
 
@@ -107,6 +122,7 @@ static const rc_disallowed_setting_t _rc_disallowed_neocd_settings[] = {
 };
 
 static const rc_disallowed_setting_t _rc_disallowed_pcsx_rearmed_settings[] = {
+  { "pcsx_rearmed_psxclock", ",!auto,<55" },
   { "pcsx_rearmed_region", "pal" },
   { NULL, NULL }
 };
@@ -139,6 +155,11 @@ static const rc_disallowed_setting_t _rc_disallowed_snes9x_settings[] = {
   { NULL, NULL }
 };
 
+static const rc_disallowed_setting_t _rc_disallowed_swanstation_settings[] = {
+  { "swanstation_CPU_Overclock", "<100" },
+  { NULL, NULL }
+};
+
 static const rc_disallowed_setting_t _rc_disallowed_vice_settings[] = {
   { "vice_autostart", "disabled" }, /* autostart dictates initial load and reset from menu */
   { "vice_reset", "!autostart" }, /* reset dictates behavior when pressing reset button (END) */
@@ -151,41 +172,95 @@ static const rc_disallowed_setting_t _rc_disallowed_virtual_jaguar_settings[] = 
 };
 
 static const rc_disallowed_core_settings_t rc_disallowed_core_settings[] = {
-  { "bsnes-mercury", _rc_disallowed_bsnes_settings },
-  { "cap32", _rc_disallowed_cap32_settings },
-  { "dolphin-emu", _rc_disallowed_dolphin_settings },
-  { "DOSBox-pure", _rc_disallowed_dosbox_pure_settings },
-  { "DuckStation", _rc_disallowed_duckstation_settings },
-  { "ecwolf", _rc_disallowed_ecwolf_settings },
-  { "FCEUmm", _rc_disallowed_fceumm_settings },
-  { "FinalBurn Neo", _rc_disallowed_fbneo_settings },
-  { "Genesis Plus GX", _rc_disallowed_gpgx_settings },
-  { "Genesis Plus GX Wide", _rc_disallowed_gpgx_wide_settings },
-  { "Mesen", _rc_disallowed_mesen_settings },
-  { "Mesen-S", _rc_disallowed_mesen_s_settings },
-  { "NeoCD", _rc_disallowed_neocd_settings },
-  { "PPSSPP", _rc_disallowed_ppsspp_settings },
-  { "PCSX-ReARMed", _rc_disallowed_pcsx_rearmed_settings },
-  { "PicoDrive", _rc_disallowed_picodrive_settings },
-  { "QUASI88", _rc_disallowed_quasi88_settings },
-  { "SMS Plus GX", _rc_disallowed_smsplus_settings },
-  { "Snes9x", _rc_disallowed_snes9x_settings },
-  { "VICE x64", _rc_disallowed_vice_settings },
-  { "Virtual Jaguar", _rc_disallowed_virtual_jaguar_settings },
-  { NULL, NULL }
+  { "Beetle PSX", _rc_disallowed_beetle_psx_settings, 0 },
+  { "Beetle PSX HW", _rc_disallowed_beetle_psx_hw_settings, 0 },
+  { "bsnes-mercury", _rc_disallowed_bsnes_settings, 0 },
+  { "cap32", _rc_disallowed_cap32_settings, 0 },
+  { "dolphin-emu", _rc_disallowed_dolphin_settings, 0 },
+  { "DOSBox-pure", _rc_disallowed_dosbox_pure_settings, 0 },
+  { "DuckStation", _rc_disallowed_duckstation_settings, 0 },
+  { "ecwolf", _rc_disallowed_ecwolf_settings, 0 },
+  { "FCEUmm", _rc_disallowed_fceumm_settings, 0 },
+  { "FinalBurn Neo", _rc_disallowed_fbneo_settings, 0 },
+  { "Flycast", _rc_disallowed_flycast_settings, 0 },
+  { "Genesis Plus GX", _rc_disallowed_gpgx_settings, 0 },
+  { "Genesis Plus GX Wide", _rc_disallowed_gpgx_wide_settings, 0 },
+  { "melonDS", _rc_disallowed_melonds_ds_settings, RC_CONSOLE_NINTENDO_DS },
+  { "Mesen", _rc_disallowed_mesen_settings, 0 },
+  { "Mesen-S", _rc_disallowed_mesen_s_settings, 0 },
+  { "NeoCD", _rc_disallowed_neocd_settings, 0 },
+  { "PPSSPP", _rc_disallowed_ppsspp_settings, 0 },
+  { "PCSX-ReARMed", _rc_disallowed_pcsx_rearmed_settings, 0 },
+  { "PicoDrive", _rc_disallowed_picodrive_settings, 0 },
+  { "QUASI88", _rc_disallowed_quasi88_settings, 0 },
+  { "SMS Plus GX", _rc_disallowed_smsplus_settings, 0 },
+  { "Snes9x", _rc_disallowed_snes9x_settings, 0 },
+  { "SwanStation", _rc_disallowed_swanstation_settings, 0 },
+  { "VICE x64", _rc_disallowed_vice_settings, 0 },
+  { "Virtual Jaguar", _rc_disallowed_virtual_jaguar_settings, 0 },
+  { NULL, NULL, 0 }
 };
 
-static int rc_libretro_string_equal_nocase_wildcard(const char* test, const char* value) {
+static int rc_libretro_string_equal_nocase_wildcard(const char* test, const char* match) {
   char c1, c2;
   while ((c1 = *test++)) {
-    if (tolower(c1) != tolower(c2 = *value++))
+    if (tolower(c1) != tolower(c2 = *match++) && c2 != '?')
       return (c2 == '*');
   }
 
-  return (*value == '\0');
+  return (*match == '\0');
+}
+
+static int rc_libretro_numeric_less_than(const char* test, const char* value) {
+  int test_num = atoi(test);
+  int value_num = atoi(value);
+  return (test_num < value_num);
+}
+
+static int rc_libretro_match_token(const char* val, const char* token, size_t size, int* result) {
+  if (*token == '!') {
+    /* !X => if X is a match, it's explicitly allowed. match with result = false */
+    if (rc_libretro_match_token(val, token + 1, size - 1, result)) {
+      *result = 0;
+      return 1;
+    }
+  }
+
+  if (*token == '<') {
+    /* if val < token, match with result = true */
+    char buffer[128];
+    memcpy(buffer, token + 1, size - 1);
+    buffer[size - 1] = '\0';
+    if (rc_libretro_numeric_less_than(val, buffer)) {
+      *result = 1;
+      return 1;
+    }
+  }
+
+  if (strncmp(token, val, size) == 0 && val[size] == '\0') {
+    /* exact match, match with result = true */
+    *result = 1;
+    return 1;
+  }
+  else {
+    /* check for case insensitive match */
+    char buffer[128];
+    memcpy(buffer, token, size);
+    buffer[size] = '\0';
+    if (rc_libretro_string_equal_nocase_wildcard(val, buffer)) {
+      /* case insensitive match, match with result = true */
+      *result = 1;
+      return 1;
+    }
+  }
+
+  /* no match */
+  return 0;
 }
 
 static int rc_libretro_match_value(const char* val, const char* match) {
+  int result = 0;
+
   /* if value starts with a comma, it's a CSV list of potential matches */
   if (*match == ',') {
     do {
@@ -196,29 +271,23 @@ static int rc_libretro_match_value(const char* val, const char* match) {
         ++match;
 
       size = match - ptr;
-      if (val[size] == '\0') {
-        if (memcmp(ptr, val, size) == 0) {
-          return 1;
-        }
-        else {
-          char buffer[128];
-          memcpy(buffer, ptr, size);
-          buffer[size] = '\0';
-          if (rc_libretro_string_equal_nocase_wildcard(buffer, val))
-            return 1;
-        }
-      }
-    } while (*match == ',');
+      if (rc_libretro_match_token(val, ptr, size, &result))
+        return result;
 
-    return 0;
+    } while (*match == ',');
+  }
+  else {
+    /* a leading exclamation point means the provided value(s) are not forbidden (are allowed) */
+    if (*match == '!')
+      return !rc_libretro_match_value(val, &match[1]);
+
+    /* just a single value, attempt to match it */
+    if (rc_libretro_match_token(val, match, strlen(match), &result))
+      return result;
   }
 
-  /* a leading exclamation point means the provided value(s) are not forbidden (are allowed) */
-  if (*match == '!')
-    return !rc_libretro_match_value(val, &match[1]);
-
-  /* just a single value, attempt to match it */
-  return rc_libretro_string_equal_nocase_wildcard(val, match);
+  /* value did not match filters, assume it's allowed */
+  return 0;
 }
 
 int rc_libretro_is_setting_allowed(const rc_disallowed_setting_t* disallowed_settings, const char* setting, const char* value) {
@@ -230,13 +299,13 @@ int rc_libretro_is_setting_allowed(const rc_disallowed_setting_t* disallowed_set
     key_len = strlen(key);
 
     if (key[key_len - 1] == '*') {
-      if (memcmp(setting, key, key_len - 1) == 0) {
+      if (strncmp(setting, key, key_len - 1) == 0) {
         if (rc_libretro_match_value(value, disallowed_settings->value))
           return 0;
       }
     }
     else {
-      if (memcmp(setting, key, key_len + 1) == 0) {
+      if (strcmp(setting, key) == 0) {
         if (rc_libretro_match_value(value, disallowed_settings->value))
           return 0;
       }
@@ -246,22 +315,24 @@ int rc_libretro_is_setting_allowed(const rc_disallowed_setting_t* disallowed_set
   return 1;
 }
 
-const rc_disallowed_setting_t* rc_libretro_get_disallowed_settings(const char* library_name) {
+const rc_disallowed_setting_t* rc_libretro_get_disallowed_settings_for_system(const char* library_name, uint32_t system_id) {
   const rc_disallowed_core_settings_t* core_filter = rc_disallowed_core_settings;
-  size_t library_name_length;
 
   if (!library_name || !library_name[0])
     return NULL;
 
-  library_name_length = strlen(library_name) + 1;
   while (core_filter->library_name) {
-    if (memcmp(core_filter->library_name, library_name, library_name_length) == 0)
+    if (core_filter->system_id == system_id && strcmp(core_filter->library_name, library_name) == 0)
       return core_filter->disallowed_settings;
 
     ++core_filter;
   }
 
   return NULL;
+}
+
+const rc_disallowed_setting_t* rc_libretro_get_disallowed_settings(const char* library_name) {
+  return rc_libretro_get_disallowed_settings_for_system(library_name, 0);
 }
 
 typedef struct rc_disallowed_core_systems_t
@@ -278,15 +349,13 @@ static const rc_disallowed_core_systems_t rc_disallowed_core_systems[] = {
 
 int rc_libretro_is_system_allowed(const char* library_name, uint32_t console_id) {
   const rc_disallowed_core_systems_t* core_filter = rc_disallowed_core_systems;
-  size_t library_name_length;
   size_t i;
 
   if (!library_name || !library_name[0])
     return 1;
 
-  library_name_length = strlen(library_name) + 1;
   while (core_filter->library_name) {
-    if (memcmp(core_filter->library_name, library_name, library_name_length) == 0) {
+    if (strcmp(core_filter->library_name, library_name) == 0) {
       for (i = 0; i < sizeof(core_filter->disallowed_consoles) / sizeof(core_filter->disallowed_consoles[0]); ++i) {
         if (core_filter->disallowed_consoles[i] == console_id)
           return 0;
@@ -538,7 +607,7 @@ static void rc_libretro_memory_init_from_memory_map(rc_libretro_memory_regions_t
         /* if we need to extract a disconnect bit, the largest block we can read is up to
          * the next time that bit flips */
         /* https://stackoverflow.com/questions/12247186/find-the-lowest-set-bit */
-        disconnect_size = (desc->disconnect & -((int)desc->disconnect));
+        disconnect_size = (uint32_t)(desc->disconnect & -((int)desc->disconnect));
         desc_size = disconnect_size - (real_address & (disconnect_size - 1));
       }
 
@@ -587,12 +656,23 @@ static void rc_libretro_memory_init_from_unmapped_memory(rc_libretro_memory_regi
   uint32_t i, j;
   rc_libretro_core_memory_info_t info;
   size_t offset;
+  int found_aligning_padding = 0;
 
   for (i = 0; i < console_regions->num_regions; ++i) {
     const rc_memory_region_t* console_region = &console_regions->region[i];
     const size_t console_region_size = console_region->end_address - console_region->start_address + 1;
     const uint32_t type = rc_libretro_memory_console_region_to_ram_type(console_region->type);
     uint32_t base_address = 0;
+
+    if (console_region->type == RC_MEMORY_TYPE_UNUSED && console_region_size >= 0x10000 && !found_aligning_padding) {
+      if (console_regions->region[console_regions->num_regions - 1].end_address > 0x01000000) {
+        /* assume anything exposing more than 16MB of regions with at least one 64KB+ UNUSED region
+         * is padding so things align with real addresses. this indicates the memory is disjoint
+         * in the system, so we cannot expect it to be contiguous in the RETRO_SYSTEM_RAM.
+         * stop processing regions now, and just fill the remaining memory map with null filler. */
+        found_aligning_padding = 1;
+      }
+    }
 
     for (j = 0; j <= i; ++j) {
       const rc_memory_region_t* console_region2 = &console_regions->region[j];
@@ -603,7 +683,13 @@ static void rc_libretro_memory_init_from_unmapped_memory(rc_libretro_memory_regi
     }
     offset = console_region->start_address - base_address;
 
-    get_core_memory_info(type, &info);
+    if (!found_aligning_padding) {
+      get_core_memory_info(type, &info);
+    }
+    else {
+      info.data = NULL;
+      info.size = console_region_size;
+    }
 
     if (offset < info.size) {
       info.size -= offset;
@@ -674,7 +760,8 @@ void rc_libretro_memory_destroy(rc_libretro_memory_regions_t* regions) {
 }
 
 void rc_libretro_hash_set_init(struct rc_libretro_hash_set_t* hash_set,
-                               const char* m3u_path, rc_libretro_get_image_path_func get_image_path) {
+                               const char* m3u_path, rc_libretro_get_image_path_func get_image_path,
+                               const rc_hash_filereader_t* file_reader) {
   char image_path[1024];
   char* m3u_contents;
   char* ptr;
@@ -687,22 +774,23 @@ void rc_libretro_hash_set_init(struct rc_libretro_hash_set_t* hash_set,
   if (!rc_path_compare_extension(m3u_path, "m3u"))
     return;
 
-  file_handle = rc_file_open(m3u_path);
+  file_handle = file_reader->open(m3u_path);
   if (!file_handle) {
-    rc_hash_error("Could not open playlist");
+    rc_hash_iterator_t iterator;
+    memset(&iterator, 0, sizeof(iterator));
+    memcpy(&iterator.callbacks, &hash_set->callbacks, sizeof(hash_set->callbacks));
+    rc_hash_iterator_error(&iterator, "Could not open playlist");
     return;
   }
 
-  rc_file_seek(file_handle, 0, SEEK_END);
-  file_len = rc_file_tell(file_handle);
-  rc_file_seek(file_handle, 0, SEEK_SET);
+  file_reader->seek(file_handle, 0, SEEK_END);
+  file_len = file_reader->tell(file_handle);
+  file_reader->seek(file_handle, 0, SEEK_SET);
 
   m3u_contents = (char*)malloc((size_t)file_len + 1);
   if (m3u_contents) {
-    rc_file_read(file_handle, m3u_contents, (int)file_len);
+    file_reader->read(file_handle, m3u_contents, (int)file_len);
     m3u_contents[file_len] = '\0';
-
-    rc_file_close(file_handle);
 
     ptr = m3u_contents;
     do
@@ -736,6 +824,9 @@ void rc_libretro_hash_set_init(struct rc_libretro_hash_set_t* hash_set,
 
     free(m3u_contents);
   }
+
+  if (file_reader->close)
+    file_reader->close(file_handle);
 
   if (hash_set->entries_count > 0) {
     /* at least one save disk was found. make sure the core supports the #SAVEDISK: extension by

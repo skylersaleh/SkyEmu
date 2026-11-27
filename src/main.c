@@ -18,13 +18,15 @@
 
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 #include "rc_client.h"
-#include "rc_consoles.h"
 #include "retro_achievements.h"
 #endif
 
 #include "gba.h"
 #include "nds.h"
 #include "gb.h"
+#ifdef ENABLE_RETRO_ACHIEVEMENTS
+#include "retro_achievements_memory.h"
+#endif
 #include "capstone/include/capstone/capstone.h"
 #include "miniz.h"
 #include "localization.h"
@@ -1907,58 +1909,13 @@ void se_draw_emu_stats(){
 }
 #ifdef ENABLE_RETRO_ACHIEVEMENTS
 uint32_t retro_achievements_read_memory_callback(uint32_t address, uint8_t* buffer, uint32_t num_bytes, rc_client_t* client){
+  if(!buffer||!num_bytes)return 0;
   if(emu_state.system==SYSTEM_GB){
-    if (address >= 0x00D000U && address <= 0x00DFFFU) {
-      // this region is always mapped to WRAM bank 1 (unlike during normal gbc operation)
-      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 1) + address - 0x00D000U];
-      for(int j=0;j<num_bytes;j++){
-        buffer[j]=wram[j];
-      }
-      return num_bytes;
-    } else if (address < 0x010000U) {
-      // these follow the normal gb memory map
-      for(int j=0;j<num_bytes;j++){
-        buffer[j]=sb_read8(&core.gb,address+j);
-      }
-      return num_bytes;
-    } else if (address <= 0x015FFFU) {
-      // 0x10000 - 0x15FFF is WRAM banks 2-7
-      uint8_t* wram = &core.gb.mem.wram[(SB_WRAM_BANK_SIZE * 2) + address - 0x010000U];
-      for(int j=0;j<num_bytes;j++){
-        buffer[j]=wram[j];
-      }
-      return num_bytes;
-    }
-    printf("GB address %08x not found\n",address);
+    return se_rc_read_gb_memory(&core.gb,address,buffer,num_bytes);
   }else if(emu_state.system==SYSTEM_GBA){
-    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_GAMEBOY_ADVANCE);
-    for (int i=0;i<regions->num_regions;i++) {
-      const rc_memory_region_t* region = &regions->region[i];
-      if (address >= 0x048000U && address <= 0x057FFFU) { // handle eeprom region specially
-        for (int j=0;j<num_bytes;j++){
-          buffer[j]=core.gba.mem.cart_backup[address-0x048000U+j];
-        }
-        return num_bytes;
-      } else if (address >= region->start_address && address <= region->end_address) {
-        for(int j=0;j<num_bytes;j++){
-          buffer[j]=gba_read8(&core.gba,region->real_address+(address-region->start_address)+j);
-        }
-        return num_bytes;
-      }
-    }
-    printf("GBA address %08x not found\n",address);
+    return se_rc_read_gba_memory(&core.gba,address,buffer,num_bytes);
   }else if(emu_state.system==SYSTEM_NDS){
-    const rc_memory_regions_t* regions = rc_console_memory_regions(RC_CONSOLE_NINTENDO_DS);
-    for (int i=0;i<regions->num_regions;i++) {
-      const rc_memory_region_t* region = &regions->region[i];
-      if (address >= region->start_address && address <= region->end_address) {
-        for(int j=0;j<num_bytes;j++){
-          buffer[j]=nds9_debug_read8(&core.nds,region->real_address+(address-region->start_address)+j);
-        }
-        return num_bytes;
-      }
-    }
-    printf("NDS address %08x not found\n",address);
+    return se_rc_read_nds_memory(&core.nds,address,buffer,num_bytes);
   }
   return 0;
 }

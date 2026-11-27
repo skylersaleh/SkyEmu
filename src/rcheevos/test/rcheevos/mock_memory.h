@@ -1,7 +1,7 @@
 #ifndef MOCK_MEMORY_H
 #define MOCK_MEMORY_H
 
-typedef struct {
+typedef struct memory_t {
   uint8_t* ram;
   uint32_t size;
 }

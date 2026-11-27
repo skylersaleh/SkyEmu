@@ -1,16 +1,17 @@
 # supported parameters
-#  ARCH          architecture - "x86" or "x64" [detected if not set]
-#  BUILD         use flags for specified upstream consumer - "c89" or "retroarch" [default to "c89"]
-#  DEBUG         if set to anything, builds with DEBUG symbols
-#  HAVE_LUA      if set to anything, includes the lua functionality
-#  HAVE_HASH     if set to 0, excludes the hash functionality
+#  ARCH                  architecture - "x86" or "x64" [detected if not set]
+#  BUILD                 use flags for specified upstream consumer - "c89" or "retroarch" [default to "c89"]
+#  DEBUG                 if set to anything, builds with DEBUG symbols
+#  HAVE_HASH             if set to 0, excludes all hash functionality
+#  HAVE_HASH_ROM         if set to 0, excludes rom hash generation
+#  HAVE_HASH_DISC        if set to 0, excludes disc hash generation
+#  HAVE_HASH_ZIP         if set to 0, excludes zip hash generation
+#  HAVE_HASH_ENCRYPTED   if set to 0, excludes encrypted hash generation
 
 RC_SRC=../src
 RC_CHEEVOS_SRC=$(RC_SRC)/rcheevos
-RC_URL_SRC=$(RC_SRC)/rurl
 RC_HASH_SRC=$(RC_SRC)/rhash
 RC_API_SRC=$(RC_SRC)/rapi
-LUA_SRC=lua/src
 
 # default parameter values
 ifeq ($(ARCH),)
@@ -57,7 +58,6 @@ OBJ=$(RC_SRC)/rc_compat.o \
     $(RC_CHEEVOS_SRC)/trigger.o \
     $(RC_CHEEVOS_SRC)/value.o \
     $(RC_HASH_SRC)/md5.o \
-    $(RC_URL_SRC)/url.o \
     $(RC_API_SRC)/rc_api_common.o \
     $(RC_API_SRC)/rc_api_editor.o \
     $(RC_API_SRC)/rc_api_info.o \
@@ -74,9 +74,9 @@ OBJ=$(RC_SRC)/rc_compat.o \
     rcheevos/test_richpresence.o \
     rcheevos/test_runtime.o \
     rcheevos/test_runtime_progress.o \
+    rcheevos/test_timing.o \
     rcheevos/test_trigger.o \
     rcheevos/test_value.o \
-    rurl/test_url.o \
     rapi/test_rc_api_common.o \
     rapi/test_rc_api_editor.o \
     rapi/test_rc_api_info.o \
@@ -86,7 +86,7 @@ OBJ=$(RC_SRC)/rc_compat.o \
     test.o
 
 # compile flags
-CFLAGS=-Wall -Wno-long-long -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
+CFLAGS=-Wall -Werror -Wno-long-long -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
 INCLUDES=-I../include -I$(RC_CHEEVOS_SRC) -I.
 
 ifeq ($(ARCH), x86)
@@ -110,7 +110,7 @@ endif
 # more strict validation for source files to eliminate warnings/errors in upstream consumers
 # -Wextra includes -Wsign-compare -Wtype-limits -Wimplicit-fallthrough=3 -Wunused-parameter and more
 # -pedantic issues errors when using GNU extensions or other things that are not strictly ISO C
-SRC_CFLAGS=-Wextra -pedantic
+SRC_CFLAGS=-Wextra -Wshadow -pedantic
 # 3DS build (retroarch) doesn't support signed char
 SRC_CFLAGS += -fno-signed-char
 
@@ -124,7 +124,7 @@ else ifeq ($(BUILD), retroarch)
     # Also include the RC_CLIENT_SUPPORTS_EXTERNAL flag to ensure we do the full level of validation on the
     # most code. The c89 build will ensure things still build without the RC_CLIENT_SUPPORTS_EXTERNAL flag.
     CFLAGS += -DRC_CLIENT_SUPPORTS_EXTERNAL
-    OBJ += test_rc_client_external.o
+    OBJ += $(RC_SRC)/rc_client_external.o test_rc_client_external.o
 else
     $(error unknown BUILD "$(BUILD)")
 endif
@@ -134,38 +134,46 @@ ifeq ($(HAVE_HASH), 0)
     EXTRA += |NO_HASH
 else
     CFLAGS += -DRC_CLIENT_SUPPORTS_HASH
-    OBJ += $(RC_HASH_SRC)/aes.o \
-           $(RC_HASH_SRC)/cdreader.o \
-           $(RC_HASH_SRC)/hash.o \
+    OBJ += $(RC_HASH_SRC)/hash.o \
            $(RC_SRC)/rc_libretro.o \
            rhash/data.o \
            rhash/mock_filereader.o \
-           rhash/test_cdreader.o \
            rhash/test_hash.o \
            test_rc_libretro.o
-endif
 
-# LUA support
-ifdef HAVE_LUA
-  OBJ += $(LUA_SRC)/lapi.o $(LUA_SRC)/lcode.o $(LUA_SRC)/lctype.o $(LUA_SRC)/ldebug.o \
-         $(LUA_SRC)/ldo.o $(LUA_SRC)/ldump.o $(LUA_SRC)/lfunc.o $(LUA_SRC)/lgc.o $(LUA_SRC)/llex.o \
-         $(LUA_SRC)/lmem.o $(LUA_SRC)/lobject.o $(LUA_SRC)/lopcodes.o $(LUA_SRC)/lparser.o \
-         $(LUA_SRC)/lstate.o $(LUA_SRC)/lstring.o $(LUA_SRC)/ltable.o $(LUA_SRC)/ltm.o \
-         $(LUA_SRC)/lundump.o $(LUA_SRC)/lvm.o $(LUA_SRC)/lzio.o $(LUA_SRC)/lauxlib.o \
-         $(LUA_SRC)/lbaselib.o $(LUA_SRC)/lbitlib.o $(LUA_SRC)/lcorolib.o $(LUA_SRC)/ldblib.o \
-         $(LUA_SRC)/liolib.o $(LUA_SRC)/lmathlib.o $(LUA_SRC)/loslib.o $(LUA_SRC)/lstrlib.o \
-         $(LUA_SRC)/ltablib.o $(LUA_SRC)/lutf8lib.o $(LUA_SRC)/loadlib.o $(LUA_SRC)/linit.o
+    ifeq ($(HAVE_HASH_ROM), 0)
+        EXTRA += |NO_HASH_ROM
+        CFLAGS += -DRC_HASH_NO_ROM
+    else
+        OBJ += $(RC_HASH_SRC)/hash_rom.o \
+               rhash/test_hash_rom.o
+    endif
 
-  CFLAGS += -DLUA_32BITS
+    ifeq ($(HAVE_HASH_DISC), 0)
+        EXTRA += |NO_HASH_DISC
+        CFLAGS += -DRC_HASH_NO_DISC
+    else
+        OBJ += $(RC_HASH_SRC)/cdreader.o \
+               $(RC_HASH_SRC)/hash_disc.o \
+               rhash/test_cdreader.o \
+               rhash/test_hash_disc.o
+    endif
 
-  ifeq ($(BUILD), c89)
-    CFLAGS += -DLUA_USE_C89
-  endif
+    ifeq ($(HAVE_HASH_ZIP), 0)
+        EXTRA += |NO_HASH_ZIP
+        CFLAGS += -DRC_HASH_NO_ZIP
+    else
+        OBJ += $(RC_HASH_SRC)/hash_zip.o \
+               rhash/test_hash_zip.o
+    endif
 
-  INCLUDES += -I$(LUA_SRC)
-  EXTRA += |HAVE_LUA
-else
-  CFLAGS += -DRC_DISABLE_LUA -Werror
+    ifeq ($(HAVE_HASH_ENCRYPTED), 0)
+        EXTRA += |NO_HASH_ENCRYPTED
+        CFLAGS += -DRC_HASH_NO_ENCRYPTED
+    else
+        OBJ += $(RC_HASH_SRC)/hash_encrypted.o \
+               $(RC_HASH_SRC)/aes.o
+    endif
 endif
 
 # recipes
@@ -182,14 +190,8 @@ $(RC_CHEEVOS_SRC)/%.o: $(RC_CHEEVOS_SRC)/%.c
 $(RC_HASH_SRC)/%.o: $(RC_HASH_SRC)/%.c
 	$(CC) $(CFLAGS) $(SRC_CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(RC_URL_SRC)/%.o: $(RC_URL_SRC)/%.c
-	$(CC) $(CFLAGS) $(SRC_CFLAGS) $(INCLUDES) -c $< -o $@
-
 $(RC_API_SRC)/%.o: $(RC_API_SRC)/%.c
 	$(CC) $(CFLAGS) $(SRC_CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(LUA_SRC)/%.o: $(LUA_SRC)/%.c
-	$(CC) $(CFLAGS) -I$(LUA_SRC) -c $< -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

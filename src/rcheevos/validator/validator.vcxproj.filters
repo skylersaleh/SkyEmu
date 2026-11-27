@@ -4,9 +4,6 @@
     <Filter Include="src">
       <UniqueIdentifier>{125bb837-6e5b-4a66-a607-e2250b31f108}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\lua">
-      <UniqueIdentifier>{36DC4CE2-0F57-46DE-A037-25E4272A7747}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\rcheevos">
       <UniqueIdentifier>{DD82F9EB-1066-40C6-9568-D5C7EEB2A49B}</UniqueIdentifier>
     </Filter>
@@ -41,105 +38,6 @@
     </ClCompile>
     <ClCompile Include="..\src\rcheevos\condset.c">
       <Filter>src\rcheevos</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lapi.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lauxlib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lbaselib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lbitlib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lcode.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lcorolib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lctype.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ldblib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ldebug.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ldo.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ldump.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lfunc.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lgc.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\linit.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\liolib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\llex.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lmathlib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lmem.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\loadlib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lobject.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lopcodes.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\loslib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lparser.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lstate.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lstring.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lstrlib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ltable.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ltablib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\ltm.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lundump.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lutf8lib.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lvm.c">
-      <Filter>src\lua</Filter>
-    </ClCompile>
-    <ClCompile Include="..\test\lua\src\lzio.c">
-      <Filter>src\lua</Filter>
     </ClCompile>
     <ClCompile Include="..\src\rcheevos\richpresence.c">
       <Filter>src\rcheevos</Filter>

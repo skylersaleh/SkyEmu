@@ -38,6 +38,20 @@ static void test_disallowed_setting(const char* library_name, const char* settin
   ASSERT_FALSE(rc_libretro_is_setting_allowed(settings, setting, value));
 }
 
+static void test_system_allowed_setting(const char* library_name, uint32_t system_id, const char* setting, const char* value) {
+  const rc_disallowed_setting_t* settings = rc_libretro_get_disallowed_settings_for_system(library_name, system_id);
+  if (!settings)
+    return;
+
+  ASSERT_TRUE(rc_libretro_is_setting_allowed(settings, setting, value));
+}
+
+static void test_system_disallowed_setting(const char* library_name, uint32_t system_id, const char* setting, const char* value) {
+  const rc_disallowed_setting_t* settings = rc_libretro_get_disallowed_settings_for_system(library_name, system_id);
+  ASSERT_PTR_NOT_NULL(settings);
+  ASSERT_FALSE(rc_libretro_is_setting_allowed(settings, setting, value));
+}
+
 static void test_allowed_system(const char* library_name, uint32_t console_id) {
   ASSERT_TRUE(rc_libretro_is_system_allowed(library_name, console_id));
 }
@@ -49,44 +63,53 @@ static void test_disallowed_system(const char* library_name, uint32_t console_id
 static void test_memory_init_without_regions() {
   rc_libretro_memory_regions_t regions;
   uint32_t avail;
-  uint8_t buffer1[16], buffer2[8], buffer3[4];
+  #define BUFFER1_SIZE 16
+  #define BUFFER2_SIZE 8
+  /* put explicit gap between buffer1 and buffer2 to prevent them from being merged when building regions */
+  uint8_t buffer[BUFFER1_SIZE + 4 + BUFFER2_SIZE];
+  uint8_t* buffer1 = &buffer[0];
+  uint8_t* buffer2 = &buffer[20];
+  uint8_t buffer3[4];
   uint32_t i;
 
-  for (i = 0; i < sizeof(buffer1); ++i)
+  for (i = 0; i < BUFFER1_SIZE; ++i)
       buffer1[i] = i;
-  for (i = 0; i < sizeof(buffer2); ++i)
+  for (i = 0; i < BUFFER2_SIZE; ++i)
       buffer2[i] = i;
   for (i = 0; i < sizeof(buffer3); ++i)
       buffer3[i] = i;
 
   retro_memory_data[RETRO_MEMORY_SYSTEM_RAM] = buffer1;
-  retro_memory_size[RETRO_MEMORY_SYSTEM_RAM] = sizeof(buffer1);
+  retro_memory_size[RETRO_MEMORY_SYSTEM_RAM] = BUFFER1_SIZE;
   retro_memory_data[RETRO_MEMORY_SAVE_RAM] = buffer2;
-  retro_memory_size[RETRO_MEMORY_SAVE_RAM] = sizeof(buffer2);
+  retro_memory_size[RETRO_MEMORY_SAVE_RAM] = BUFFER2_SIZE;
 
   ASSERT_TRUE(rc_libretro_memory_init(&regions, NULL, libretro_get_core_memory_info, RC_CONSOLE_HUBS));
 
   ASSERT_NUM_EQUALS(regions.count, 2);
-  ASSERT_NUM_EQUALS(regions.total_size, sizeof(buffer1) + sizeof(buffer2));
+  ASSERT_NUM_EQUALS(regions.total_size, BUFFER1_SIZE + BUFFER2_SIZE);
   ASSERT_PTR_EQUALS(rc_libretro_memory_find(&regions, 2), &buffer1[2]);
-  ASSERT_PTR_EQUALS(rc_libretro_memory_find(&regions, sizeof(buffer1) + 2), &buffer2[2]);
-  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, sizeof(buffer1) + sizeof(buffer2) + 2));
+  ASSERT_PTR_EQUALS(rc_libretro_memory_find(&regions, BUFFER1_SIZE + 2), &buffer2[2]);
+  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, BUFFER1_SIZE + BUFFER2_SIZE + 2));
 
   ASSERT_PTR_EQUALS(rc_libretro_memory_find_avail(&regions, 2, &avail), &buffer1[2]);
-  ASSERT_NUM_EQUALS(avail, sizeof(buffer1) - 2);
-  ASSERT_PTR_EQUALS(rc_libretro_memory_find_avail(&regions, sizeof(buffer1) - 1, &avail), &buffer1[sizeof(buffer1) - 1]);
+  ASSERT_NUM_EQUALS(avail, BUFFER1_SIZE - 2);
+  ASSERT_PTR_EQUALS(rc_libretro_memory_find_avail(&regions, BUFFER1_SIZE - 1, &avail), &buffer1[BUFFER1_SIZE - 1]);
   ASSERT_NUM_EQUALS(avail, 1);
-  ASSERT_PTR_EQUALS(rc_libretro_memory_find_avail(&regions, sizeof(buffer1) + 2, &avail), &buffer2[2]);
-  ASSERT_NUM_EQUALS(avail, sizeof(buffer2) - 2);
-  ASSERT_PTR_NULL(rc_libretro_memory_find_avail(&regions, sizeof(buffer1) + sizeof(buffer2) + 2, &avail));
+  ASSERT_PTR_EQUALS(rc_libretro_memory_find_avail(&regions, BUFFER1_SIZE + 2, &avail), &buffer2[2]);
+  ASSERT_NUM_EQUALS(avail, BUFFER2_SIZE - 2);
+  ASSERT_PTR_NULL(rc_libretro_memory_find_avail(&regions, BUFFER1_SIZE + BUFFER2_SIZE + 2, &avail));
   ASSERT_NUM_EQUALS(avail, 0);
 
   ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, 2, buffer3, 1), 1);
   ASSERT_TRUE(memcmp(buffer3, &buffer1[2], 1) == 0);
   ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, 7, buffer3, 4), 4);
   ASSERT_TRUE(memcmp(buffer3, &buffer1[7], 4) == 0);
-  ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, sizeof(buffer1) - 2, buffer3, 3), 3); /* read across boundary */
-  ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, sizeof(buffer1) + sizeof(buffer2) + 2, buffer3, 1), 0);
+  ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, BUFFER1_SIZE - 2, buffer3, 3), 3); /* read across boundary */
+  ASSERT_NUM_EQUALS(rc_libretro_memory_read(&regions, BUFFER1_SIZE + BUFFER2_SIZE + 2, buffer3, 1), 0);
+
+  #undef BUFFER2_SIZE
+  #undef BUFFER1_SIZE
 }
 
 static void test_memory_init_without_regions_system_ram_only() {
@@ -234,6 +257,45 @@ static void test_memory_init_from_unmapped_memory_no_ram() {
   ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x00002));
   ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x10002));
   ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x20002));
+}
+
+static void test_memory_init_from_unmapped_memory_ds() {
+  rc_libretro_memory_regions_t regions;
+  uint8_t* buffer1 = (uint8_t*)malloc(0x02000000); /* have to malloc to prevent array-bounds compiler warnings */
+  retro_memory_data[RETRO_MEMORY_SYSTEM_RAM] = buffer1;
+  retro_memory_size[RETRO_MEMORY_SYSTEM_RAM] = 0x02000000;
+  retro_memory_data[RETRO_MEMORY_SAVE_RAM] = NULL;
+  retro_memory_size[RETRO_MEMORY_SAVE_RAM] = 0;
+
+  /* init returns true */
+  ASSERT_TRUE(rc_libretro_memory_init(&regions, NULL, libretro_get_core_memory_info, RC_CONSOLE_NINTENDO_DS));
+
+  /* primary region should be generated, but TCM won't be available */
+  ASSERT_NUM_EQUALS(regions.count, 2);
+  ASSERT_NUM_EQUALS(regions.total_size, 0x1004000);
+  ASSERT_PTR_NOT_NULL(rc_libretro_memory_find(&regions, 0x00000002));
+  ASSERT_PTR_NOT_NULL(rc_libretro_memory_find(&regions, 0x003FFFFF));
+  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x00400000));
+  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x01000002));
+
+  free(buffer1);
+}
+
+static void test_memory_init_from_unmapped_memory_wii() {
+  rc_libretro_memory_regions_t regions;
+  retro_memory_data[RETRO_MEMORY_SYSTEM_RAM] = NULL;
+  retro_memory_size[RETRO_MEMORY_SYSTEM_RAM] = 0;
+  retro_memory_data[RETRO_MEMORY_SAVE_RAM] = NULL;
+  retro_memory_size[RETRO_MEMORY_SAVE_RAM] = 0;
+
+  /* init returns false */
+  ASSERT_FALSE(rc_libretro_memory_init(&regions, NULL, libretro_get_core_memory_info, RC_CONSOLE_WII));
+
+  /* but one null-filled region is still generated */
+  ASSERT_NUM_EQUALS(regions.count, 1);
+  ASSERT_NUM_EQUALS(regions.total_size, 0x14000000);
+  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x00000002));
+  ASSERT_PTR_NULL(rc_libretro_memory_find(&regions, 0x14000002));
 }
 
 static void test_memory_init_from_memory_map() {
@@ -493,9 +555,12 @@ static void test_memory_read()
 
 static void test_hash_set_add_single() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char hash[] = "ABCDEF01234567899876543210ABCDEF";
 
-  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path);
+  get_mock_filereader(&file_reader);
+
+  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.rom"));
   ASSERT_NUM_EQUALS(rc_libretro_hash_set_get_game_id(&hash_set, hash), 0);
@@ -510,10 +575,13 @@ static void test_hash_set_add_single() {
 
 static void test_hash_set_update_single() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char hash[] = "ABCDEF01234567899876543210ABCDEF";
   const char hash2[] = "0123456789ABCDEF0123456789ABCDEF";
 
-  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path);
+  get_mock_filereader(&file_reader);
+
+  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.rom"));
   ASSERT_NUM_EQUALS(rc_libretro_hash_set_get_game_id(&hash_set, hash), 0);
@@ -536,6 +604,7 @@ static void test_hash_set_update_single() {
 
 static void test_hash_set_add_many() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char hash1[] = "ABCDEF01234567899876543210ABCDE1";
   const char hash2[] = "ABCDEF01234567899876543210ABCDE2";
   const char hash3[] = "ABCDEF01234567899876543210ABCDE3";
@@ -545,7 +614,9 @@ static void test_hash_set_add_many() {
   const char hash7[] = "ABCDEF01234567899876543210ABCDE7";
   const char hash8[] = "ABCDEF01234567899876543210ABCDE8";
 
-  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path);
+  get_mock_filereader(&file_reader);
+
+  rc_libretro_hash_set_init(&hash_set, "file.rom", libretro_get_image_path, &file_reader);
 
   rc_libretro_hash_set_add(&hash_set, "file1.rom", 1, hash1);
   rc_libretro_hash_set_add(&hash_set, "file2.rom", 2, hash2);
@@ -578,13 +649,14 @@ static void test_hash_set_add_many() {
 
 static void test_hash_set_m3u_single() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char hash[] = "ABCDEF01234567899876543210ABCDEF";
   const char* m3u_contents = "file.dsk";
 
-  init_mock_filereader();
+  get_mock_filereader(&file_reader);
   mock_file(0, "game.m3u", (uint8_t*)m3u_contents, strlen(m3u_contents));
 
-  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path);
+  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.dsk"));
   ASSERT_NUM_EQUALS(rc_libretro_hash_set_get_game_id(&hash_set, hash), 0);
@@ -595,12 +667,13 @@ static void test_hash_set_m3u_single() {
 
 static void test_hash_set_m3u_savedisk() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char* m3u_contents = "file.dsk\n#SAVEDISK:";
 
-  init_mock_filereader();
+  get_mock_filereader(&file_reader);
   mock_file(0, "game.m3u", (uint8_t*)m3u_contents, strlen(m3u_contents));
 
-  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path);
+  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.dsk"));
   ASSERT_STR_EQUALS(rc_libretro_hash_set_get_hash(&hash_set, "save1.dsk"), "[SAVE DISK]");
@@ -610,12 +683,13 @@ static void test_hash_set_m3u_savedisk() {
 
 static void test_hash_set_m3u_savedisk_volume_label() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char* m3u_contents = "file.dsk\n#SAVEDISK:DSAVE";
 
-  init_mock_filereader();
+  get_mock_filereader(&file_reader);
   mock_file(0, "game.m3u", (uint8_t*)m3u_contents, strlen(m3u_contents));
 
-  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path);
+  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.dsk"));
   ASSERT_STR_EQUALS(rc_libretro_hash_set_get_hash(&hash_set, "save1.dsk"), "[SAVE DISK]");
@@ -625,6 +699,7 @@ static void test_hash_set_m3u_savedisk_volume_label() {
 
 static void test_hash_set_m3u_savedisk_multiple_with_comments_and_whitespace() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char* m3u_contents =
       "#EXTM3U\n"
       "file.dsk\n" /* index 0 */
@@ -640,10 +715,10 @@ static void test_hash_set_m3u_savedisk_multiple_with_comments_and_whitespace() {
       "\r\n"
       "#SAVEDISK:|No Custom Label for Save Disk"; /* index 5 */
 
-  init_mock_filereader();
+  get_mock_filereader(&file_reader);
   mock_file(0, "game.m3u", (uint8_t*)m3u_contents, strlen(m3u_contents));
 
-  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path);
+  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path, &file_reader);
 
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file.dsk"));
   ASSERT_STR_EQUALS(rc_libretro_hash_set_get_hash(&hash_set, "save1.dsk"), "[SAVE DISK]");
@@ -666,12 +741,13 @@ static int libretro_get_image_path_no_core_support(uint32_t index, char* buffer,
 
 static void test_hash_set_m3u_savedisk_no_core_support() {
   rc_libretro_hash_set_t hash_set;
+  rc_hash_filereader_t file_reader;
   const char* m3u_contents = "file1.dsk\n#SAVEDISK:\nfile2.dsk";
 
-  init_mock_filereader();
+  get_mock_filereader(&file_reader);
   mock_file(0, "game.m3u", (uint8_t*)m3u_contents, strlen(m3u_contents));
 
-  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path_no_core_support);
+  rc_libretro_hash_set_init(&hash_set, "game.m3u", libretro_get_image_path_no_core_support, &file_reader);
 
   ASSERT_NUM_EQUALS(hash_set.entries_count, 0);
   ASSERT_PTR_NULL(rc_libretro_hash_set_get_hash(&hash_set, "file1.dsk"));
@@ -689,6 +765,16 @@ void test_rc_libretro(void) {
   TEST_SUITE_BEGIN();
 
   /* rc_libretro_disallowed_settings */
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX", "beetle_psx_cpu_freq_scale", "750%");
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX", "beetle_psx_cpu_freq_scale", "100%(native)");
+  TEST_PARAMS3(test_disallowed_setting, "Beetle PSX", "beetle_psx_cpu_freq_scale", "99%");
+  TEST_PARAMS3(test_disallowed_setting, "Beetle PSX", "beetle_psx_cpu_freq_scale", "50%");
+
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX HW", "beetle_psx_hw_cpu_freq_scale", "750%");
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX HW", "beetle_psx_hw_cpu_freq_scale", "100%(native)");
+  TEST_PARAMS3(test_disallowed_setting, "Beetle PSX HW", "beetle_psx_hw_cpu_freq_scale", "99%");
+  TEST_PARAMS3(test_disallowed_setting, "Beetle PSX HW", "beetle_psx_hw_cpu_freq_scale", "50%");
+
   TEST_PARAMS3(test_allowed_setting,    "bsnes-mercury", "bsnes_region", "Auto");
   TEST_PARAMS3(test_allowed_setting,    "bsnes-mercury", "bsnes_region", "NTSC");
   TEST_PARAMS3(test_disallowed_setting, "bsnes-mercury", "bsnes_region", "PAL");
@@ -714,6 +800,13 @@ void test_rc_libretro(void) {
   TEST_PARAMS3(test_disallowed_setting, "FCEUmm", "fceumm_region", "pal"); /* case insensitive */
   TEST_PARAMS3(test_disallowed_setting, "FCEUmm", "fceumm_region", "Dendy");
   TEST_PARAMS3(test_allowed_setting,    "FCEUmm", "fceumm_palette", "default"); /* setting we don't care about */
+  TEST_PARAMS3(test_allowed_setting,    "FCEUmm", "fceumm_game_genie", "disabled");
+  TEST_PARAMS3(test_disallowed_setting, "FCEUmm", "fceumm_game_genie", "enabled");
+
+  TEST_PARAMS3(test_allowed_setting,    "Flycast", "reicast_sh4clock", "500");
+  TEST_PARAMS3(test_allowed_setting,    "Flycast", "reicast_sh4clock", "200");
+  TEST_PARAMS3(test_disallowed_setting, "Flycast", "reicast_sh4clock", "190");
+  TEST_PARAMS3(test_disallowed_setting, "Flycast", "reicast_sh4clock", "50");
 
   TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-allow-patched-romsets", "disabled");
   TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-allow-patched-romsets", "enabled");
@@ -721,6 +814,16 @@ void test_rc_libretro(void) {
   TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cheat-mvsc-P1_Char_1_Easy_Hyper_Combo", "enabled");
   TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-cheat-mvsc-P1_Char_1_Easy_Hyper_Combo", "0 - Disabled"); /* multi-not value match */
   TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cheat-mvsc-P1_Char_1_Easy_Hyper_Combo", "1 - Enabled");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "25%");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "50%");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "75%");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "90%");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "95%");
+  TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-cpu-speed-adjust", "99%");
+  TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-cpu-speed-adjust", "100%");
+  TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-cpu-speed-adjust", "150%");
+  TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-cpu-speed-adjust", "200%");
+  TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-cpu-speed-adjust", "400%");
   TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-dipswitch-mslug-BIOS", "MVS Asia/Europe ver. 6 (1 slot)");
   TEST_PARAMS3(test_disallowed_setting, "FinalBurn Neo", "fbneo-dipswitch-mslug-BIOS", "Universe BIOS ver. 2.3 (alt)");
   TEST_PARAMS3(test_allowed_setting,    "FinalBurn Neo", "fbneo-neogeo-mode", "DIPSWITCH");
@@ -744,6 +847,10 @@ void test_rc_libretro(void) {
   TEST_PARAMS3(test_disallowed_setting, "Genesis Plus GX Wide", "genesis_plus_gx_wide_region_detect", "PAL");
   TEST_PARAMS3(test_allowed_setting,    "Genesis Plus GX Wide", "genesis_plus_gx_wide_region_detect", "NTSC-J");
 
+  TEST_PARAMS4(test_system_allowed_setting, "melonDS", RC_CONSOLE_NINTENDO_DS, "melonds_console_mode", "DS");
+  TEST_PARAMS4(test_system_disallowed_setting, "melonDS", RC_CONSOLE_NINTENDO_DS, "melonds_console_mode", "DSi");
+  TEST_PARAMS4(test_system_allowed_setting, "melonDS", RC_CONSOLE_NINTENDO_DSI, "melonds_console_mode", "DSi");
+
   TEST_PARAMS3(test_allowed_setting,    "Mesen", "mesen_region", "Auto");
   TEST_PARAMS3(test_allowed_setting,    "Mesen", "mesen_region", "NTSC");
   TEST_PARAMS3(test_disallowed_setting, "Mesen", "mesen_region", "PAL");
@@ -762,7 +869,13 @@ void test_rc_libretro(void) {
   TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_region", "Auto");
   TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_region", "NTSC");
   TEST_PARAMS3(test_disallowed_setting, "PCSX-ReARMed", "pcsx_rearmed_region", "PAL");
-  
+  TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_psxclock", "auto");
+  TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_psxclock", "100");
+  TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_psxclock", "57");
+  TEST_PARAMS3(test_allowed_setting,    "PCSX-ReARMed", "pcsx_rearmed_psxclock", "55");
+  TEST_PARAMS3(test_disallowed_setting, "PCSX-ReARMed", "pcsx_rearmed_psxclock", "54");
+  TEST_PARAMS3(test_disallowed_setting, "PCSX-ReARMed", "pcsx_rearmed_psxclock", "30");
+
   TEST_PARAMS3(test_allowed_setting,    "PicoDrive", "picodrive_region", "Auto");
   TEST_PARAMS3(test_allowed_setting,    "PicoDrive", "picodrive_region", "US");
   TEST_PARAMS3(test_allowed_setting,    "PicoDrive", "picodrive_region", "Japan NTSC");
@@ -792,6 +905,11 @@ void test_rc_libretro(void) {
   TEST_PARAMS3(test_allowed_setting,    "Snes9x", "snes9x_layer_5", "enabled");
   TEST_PARAMS3(test_disallowed_setting, "Snes9x", "snes9x_layer_5", "disabled");
 
+  TEST_PARAMS3(test_allowed_setting,    "SwanStation", "swanstation_CPU_Overclock", "1000");
+  TEST_PARAMS3(test_allowed_setting,    "SwanStation", "swanstation_CPU_Overclock", "100");
+  TEST_PARAMS3(test_disallowed_setting, "SwanStation", "swanstation_CPU_Overclock", "99");
+  TEST_PARAMS3(test_disallowed_setting, "SwanStation", "swanstation_CPU_Overclock", "50");
+
   TEST_PARAMS3(test_allowed_setting,    "VICE x64", "vice_autostart", "enabled");
   TEST_PARAMS3(test_disallowed_setting, "VICE x64", "vice_autostart", "disabled");
   TEST_PARAMS3(test_allowed_setting,    "VICE x64", "vice_autostart", "warp");
@@ -810,6 +928,12 @@ void test_rc_libretro(void) {
   TEST_PARAMS2(test_disallowed_system,  "Mesen-S", RC_CONSOLE_GAMEBOY);
   TEST_PARAMS2(test_disallowed_system,  "Mesen-S", RC_CONSOLE_GAMEBOY_COLOR);
 
+  /* boundary cases, loaded library/setting name may contain a prefix */
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX", "x", "50%");
+  TEST_PARAMS3(test_allowed_setting,    "Beetle PSX Unknown", "beetle_psx_cpu_freq_scale", "50%");
+  TEST_PARAMS3(test_allowed_setting,    "cap32", "cap32_autorun", "x");
+  TEST_PARAMS2(test_allowed_system,     "Mesen-S Unknown", RC_CONSOLE_GAMEBOY);
+
   /* rc_libretro_memory_init */
   TEST(test_memory_init_without_regions);
   TEST(test_memory_init_without_regions_system_ram_only);
@@ -821,6 +945,8 @@ void test_rc_libretro(void) {
   TEST(test_memory_init_from_unmapped_memory_no_save_ram);
   TEST(test_memory_init_from_unmapped_memory_merge_neighbors);
   TEST(test_memory_init_from_unmapped_memory_no_ram);
+  TEST(test_memory_init_from_unmapped_memory_ds);
+  TEST(test_memory_init_from_unmapped_memory_wii);
 
   TEST(test_memory_init_from_memory_map);
   TEST(test_memory_init_from_memory_map_null_filler);

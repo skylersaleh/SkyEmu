@@ -72,7 +72,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos;$(ProjectDir)..\test\lua\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -84,7 +84,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos;$(ProjectDir)..\test\lua\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -98,7 +98,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos;$(ProjectDir)..\test\lua\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -114,7 +114,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos;$(ProjectDir)..\test\lua\src</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src\rcheevos</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -140,39 +140,6 @@
     <ClCompile Include="..\src\rc_compat.c" />
     <ClCompile Include="..\src\rc_util.c" />
     <ClCompile Include="..\src\rhash\md5.c" />
-    <ClCompile Include="..\test\lua\src\lapi.c" />
-    <ClCompile Include="..\test\lua\src\lauxlib.c" />
-    <ClCompile Include="..\test\lua\src\lbaselib.c" />
-    <ClCompile Include="..\test\lua\src\lbitlib.c" />
-    <ClCompile Include="..\test\lua\src\lcode.c" />
-    <ClCompile Include="..\test\lua\src\lcorolib.c" />
-    <ClCompile Include="..\test\lua\src\lctype.c" />
-    <ClCompile Include="..\test\lua\src\ldblib.c" />
-    <ClCompile Include="..\test\lua\src\ldebug.c" />
-    <ClCompile Include="..\test\lua\src\ldo.c" />
-    <ClCompile Include="..\test\lua\src\ldump.c" />
-    <ClCompile Include="..\test\lua\src\lfunc.c" />
-    <ClCompile Include="..\test\lua\src\lgc.c" />
-    <ClCompile Include="..\test\lua\src\linit.c" />
-    <ClCompile Include="..\test\lua\src\liolib.c" />
-    <ClCompile Include="..\test\lua\src\llex.c" />
-    <ClCompile Include="..\test\lua\src\lmathlib.c" />
-    <ClCompile Include="..\test\lua\src\lmem.c" />
-    <ClCompile Include="..\test\lua\src\loadlib.c" />
-    <ClCompile Include="..\test\lua\src\lobject.c" />
-    <ClCompile Include="..\test\lua\src\lopcodes.c" />
-    <ClCompile Include="..\test\lua\src\loslib.c" />
-    <ClCompile Include="..\test\lua\src\lparser.c" />
-    <ClCompile Include="..\test\lua\src\lstate.c" />
-    <ClCompile Include="..\test\lua\src\lstring.c" />
-    <ClCompile Include="..\test\lua\src\lstrlib.c" />
-    <ClCompile Include="..\test\lua\src\ltable.c" />
-    <ClCompile Include="..\test\lua\src\ltablib.c" />
-    <ClCompile Include="..\test\lua\src\ltm.c" />
-    <ClCompile Include="..\test\lua\src\lundump.c" />
-    <ClCompile Include="..\test\lua\src\lutf8lib.c" />
-    <ClCompile Include="..\test\lua\src\lvm.c" />
-    <ClCompile Include="..\test\lua\src\lzio.c" />
     <ClCompile Include="validator.c" />
   </ItemGroup>
   <ItemGroup>

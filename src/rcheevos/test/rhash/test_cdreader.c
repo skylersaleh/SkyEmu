@@ -1,28 +1,12 @@
 #include "rc_hash.h"
 
 #include "../rc_compat.h"
+#include "../src/rhash/rc_hash_internal.h"
 #include "../test_framework.h"
 #include "data.h"
 #include "mock_filereader.h"
 
 #include <stdlib.h>
-
-extern struct rc_hash_cdreader* cdreader;
-
-/* as defined in cdreader.c */
-typedef struct cdrom_t
-{
-  void* file_handle;
-  int sector_size;
-  int sector_header_size;
-  int raw_data_size;
-  int64_t file_track_offset;
-  int track_first_sector;
-  int track_pregap_sectors;
-#ifndef NDEBUG
-  uint32_t track_id;
-#endif
-} cdrom_t;
 
 static const uint8_t sync_pattern[] = {
   0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00
@@ -115,14 +99,33 @@ static char gdi_many_tracks[] =
   "25 527383 0 2352 track25.raw 0\n"
   "26 548106 4 2352 track26.bin 0\n";
 
+static void initialize_iterator(rc_hash_iterator_t* iterator)
+{
+  memset(iterator, 0, sizeof(*iterator));
+  rc_hash_get_default_cdreader(&iterator->callbacks.cdreader);
+  get_mock_filereader(&iterator->callbacks.filereader);
+}
+
+static rc_hash_cdrom_track_t* open_track(rc_hash_iterator_t* iterator, const char* path, uint32_t index)
+{
+  return (rc_hash_cdrom_track_t*)iterator->callbacks.cdreader.open_track_iterator(path, index, iterator);
+}
+
+static void close_track(rc_hash_iterator_t* iterator, rc_hash_cdrom_track_t* track_handle)
+{
+  iterator->callbacks.cdreader.close_track(track_handle);
+}
+
 static void test_open_cue_track_2()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 2);
+  track_handle = open_track(&iterator, "game.cue", 2);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -132,17 +135,19 @@ static void test_open_cue_track_2()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_12()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 12);
+  track_handle = open_track(&iterator, "game.cue", 12);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -152,39 +157,45 @@ static void test_open_cue_track_12()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_14()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
   /* only 13 tracks */
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 14);
+  track_handle = open_track(&iterator, "game.cue", 14);
   ASSERT_PTR_NULL(track_handle);
 }
 
 static void test_open_cue_track_missing_bin()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 2);
+  track_handle = open_track(&iterator, "game.cue", 2);
   ASSERT_PTR_NULL(track_handle);
 }
 
 static void test_open_gdi_track_3()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.gdi", gdi_three_tracks);
   mock_empty_file(1, "track03.bin", 1185760800);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.gdi", 3);
+  track_handle = open_track(&iterator, "game.gdi", 3);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -195,23 +206,25 @@ static void test_open_gdi_track_3()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_gdi_track_3_quoted()
 {
   const char gdi_contents[] =
-	"3\n"
-	"1 0 4 2352 \"track 01.bin\" 0\n"
-	"2 600 0 2352 \"track 02.raw\" 0\n"
-	"3 45000 4 2352 \"track 03.bin\" 0";
+	  "3\n"
+	  "1 0 4 2352 \"track 01.bin\" 0\n"
+	  "2 600 0 2352 \"track 02.raw\" 0\n"
+	  "3 45000 4 2352 \"track 03.bin\" 0";
 
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.gdi", gdi_contents);
   mock_empty_file(1, "track 03.bin", 1185760800);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.gdi", 3);
+  track_handle = open_track(&iterator, "game.gdi", 3);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -222,23 +235,25 @@ static void test_open_gdi_track_3_quoted()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_gdi_track_3_extra_whitespace()
 {
   const char gdi_contents[] =
-	"3\n\n"
-	"  1       0   4   2352   \"track 01.bin\"   0\n\n"
-	"  2     600   0   2352   \"track 02.raw\"   0\n\n"
-	"  3   45000   4   2352   \"track 03.bin\"   0\n\n";
+	  "3\n\n"
+	  "  1       0   4   2352   \"track 01.bin\"   0\n\n"
+	  "  2     600   0   2352   \"track 02.raw\"   0\n\n"
+	  "  3   45000   4   2352   \"track 03.bin\"   0\n\n";
 
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.gdi", gdi_contents);
   mock_empty_file(1, "track 03.bin", 1185760800);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.gdi", 3);
+  track_handle = open_track(&iterator, "game.gdi", 3);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -248,17 +263,19 @@ static void test_open_gdi_track_3_extra_whitespace()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_gdi_track_last()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.gdi", gdi_many_tracks);
   mock_empty_file(1, "track26.bin", 2457600);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.gdi", RC_HASH_CDTRACK_LAST);
+  track_handle = open_track(&iterator, "game.gdi", RC_HASH_CDTRACK_LAST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -268,17 +285,19 @@ static void test_open_gdi_track_last()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_LARGEST);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_LARGEST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -288,18 +307,20 @@ static void test_open_cue_track_largest_data()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_multiple_bin()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_multiple_bin_multiple_data);
   mock_empty_file(1, "track2.bin", 406423248);
   mock_empty_file(2, "track3.bin", 11553024);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_LARGEST);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_LARGEST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -310,18 +331,20 @@ static void test_open_cue_track_largest_data_multiple_bin()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_backwards_compatibility()
 {
-  cdrom_t* track_handle;
-	
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
   /* before defining the enum, 0 meant largest */
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 0);
+  track_handle = open_track(&iterator, "game.cue", 0);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -331,12 +354,11 @@ static void test_open_cue_track_largest_data_backwards_compatibility()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_last_track()
 {
-  cdrom_t* track_handle;
   const char cue[] =
 	  "FILE \"game.bin\" BINARY\n"
 	  "  TRACK 01 AUDIO\n"
@@ -351,10 +373,14 @@ static void test_open_cue_track_largest_data_last_track()
 	  "  TRACK 05 MODE1/2352\n"
 	  "    INDEX 01 13:48:56\n";
 
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.cue", cue);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_LARGEST);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_LARGEST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -363,12 +389,11 @@ static void test_open_cue_track_largest_data_last_track()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_index0s()
 {
-  cdrom_t* track_handle;
   const char cue[] =
 	  "FILE \"game.bin\" BINARY\n"
 	  "  TRACK 01 AUDIO\n"
@@ -380,10 +405,14 @@ static void test_open_cue_track_largest_data_index0s()
 	  "    INDEX 00 01:19:52\n"
 	  "    INDEX 01 01:21:52\n";
 
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.cue", cue);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_LARGEST);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_LARGEST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -393,12 +422,11 @@ static void test_open_cue_track_largest_data_index0s()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_index2()
 {
-  cdrom_t* track_handle;
   const char cue[] =
 	  "FILE \"game.bin\" BINARY\n"
 	  "  TRACK 01 AUDIO\n"
@@ -408,10 +436,14 @@ static void test_open_cue_track_largest_data_index2()
 	  "    INDEX 01 00:02:00\n"
 	  "    INDEX 02 00:08:64\n";
 
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.cue", cue);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_LARGEST);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_LARGEST);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -421,20 +453,22 @@ static void test_open_cue_track_largest_data_index2()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_multiple_bins()
 {
-  cdrom_t* track_handle;
-	
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.cue", cue_multiple_bin_multiple_data);
   mock_empty_file(1, "track1.bin", 4132464);
   mock_empty_file(2, "track2.bin", 30080102);
   mock_empty_file(3, "track3.bin", 40343152);
   mock_empty_file(4, "track4.bin", 47277552);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 0);
+  track_handle = open_track(&iterator, "game.cue", 0);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -444,7 +478,7 @@ static void test_open_cue_track_largest_data_multiple_bins()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_open_cue_track_largest_data_only_audio()
@@ -464,7 +498,10 @@ static void test_open_cue_track_largest_data_only_audio()
     "FILE \"track4.bin\" BINARY\n"
     "  TRACK 04 AUDIO\n"
     "    INDEX 00 00:00:00\n";
-  cdrom_t* track_handle;
+
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue);
   mock_empty_file(1, "track1.bin", 4132464);
@@ -472,18 +509,20 @@ static void test_open_cue_track_largest_data_only_audio()
   mock_empty_file(3, "track3.bin", 40343152);
   mock_empty_file(4, "track4.bin", 47277552);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 0);
+  track_handle = open_track(&iterator, "game.cue", 0);
   ASSERT_PTR_NULL(track_handle);
 }
 
 static void test_open_cue_track_first_data()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_bin_multiple_data);
   mock_empty_file(1, "game.bin", 718310208);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", RC_HASH_CDTRACK_FIRST_DATA);
+  track_handle = open_track(&iterator, "game.cue", RC_HASH_CDTRACK_FIRST_DATA);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -493,15 +532,19 @@ static void test_open_cue_track_first_data()
   ASSERT_NUM_EQUALS(track_handle->sector_size, 2352);
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_determine_sector_size_sync(int sector_size)
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+
   const size_t image_size = (size_t)sector_size * 32;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_track);
   mock_file(1, "game.bin", image, image_size);
@@ -509,7 +552,7 @@ static void test_determine_sector_size_sync(int sector_size)
   memset(image, 0, image_size);
   memcpy(&image[sector_size * 16], sync_pattern, sizeof(sync_pattern));
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -519,16 +562,20 @@ static void test_determine_sector_size_sync(int sector_size)
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
 static void test_determine_sector_size_sync_primary_volume_descriptor(int sector_size)
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+
   const size_t image_size = (size_t)sector_size * 32;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_track);
   mock_file(1, "game.bin", image, image_size);
@@ -537,7 +584,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor(int sector
   memcpy(&image[sector_size * 16], sync_pattern, sizeof(sync_pattern));
   memcpy(&image[sector_size * 16 + 25], "CD001", 5);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -547,7 +594,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor(int sector
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 24);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
@@ -559,10 +606,14 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0(int
     "    INDEX 00 00:00:00\n"
     "    INDEX 01 00:02:00\n";
 
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+
   const size_t image_size = (size_t)sector_size * 200;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue);
   mock_file(1, "game.bin", image, image_size);
@@ -575,7 +626,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0(int
   memcpy(&image[sector_size * (150 + 16)], sync_pattern, sizeof(sync_pattern));
   memcpy(&image[sector_size * (150 + 16) + 25], "CD001", 5);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -586,17 +637,20 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0(int
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 24);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
 static void test_determine_sector_size_sync_2048()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
   const int sector_size = 2048;
   const size_t image_size = (size_t)sector_size * 32;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_track);
   mock_file(1, "game.bin", image, image_size);
@@ -604,7 +658,7 @@ static void test_determine_sector_size_sync_2048()
   memset(image, 0, image_size);
 
   /* 2048 byte sectors don't have a sync pattern - will use mode specified in header */
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -614,17 +668,20 @@ static void test_determine_sector_size_sync_2048()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 24);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
 static void test_determine_sector_size_sync_primary_volume_descriptor_2048()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
   const int sector_size = 2048;
   const size_t image_size = (size_t)sector_size * 32;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_track);
   mock_file(1, "game.bin", image, image_size);
@@ -632,7 +689,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_2048()
   memset(image, 0, image_size);
   memcpy(&image[sector_size * 16 + 1], "CD001", 5);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -642,7 +699,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_2048()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 0);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
@@ -654,11 +711,15 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0_204
     "    INDEX 00 00:00:00\n"
     "    INDEX 01 00:02:00\n";
 
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+
   const int sector_size = 2048;
   const size_t image_size = (size_t)sector_size * 200;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue);
   mock_file(1, "game.bin", image, image_size);
@@ -670,7 +731,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0_204
   memset(image, 0, image_size);
   memcpy(&image[sector_size * (150 + 16) + 1], "CD001", 5);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -681,7 +742,7 @@ static void test_determine_sector_size_sync_primary_volume_descriptor_index0_204
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 0);
   ASSERT_NUM_EQUALS(track_handle->raw_data_size, 2048);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
@@ -693,20 +754,24 @@ static void test_absolute_sector_to_track_sector_cue_pregap()
     "    INDEX 00 00:00:00\n"    /* 150 pre-gap sectors */
     "    INDEX 01 00:02:00\n"    /* 350 sectors of data */
     "FILE \"game2.bin\" BINARY\n"
-	"  TRACK 02 MODE2/2352\n"
-	"    INDEX 00 00:00:00\n"    /* 150 pre-gap sectors */
-	"    INDEX 01 00:02:00\n";
+	  "  TRACK 02 MODE2/2352\n"
+	  "    INDEX 00 00:00:00\n"    /* 150 pre-gap sectors */
+	  "    INDEX 01 00:02:00\n";
 
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+
   const size_t image_size = (size_t)60 * 200;
   uint8_t* image = (uint8_t*)malloc(image_size);
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue);
   mock_file(1, "game1.bin", NULL, (size_t)500 * 2352);
   mock_file(2, "game2.bin", image, image_size);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 2);
+  track_handle = open_track(&iterator, "game.cue", 2);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -717,38 +782,44 @@ static void test_absolute_sector_to_track_sector_cue_pregap()
   ASSERT_NUM_EQUALS(track_handle->track_pregap_sectors, 150);
 
   /* data for second track starts at sector 650 */
-  ASSERT_NUM_EQUALS(cdreader->first_track_sector(track_handle), 650);
+  ASSERT_NUM_EQUALS(iterator.callbacks.cdreader.first_track_sector(track_handle), 650);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 
 static void test_absolute_sector_to_track_sector_gdi()
 {
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
+  initialize_iterator(&iterator);
+
   mock_file_text(0, "game.gdi", gdi_many_tracks);
   mock_file(1, "track26.bin", NULL, 1234567);
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.gdi", 26);
+  track_handle = open_track(&iterator, "game.gdi", 26);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
   ASSERT_STR_EQUALS(get_mock_filename(track_handle->file_handle), "track26.bin");
   ASSERT_NUM_EQUALS(track_handle->track_first_sector, 548106);
 
-  ASSERT_NUM_EQUALS(cdreader->first_track_sector(track_handle), 548106);
+  ASSERT_NUM_EQUALS(iterator.callbacks.cdreader.first_track_sector(track_handle), 548106);
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
 }
 
 static void test_read_sector()
 {
   char buffer[4096];
-  cdrom_t* track_handle;
+  rc_hash_cdrom_track_t* track_handle;
+  rc_hash_iterator_t iterator;
   const size_t image_size = (size_t)2352 * 32;
   uint8_t* image = (uint8_t*)malloc(image_size);
   int offset, i;
   ASSERT_PTR_NOT_NULL(image);
+
+  initialize_iterator(&iterator);
 
   mock_file_text(0, "game.cue", cue_single_track);
   mock_file(1, "game.bin", image, image_size);
@@ -770,7 +841,7 @@ static void test_read_sector()
       offset += (2352 - 2048);
   }
 
-  track_handle = (cdrom_t*)cdreader->open_track("game.cue", 1);
+  track_handle = open_track(&iterator, "game.cue", 1);
   ASSERT_PTR_NOT_NULL(track_handle);
 
   ASSERT_PTR_NOT_NULL(track_handle->file_handle);
@@ -780,7 +851,7 @@ static void test_read_sector()
   ASSERT_NUM_EQUALS(track_handle->sector_header_size, 16);
 
   /* read across multiple sectors */
-  ASSERT_NUM_EQUALS(cdreader->read_sector(track_handle, 1, buffer, sizeof(buffer)), 4096);
+  ASSERT_NUM_EQUALS(iterator.callbacks.cdreader.read_sector(track_handle, 1, buffer, sizeof(buffer)), 4096);
 
   ASSERT_NUM_EQUALS(buffer[0], 'A');
   ASSERT_NUM_EQUALS(buffer[255], 'A');
@@ -790,12 +861,12 @@ static void test_read_sector()
   ASSERT_NUM_EQUALS(buffer[4095], 'P');
 
   /* read of partial sector */
-  ASSERT_NUM_EQUALS(cdreader->read_sector(track_handle, 2, buffer, 10), 10);
+  ASSERT_NUM_EQUALS(iterator.callbacks.cdreader.read_sector(track_handle, 2, buffer, 10), 10);
   ASSERT_NUM_EQUALS(buffer[0], 'I');
   ASSERT_NUM_EQUALS(buffer[9], 'I');
   ASSERT_NUM_EQUALS(buffer[10], 'A');
 
-  cdreader->close_track(track_handle);
+  close_track(&iterator, track_handle);
   free(image);
 }
 

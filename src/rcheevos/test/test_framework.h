@@ -176,12 +176,17 @@ extern const char* test_framework_basename(const char* path);
   } \
 }
 
-/* TODO: figure out some way to detect c89 so we can use int64_t and %lld on non-c89 builds */
+/* NOTE: C89 does not support %lld, so this check will silently truncate to 32-bit. */
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(_MSC_VER)
+#define ASSERT_NUM64_EQUALS(value, expected)       ASSERT_COMPARE(value, ==, expected, long long int, "%lld")
+#else
 #define ASSERT_NUM64_EQUALS(value, expected)       ASSERT_COMPARE(value, ==, expected, int, "%d")
+#endif
 
 #define ASSERT_TRUE(value)                         ASSERT_NUM_NOT_EQUALS(value, 0)
 #define ASSERT_FALSE(value)                        ASSERT_NUM_EQUALS(value, 0)
 
+#define ASSERT_TIMET_EQUALS(value, expected)       ASSERT_NUM64_EQUALS(value, expected)
 #define ASSERT_UNUM_EQUALS(value, expected)        ASSERT_COMPARE(value, ==, expected, unsigned, "%u")
 #define ASSERT_DBL_EQUALS(value, expected)         ASSERT_COMPARE(value, ==, expected, double, "%g")
 #define ASSERT_PTR_EQUALS(value, expected)         ASSERT_COMPARE(value, ==, expected, void*, "%p")

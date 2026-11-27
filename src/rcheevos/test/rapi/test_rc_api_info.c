@@ -86,7 +86,7 @@ static void test_process_fetch_achievement_info_response() {
   rc_api_achievement_awarded_entry_t* entry;
   const char* server_response = "{\"Success\":true,\"AchievementID\":1234,\"Response\":{"
 	  "\"NumEarned\":17,\"GameID\":2345,\"TotalPlayers\":25,"
-	  "\"RecentWinner\":[{\"User\":\"Player1\",\"DateAwarded\":1615654895},"
+	  "\"RecentWinner\":[{\"User\":\"Player1\",\"DateAwarded\":1615654895,\"AvatarUrl\":\"http://host/UserPic/PLAYER1.png\"},"
                         "{\"User\":\"Player2\",\"DateAwarded\":1600604303}]"
 	  "}}";
 
@@ -103,10 +103,12 @@ static void test_process_fetch_achievement_info_response() {
 
   entry = &fetch_achievement_info_response.recently_awarded[0];
   ASSERT_STR_EQUALS(entry->username, "Player1");
-  ASSERT_NUM_EQUALS(entry->awarded, 1615654895);
+  ASSERT_TIMET_EQUALS(entry->awarded, 1615654895);
+  ASSERT_STR_EQUALS(entry->avatar_url, "http://host/UserPic/PLAYER1.png");
   entry = &fetch_achievement_info_response.recently_awarded[1];
   ASSERT_STR_EQUALS(entry->username, "Player2");
-  ASSERT_NUM_EQUALS(entry->awarded, 1600604303);
+  ASSERT_TIMET_EQUALS(entry->awarded, 1600604303);
+  ASSERT_STR_EQUALS(entry->avatar_url, "https://media.retroachievements.org/UserPic/Player2.png");
 
   rc_api_destroy_fetch_achievement_info_response(&fetch_achievement_info_response);
 }
@@ -185,8 +187,8 @@ static void test_process_fetch_leaderboard_info_response() {
   const char* server_response = "{\"Success\":true,\"LeaderboardData\":{\"LBID\":1234,\"GameID\":2345,"
 	  "\"LowerIsBetter\":1,\"LBTitle\":\"Title\",\"LBDesc\":\"Description\",\"LBFormat\":\"TIME\","
 	  "\"LBMem\":\"STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004\",\"LBAuthor\":null,"
-	  "\"LBCreated\":\"2013-10-20 22:12:21\",\"LBUpdated\":\"2021-06-14 08:18:19\","
-	  "\"Entries\":[{\"User\":\"Player1\",\"Score\":8765,\"Rank\":1,\"Index\":5,\"DateSubmitted\":1615654895},"
+	  "\"LBCreated\":\"2013-10-20 22:12:21\",\"LBUpdated\":\"2021-06-14 08:18:19\",\"TotalEntries\":12,"
+	  "\"Entries\":[{\"User\":\"Player1\",\"Score\":8765,\"Rank\":1,\"Index\":5,\"DateSubmitted\":1615654895,\"AvatarUrl\":\"http://host/UserPic/PLAYER1.png\"},"
                    "{\"User\":\"Player2\",\"Score\":7654,\"Rank\":2,\"Index\":6,\"DateSubmitted\":1600604303}]"
 	  "}}";
 
@@ -203,6 +205,7 @@ static void test_process_fetch_leaderboard_info_response() {
   ASSERT_STR_EQUALS(fetch_leaderboard_info_response.definition, "STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004");
   ASSERT_PTR_NULL(fetch_leaderboard_info_response.author);
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.num_entries, 2);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.total_entries, 12);
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.created, 1382307141);
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.updated, 1623658699);
 
@@ -211,13 +214,15 @@ static void test_process_fetch_leaderboard_info_response() {
   ASSERT_NUM_EQUALS(entry->index, 5);
   ASSERT_STR_EQUALS(entry->username, "Player1");
   ASSERT_NUM_EQUALS(entry->score, 8765);
-  ASSERT_NUM_EQUALS(entry->submitted, 1615654895);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1615654895);
+  ASSERT_STR_EQUALS(entry->avatar_url, "http://host/UserPic/PLAYER1.png");
   entry = &fetch_leaderboard_info_response.entries[1];
   ASSERT_NUM_EQUALS(entry->rank, 2);
   ASSERT_NUM_EQUALS(entry->index, 6);
   ASSERT_STR_EQUALS(entry->username, "Player2");
   ASSERT_NUM_EQUALS(entry->score, 7654);
-  ASSERT_NUM_EQUALS(entry->submitted, 1600604303);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1600604303);
+  ASSERT_STR_EQUALS(entry->avatar_url, "https://media.retroachievements.org/UserPic/Player2.png");
 
   rc_api_destroy_fetch_leaderboard_info_response(&fetch_leaderboard_info_response);
 }
@@ -228,7 +233,7 @@ static void test_process_fetch_leaderboard_info_response2() {
   const char* server_response = "{\"Success\":true,\"LeaderboardData\":{\"LBID\":9999,\"GameID\":2222,"
 	  "\"LowerIsBetter\":0,\"LBTitle\":\"Title2\",\"LBDesc\":\"Description2\",\"LBFormat\":\"SCORE\","
 	  "\"LBMem\":\"STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004\",\"LBAuthor\":\"AuthorName\","
-	  "\"LBCreated\":\"2021-06-18 15:32:16\",\"LBUpdated\":\"2021-06-18 15:32:16\","
+	  "\"LBCreated\":\"2021-06-18 15:32:16\",\"LBUpdated\":\"2021-06-18 15:32:16\",\"TotalEntries\":12,"
 	  "\"Entries\":[{\"User\":\"Player1\",\"Score\":1013580,\"Rank\":1,\"Index\":5,\"DateSubmitted\":1624055310},"
                    "{\"User\":\"Player2\",\"Score\":133340,\"Rank\":1,\"Index\":6,\"DateSubmitted\":1624166772}]"
 	  "}}";
@@ -246,6 +251,7 @@ static void test_process_fetch_leaderboard_info_response2() {
   ASSERT_STR_EQUALS(fetch_leaderboard_info_response.definition, "STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004");
   ASSERT_STR_EQUALS(fetch_leaderboard_info_response.author, "AuthorName");
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.num_entries, 2);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.total_entries, 12);
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.created, 1624030336);
   ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.updated, 1624030336);
 
@@ -254,13 +260,57 @@ static void test_process_fetch_leaderboard_info_response2() {
   ASSERT_NUM_EQUALS(entry->index, 5);
   ASSERT_STR_EQUALS(entry->username, "Player1");
   ASSERT_NUM_EQUALS(entry->score, 1013580);
-  ASSERT_NUM_EQUALS(entry->submitted, 1624055310);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1624055310);
   entry = &fetch_leaderboard_info_response.entries[1];
   ASSERT_NUM_EQUALS(entry->rank, 1);
   ASSERT_NUM_EQUALS(entry->index, 6);
   ASSERT_STR_EQUALS(entry->username, "Player2");
   ASSERT_NUM_EQUALS(entry->score, 133340);
-  ASSERT_NUM_EQUALS(entry->submitted, 1624166772);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1624166772);
+
+  rc_api_destroy_fetch_leaderboard_info_response(&fetch_leaderboard_info_response);
+}
+
+static void test_process_fetch_leaderboard_info_response_iso8601() {
+  rc_api_fetch_leaderboard_info_response_t fetch_leaderboard_info_response;
+  rc_api_lboard_info_entry_t* entry;
+  const char* server_response = "{\"Success\":true,\"LeaderboardData\":{\"LBID\":1234,\"GameID\":2345,"
+    "\"LowerIsBetter\":1,\"LBTitle\":\"Title\",\"LBDesc\":\"Description\",\"LBFormat\":\"TIME\","
+    "\"LBMem\":\"STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004\",\"LBAuthor\":null,"
+    "\"LBCreated\":\"2013-10-20T22:12:21.000000Z\",\"LBUpdated\":\"2021-06-14T08:18:19.000000Z\",\"TotalEntries\":12,"
+    "\"Entries\":[{\"User\":\"Player1\",\"Score\":8765,\"Rank\":1,\"Index\":5,\"DateSubmitted\":1615654895},"
+    "{\"User\":\"Player2\",\"Score\":7654,\"Rank\":2,\"Index\":6,\"DateSubmitted\":1600604303}]"
+    "}}";
+
+  memset(&fetch_leaderboard_info_response, 0, sizeof(fetch_leaderboard_info_response));
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_leaderboard_info_response(&fetch_leaderboard_info_response, server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_leaderboard_info_response.response.error_message);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.id, 1234);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.game_id, 2345);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.lower_is_better, 1);
+  ASSERT_STR_EQUALS(fetch_leaderboard_info_response.title, "Title");
+  ASSERT_STR_EQUALS(fetch_leaderboard_info_response.description, "Description");
+  ASSERT_STR_EQUALS(fetch_leaderboard_info_response.definition, "STA:0xH0000=1::CAN:1=1::SUB:0xH0000=2::VAL:b0x 0004");
+  ASSERT_PTR_NULL(fetch_leaderboard_info_response.author);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.num_entries, 2);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.total_entries, 12);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.created, 1382307141);
+  ASSERT_NUM_EQUALS(fetch_leaderboard_info_response.updated, 1623658699);
+
+  entry = &fetch_leaderboard_info_response.entries[0];
+  ASSERT_NUM_EQUALS(entry->rank, 1);
+  ASSERT_NUM_EQUALS(entry->index, 5);
+  ASSERT_STR_EQUALS(entry->username, "Player1");
+  ASSERT_NUM_EQUALS(entry->score, 8765);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1615654895);
+  entry = &fetch_leaderboard_info_response.entries[1];
+  ASSERT_NUM_EQUALS(entry->rank, 2);
+  ASSERT_NUM_EQUALS(entry->index, 6);
+  ASSERT_STR_EQUALS(entry->username, "Player2");
+  ASSERT_NUM_EQUALS(entry->score, 7654);
+  ASSERT_TIMET_EQUALS(entry->submitted, 1600604303);
 
   rc_api_destroy_fetch_leaderboard_info_response(&fetch_leaderboard_info_response);
 }
@@ -274,7 +324,7 @@ static void test_init_fetch_games_list_request() {
 
   ASSERT_NUM_EQUALS(rc_api_init_fetch_games_list_request(&request, &fetch_games_list_request), RC_OK);
   ASSERT_STR_EQUALS(request.url, DOREQUEST_URL);
-  ASSERT_STR_EQUALS(request.post_data, "r=gameslist&c=12");
+  ASSERT_STR_EQUALS(request.post_data, "r=systemgames&s=12");
   ASSERT_STR_EQUALS(request.content_type, RC_CONTENT_TYPE_URLENCODED);
 
   rc_api_destroy_request(&request);
@@ -283,42 +333,290 @@ static void test_init_fetch_games_list_request() {
 static void test_process_fetch_games_list_response() {
   rc_api_fetch_games_list_response_t fetch_games_list_response;
   rc_api_game_list_entry_t* entry;
-  const char* server_response = "{\"Success\":true,\"Response\":{"
-	  "\"1234\":\"Game Name 1\","
-	  "\"17\":\"Game Name 2\","
-	  "\"9923\":\"Game Name 3\","
-	  "\"12303\":\"Game Name 4\","
-	  "\"4338\":\"Game Name 5\","
-	  "\"5437\":\"Game Name 6\""
-	  "}}";
+  const char* server_response = "{\"Success\":true,\"Response\":["
+	  "{\"ID\":111,\"Title\":\"Game Name 1\",\"NumAchievements\":6,\"NumLeaderboards\":0,\"Points\":40,"
+     "\"ImageIcon\":\"/Images/001110.png\",\"ImageUrl\":\"http://host/Images/001110.png\","
+     "\"SupportedHashes\":[\"0123456789abcdeffedcba9876543210\"]},"
+	  "{\"ID\":222,\"Title\":\"Game Name 2\",\"NumAchievements\":0,\"NumLeaderboards\":0,\"Points\":0,"
+     "\"ImageIcon\":\"/Images/002220.png\",\"ImageUrl\":\"http://host/Images/002220.png\","
+     "\"SupportedHashes\":[]},"
+	  "{\"ID\":333,\"Title\":\"Game Name 3\",\"NumAchievements\":14,\"NumLeaderboards\":3,\"Points\":200,"
+     "\"ImageIcon\":\"/Images/003330.png\",\"ImageUrl\":\"http://host/Images/003330.png\","
+     "\"SupportedHashes\":[\"deadbeefdeadbeefdeadbeefdeadbeef\",\"00112233445566778899aabbccddeeff\"],"
+     "\"UnsupportedHashes\":[\"abababababababababababababababab\"]}"
+	  "]}";
 
   memset(&fetch_games_list_response, 0, sizeof(fetch_games_list_response));
 
   ASSERT_NUM_EQUALS(rc_api_process_fetch_games_list_response(&fetch_games_list_response, server_response), RC_OK);
   ASSERT_NUM_EQUALS(fetch_games_list_response.response.succeeded, 1);
   ASSERT_PTR_NULL(fetch_games_list_response.response.error_message);
-  ASSERT_NUM_EQUALS(fetch_games_list_response.num_entries, 6);
+  ASSERT_NUM_EQUALS(fetch_games_list_response.num_entries, 3);
 
   entry = &fetch_games_list_response.entries[0];
-  ASSERT_NUM_EQUALS(entry->id, 1234);
+  ASSERT_NUM_EQUALS(entry->id, 111);
   ASSERT_STR_EQUALS(entry->name, "Game Name 1");
+  ASSERT_NUM_EQUALS(entry->num_achievements, 6);
+  ASSERT_NUM_EQUALS(entry->num_leaderboards, 0);
+  ASSERT_NUM_EQUALS(entry->points, 40);
+  ASSERT_STR_EQUALS(entry->image_name, "001110");
+  ASSERT_STR_EQUALS(entry->image_url, "http://host/Images/001110.png");
+  ASSERT_NUM_EQUALS(entry->num_supported_hashes, 1);
+  ASSERT_STR_EQUALS(entry->supported_hashes[0], "0123456789abcdeffedcba9876543210");
+  ASSERT_NUM_EQUALS(entry->num_unsupported_hashes, 0);
+  ASSERT_PTR_NULL(entry->unsupported_hashes);
+
   entry = &fetch_games_list_response.entries[1];
-  ASSERT_NUM_EQUALS(entry->id, 17);
+  ASSERT_NUM_EQUALS(entry->id, 222);
   ASSERT_STR_EQUALS(entry->name, "Game Name 2");
+  ASSERT_NUM_EQUALS(entry->num_achievements, 0);
+  ASSERT_NUM_EQUALS(entry->num_leaderboards, 0);
+  ASSERT_NUM_EQUALS(entry->points, 0);
+  ASSERT_STR_EQUALS(entry->image_name, "002220");
+  ASSERT_STR_EQUALS(entry->image_url, "http://host/Images/002220.png");
+  ASSERT_NUM_EQUALS(entry->num_supported_hashes, 0);
+  ASSERT_PTR_NULL(entry->supported_hashes);
+  ASSERT_NUM_EQUALS(entry->num_unsupported_hashes, 0);
+  ASSERT_PTR_NULL(entry->unsupported_hashes);
+
   entry = &fetch_games_list_response.entries[2];
-  ASSERT_NUM_EQUALS(entry->id, 9923);
+  ASSERT_NUM_EQUALS(entry->id, 333);
   ASSERT_STR_EQUALS(entry->name, "Game Name 3");
-  entry = &fetch_games_list_response.entries[3];
-  ASSERT_NUM_EQUALS(entry->id, 12303);
-  ASSERT_STR_EQUALS(entry->name, "Game Name 4");
-  entry = &fetch_games_list_response.entries[4];
-  ASSERT_NUM_EQUALS(entry->id, 4338);
-  ASSERT_STR_EQUALS(entry->name, "Game Name 5");
-  entry = &fetch_games_list_response.entries[5];
-  ASSERT_NUM_EQUALS(entry->id, 5437);
-  ASSERT_STR_EQUALS(entry->name, "Game Name 6");
+  ASSERT_NUM_EQUALS(entry->num_achievements, 14);
+  ASSERT_NUM_EQUALS(entry->num_leaderboards, 3);
+  ASSERT_NUM_EQUALS(entry->points, 200);
+  ASSERT_STR_EQUALS(entry->image_name, "003330");
+  ASSERT_STR_EQUALS(entry->image_url, "http://host/Images/003330.png");
+  ASSERT_NUM_EQUALS(entry->num_supported_hashes, 2);
+  ASSERT_STR_EQUALS(entry->supported_hashes[0], "deadbeefdeadbeefdeadbeefdeadbeef");
+  ASSERT_STR_EQUALS(entry->supported_hashes[1], "00112233445566778899aabbccddeeff");
+  ASSERT_NUM_EQUALS(entry->num_unsupported_hashes, 1);
+  ASSERT_STR_EQUALS(entry->unsupported_hashes[0], "abababababababababababababababab");
 
   rc_api_destroy_fetch_games_list_response(&fetch_games_list_response);
+}
+
+static void test_init_fetch_game_titles_request() {
+  rc_api_fetch_game_titles_request_t fetch_game_titles_request;
+  rc_api_request_t request;
+  uint32_t game_ids[] = { 3, 4, 7, 10 };
+
+  memset(&fetch_game_titles_request, 0, sizeof(fetch_game_titles_request));
+  fetch_game_titles_request.game_ids = game_ids;
+  fetch_game_titles_request.num_game_ids = 3; /* purposefully only ask for 3/4 */
+
+  ASSERT_NUM_EQUALS(rc_api_init_fetch_game_titles_request(&request, &fetch_game_titles_request), RC_OK);
+  ASSERT_STR_EQUALS(request.url, DOREQUEST_URL);
+  ASSERT_STR_EQUALS(request.post_data, "r=gameinfolist&g=3,4,7");
+  ASSERT_STR_EQUALS(request.content_type, RC_CONTENT_TYPE_URLENCODED);
+
+  rc_api_destroy_request(&request);
+}
+
+static void test_process_fetch_game_titles_response() {
+  rc_api_fetch_game_titles_response_t fetch_game_titles_response;
+  rc_api_server_response_t fetch_game_titles_server_response;
+  rc_api_game_title_entry_t* entry;
+  const char* server_response = "{\"Success\":true,\"Response\":["
+    "{\"ID\": 3, \"Title\":\"Game Name 3\", \"ImageIcon\": \"/Images/010003.png\"}," /* ImageUrl explicitly not returned to test auto-populating logic */
+    "{\"ID\": 4, \"Title\":\"Game Name 4\", \"ImageIcon\": \"/Images/010004.png\", \"ImageUrl\": \"http:\\/\\/media.retroachievements.org\\/Images\\/010004.png\"},"
+    "{\"ID\": 7, \"Title\":\"Game Name 7\", \"ImageIcon\": \"/Images/010007.png\", \"ImageUrl\": \"localhost\\/Images\\/010007.png\"}"
+    "]}";
+
+  rc_api_set_host("http://retroachievements.org");
+  rc_api_set_image_host("http://i.retroachievements.org");
+
+  memset(&fetch_game_titles_response, 0, sizeof(fetch_game_titles_response));
+  memset(&fetch_game_titles_server_response, 0, sizeof(fetch_game_titles_server_response));
+  fetch_game_titles_server_response.body = server_response;
+  fetch_game_titles_server_response.body_length = strlen(server_response);
+  fetch_game_titles_server_response.http_status_code = 200;
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_game_titles_server_response(&fetch_game_titles_response, &fetch_game_titles_server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_game_titles_response.response.error_message);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.num_entries, 3);
+
+  entry = &fetch_game_titles_response.entries[0];
+  ASSERT_NUM_EQUALS(entry->id, 3);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 3");
+  ASSERT_STR_EQUALS(entry->image_name, "010003");
+  ASSERT_STR_EQUALS(entry->image_url, "http://i.retroachievements.org/Images/010003.png");
+  entry = &fetch_game_titles_response.entries[1];
+  ASSERT_NUM_EQUALS(entry->id, 4);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 4");
+  ASSERT_STR_EQUALS(entry->image_name, "010004");
+  ASSERT_STR_EQUALS(entry->image_url, "http://media.retroachievements.org/Images/010004.png");
+  entry = &fetch_game_titles_response.entries[2];
+  ASSERT_NUM_EQUALS(entry->id, 7);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 7");
+  ASSERT_STR_EQUALS(entry->image_name, "010007");
+  ASSERT_STR_EQUALS(entry->image_url, "localhost/Images/010007.png");
+
+  rc_api_destroy_fetch_game_titles_response(&fetch_game_titles_response);
+  rc_api_set_image_host(NULL);
+  rc_api_set_host(NULL);
+}
+
+static void test_process_fetch_game_titles_response_invalid_image_icons() {
+  rc_api_fetch_game_titles_response_t fetch_game_titles_response;
+  rc_api_server_response_t fetch_game_titles_server_response;
+  rc_api_game_title_entry_t* entry;
+  const char* server_response = "{\"Success\":true,\"Response\":["
+    "{\"ID\": 3, \"Title\":\"Game Name 3\", \"ImageIcon\": null},"
+    "{\"ID\": 4, \"Title\":\"Game Name 4\", \"ImageIcon\": \"\"},"
+    "{\"ID\": 5, \"Title\":\"Game Name 5\", \"ImageIcon\": \"/Images/\"},"
+    "{\"ID\": 7, \"Title\":\"Game Name 7\", \"ImageIcon\": \"/Images/010007\"}"
+  "]}";
+
+  rc_api_set_host("http://retroachievements.org");
+  rc_api_set_image_host("http://i.retroachievements.org");
+
+  memset(&fetch_game_titles_response, 0, sizeof(fetch_game_titles_response));
+  memset(&fetch_game_titles_server_response, 0, sizeof(fetch_game_titles_server_response));
+  fetch_game_titles_server_response.body = server_response;
+  fetch_game_titles_server_response.body_length = strlen(server_response);
+  fetch_game_titles_server_response.http_status_code = 200;
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_game_titles_server_response(&fetch_game_titles_response, &fetch_game_titles_server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_game_titles_response.response.error_message);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.num_entries, 4);
+
+  entry = &fetch_game_titles_response.entries[0];
+  ASSERT_NUM_EQUALS(entry->id, 3);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 3");
+  ASSERT_PTR_NULL(entry->image_name);
+  ASSERT_PTR_NULL(entry->image_url);
+  entry = &fetch_game_titles_response.entries[1];
+  ASSERT_NUM_EQUALS(entry->id, 4);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 4");
+  ASSERT_STR_EQUALS(entry->image_name, "");
+  ASSERT_PTR_NULL(entry->image_url);
+  entry = &fetch_game_titles_response.entries[2];
+  ASSERT_NUM_EQUALS(entry->id, 5);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 5");
+  ASSERT_STR_EQUALS(entry->image_name, "");
+  ASSERT_PTR_NULL(entry->image_url);
+  entry = &fetch_game_titles_response.entries[3];
+  ASSERT_NUM_EQUALS(entry->id, 7);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 7");
+  ASSERT_STR_EQUALS(entry->image_name, "010007");
+  ASSERT_STR_EQUALS(entry->image_url, "http://i.retroachievements.org/Images/010007.png");
+
+  rc_api_destroy_fetch_game_titles_response(&fetch_game_titles_response);
+  rc_api_set_image_host(NULL);
+  rc_api_set_host(NULL);
+}
+
+static void test_process_fetch_game_titles_response_null_image_url() {
+  rc_api_fetch_game_titles_response_t fetch_game_titles_response;
+  rc_api_server_response_t fetch_game_titles_server_response;
+  rc_api_game_title_entry_t* entry;
+  const char* server_response = "{\"Success\":true,\"Response\":["
+    "{\"ID\": 3, \"Title\":\"Game Name 3\", \"ImageIcon\": \"/Images/010003.png\", \"ImageUrl\": null},"
+    "{\"ID\": 4, \"Title\":\"Game Name 4\", \"ImageIcon\": null, \"ImageUrl\": null}"
+  "]}";
+
+  rc_api_set_host("http://retroachievements.org");
+  rc_api_set_image_host("http://i.retroachievements.org");
+
+  memset(&fetch_game_titles_response, 0, sizeof(fetch_game_titles_response));
+  memset(&fetch_game_titles_server_response, 0, sizeof(fetch_game_titles_server_response));
+  fetch_game_titles_server_response.body = server_response;
+  fetch_game_titles_server_response.body_length = strlen(server_response);
+  fetch_game_titles_server_response.http_status_code = 200;
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_game_titles_server_response(&fetch_game_titles_response, &fetch_game_titles_server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_game_titles_response.response.error_message);
+  ASSERT_NUM_EQUALS(fetch_game_titles_response.num_entries, 2);
+
+  entry = &fetch_game_titles_response.entries[0];
+  ASSERT_NUM_EQUALS(entry->id, 3);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 3");
+  ASSERT_STR_EQUALS(entry->image_name, "010003");
+  ASSERT_STR_EQUALS(entry->image_url, "http://i.retroachievements.org/Images/010003.png");
+  entry = &fetch_game_titles_response.entries[1];
+  ASSERT_NUM_EQUALS(entry->id, 4);
+  ASSERT_STR_EQUALS(entry->title, "Game Name 4");
+  ASSERT_PTR_NULL(entry->image_name);
+  ASSERT_PTR_NULL(entry->image_url);
+
+  rc_api_destroy_fetch_game_titles_response(&fetch_game_titles_response);
+  rc_api_set_image_host(NULL);
+  rc_api_set_host(NULL);
+}
+
+static void test_init_fetch_hash_library_request() {
+  rc_api_fetch_hash_library_request_t fetch_hash_library_request;
+  rc_api_request_t request;
+
+  memset(&fetch_hash_library_request, 0, sizeof(fetch_hash_library_request));
+  fetch_hash_library_request.console_id = 1;
+
+  ASSERT_NUM_EQUALS(rc_api_init_fetch_hash_library_request(&request, &fetch_hash_library_request), RC_OK);
+  ASSERT_STR_EQUALS(request.url, DOREQUEST_URL);
+  ASSERT_STR_EQUALS(request.post_data, "r=hashlibrary&c=1");
+  ASSERT_STR_EQUALS(request.content_type, RC_CONTENT_TYPE_URLENCODED);
+
+  rc_api_destroy_request(&request);
+}
+
+static void test_process_fetch_hash_library_response() {
+  rc_api_fetch_hash_library_response_t fetch_hash_library_response;
+  rc_api_server_response_t fetch_hash_library_server_response;
+  rc_api_hash_library_entry_t* entry;
+  const char* server_response = "{\"Success\":true,\"MD5List\":{"
+    "\"aabbccddeeff00112233445566778899\":1,"
+    "\"99aabbccddeeff001122334455667788\":1,"
+    "\"8899aabbccddeeff0011223344556677\":2"
+    "}}";
+
+  memset(&fetch_hash_library_server_response, 0, sizeof(fetch_hash_library_server_response));
+  fetch_hash_library_server_response.body = server_response;
+  fetch_hash_library_server_response.body_length = strlen(server_response);
+  fetch_hash_library_server_response.http_status_code = 200;
+
+  memset(&fetch_hash_library_response, 0, sizeof(fetch_hash_library_response));
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_hash_library_server_response(&fetch_hash_library_response, &fetch_hash_library_server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_hash_library_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_hash_library_response.response.error_message);
+  ASSERT_NUM_EQUALS(fetch_hash_library_response.num_entries, 3);
+
+  entry = &fetch_hash_library_response.entries[0];
+  ASSERT_NUM_EQUALS(entry->game_id, 1);
+  ASSERT_STR_EQUALS(entry->hash, "aabbccddeeff00112233445566778899");
+  entry = &fetch_hash_library_response.entries[1];
+  ASSERT_NUM_EQUALS(entry->game_id, 1);
+  ASSERT_STR_EQUALS(entry->hash, "99aabbccddeeff001122334455667788");
+  entry = &fetch_hash_library_response.entries[2];
+  ASSERT_NUM_EQUALS(entry->game_id, 2);
+  ASSERT_STR_EQUALS(entry->hash, "8899aabbccddeeff0011223344556677");
+
+  rc_api_destroy_fetch_hash_library_response(&fetch_hash_library_response);
+}
+
+static void test_process_fetch_hash_library_empty_response() {
+  rc_api_fetch_hash_library_response_t fetch_hash_library_response;
+  rc_api_server_response_t fetch_hash_library_server_response;
+  const char* server_response = "{\"Success\":true,\"MD5List\":[]}"; /* RAWeb returns a list instead of a map for invalid console */
+
+  memset(&fetch_hash_library_server_response, 0, sizeof(fetch_hash_library_server_response));
+  fetch_hash_library_server_response.body = server_response;
+  fetch_hash_library_server_response.body_length = strlen(server_response);
+  fetch_hash_library_server_response.http_status_code = 200;
+
+  memset(&fetch_hash_library_response, 0, sizeof(fetch_hash_library_response));
+
+  ASSERT_NUM_EQUALS(rc_api_process_fetch_hash_library_server_response(&fetch_hash_library_response, &fetch_hash_library_server_response), RC_OK);
+  ASSERT_NUM_EQUALS(fetch_hash_library_response.response.succeeded, 1);
+  ASSERT_PTR_NULL(fetch_hash_library_response.response.error_message);
+  ASSERT_PTR_NULL(fetch_hash_library_response.entries);
+  ASSERT_NUM_EQUALS(fetch_hash_library_response.num_entries, 0);
+
+  rc_api_destroy_fetch_hash_library_response(&fetch_hash_library_response);
 }
 
 void test_rapi_info(void) {
@@ -340,11 +638,25 @@ void test_rapi_info(void) {
 
   TEST(test_process_fetch_leaderboard_info_response);
   TEST(test_process_fetch_leaderboard_info_response2);
+  TEST(test_process_fetch_leaderboard_info_response_iso8601);
 
   /* games list */
   TEST(test_init_fetch_games_list_request);
 
   TEST(test_process_fetch_games_list_response);
+
+  /* game titles */
+  TEST(test_init_fetch_game_titles_request);
+
+  TEST(test_process_fetch_game_titles_response);
+  TEST(test_process_fetch_game_titles_response_invalid_image_icons);
+  TEST(test_process_fetch_game_titles_response_null_image_url);
+
+  /* hash library */
+  TEST(test_init_fetch_hash_library_request);
+
+  TEST(test_process_fetch_hash_library_response);
+  TEST(test_process_fetch_hash_library_empty_response);
 
   TEST_SUITE_END();
 }

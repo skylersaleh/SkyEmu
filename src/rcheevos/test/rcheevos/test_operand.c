@@ -5,12 +5,12 @@
 
 static void _assert_parse_operand(rc_operand_t* self, char* buffer, const char** memaddr) {
   rc_parse_state_t parse;
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
   int ret;
 
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  ret = rc_parse_operand(self, memaddr, 0, &parse);
+  ret = rc_parse_operand(self, memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
   ASSERT_NUM_GREATER_EQUALS(ret, 0);
@@ -63,18 +63,18 @@ static void test_parse_error_operand(const char* memaddr, int valid_chars, int e
   rc_parse_state_t parse;
   int ret;
   const char* begin = memaddr;
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
 
-  rc_init_parse_state(&parse, 0, 0, 0);
+  rc_init_parse_state(&parse, 0);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  ret = rc_parse_operand(&self, &memaddr, 0, &parse);
+  ret = rc_parse_operand(&self, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
   ASSERT_NUM_EQUALS(expected_error, ret);
   ASSERT_NUM_EQUALS(memaddr - begin, valid_chars);
 }
 
-static uint32_t evaluate_operand(rc_operand_t* op, memory_t* memory, rc_memref_t* memrefs)
+static uint32_t evaluate_operand(rc_operand_t* op, memory_t* memory, rc_memrefs_t* memrefs)
 {
   rc_eval_state_t eval_state;
   rc_typed_value_t value;
@@ -91,20 +91,20 @@ static uint32_t evaluate_operand(rc_operand_t* op, memory_t* memory, rc_memref_t
 static void test_evaluate_operand(const char* memaddr, memory_t* memory, uint32_t expected_value) {
   rc_operand_t self;
   rc_parse_state_t parse;
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
   char buffer[512];
   uint32_t value;
 
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  rc_parse_operand(&self, &memaddr, 0, &parse);
+  rc_parse_operand(&self, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
-  value = evaluate_operand(&self, memory, memrefs);
+  value = evaluate_operand(&self, memory, &memrefs);
   ASSERT_NUM_EQUALS(value, expected_value);
 }
 
-static float evaluate_operand_float(rc_operand_t* op, memory_t* memory, rc_memref_t* memrefs) {
+static float evaluate_operand_float(rc_operand_t* op, memory_t* memory, rc_memrefs_t* memrefs) {
   rc_eval_state_t eval_state;
   rc_typed_value_t value;
 
@@ -120,16 +120,16 @@ static float evaluate_operand_float(rc_operand_t* op, memory_t* memory, rc_memre
 static void test_evaluate_operand_float(const char* memaddr, memory_t* memory, double expected_value) {
   rc_operand_t self;
   rc_parse_state_t parse;
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
   char buffer[512];
   float value;
 
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  rc_parse_operand(&self, &memaddr, 0, &parse);
+  rc_parse_operand(&self, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
-  value = evaluate_operand_float(&self, memory, memrefs);
+  value = evaluate_operand_float(&self, memory, &memrefs);
   ASSERT_FLOAT_EQUALS(value, expected_value);
 }
 static void test_parse_memory_references() {
@@ -187,6 +187,9 @@ static void test_parse_memory_references() {
   TEST_PARAMS4(test_parse_operand, "0xHABCD", RC_OPERAND_ADDRESS, RC_MEMSIZE_8_BITS, 0xABCDU);
   TEST_PARAMS4(test_parse_operand, "0xhabcd", RC_OPERAND_ADDRESS, RC_MEMSIZE_8_BITS, 0xABCDU);
   TEST_PARAMS4(test_parse_operand, "fFABCD", RC_OPERAND_ADDRESS, RC_MEMSIZE_FLOAT, 0xABCDU);
+
+  /* doubled up prefix */
+  TEST_PARAMS3(test_parse_error_operand, "0x0xH1234", 0, RC_INVALID_MEMORY_OPERAND);
 }
 
 static void test_parse_delta_memory_references() {
@@ -522,35 +525,35 @@ static void test_evaluate_delta_memory_reference() {
   const char* memaddr;
   rc_parse_state_t parse;
   char buffer[256];
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
 
   memory.ram = ram;
   memory.size = sizeof(ram);
 
   memaddr = "d0xh1";
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  rc_parse_operand(&op, &memaddr, 0, &parse);
+  rc_parse_operand(&op, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x00); /* first call gets uninitialized value */
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12); /* second gets current value */
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x00); /* first call gets uninitialized value */
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12); /* second gets current value */
 
   /* RC_OPERAND_DELTA is always one frame behind */
   ram[1] = 0x13;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12U);
 
   ram[1] = 0x14;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x13U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x13U);
 
   ram[1] = 0x15;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x14U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x14U);
 
   ram[1] = 0x16;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x15U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x15U);
 
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x16U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x16U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x16U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x16U);
 }
 
 void test_evaluate_prior_memory_reference() {
@@ -560,37 +563,37 @@ void test_evaluate_prior_memory_reference() {
   const char* memaddr;
   rc_parse_state_t parse;
   char buffer[256];
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
 
   memory.ram = ram;
   memory.size = sizeof(ram);
 
   memaddr = "p0xh1";
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  rc_parse_operand(&op, &memaddr, 0, &parse);
+  rc_parse_operand(&op, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
   /* RC_OPERAND_PRIOR only updates when the memory value changes */
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x00); /* first call gets uninitialized value */
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x00); /* value only changes when memory changes */
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x00); /* first call gets uninitialized value */
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x00); /* value only changes when memory changes */
 
   ram[1] = 0x13;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x12U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x12U);
 
   ram[1] = 0x14;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x13U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x13U);
 
   ram[1] = 0x15;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x14U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x14U);
 
   ram[1] = 0x16;
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x15U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x15U);
-  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, memrefs), 0x15U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x15U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x15U);
+  ASSERT_UNUM_EQUALS(evaluate_operand(&op, &memory, &memrefs), 0x15U);
 }
 
 static void test_evaluate_memory_references_float() {
@@ -633,35 +636,201 @@ static void test_evaluate_delta_memory_reference_float() {
   const char* memaddr;
   rc_parse_state_t parse;
   char buffer[256];
-  rc_memref_t* memrefs;
+  rc_memrefs_t memrefs;
 
   memory.ram = ram;
   memory.size = sizeof(ram);
 
   memaddr = "dff0";
-  rc_init_parse_state(&parse, buffer, 0, 0);
+  rc_init_parse_state(&parse, buffer);
   rc_init_parse_state_memrefs(&parse, &memrefs);
-  rc_parse_operand(&op, &memaddr, 0, &parse);
+  rc_parse_operand(&op, &memaddr, &parse);
   rc_destroy_parse_state(&parse);
 
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 0.0); /* first call gets uninitialized value */
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 1.0); /* second gets current value */
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 0.0); /* first call gets uninitialized value */
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 1.0); /* second gets current value */
 
   /* RC_OPERAND_DELTA is always one frame behind */
   ram[3] = 0x40;
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 1.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 1.0);
 
   ram[3] = 0x41;
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 4.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 4.0);
 
   ram[3] = 0x42;
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 16.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 16.0);
 
   ram[3] = 0x43;
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 64.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 64.0);
 
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 256.0);
-  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, memrefs), 256.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 256.0);
+  ASSERT_NUM_EQUALS(evaluate_operand_float(&op, &memory, &memrefs), 256.0);
+}
+
+void test_operands_are_equal_const() {
+  rc_operand_t one, two, one_b, two_b, one_float;
+
+  rc_operand_set_const(&one, 1);
+  rc_operand_set_const(&two, 2);
+  rc_operand_set_const(&one_b, 1);
+  rc_operand_set_const(&two_b, 2);
+  rc_operand_set_float_const(&one_float, 1.0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_float), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_float), 0);
+}
+
+void test_operands_are_equal_float_const() {
+  rc_operand_t one, two, one_b, two_b, one_neg, one_num;
+
+  rc_operand_set_float_const(&one, 1.0);
+  rc_operand_set_float_const(&two, 2.16);
+  rc_operand_set_float_const(&one_b, 1.0);
+  rc_operand_set_float_const(&two_b, 2.16);
+  rc_operand_set_float_const(&one_neg, -1.0);
+  rc_operand_set_const(&one_num, 1);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_neg), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_num), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_neg), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_num), 0);
+}
+
+void test_operands_are_equal_memref() {
+  rc_memrefs_t memrefs;
+  rc_parse_state_t parse;
+  rc_operand_t one, two, one_b, two_b, one_large, one_const;
+  const char* memaddr;
+
+  rc_init_parse_state(&parse, NULL);
+  rc_init_parse_state_memrefs(&parse, &memrefs);
+
+  memaddr = "0xH0001";
+  rc_parse_operand(&one, &memaddr, &parse);
+  memaddr = "0xH0002";
+  rc_parse_operand(&two, &memaddr, &parse);
+  memaddr = "0xH0001";
+  rc_parse_operand(&one_b, &memaddr, &parse);
+  memaddr = "0xH0002";
+  rc_parse_operand(&two_b, &memaddr, &parse);
+  memaddr = "0xX0001";
+  rc_parse_operand(&one_large, &memaddr, &parse);
+  rc_operand_set_const(&one_const, 1);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &two_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_large), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one, &one_const), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &two_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_large), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&two, &one_const), 0);
+
+  rc_destroy_parse_state(&parse);
+}
+
+void test_operands_are_equal_recall() {
+  rc_memrefs_t memrefs;
+  rc_parse_state_t parse;
+  rc_operand_t one_const, two_const, one_const_b, one_float, one_memref, two_memref, none, none_b;
+  const char* memaddr;
+
+  rc_init_parse_state(&parse, NULL);
+  rc_init_parse_state_memrefs(&parse, &memrefs);
+
+  memaddr = "{recall}";
+  rc_parse_operand(&none, &memaddr, &parse);
+
+  memaddr = "{recall}";
+  rc_parse_operand(&none_b, &memaddr, &parse);
+
+  memaddr = "1";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&one_const, &memaddr, &parse);
+
+  memaddr = "2";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&two_const, &memaddr, &parse);
+
+  memaddr = "1";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&one_const_b, &memaddr, &parse);
+
+  memaddr = "f1.0";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&one_float, &memaddr, &parse);
+
+  memaddr = "0xH0001";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&one_memref, &memaddr, &parse);
+
+  memaddr = "0xH0002";
+  rc_parse_operand(&parse.remember, &memaddr, &parse);
+  memaddr = "{recall}";
+  rc_parse_operand(&two_memref, &memaddr, &parse);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &one_const), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &one_const_b), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &two_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &one_float), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &one_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &two_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_const, &none), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &one_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &one_const_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &two_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &one_float), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &one_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &two_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_float, &none), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &one_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &one_const_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &two_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &one_float), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &one_memref), 1);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &two_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&one_memref, &none), 0);
+
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &one_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &one_const_b), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &two_const), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &one_float), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &one_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &two_memref), 0);
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &none_b), 0); /* don't match unknown remembers */
+  ASSERT_NUM_EQUALS(rc_operands_are_equal(&none, &none), 1); /* unless it's the same pointer */
+
+  rc_destroy_parse_state(&parse);
 }
 
 void test_operand(void) {
@@ -684,6 +853,11 @@ void test_operand(void) {
 
   test_evaluate_memory_references_float();
   TEST(test_evaluate_delta_memory_reference_float);
+
+  TEST(test_operands_are_equal_const);
+  TEST(test_operands_are_equal_float_const);
+  TEST(test_operands_are_equal_memref);
+  TEST(test_operands_are_equal_recall);
 
   TEST_SUITE_END();
 }

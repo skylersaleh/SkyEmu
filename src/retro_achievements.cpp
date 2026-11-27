@@ -167,8 +167,33 @@ struct ra_state_t
 
 static ra_state_t* ra_state = nullptr;
 
+#ifdef SE_PLATFORM_WEB
+static const char* retro_achievements_proxy = "https://api.achieve.skyemoo.pandasemi.co";
+#endif
+
 namespace
 {
+    atlas_tile_t* retro_achievements_add_image_from_url(atlas_map_t* atlas, const char* url)
+    {
+#ifdef SE_PLATFORM_WEB
+        // rc_client's image URLs no longer use the deprecated global image host.
+        const char* hosts[] = {
+            "https://media.retroachievements.org/", "http://media.retroachievements.org/",
+            "https://retroachievements.org/", "http://retroachievements.org/"
+        };
+        for (const char* host : hosts)
+        {
+            size_t length = strlen(host);
+            if (strncmp(url, host, length) == 0)
+            {
+                std::string proxy_url = std::string(retro_achievements_proxy) + (url + length - 1);
+                return atlas_add_tile_from_url(atlas, proxy_url.c_str());
+            }
+        }
+#endif
+        return atlas_add_tile_from_url(atlas, url);
+    }
+
     void retro_achievements_game_image_loaded(ra_game_state_ptr game_state)
     {
         const rc_client_game_t* game = rc_client_get_game_info(ra_state->rc_client);
@@ -306,7 +331,7 @@ namespace
             uint8_t bucket = rc_achievement->bucket;
             std::unique_lock<std::mutex> lock(game_state->mutex);
             ra_achievement_t* achievement = retro_achievements_move_bucket(game_state, id, bucket);
-            notification->tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+            notification->tile = retro_achievements_add_image_from_url(game_state->atlas_map, url.c_str());
             achievement->tile = notification->tile;
             game_state->notifications.push_back(*notification);
         }
@@ -326,7 +351,7 @@ namespace
                                                 &url[0], url.size()) == RC_OK)
         {
             std::unique_lock<std::mutex> lock(game_state->mutex);
-            game_state->progress_indicator.tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+            game_state->progress_indicator.tile = retro_achievements_add_image_from_url(game_state->atlas_map, url.c_str());
         }
     }
 
@@ -372,7 +397,7 @@ namespace
             if (rc_client_game_get_image_url(game, &url[0], url.size()) == RC_OK)
             {
                 std::unique_lock<std::mutex> lock(game_state->mutex);
-                game_state->game_image = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+                game_state->game_image = retro_achievements_add_image_from_url(game_state->atlas_map, url.c_str());
                 retro_achievements_game_image_loaded(game_state);
             }
 
@@ -408,7 +433,7 @@ namespace
             url.resize(256);
             if (rc_client_user_get_image_url(user, &url[0], url.size()) == RC_OK)
             {
-                ra_state->user_image = atlas_add_tile_from_url(ra_state->user_image_atlas, url.c_str());
+                ra_state->user_image = retro_achievements_add_image_from_url(ra_state->user_image_atlas, url.c_str());
             }
         } else {
             snprintf(buffer, sizeof(buffer), "Login failed: %s", error_message);
@@ -555,7 +580,7 @@ namespace
                                                         &url[0], url.size()) == RC_OK)
                 {
                     std::unique_lock<std::mutex> lock(game_state->mutex);
-                    game_state->challenges[id].tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+                    game_state->challenges[id].tile = retro_achievements_add_image_from_url(game_state->atlas_map, url.c_str());
                 }
                 break;
             }
@@ -625,7 +650,7 @@ namespace
                                             void* callback_data, rc_client_t* client)
     {
         std::string url = request->url;
-        std::string post_data = request->post_data;
+        std::string post_data = request->post_data ? request->post_data : "";
         http_request_e type;
 
         if (post_data.empty())
@@ -643,7 +668,7 @@ namespace
         // preflight request which is makes the request fail.
         headers.push_back({"User-Agent", "SkyEmu/4.0"});
 #endif
-        headers.push_back({"Content-Type", "application/x-www-form-urlencoded"});
+        headers.push_back({"Content-Type", request->content_type ? request->content_type : "application/x-www-form-urlencoded"});
         headers.push_back({"Content-Length", std::to_string(post_data.size())});
 
         https_request(type, url, post_data, headers,
@@ -784,7 +809,7 @@ void ra_achievement_list_t::initialize(ra_game_state_ptr game_state,
             {
                 uint32_t id = achievement->id;
                 ra_achievement_t* achievement_ptr = buckets[i].achievements[j].get();
-                achievement_ptr->tile = atlas_add_tile_from_url(game_state->atlas_map, url.c_str());
+                achievement_ptr->tile = retro_achievements_add_image_from_url(game_state->atlas_map, url.c_str());
             }
 
             printf("[rcheevos]: Achievement %s, ", achievement->title);
@@ -831,8 +856,7 @@ void retro_achievements_initialize(void* state, bool hardcore)
 
     // RetroAchievements doesn't enable CORS, so we use a reverse proxy
 #ifdef SE_PLATFORM_WEB
-    rc_api_set_host("https://api.achieve.skyemoo.pandasemi.co");
-    rc_api_set_image_host("https://api.achieve.skyemoo.pandasemi.co");
+    rc_client_set_host(ra_state->rc_client, retro_achievements_proxy);
 #endif
 
     std::string path = se_get_pref_path();

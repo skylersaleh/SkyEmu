@@ -1,5 +1,4 @@
 #include "rc_internal.h"
-#include "rc_url.h"
 #include "rc_api_runtime.h"
 #include "rc_consoles.h"
 #include "rc_validate.h"
@@ -36,6 +35,7 @@ static const char* flag_string(char type) {
     case RC_CONDITION_MEASURED: return "Measured ";
     case RC_CONDITION_ADD_SOURCE: return "AddSource ";
     case RC_CONDITION_SUB_SOURCE: return "SubSource ";
+    case RC_CONDITION_REMEMBER: return "Remember ";
     case RC_CONDITION_ADD_ADDRESS: return "AddAddress ";
     case RC_CONDITION_ADD_HITS: return "AddHits ";
     case RC_CONDITION_SUB_HITS: return "SubHits ";
@@ -52,10 +52,11 @@ static const char* type_string(char type) {
     case RC_OPERAND_DELTA: return "Delta";
     case RC_OPERAND_CONST: return "Value";
     case RC_OPERAND_FP: return "Float";
-    case RC_OPERAND_LUA: return "Lua";
+    case RC_OPERAND_FUNC: return "Func";
     case RC_OPERAND_PRIOR: return "Prior";
     case RC_OPERAND_BCD: return "BCD";
     case RC_OPERAND_INVERTED: return "Inverted";
+    case RC_OPERAND_RECALL: return "Recall";
     default: return "Unknown";
   }
 }
@@ -92,6 +93,9 @@ static const char* operator_string(char oper) {
     case RC_OPERATOR_XOR: return "^";
     case RC_OPERATOR_MULT: return "*";
     case RC_OPERATOR_DIV: return "/";
+    case RC_OPERATOR_MOD: return "%";
+    case RC_OPERATOR_ADD: return "+";
+    case RC_OPERATOR_SUB: return "-";
     case RC_OPERATOR_EQ: return "=";
     case RC_OPERATOR_NE: return "!=";
     case RC_OPERATOR_GE: return ">=";
@@ -387,7 +391,7 @@ static int validate_richpresence(const char* script, char result[], const size_t
     }
 
     if (success)
-      success = rc_validate_memrefs_for_console(compiled->memrefs, result, result_size, console_id);
+      success = rc_validate_memrefs_for_console(rc_richpresence_get_memrefs(compiled), result, result_size, console_id);
     if (success)
       success = validate_macros(compiled, script, result, result_size);
     if (success)

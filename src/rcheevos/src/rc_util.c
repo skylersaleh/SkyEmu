@@ -39,6 +39,9 @@ void rc_buffer_destroy(rc_buffer_t* buffer)
     wasted += (int)(chunk->end - chunk->write);
     ++count;
 #endif
+#ifdef DEBUG_BUFFERS
+    printf("< free %p.%p\n", (void*)buffer, (void*)chunk);
+#endif
     free(chunk);
     chunk = next;
   }
@@ -53,6 +56,11 @@ uint8_t* rc_buffer_reserve(rc_buffer_t* buffer, size_t amount)
 {
   rc_buffer_chunk_t* chunk = &buffer->chunk;
   size_t remaining;
+
+  /* we should never need 1GB of space for anything, and avoids any underflow below */
+  if (amount >= 0x40000000)
+    return NULL;
+
   while (chunk)
   {
     remaining = chunk->end - chunk->write;
@@ -69,6 +77,10 @@ uint8_t* rc_buffer_reserve(rc_buffer_t* buffer, size_t amount)
       chunk->next = (rc_buffer_chunk_t*)malloc(alloc_size);
       if (!chunk->next)
         break;
+
+#ifdef DEBUG_BUFFERS
+      printf("> alloc %p.%p\n", (void*)buffer, (void*)chunk->next);
+#endif
 
       chunk->next->start = (uint8_t*)chunk->next + chunk_header_size;
       chunk->next->write = chunk->next->start;
@@ -105,6 +117,9 @@ void rc_buffer_consume(rc_buffer_t* buffer, const uint8_t* start, uint8_t* end)
 void* rc_buffer_alloc(rc_buffer_t* buffer, size_t amount)
 {
   uint8_t* ptr = rc_buffer_reserve(buffer, amount);
+  if (!ptr)
+    return NULL;
+
   rc_buffer_consume(buffer, ptr, ptr + amount);
   return (void*)ptr;
 }
@@ -112,9 +127,12 @@ void* rc_buffer_alloc(rc_buffer_t* buffer, size_t amount)
 char* rc_buffer_strncpy(rc_buffer_t* buffer, const char* src, size_t len)
 {
   uint8_t* dst = rc_buffer_reserve(buffer, len + 1);
+  if (!dst)
+    return NULL;
+
   memcpy(dst, src, len);
   dst[len] = '\0';
-  rc_buffer_consume(buffer, dst, dst + len + 2);
+  rc_buffer_consume(buffer, dst, dst + len + 1);
   return (char*)dst;
 }
 
@@ -148,7 +166,7 @@ const char* rc_error_str(int ret)
 {
   switch (ret) {
     case RC_OK: return "OK";
-    case RC_INVALID_LUA_OPERAND: return "Invalid Lua operand";
+    case RC_INVALID_FUNC_OPERAND: return "Invalid function operand";
     case RC_INVALID_MEMORY_OPERAND: return "Invalid memory operand";
     case RC_INVALID_CONST_OPERAND: return "Invalid constant operand";
     case RC_INVALID_FP_OPERAND: return "Invalid floating-point operand";
@@ -184,6 +202,10 @@ const char* rc_error_str(int ret)
     case RC_INVALID_CREDENTIALS: return "Invalid credentials";
     case RC_EXPIRED_TOKEN: return "Expired token";
     case RC_INSUFFICIENT_BUFFER: return "Buffer not large enough";
+    case RC_INVALID_VARIABLE_NAME: return "Invalid variable name";
+    case RC_UNKNOWN_VARIABLE_NAME: return "Unknown variable name";
+    case RC_NOT_FOUND: return "Not found";
+    case RC_INVALID_VALUE: return "Invalid value expression";
     default: return "Unknown error";
   }
 }
