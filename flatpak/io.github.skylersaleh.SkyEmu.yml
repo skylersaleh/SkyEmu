@@ -1,0 +1,53 @@
+app-id: io.github.skylersaleh.SkyEmu
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: skyemu-wrapper.sh
+finish-args:
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=all
+  - --filesystem=/mnt:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --filesystem=home:ro
+
+modules:
+  - name: SkyEmu
+    buildsystem: cmake
+    builddir: true
+    config-opts:
+      - -DPLATFORM_FLATPAK=ON
+    sources:
+      - type: git
+        url: https://github.com/skylersaleh/SkyEmu.git
+        tag: v5
+        commit: 46efbcbdb3b902373a09f4724e6d3b1a5acc4af3
+      - type: file
+        path: io.github.skylersaleh.SkyEmu.metainfo.xml
+      - type: file
+        path: io.github.skylersaleh.SkyEmu.desktop
+      - type: file
+        path: io.github.skylersaleh.SkyEmu.svg
+      - type: file
+        path: search_paths.bin 
+      - type: file
+        path: user_settings.bin
+      - type: file
+        path: skyemu-wrapper.sh
+    post-install:
+      - install -Dm644 ../io.github.skylersaleh.SkyEmu.metainfo.xml /app/share/metainfo/io.github.skylersaleh.SkyEmu.metainfo.xml
+      - install -Dm644 ../io.github.skylersaleh.SkyEmu.desktop /app/share/applications/io.github.skylersaleh.SkyEmu.desktop
+      - install -Dm644 ../io.github.skylersaleh.SkyEmu.svg /app/share/icons/hicolor/scalable/apps/io.github.skylersaleh.SkyEmu.svg
+      - install -Dm644 ../search_paths.bin /app/share/skyemu/search_paths.bin
+      - install -Dm644 ../user_settings.bin /app/share/skyemu/user_settings.bin
+      - install -Dm755 ../skyemu-wrapper.sh /app/bin/skyemu-wrapper.sh
+
+
+
+
+
+
+
+

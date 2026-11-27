@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SkyEmu
+Comment=GB, GBC, GBA, and DS Emulator
+Exec=skyemu-wrapper.sh
+Icon=io.github.skylersaleh.SkyEmu
+Categories=Game;Emulator;
+Terminal=false
